@@ -1,7 +1,18 @@
+import dynamic from 'next/dynamic'
 import KpiGrid from '@/components/dashboard/KpiGrid'
-import RevenueChart from '@/components/dashboard/RevenueChart'
 import AgentTable from '@/components/dashboard/AgentTable'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
+
+// Recharts uses ResizeObserver / window — must not run during SSR
+const RevenueChart = dynamic(() => import('@/components/dashboard/RevenueChart'), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="rounded-xl"
+      style={{ height: 324, backgroundColor: '#12121e', border: '1px solid #24243e' }}
+    />
+  ),
+})
 
 export default function DashboardPage() {
   return (
