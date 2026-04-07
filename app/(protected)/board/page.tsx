@@ -133,15 +133,11 @@ export default function BoardPage() {
     if (!reviewCard) return
     setColumns(prev => ({
       ...prev,
-      review: prev['review'].map(c =>
-        c.id === reviewCard.id ? { ...c, revisionNote: revision } : c
-      ),
-      // Move back to backlog for regeneration
+      review: prev['review'].filter(c => c.id !== reviewCard.id),
       backlog: [
         { ...reviewCard, columnId: 'backlog', revisionNote: revision },
         ...prev['backlog'],
       ],
-      review: prev['review'].filter(c => c.id !== reviewCard.id),
     }))
     setReviewCard(null)
   }
