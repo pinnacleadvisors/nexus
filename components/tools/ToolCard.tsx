@@ -1,3 +1,5 @@
+'use client'
+
 import type { Tool, ToolCategory } from '@/lib/types'
 import {
   Bot,

@@ -1,3 +1,5 @@
+'use client'
+
 import { formatDistanceToNow } from 'date-fns'
 import type { AgentRow } from '@/lib/types'
 
