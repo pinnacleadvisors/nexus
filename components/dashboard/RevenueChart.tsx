@@ -75,7 +75,7 @@ export default function RevenueChart({ data }: Props) {
               color: '#e8e8f0',
               fontSize: 12,
             }}
-            formatter={(value: number) => [`$${value.toLocaleString()}`, undefined]}
+            formatter={(value) => `$${Number(value).toLocaleString()}`}
             labelStyle={{ color: '#9090b0', marginBottom: 4 }}
           />
 
