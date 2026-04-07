@@ -238,7 +238,7 @@ export const TOOLS: Tool[] = [
     id: 't5',
     name: 'GitHub',
     description: 'All code versioned here. Agents commit and open PRs automatically.',
-    icon: 'Github',
+    icon: 'GitBranch',
     category: 'DevOps',
     status: 'available',
     href: 'https://github.com',

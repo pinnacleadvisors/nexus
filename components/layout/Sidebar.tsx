@@ -7,7 +7,7 @@ import { UserButton } from '@clerk/nextjs'
 import {
   Hammer,
   LayoutDashboard,
-  Trello,
+  Kanban,
   Wrench,
   ChevronLeft,
   ChevronRight,
@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 const NAV_ITEMS = [
   { href: '/forge', label: 'Forge', segment: 'forge', icon: Hammer },
   { href: '/dashboard', label: 'Dashboard', segment: 'dashboard', icon: LayoutDashboard },
-  { href: '/board', label: 'Board', segment: 'board', icon: Trello },
+  { href: '/board', label: 'Board', segment: 'board', icon: Kanban },
   { href: '/tools', label: 'Tools', segment: 'tools', icon: Wrench },
 ]
 
