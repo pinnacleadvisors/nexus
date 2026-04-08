@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import type { Tool, ToolCategory } from '@/lib/types'
+import type { Tool } from '@/lib/types'
 import {
   Bot,
   Cpu,
@@ -39,7 +39,6 @@ const STATUS_STYLE: Record<Tool['status'], { label: string; color: string; bg: s
   beta:         { label: 'Beta',         color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)' },
   'coming-soon':{ label: 'Coming Soon',  color: '#55556a', bg: 'rgba(85,85,106,0.1)',   border: 'rgba(85,85,106,0.25)' },
 }
-
 
 interface Props {
   tool: Tool
