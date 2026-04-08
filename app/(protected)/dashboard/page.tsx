@@ -1,3 +1,5 @@
+'use client'
+
 import dynamic from 'next/dynamic'
 import KpiGrid from '@/components/dashboard/KpiGrid'
 import AgentTable from '@/components/dashboard/AgentTable'
