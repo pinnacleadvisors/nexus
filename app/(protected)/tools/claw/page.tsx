@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, Cpu, CheckCircle2, XCircle, Loader2, ExternalLink,
   GitBranch, Mail, MessageSquare, FileText, ShieldCheck, Unlink,
+  Send, Bot, User,
 } from 'lucide-react'
 import type { OAuthConnection } from '@/lib/types'
 import { OAUTH_PROVIDERS } from '@/lib/oauth-providers'
@@ -14,8 +15,9 @@ const PROVIDER_ICON: Record<string, React.ElementType> = {
   Mail, GitBranch, MessageSquare, FileText,
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 type TestStatus = 'idle' | 'loading' | 'success' | 'error'
+type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ClawConfigPage() {
@@ -28,6 +30,13 @@ export default function ClawConfigPage() {
   const [testError, setTestError]     = useState('')
   const [connections, setConnections] = useState<OAuthConnection[]>([])
   const [oauthMsg, setOauthMsg]       = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatPrompt, setChatPrompt]     = useState('')
+  const [chatLoading, setChatLoading]   = useState(false)
+  const [chatError, setChatError]       = useState('')
+  const chatBottomRef                   = useRef<HTMLDivElement>(null)
 
   // Load config status from server (never receives the token)
   const loadConfig = useCallback(async () => {
@@ -112,6 +121,45 @@ export default function ClawConfigPage() {
   async function handleOAuthDisconnect(providerId: string) {
     await fetch(`/api/oauth/disconnect?provider=${providerId}`, { method: 'DELETE' })
     setConnections(prev => prev.filter(c => c.provider !== providerId))
+  }
+
+  // Auto-scroll chat to latest message
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  async function handleChat(e: React.FormEvent) {
+    e.preventDefault()
+    const text = chatPrompt.trim()
+    if (!text || chatLoading) return
+
+    setChatPrompt('')
+    setChatError('')
+    setChatMessages(prev => [...prev, { role: 'user', content: text }])
+    setChatLoading(true)
+
+    try {
+      const res = await fetch('/api/claw/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setChatError(data.error ?? `Error ${res.status}`)
+        if (res.status === 401) window.location.href = '/tools/claw'
+      } else {
+        // Normalise: content may be in data.content (REST) or data.message
+        const reply: string =
+          data.content ?? data.message ?? data.response ?? JSON.stringify(data)
+        setChatMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      }
+    } catch {
+      setChatError('Network error — could not reach the proxy.')
+    } finally {
+      setChatLoading(false)
+    }
   }
 
   const isConnected = (id: string) => connections.some(c => c.provider === id)
@@ -376,6 +424,135 @@ export default function ClawConfigPage() {
           </div>
         </section>
       </div>
+
+      {/* ── Chat with Agent ───────────────────────────────────────────────── */}
+      <section
+        className="rounded-xl mt-6 flex flex-col overflow-hidden"
+        style={{ backgroundColor: '#12121e', border: '1px solid #24243e', minHeight: 360, maxHeight: 520 }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center gap-2 px-5 py-3 shrink-0"
+          style={{ borderBottom: '1px solid #24243e' }}
+        >
+          <Bot size={15} style={{ color: '#6c63ff' }} />
+          <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
+            Chat with Agent
+          </h2>
+          <span
+            className="ml-auto text-xs px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: '#1a1a2e', color: '#9090b0', border: '1px solid #24243e' }}
+          >
+            POST /api/sessions/main/messages
+          </span>
+        </div>
+
+        {/* Message thread */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3" style={{ scrollBehavior: 'smooth' }}>
+          {chatMessages.length === 0 && (
+            <p className="text-xs text-center pt-8" style={{ color: '#55556a' }}>
+              Send a prompt to your OpenClaw agent — responses arrive directly via the Gateway REST API.
+            </p>
+          )}
+          {chatMessages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {msg.role === 'assistant' && (
+                <div
+                  className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                  style={{ backgroundColor: 'rgba(108,99,255,0.15)', border: '1px solid rgba(108,99,255,0.3)' }}
+                >
+                  <Bot size={13} style={{ color: '#6c63ff' }} />
+                </div>
+              )}
+              <div
+                className="max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
+                style={
+                  msg.role === 'user'
+                    ? { backgroundColor: '#1a1a2e', color: '#e8e8f0', border: '1px solid #2e2e4a' }
+                    : { backgroundColor: 'rgba(108,99,255,0.08)', color: '#d0d0e8', border: '1px solid rgba(108,99,255,0.15)' }
+                }
+              >
+                {msg.content}
+              </div>
+              {msg.role === 'user' && (
+                <div
+                  className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                  style={{ backgroundColor: '#1a1a2e', border: '1px solid #24243e' }}
+                >
+                  <User size={13} style={{ color: '#9090b0' }} />
+                </div>
+              )}
+            </div>
+          ))}
+          {chatLoading && (
+            <div className="flex gap-2.5 justify-start">
+              <div
+                className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                style={{ backgroundColor: 'rgba(108,99,255,0.15)', border: '1px solid rgba(108,99,255,0.3)' }}
+              >
+                <Bot size={13} style={{ color: '#6c63ff' }} />
+              </div>
+              <div
+                className="flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm"
+                style={{ backgroundColor: 'rgba(108,99,255,0.08)', color: '#9090b0', border: '1px solid rgba(108,99,255,0.15)' }}
+              >
+                <Loader2 size={13} className="animate-spin" />
+                Thinking…
+              </div>
+            </div>
+          )}
+          {chatError && (
+            <div
+              className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg"
+              style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444' }}
+            >
+              <XCircle size={12} />
+              {chatError}
+            </div>
+          )}
+          <div ref={chatBottomRef} />
+        </div>
+
+        {/* Input */}
+        <form
+          onSubmit={handleChat}
+          className="flex gap-2 px-4 py-3 shrink-0"
+          style={{ borderTop: '1px solid #24243e', backgroundColor: '#0d0d14' }}
+        >
+          <input
+            type="text"
+            value={chatPrompt}
+            onChange={e => setChatPrompt(e.target.value)}
+            placeholder={configured ? 'Ask your agent anything…' : 'Configure gateway above first'}
+            disabled={chatLoading || !configured}
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+            style={{
+              backgroundColor: '#12121e',
+              border: '1px solid #24243e',
+              color: '#e8e8f0',
+              opacity: !configured ? 0.5 : 1,
+            }}
+            onFocus={e => { if (configured) (e.target as HTMLInputElement).style.borderColor = '#6c63ff' }}
+            onBlur={e => ((e.target as HTMLInputElement).style.borderColor = '#24243e')}
+          />
+          <button
+            type="submit"
+            disabled={!chatPrompt.trim() || chatLoading || !configured}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+            style={
+              chatPrompt.trim() && !chatLoading && configured
+                ? { background: 'linear-gradient(135deg, #6c63ff, #4c45cc)', color: '#fff', cursor: 'pointer' }
+                : { backgroundColor: '#1a1a2e', color: '#55556a', border: '1px solid #24243e', cursor: 'not-allowed' }
+            }
+          >
+            {chatLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            {chatLoading ? 'Sending…' : 'Send'}
+          </button>
+        </form>
+      </section>
     </div>
   )
 }
