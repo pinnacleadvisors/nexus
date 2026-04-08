@@ -307,4 +307,14 @@ export const TOOLS: Tool[] = [
     category: 'Communication',
     status: 'coming-soon',
   },
+  // Automation
+  {
+    id: 't13',
+    name: 'OpenClaw (MyClaw)',
+    description: 'Cloud-hosted AI agent that autonomously executes business tasks via messaging channels. Connect your MyClaw.ai instance to dispatch milestones for hands-free implementation.',
+    icon: 'Cpu',
+    category: 'Automation',
+    status: 'available',
+    href: '/tools/claw',
+  },
 ]

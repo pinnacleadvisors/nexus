@@ -65,7 +65,7 @@ export interface GanttTask {
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
-export type ToolCategory = 'AI' | 'Analytics' | 'Communication' | 'DevOps' | 'Finance' | 'Database'
+export type ToolCategory = 'AI' | 'Analytics' | 'Automation' | 'Communication' | 'DevOps' | 'Finance' | 'Database'
 export type ToolStatus = 'available' | 'coming-soon' | 'beta'
 
 export interface Tool {
@@ -76,4 +76,10 @@ export interface Tool {
   category: ToolCategory
   status: ToolStatus
   href?: string
+}
+
+// ── OpenClaw / MyClaw ─────────────────────────────────────────────────────────
+export interface ClawConfig {
+  gatewayUrl: string
+  hookToken: string
 }

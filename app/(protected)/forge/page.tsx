@@ -169,6 +169,7 @@ export default function ForgePage() {
           onLaunch={() => setShowGantt(s => !s)}
           milestonesReady={milestones.length > 0}
           showGantt={showGantt}
+          milestones={milestones}
         />
       </div>
     </div>
