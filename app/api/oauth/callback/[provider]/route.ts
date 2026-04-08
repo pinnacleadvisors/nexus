@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/oauth-providers'
 
+export const runtime = 'nodejs'
+
 const TOKEN_ENDPOINTS: Record<string, string> = {
   google: 'https://oauth2.googleapis.com/token',
   github: 'https://github.com/login/oauth/access_token',
@@ -81,7 +83,7 @@ export async function GET(
     res.cookies.set(`oauth_token_${providerId}`, accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       path: '/',
       maxAge: 60 * 60 * 24 * 60, // 60 days
     })
@@ -92,7 +94,7 @@ export async function GET(
       {
         httpOnly: false, // UI needs to read this
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: 'lax' as const,
         path: '/',
         maxAge: 60 * 60 * 24 * 60,
       },

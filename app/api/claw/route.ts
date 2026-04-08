@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 const CONFIG_COOKIE = 'nexus_claw_cfg'
 const TIMEOUT_MS = 15_000
 
