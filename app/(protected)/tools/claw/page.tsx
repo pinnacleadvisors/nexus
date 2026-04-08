@@ -1,94 +1,120 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Cpu, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
-import type { ClawConfig } from '@/lib/types'
+import {
+  ArrowLeft, Cpu, CheckCircle2, XCircle, Loader2, ExternalLink,
+  GitBranch, Mail, MessageSquare, FileText, ShieldCheck, Unlink,
+} from 'lucide-react'
+import type { OAuthConnection } from '@/lib/types'
+import { OAUTH_PROVIDERS } from '@/lib/oauth-providers'
 
-const STORAGE_KEY = 'nexus_claw_config'
-
-function loadConfig(): ClawConfig | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as ClawConfig) : null
-  } catch {
-    return null
-  }
+// ── Icon map for OAuth providers ──────────────────────────────────────────────
+const PROVIDER_ICON: Record<string, React.ElementType> = {
+  Mail, GitBranch, MessageSquare, FileText,
 }
 
-function saveConfig(cfg: ClawConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg))
-}
-
-function clearConfig() {
-  localStorage.removeItem(STORAGE_KEY)
-}
-
+// ── Helpers ───────────────────────────────────────────────────────────────────
 type TestStatus = 'idle' | 'loading' | 'success' | 'error'
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function ClawConfigPage() {
-  const [gatewayUrl, setGatewayUrl] = useState('')
-  const [hookToken, setHookToken] = useState('')
-  const [saved, setSaved] = useState(false)
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle')
-  const [testError, setTestError] = useState('')
+  const [gatewayUrl, setGatewayUrl]   = useState('')
+  const [hookToken, setHookToken]     = useState('')
+  const [configured, setConfigured]   = useState(false)
+  const [savedUrl, setSavedUrl]       = useState('')   // shown in UI (token never returned)
+  const [saving, setSaving]           = useState(false)
+  const [testStatus, setTestStatus]   = useState<TestStatus>('idle')
+  const [testError, setTestError]     = useState('')
+  const [connections, setConnections] = useState<OAuthConnection[]>([])
+  const [oauthMsg, setOauthMsg]       = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  useEffect(() => {
-    const cfg = loadConfig()
-    if (cfg) {
-      setGatewayUrl(cfg.gatewayUrl)
-      setHookToken(cfg.hookToken)
-      setSaved(true)
-    }
+  // Load config status from server (never receives the token)
+  const loadConfig = useCallback(async () => {
+    const res = await fetch('/api/claw/config')
+    const data = await res.json()
+    setConfigured(data.configured)
+    if (data.configured) setSavedUrl(data.gatewayUrl)
   }, [])
 
-  function handleSave() {
-    const cfg: ClawConfig = {
-      gatewayUrl: gatewayUrl.trim(),
-      hookToken: hookToken.trim(),
+  // Load OAuth connection status
+  const loadConnections = useCallback(async () => {
+    const res = await fetch('/api/oauth/status')
+    const data = await res.json()
+    setConnections(data.connections ?? [])
+  }, [])
+
+  // Parse OAuth redirect messages from URL
+  useEffect(() => {
+    loadConfig()
+    loadConnections()
+
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('oauth_connected')
+    const error = params.get('oauth_error')
+    if (connected) {
+      setOauthMsg({ type: 'success', text: `Successfully connected ${connected}` })
+      window.history.replaceState({}, '', window.location.pathname)
+      loadConnections()
+    } else if (error) {
+      setOauthMsg({ type: 'error', text: decodeURIComponent(error) })
+      window.history.replaceState({}, '', window.location.pathname)
     }
-    saveConfig(cfg)
-    setSaved(true)
-    setTestStatus('idle')
+  }, [loadConfig, loadConnections])
+
+  async function handleSave() {
+    if (!gatewayUrl.trim() || !hookToken.trim()) return
+    setSaving(true)
+    const res = await fetch('/api/claw/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gatewayUrl: gatewayUrl.trim(), hookToken: hookToken.trim() }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      setConfigured(true)
+      setSavedUrl(gatewayUrl.trim())
+      setGatewayUrl('')
+      setHookToken('')   // clear from state — token is now server-side only
+      setTestStatus('idle')
+    }
   }
 
-  function handleDisconnect() {
-    clearConfig()
+  async function handleDisconnect() {
+    await fetch('/api/claw/config', { method: 'DELETE' })
+    setConfigured(false)
+    setSavedUrl('')
     setGatewayUrl('')
     setHookToken('')
-    setSaved(false)
     setTestStatus('idle')
   }
 
   async function handleTest() {
-    if (!gatewayUrl.trim() || !hookToken.trim()) return
     setTestStatus('loading')
     setTestError('')
-    try {
-      const res = await fetch('/api/claw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'wake',
-          gatewayUrl: gatewayUrl.trim(),
-          hookToken: hookToken.trim(),
-          payload: { text: 'Nexus connection test — please reply "pong".', mode: 'now' },
-        }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setTestStatus('success')
-      } else {
-        setTestStatus('error')
-        setTestError(data.error ?? `HTTP ${res.status}`)
-      }
-    } catch (err) {
+    const res = await fetch('/api/claw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'wake',
+        payload: { text: 'Nexus connection test — please reply "pong".', mode: 'now' },
+      }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setTestStatus('success')
+    } else {
       setTestStatus('error')
-      setTestError(err instanceof Error ? err.message : 'Unknown error')
+      setTestError(data.error ?? `HTTP ${res.status}`)
     }
   }
 
+  async function handleOAuthDisconnect(providerId: string) {
+    await fetch(`/api/oauth/disconnect?provider=${providerId}`, { method: 'DELETE' })
+    setConnections(prev => prev.filter(c => c.provider !== providerId))
+  }
+
+  const isConnected = (id: string) => connections.some(c => c.provider === id)
   const canSave = gatewayUrl.trim() && hookToken.trim()
 
   return (
@@ -118,88 +144,95 @@ export default function ClawConfigPage() {
             OpenClaw (MyClaw)
           </h1>
           <p className="text-sm" style={{ color: '#9090b0' }}>
-            Connect your cloud-hosted OpenClaw instance to automate project execution.
+            Secure cloud-hosted AI agent with OAuth platform access.
           </p>
         </div>
       </div>
 
       {/* Status badge */}
-      {saved && (
+      {configured && (
         <div
           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full mb-6"
-          style={{
-            backgroundColor: 'rgba(34,197,94,0.1)',
-            border: '1px solid rgba(34,197,94,0.25)',
-            color: '#22c55e',
-          }}
+          style={{ backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e' }}
         >
           <CheckCircle2 size={11} />
-          Connected
+          Connected — {savedUrl}
+        </div>
+      )}
+
+      {/* OAuth notification */}
+      {oauthMsg && (
+        <div
+          className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-4"
+          style={{
+            backgroundColor: oauthMsg.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+            border: `1px solid ${oauthMsg.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+            color: oauthMsg.type === 'success' ? '#22c55e' : '#ef4444',
+          }}
+        >
+          {oauthMsg.type === 'success' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+          {oauthMsg.text}
+          <button
+            onClick={() => setOauthMsg(null)}
+            className="ml-auto"
+            style={{ color: 'inherit', opacity: 0.6 }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        {/* ── Config form ───────────────────────────────────────────────── */}
+        {/* ── Gateway config ───────────────────────────────────────────── */}
         <section
           className="rounded-xl p-5 space-y-4"
           style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
         >
-          <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
-            Instance Configuration
-          </h2>
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={14} style={{ color: '#6c63ff' }} />
+            <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
+              Instance Configuration
+            </h2>
+          </div>
+
+          <div
+            className="text-xs px-3 py-2 rounded-lg"
+            style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e', color: '#9090b0' }}
+          >
+            Your hook token is stored in an HTTP-only server cookie — it never
+            touches client-side JavaScript after you save.
+          </div>
 
           {/* Gateway URL */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>
-              Gateway URL
-            </label>
+            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>Gateway URL</label>
             <input
               type="url"
               value={gatewayUrl}
-              onChange={e => { setGatewayUrl(e.target.value); setSaved(false) }}
-              placeholder="https://your-instance.myclaw.ai"
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-colors"
-              style={{
-                backgroundColor: '#0d0d14',
-                border: '1px solid #24243e',
-                color: '#e8e8f0',
-              }}
+              onChange={e => setGatewayUrl(e.target.value)}
+              placeholder={configured ? savedUrl : 'https://your-instance.myclaw.ai'}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e', color: '#e8e8f0' }}
               onFocus={e => ((e.target as HTMLInputElement).style.borderColor = '#6c63ff')}
               onBlur={e => ((e.target as HTMLInputElement).style.borderColor = '#24243e')}
             />
-            <p className="text-xs" style={{ color: '#55556a' }}>
-              The public URL of your MyClaw.ai instance gateway.
-            </p>
           </div>
 
           {/* Hook token */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>
-              Hook Token
-            </label>
+            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>Hook Token</label>
             <input
               type="password"
               value={hookToken}
-              onChange={e => { setHookToken(e.target.value); setSaved(false) }}
-              placeholder="your-long-random-secret"
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-colors"
-              style={{
-                backgroundColor: '#0d0d14',
-                border: '1px solid #24243e',
-                color: '#e8e8f0',
-              }}
+              onChange={e => setHookToken(e.target.value)}
+              placeholder={configured ? '••••••••••••••••' : 'your-long-random-secret'}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e', color: '#e8e8f0' }}
               onFocus={e => ((e.target as HTMLInputElement).style.borderColor = '#6c63ff')}
               onBlur={e => ((e.target as HTMLInputElement).style.borderColor = '#24243e')}
             />
             <p className="text-xs" style={{ color: '#55556a' }}>
-              Set in your OpenClaw config under{' '}
-              <code
-                className="rounded px-1 py-0.5"
-                style={{ backgroundColor: '#1a1a2e', color: '#9090b0', fontSize: '11px' }}
-              >
-                hooks.token
-              </code>
-              .
+              Set via <code style={{ backgroundColor: '#1a1a2e', color: '#9090b0', padding: '0 4px', borderRadius: 3, fontSize: 11 }}>hooks.token</code> in your OpenClaw config.
             </p>
           </div>
 
@@ -207,20 +240,18 @@ export default function ClawConfigPage() {
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSave}
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all"
-              style={
-                canSave
-                  ? { background: 'linear-gradient(135deg, #6c63ff, #4c45cc)', color: '#fff', cursor: 'pointer' }
-                  : { backgroundColor: '#1a1a2e', color: '#55556a', cursor: 'not-allowed' }
-              }
+              style={canSave && !saving
+                ? { background: 'linear-gradient(135deg, #6c63ff, #4c45cc)', color: '#fff', cursor: 'pointer' }
+                : { backgroundColor: '#1a1a2e', color: '#55556a', cursor: 'not-allowed' }}
             >
-              {saved ? 'Saved' : 'Save Configuration'}
+              {saving ? 'Saving…' : configured ? 'Update Configuration' : 'Save Configuration'}
             </button>
-            {saved && (
+            {configured && (
               <button
                 onClick={handleDisconnect}
-                className="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                className="px-3 py-2 rounded-lg text-sm font-medium"
                 style={{ backgroundColor: '#1a1a2e', color: '#ef4444', border: '1px solid #24243e', cursor: 'pointer' }}
               >
                 Disconnect
@@ -228,110 +259,103 @@ export default function ClawConfigPage() {
             )}
           </div>
 
-          {/* Test connection */}
-          {saved && (
-            <div
-              className="rounded-lg p-3 space-y-2"
-              style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
-            >
+          {/* Connection test */}
+          {configured && (
+            <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium" style={{ color: '#9090b0' }}>
-                  Connection test
-                </span>
+                <span className="text-xs font-medium" style={{ color: '#9090b0' }}>Connection test</span>
                 <button
                   onClick={handleTest}
                   disabled={testStatus === 'loading'}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-colors"
-                  style={{
-                    backgroundColor: '#1a1a2e',
-                    color: testStatus === 'loading' ? '#55556a' : '#6c63ff',
-                    border: '1px solid #24243e',
-                    cursor: testStatus === 'loading' ? 'default' : 'pointer',
-                  }}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg"
+                  style={{ backgroundColor: '#1a1a2e', color: testStatus === 'loading' ? '#55556a' : '#6c63ff', border: '1px solid #24243e', cursor: testStatus === 'loading' ? 'default' : 'pointer' }}
                 >
-                  {testStatus === 'loading' ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : null}
+                  {testStatus === 'loading' && <Loader2 size={11} className="animate-spin" />}
                   {testStatus === 'loading' ? 'Testing…' : 'Run Test'}
                 </button>
               </div>
-
               {testStatus === 'success' && (
                 <div className="flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
-                  <CheckCircle2 size={12} />
-                  Wake event delivered — your OpenClaw instance is reachable.
+                  <CheckCircle2 size={12} /> Wake event delivered — instance is reachable.
                 </div>
               )}
               {testStatus === 'error' && (
                 <div className="flex items-center gap-1.5 text-xs" style={{ color: '#ef4444' }}>
-                  <XCircle size={12} />
-                  {testError || 'Connection failed. Check gateway URL and token.'}
+                  <XCircle size={12} /> {testError || 'Connection failed.'}
                 </div>
               )}
             </div>
           )}
         </section>
 
-        {/* ── How it works ──────────────────────────────────────────────── */}
+        {/* ── OAuth platform connections ────────────────────────────────── */}
         <section className="space-y-4">
           <div
             className="rounded-xl p-5"
             style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
           >
-            <h2 className="text-sm font-semibold mb-3" style={{ color: '#e8e8f0' }}>
-              How it works
-            </h2>
-            <ol className="space-y-3">
-              {[
-                {
-                  step: '1',
-                  title: 'Set up MyClaw.ai',
-                  body: 'Deploy a cloud OpenClaw instance on MyClaw.ai. Enable webhooks in your config and copy the gateway URL and hook token.',
-                },
-                {
-                  step: '2',
-                  title: 'Connect here',
-                  body: 'Paste your gateway URL and hook token above. Nexus stores them locally and proxies all requests through /api/claw.',
-                },
-                {
-                  step: '3',
-                  title: 'Dispatch milestones',
-                  body: 'In the Forge, once your AI consultant generates project milestones, click "Dispatch to OpenClaw". Each milestone is sent as a task to your agent.',
-                },
-                {
-                  step: '4',
-                  title: 'Agent executes',
-                  body: 'Your OpenClaw instance picks up each task, uses its skills (email, calendar, research, CRM…) and delivers results back via your chosen messaging channel.',
-                },
-              ].map(item => (
-                <li key={item.step} className="flex gap-3">
-                  <span
-                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5"
-                    style={{ backgroundColor: '#1a1a2e', color: '#6c63ff', border: '1px solid #24243e' }}
+            <div className="flex items-center gap-2 mb-1">
+              <ShieldCheck size={14} style={{ color: '#6c63ff' }} />
+              <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>Platform Access (OAuth)</h2>
+            </div>
+            <p className="text-xs mb-4" style={{ color: '#9090b0' }}>
+              Connect platforms so your OpenClaw agent can act on your behalf — no passwords stored.
+              Tokens are held in HTTP-only cookies and forwarded securely when dispatching tasks.
+            </p>
+
+            <div className="space-y-2">
+              {OAUTH_PROVIDERS.map(provider => {
+                const connected = isConnected(provider.id)
+                const Icon = PROVIDER_ICON[provider.icon] ?? Mail
+                return (
+                  <div
+                    key={provider.id}
+                    className="flex items-center justify-between rounded-lg px-3 py-2.5"
+                    style={{ backgroundColor: '#0d0d14', border: `1px solid ${connected ? 'rgba(34,197,94,0.2)' : '#1a1a2e'}` }}
                   >
-                    {item.step}
-                  </span>
-                  <div>
-                    <p className="text-xs font-semibold mb-0.5" style={{ color: '#e8e8f0' }}>
-                      {item.title}
-                    </p>
-                    <p className="text-xs leading-relaxed" style={{ color: '#9090b0' }}>
-                      {item.body}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: '#1a1a2e', border: '1px solid #24243e' }}
+                      >
+                        <Icon size={14} style={{ color: connected ? '#22c55e' : '#55556a' }} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#e8e8f0' }}>{provider.name}</p>
+                        <p className="text-xs" style={{ color: '#55556a' }}>{provider.description}</p>
+                      </div>
+                    </div>
+
+                    {connected ? (
+                      <button
+                        onClick={() => handleOAuthDisconnect(provider.id)}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg"
+                        style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer' }}
+                      >
+                        <Unlink size={11} />
+                        Disconnect
+                      </button>
+                    ) : (
+                      <a
+                        href={`/api/oauth/${provider.id}`}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg no-underline"
+                        style={{ backgroundColor: '#1a1a2e', color: '#6c63ff', border: '1px solid #24243e' }}
+                      >
+                        Connect
+                      </a>
+                    )}
                   </div>
-                </li>
-              ))}
-            </ol>
+                )
+              })}
+            </div>
           </div>
 
-          {/* External links */}
+          {/* Resources */}
           <div
             className="rounded-xl p-4 flex flex-col gap-2"
             style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
           >
-            <p className="text-xs font-semibold mb-1" style={{ color: '#e8e8f0' }}>
-              Resources
-            </p>
+            <p className="text-xs font-semibold mb-1" style={{ color: '#e8e8f0' }}>Resources</p>
             {[
               { label: 'MyClaw.ai — managed hosting', url: 'https://myclaw.ai' },
               { label: 'OpenClaw on GitHub', url: 'https://github.com/openclaw/openclaw' },
@@ -342,10 +366,8 @@ export default function ClawConfigPage() {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs no-underline transition-colors"
+                className="flex items-center gap-1.5 text-xs no-underline"
                 style={{ color: '#6c63ff' }}
-                onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#8b84ff')}
-                onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#6c63ff')}
               >
                 <ExternalLink size={11} />
                 {link.label}

@@ -83,3 +83,22 @@ export interface ClawConfig {
   gatewayUrl: string
   hookToken: string
 }
+
+// ── OAuth ─────────────────────────────────────────────────────────────────────
+export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
+
+export interface OAuthProvider {
+  id: OAuthProviderName
+  name: string
+  icon: string
+  description: string
+  scopes: string[]
+  color: string
+  authUrl: string
+  envClientId: string
+}
+
+export interface OAuthConnection {
+  provider: OAuthProviderName
+  connectedAt: string
+}

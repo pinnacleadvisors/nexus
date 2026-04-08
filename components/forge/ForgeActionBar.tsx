@@ -2,19 +2,7 @@
 
 import { useState } from 'react'
 import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import type { Milestone, ClawConfig } from '@/lib/types'
-
-const STORAGE_KEY = 'nexus_claw_config'
-
-function loadClawConfig(): ClawConfig | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as ClawConfig) : null
-  } catch {
-    return null
-  }
-}
+import type { Milestone } from '@/lib/types'
 
 type DispatchStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -39,12 +27,6 @@ export default function ForgeActionBar({
   const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>('idle')
 
   async function handleDispatch() {
-    const cfg = loadClawConfig()
-    if (!cfg) {
-      window.location.href = '/tools/claw'
-      return
-    }
-
     setDispatchStatus('loading')
 
     const milestoneList = milestones
@@ -59,8 +41,6 @@ export default function ForgeActionBar({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'agent',
-          gatewayUrl: cfg.gatewayUrl,
-          hookToken: cfg.hookToken,
           payload: {
             message,
             name: 'Nexus Forge',
@@ -68,6 +48,12 @@ export default function ForgeActionBar({
           },
         }),
       })
+
+      if (res.status === 401) {
+        // Not configured — send user to the config page
+        window.location.href = '/tools/claw'
+        return
+      }
 
       if (res.ok) {
         setDispatchStatus('success')
