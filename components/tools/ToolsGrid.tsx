@@ -1,5 +1,7 @@
 import type { Tool, ToolCategory } from '@/lib/types'
-import ToolCard, { CATEGORY_ORDER } from './ToolCard'
+import ToolCard from './ToolCard'
+
+const CATEGORY_ORDER: ToolCategory[] = ['AI', 'Automation', 'Database', 'DevOps', 'Analytics', 'Finance', 'Communication']
 
 interface Props {
   tools: Tool[]

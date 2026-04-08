@@ -40,7 +40,6 @@ const STATUS_STYLE: Record<Tool['status'], { label: string; color: string; bg: s
   'coming-soon':{ label: 'Coming Soon',  color: '#55556a', bg: 'rgba(85,85,106,0.1)',   border: 'rgba(85,85,106,0.25)' },
 }
 
-const CATEGORY_ORDER: ToolCategory[] = ['AI', 'Automation', 'Database', 'DevOps', 'Analytics', 'Finance', 'Communication']
 
 interface Props {
   tool: Tool
@@ -122,4 +121,3 @@ export default function ToolCard({ tool }: Props) {
   return card
 }
 
-export { CATEGORY_ORDER }
