@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, Cpu, CheckCircle2, XCircle, Loader2, ExternalLink,
-  GitBranch, Mail, MessageSquare, FileText, ShieldCheck, Unlink,
+  GitBranch, Mail, MessageSquare, FileText, Unlink,
   Send, Bot, User,
 } from 'lucide-react'
 import type { OAuthConnection } from '@/lib/types'
@@ -237,7 +237,7 @@ export default function ClawConfigPage() {
           style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
         >
           <div className="flex items-center gap-2">
-            <ShieldCheck size={14} style={{ color: '#6c63ff' }} />
+            <CheckCircle2 size={14} style={{ color: '#6c63ff' }} />
             <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
               Instance Configuration
             </h2>
@@ -343,7 +343,7 @@ export default function ClawConfigPage() {
             style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
           >
             <div className="flex items-center gap-2 mb-1">
-              <ShieldCheck size={14} style={{ color: '#6c63ff' }} />
+              <CheckCircle2 size={14} style={{ color: '#6c63ff' }} />
               <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>Platform Access (OAuth)</h2>
             </div>
             <p className="text-xs mb-4" style={{ color: '#9090b0' }}>

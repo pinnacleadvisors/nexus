@@ -1,11 +1,11 @@
 import { format, parseISO } from 'date-fns'
 import type { Milestone } from '@/lib/types'
-import { CheckCircle, Circle, Clock } from 'lucide-react'
+import { CheckCircle2, Loader2, Zap } from 'lucide-react'
 
 const STATUS_CONFIG = {
-  'pending': { icon: Circle, color: '#55556a', label: 'Pending' },
-  'in-progress': { icon: Clock, color: '#6c63ff', label: 'In Progress' },
-  'done': { icon: CheckCircle, color: '#22c55e', label: 'Done' },
+  'pending': { icon: Zap, color: '#55556a', label: 'Pending' },
+  'in-progress': { icon: Loader2, color: '#6c63ff', label: 'In Progress' },
+  'done': { icon: CheckCircle2, color: '#22c55e', label: 'Done' },
 }
 
 const PHASE_LABELS: Record<number, string> = {
@@ -27,7 +27,7 @@ export default function MilestoneTimeline({ milestones }: Props) {
           className="w-12 h-12 rounded-xl flex items-center justify-center"
           style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
         >
-          <Clock size={22} style={{ color: '#55556a' }} />
+          <Loader2 size={22} style={{ color: '#55556a' }} />
         </div>
         <div>
           <p className="font-medium mb-1" style={{ color: '#e8e8f0' }}>
