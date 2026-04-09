@@ -145,7 +145,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
     [], // only once — component is re-keyed when projectId changes
   )
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop, error } = useChat({
     chat,
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   })
@@ -227,7 +227,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
         </div>
 
         {/* Messages */}
-        <ChatMessages messages={messages} status={status} />
+        <ChatMessages messages={messages} status={status} error={error} />
 
         {/* Input */}
         <form

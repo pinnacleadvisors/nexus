@@ -186,13 +186,35 @@ export async function POST(req: NextRequest) {
 
   // ── SECONDARY: Anthropic API key ─────────────────────────────────────────
   if (process.env.ANTHROPIC_API_KEY) {
-    const { anthropic } = await import('@ai-sdk/anthropic')
-    const sdkResult = streamText({
-      model: anthropic('claude-sonnet-4-6'),
-      system,
-      messages: await convertToModelMessages(windowedMessages),
-    })
-    return sdkResult.toUIMessageStreamResponse()
+    try {
+      const { anthropic } = await import('@ai-sdk/anthropic')
+      const modelMessages = await convertToModelMessages(windowedMessages)
+      const sdkResult = streamText({
+        model: anthropic('claude-sonnet-4-6'),
+        system,
+        messages: modelMessages,
+        onError: ({ error }) => {
+          console.error('[chat/anthropic] stream error:', error)
+        },
+      })
+      return sdkResult.toUIMessageStreamResponse()
+    } catch (err) {
+      // Anthropic threw synchronously (bad key, network, etc.) — stream a friendly error
+      const msg = err instanceof Error ? err.message : String(err)
+      const isServerError = msg.includes('500') || msg.includes('Internal server error')
+      const stream = createUIMessageStream({
+        execute: writer => {
+          writer.writer.write({
+            type: 'text-delta',
+            id: 'text-0',
+            delta: isServerError
+              ? 'The AI provider is temporarily unavailable (Anthropic 500). Please try again in a moment.'
+              : `AI error: ${msg}`,
+          })
+        },
+      })
+      return createUIMessageStreamResponse({ stream })
+    }
   }
 
   // ── NEITHER configured — stream a helpful setup message ──────────────────
