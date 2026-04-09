@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "doppler run -- node scripts/migrate.mjs",
+    "migrate:local": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
