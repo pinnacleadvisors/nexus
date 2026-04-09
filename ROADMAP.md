@@ -39,11 +39,11 @@
 | ✅ | Agent count selector + rough budget estimator |
 | ✅ | "Launch Agents" button triggers Gantt view |
 | ✅ | "Dispatch to OpenClaw" button — sends milestones to cloud agent |
-| ⬜ | Consulting agent asks about budget, team size, target market upfront |
-| ⬜ | Save/resume sessions — persist conversations and milestones to Supabase |
-| ⬜ | Multi-business support — create named projects, switch between them |
-| ⬜ | Export finalised business plan as PDF |
-| ⬜ | Token efficiency: summarise old messages before hitting context window |
+| ✅ | Consulting agent asks about budget, team size, target market upfront |
+| 🔧 | Save/resume sessions — persist conversations and milestones (localStorage; Supabase pending) |
+| 🔧 | Multi-business support — create named projects, switch between them (localStorage; Supabase pending) |
+| ✅ | Export finalised business plan as PDF (browser print dialog) |
+| ✅ | Token efficiency: sliding window — compresses messages > 20 into synopsis in system prompt |
 
 ---
 

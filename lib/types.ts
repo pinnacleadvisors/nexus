@@ -45,6 +45,13 @@ export interface AgentRow {
 }
 
 // ── Forge ─────────────────────────────────────────────────────────────────────
+export interface ForgeProject {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Milestone {
   id: string
   title: string

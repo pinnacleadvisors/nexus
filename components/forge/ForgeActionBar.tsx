@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle, FileDown } from 'lucide-react'
 import type { Milestone } from '@/lib/types'
 
 type DispatchStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -13,6 +13,7 @@ interface Props {
   milestonesReady: boolean
   showGantt: boolean
   milestones?: Milestone[]
+  onExportPdf?: () => void
 }
 
 export default function ForgeActionBar({
@@ -22,6 +23,7 @@ export default function ForgeActionBar({
   milestonesReady,
   showGantt,
   milestones = [],
+  onExportPdf,
 }: Props) {
   const estimatedCost = agentCount * 500
   const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>('idle')
@@ -140,6 +142,42 @@ export default function ForgeActionBar({
 
       {/* Right side buttons */}
       <div className="flex items-center gap-2">
+        {/* Export PDF */}
+        {onExportPdf && (
+          <button
+            onClick={onExportPdf}
+            disabled={!milestonesReady}
+            title="Export business plan as PDF"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={
+              milestonesReady
+                ? {
+                    backgroundColor: '#1a1a2e',
+                    color: '#9090b0',
+                    border: '1px solid #24243e',
+                    cursor: 'pointer',
+                  }
+                : {
+                    backgroundColor: '#1a1a2e',
+                    color: '#55556a',
+                    border: '1px solid #24243e',
+                    cursor: 'not-allowed',
+                  }
+            }
+            onMouseEnter={e => {
+              if (milestonesReady)
+                (e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0'
+            }}
+            onMouseLeave={e => {
+              if (milestonesReady)
+                (e.currentTarget as HTMLButtonElement).style.color = '#9090b0'
+            }}
+          >
+            <FileDown size={13} />
+            Export PDF
+          </button>
+        )}
+
         {/* Dispatch to OpenClaw */}
         <button
           onClick={handleDispatch}

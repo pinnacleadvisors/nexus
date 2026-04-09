@@ -14,15 +14,22 @@ const SYSTEM_PROMPT = `You are a world-class business consulting agent operating
 
 Your role is to help the user refine and validate their business idea through thoughtful conversation. You act as a senior startup advisor with deep knowledge of lean startup methodology, market dynamics, product development, and growth strategy.
 
-## Conversation approach
-- Ask clarifying questions to understand the target market, problem being solved, and the user's unfair advantages
+## Opening the conversation
+If you do not yet know the user's budget, team size, or target market, ask about all three naturally within your opening reply — not as a numbered form, but woven into your response. Specifically gather:
+- **Budget**: Roughly what budget do they have? (bootstrapped / under $10k / $10k–$50k / $50k–$250k / $250k+ / VC-funded)
+- **Team**: What does their team look like? (solo / 1–2 co-founders / small team of 3–10 / larger org)
+- **Market**: Who is the primary target customer? (B2B / B2C / prosumer / specific industry niche)
+
+Once these are established, do not ask again — use them to inform all subsequent advice.
+
+## Consulting approach
 - Be direct and honest — challenge weak assumptions respectfully
 - Help quantify opportunity size, competitive landscape, and realistic timelines
 - Suggest the minimum viable product scope and prioritise ruthlessly
 - Estimate rough costs and revenue potential with realistic ranges
 
 ## Milestone extraction
-After each substantive response where you identify clear action items or project phases, append a structured block at the END of your message using this exact format (do not include in the chat text, append after your main response):
+After each substantive response where you identify clear action items or project phases, append a structured block at the END of your message using this exact format:
 
 <milestones>
 [
@@ -47,7 +54,47 @@ Rules for milestones:
 
 Keep your main response clear and conversational. The milestone JSON block is parsed separately — users will not see it directly.`
 
-// ── Config resolution: env vars > cookie ──────────────────────────────────────
+// ── Message text helper ───────────────────────────────────────────────────────
+function getMessageText(msg: UIMessage): string {
+  return msg.parts
+    .filter(p => p.type === 'text')
+    .map(p => (p as { type: 'text'; text: string }).text)
+    .join('')
+}
+
+// ── Token efficiency: sliding window ─────────────────────────────────────────
+const MSG_THRESHOLD = 20
+const KEEP_RECENT = 10
+
+function applyMessageWindow(messages: UIMessage[]): { system: string; messages: UIMessage[] } {
+  if (messages.length <= MSG_THRESHOLD) {
+    return { system: SYSTEM_PROMPT, messages }
+  }
+
+  const older = messages.slice(0, messages.length - KEEP_RECENT)
+  const recent = messages.slice(-KEEP_RECENT)
+
+  // Compact synopsis of the older messages (strip milestone JSON to save tokens)
+  const synopsis = older
+    .map(m => {
+      const txt = getMessageText(m)
+        .replace(/<milestones>[\s\S]*?<\/milestones>/g, '')
+        .trim()
+        .slice(0, 300)
+      return `[${m.role}]: ${txt}`
+    })
+    .join('\n')
+    .slice(0, 3000)
+
+  const systemWithContext =
+    `${SYSTEM_PROMPT}\n\n---\n\n` +
+    `**Prior conversation context** (${older.length} earlier messages, compressed for context efficiency):\n` +
+    `${synopsis}\n\n---`
+
+  return { system: systemWithContext, messages: recent }
+}
+
+// ── Config resolution: env vars > cookie ─────────────────────────────────────
 function resolveClawConfig(req: NextRequest): { gatewayUrl: string; token: string } | null {
   const envUrl = process.env.OPENCLAW_GATEWAY_URL
   const envToken = process.env.OPENCLAW_BEARER_TOKEN
@@ -64,23 +111,22 @@ function resolveClawConfig(req: NextRequest): { gatewayUrl: string; token: strin
   return null
 }
 
-// ── Build a flat text prompt from the conversation history ────────────────────
-function buildConversationPrompt(messages: UIMessage[]): string {
-  const lines: string[] = [`${SYSTEM_PROMPT}\n\n---`]
+// ── Build a flat text prompt for the OpenClaw path ───────────────────────────
+function buildConversationPrompt(messages: UIMessage[], system: string): string {
+  const lines: string[] = [`${system}\n\n---`]
   for (const msg of messages) {
     const role = msg.role === 'user' ? 'User' : 'Assistant'
-    const text = msg.parts
-      .filter(p => p.type === 'text')
-      .map(p => (p as { type: 'text'; text: string }).text)
-      .join('')
+    const text = getMessageText(msg)
+      .replace(/<milestones>[\s\S]*?<\/milestones>/g, '')
+      .trim()
     lines.push(`${role}: ${text}`)
   }
   lines.push('Assistant:')
   return lines.join('\n\n')
 }
 
-// ── PRIMARY: stream from OpenClaw (Claude Code CLI via MyClaw) ────────────────
-async function streamFromClaw(
+// ── PRIMARY: OpenClaw (Claude Code CLI via MyClaw) ────────────────────────────
+async function callOpenClaw(
   cfg: { gatewayUrl: string; token: string },
   prompt: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
@@ -101,7 +147,7 @@ async function streamFromClaw(
 
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      return { ok: false, error: `Gateway error ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}` }
+      return { ok: false, error: `Gateway ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}` }
     }
 
     const data = (await res.json()) as { content?: string; text?: string; response?: string }
@@ -117,14 +163,16 @@ async function streamFromClaw(
 export async function POST(req: NextRequest) {
   const { messages }: { messages: UIMessage[] } = await req.json()
 
+  // Apply sliding window compression for long conversations
+  const { system, messages: windowedMessages } = applyMessageWindow(messages)
+
   // ── PRIMARY: OpenClaw (Claude Code CLI) ──────────────────────────────────
   const clawCfg = resolveClawConfig(req)
   if (clawCfg) {
-    const prompt = buildConversationPrompt(messages)
-    const result = await streamFromClaw(clawCfg, prompt)
+    const prompt = buildConversationPrompt(windowedMessages, system)
+    const result = await callOpenClaw(clawCfg, prompt)
 
     if (result.ok) {
-      // Wrap the plain-text response in a UI message stream
       const stream = createUIMessageStream({
         execute: writer => {
           writer.writer.write({ type: 'text-delta', id: 'text-0', delta: result.text })
@@ -133,7 +181,6 @@ export async function POST(req: NextRequest) {
       return createUIMessageStreamResponse({ stream })
     }
 
-    // OpenClaw failed — log and fall through to API key fallback
     console.warn('[chat] OpenClaw failed, falling back to API key:', result.error)
   }
 
@@ -142,13 +189,13 @@ export async function POST(req: NextRequest) {
     const { anthropic } = await import('@ai-sdk/anthropic')
     const sdkResult = streamText({
       model: anthropic('claude-sonnet-4-6'),
-      system: SYSTEM_PROMPT,
-      messages: await convertToModelMessages(messages),
+      system,
+      messages: await convertToModelMessages(windowedMessages),
     })
     return sdkResult.toUIMessageStreamResponse()
   }
 
-  // ── NEITHER configured — stream a helpful error ──────────────────────────
+  // ── NEITHER configured — stream a helpful setup message ──────────────────
   const stream = createUIMessageStream({
     execute: writer => {
       writer.writer.write({
@@ -156,7 +203,7 @@ export async function POST(req: NextRequest) {
         id: 'text-0',
         delta:
           'No AI provider is configured yet.\n\n' +
-          '**Option 1 (recommended):** Connect your OpenClaw / MyClaw instance at [/tools/claw](/tools/claw) to use your Claude Pro subscription.\n\n' +
+          '**Option 1 (recommended):** Connect your OpenClaw / MyClaw instance at [/tools/claw](/tools/claw) to use your Claude Pro subscription — no API key needed.\n\n' +
           '**Option 2:** Add an `ANTHROPIC_API_KEY` environment variable in Doppler or your `.env.local` file.',
       })
     },
