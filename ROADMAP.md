@@ -94,6 +94,7 @@
 | ✅ | Forge "Dispatch to OpenClaw" — sends project milestones to agent |
 | 🔧 | OAuth token storage — currently uses cookies, move to encrypted DB |
 | 🔒 | Security audit on OAuth proxy and token handling |
+| ✅ | `/api/chat` uses OpenClaw (Claude Code CLI) as primary AI, `ANTHROPIC_API_KEY` as fallback |
 | ⬜ | Connect Claw to Claude Code CLI (Command) for code generation tasks |
 | ⬜ | Skill registry — list and audit each OpenClaw skill with permission scope |
 | ⬜ | Claw webhook receiver — agent posts task completions back to Nexus |
@@ -181,8 +182,8 @@ These are the tasks agents should be able to execute autonomously:
 
 ## Immediate Next Steps (Priority Order)
 
-1. **Set `ANTHROPIC_API_KEY`** in Doppler → Forge chat goes live
-2. **Configure OpenClaw** at `/tools/claw` → milestone dispatch works end-to-end
+1. **Configure OpenClaw** at `/tools/claw` → Forge chat goes live using Claude Pro subscription (no API key needed)
+2. **Set `ANTHROPIC_API_KEY`** in Doppler (optional) → fallback if OpenClaw is unavailable
 3. **Set up Supabase** → replace mock data with real agent state
 4. **Add Stripe webhook** → real revenue on Dashboard
 5. **Implement Notion API** → agents write to knowledge base

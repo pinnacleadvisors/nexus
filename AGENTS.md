@@ -50,7 +50,9 @@ See `ROADMAP.md` for the full feature backlog and implementation status.
 
 ### Secrets
 - All secrets managed via Doppler — never hardcode or commit `.env` files
-- Required env vars: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+- Required env vars: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+- Optional env vars: `ANTHROPIC_API_KEY` (fallback AI), `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN` (primary AI via Claude Code CLI)
+- AI priority in `/api/chat`: OpenClaw (Claude Pro subscription) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 
 ## File Structure
