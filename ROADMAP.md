@@ -54,14 +54,14 @@
 | ✅ | KPI grid (revenue, cost, net profit, active agents, tokens, tasks) |
 | ✅ | Revenue vs cost area chart (recharts) |
 | ✅ | Agent performance table (status, tasks, tokens, cost, last active) |
-| ⬜ | Connect to real data source (Supabase) — replace mock data |
-| ⬜ | Stripe webhook → real revenue figures |
-| ⬜ | Token cost tracking per agent from Anthropic/OpenAI API usage logs |
-| ⬜ | Real-time agent status via Supabase Realtime subscriptions |
-| ⬜ | Sentry integration — error rate per agent shown on dashboard |
-| ⬜ | Mobile-optimised layout for monitoring while travelling |
-| ⬜ | Date range filter (7d / 30d / 90d / custom) on charts |
-| ⬜ | Email/Slack alerts when cost exceeds threshold or agent errors spike |
+| 🔧 | Connect to real data source (Supabase) — scaffold complete; run `lib/schema.sql`, set `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| 🔧 | Stripe webhook → real revenue figures — endpoint at `/api/webhooks/stripe`; set `STRIPE_WEBHOOK_SECRET` in Doppler |
+| ✅ | Token cost tracking — `/api/token-events` logs per-agent usage + cost to `token_events` table |
+| ✅ | Real-time agent status via Supabase Realtime — dashboard subscribes to `agents` table changes |
+| 🔧 | Sentry integration — stub in `lib/sentry.ts`; install `@sentry/nextjs` + set `SENTRY_DSN` to activate |
+| ✅ | Mobile-optimised layout — dashboard + AgentTable responsive (stacked cards on mobile) |
+| ✅ | Date range filter (7d / 30d / 90d / all) on charts |
+| ✅ | Email/Slack alerts when cost exceeds threshold or errors spike — `/api/alerts` + AlertsPanel UI |
 
 ---
 

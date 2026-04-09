@@ -41,6 +41,7 @@ export interface AgentRow {
   tasksCompleted: number
   tokensUsed: number
   costUsd: number
+  errorCount?: number
   lastActive: string
 }
 
@@ -69,6 +70,18 @@ export interface GanttTask {
   phase: number
   status: 'pending' | 'active' | 'done'
   agent?: string
+}
+
+// ── Dashboard filters & alerts ────────────────────────────────────────────────
+export type DateRange = '7d' | '30d' | '90d' | 'all'
+
+export interface AlertThreshold {
+  id: string
+  metric: 'daily_cost' | 'error_rate' | 'agent_down'
+  threshold: number
+  channel: 'email' | 'slack'
+  destination: string
+  enabled: boolean
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
