@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-09
+> Last updated: 2026-04-10
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -10,6 +10,63 @@
 - 🔧 In progress / partial
 - ⬜ Not started
 - 🔒 Security-sensitive — requires audit before production use
+
+---
+
+## Manual Setup Checklist
+
+> These are one-time steps that require action in a browser or terminal.
+> Tick each box once done — Claude tracks which SQL migrations have been applied automatically via `schema_migrations` in your database, but everything else here is manual.
+
+### Supabase (Database)
+
+- [ ] Create a Supabase project at https://supabase.com/dashboard
+- [ ] Add `NEXT_PUBLIC_SUPABASE_URL` to Doppler — Project Settings → API → Project URL
+- [ ] Add `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Doppler — Project Settings → API → anon public key
+- [ ] Add `SUPABASE_SERVICE_ROLE_KEY` to Doppler — Project Settings → API → service_role secret key
+- [ ] Add `SUPABASE_PROJECT_REF` to Doppler — Project Settings → General → Reference ID (e.g. `abcdefghijklmnop`)
+- [ ] Add `SUPABASE_ACCESS_TOKEN` to Doppler — https://supabase.com/account/tokens → Generate new token
+- [ ] Run `npm run migrate` to apply all pending SQL migrations
+
+#### SQL Migrations
+
+Tracked automatically — `npm run migrate` records each applied file in the `schema_migrations` table so nothing runs twice. Update the ✅/⬜ below after each successful run.
+
+| File | Description | Applied |
+|------|-------------|---------|
+| `supabase/migrations/001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds | ⬜ |
+
+> **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row to this table with ⬜, then run `npm run migrate`. Claude will do this automatically when generating new SQL.
+
+---
+
+### Stripe (Payments)
+
+- [ ] Add `STRIPE_WEBHOOK_SECRET` to Doppler — Stripe Dashboard → Developers → Webhooks → endpoint secret
+- [ ] Register webhook endpoint in Stripe Dashboard:
+  - URL: `https://<your-vercel-domain>/api/webhooks/stripe`
+  - Events to subscribe: `payment_intent.succeeded`, `invoice.payment_succeeded`
+
+---
+
+### Sentry (Error Tracking)
+
+- [ ] Run `npm install @sentry/nextjs`
+- [ ] Run `npx @sentry/wizard@latest -i nextjs` (generates config files automatically)
+- [ ] Add `SENTRY_DSN` to Doppler — Sentry project → Settings → Client Keys
+
+---
+
+### Resend (Email Alerts)
+
+- [ ] Add `RESEND_API_KEY` to Doppler — resend.com → API Keys
+- [ ] Verify your sending domain in the Resend dashboard
+
+---
+
+### OpenClaw / MyClaw (AI Agent)
+
+- [ ] Configure gateway URL + hook token at `/tools/claw` in the Nexus dashboard
 
 ---
 
@@ -54,7 +111,7 @@
 | ✅ | KPI grid (revenue, cost, net profit, active agents, tokens, tasks) |
 | ✅ | Revenue vs cost area chart (recharts) |
 | ✅ | Agent performance table (status, tasks, tokens, cost, last active) |
-| 🔧 | Connect to real data source (Supabase) — scaffold complete; run `lib/schema.sql`, set `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| 🔧 | Connect to real data source (Supabase) — scaffold complete; run `npm run migrate`, set `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
 | 🔧 | Stripe webhook → real revenue figures — endpoint at `/api/webhooks/stripe`; set `STRIPE_WEBHOOK_SECRET` in Doppler |
 | ✅ | Token cost tracking — `/api/token-events` logs per-agent usage + cost to `token_events` table |
 | ✅ | Real-time agent status via Supabase Realtime — dashboard subscribes to `agents` table changes |
@@ -132,16 +189,17 @@
 
 ---
 
-## Phase 8 — Token Efficiency & Agent Intelligence (Not Started)
+## Phase 8 — Token Efficiency & Agent Intelligence (In Progress)
 
 | Status | Item |
 |--------|------|
-| ⬜ | Sliding window summarisation — compress old messages before context limit |
+| ✅ | Sliding window summarisation — compress old messages before context limit (20-message window, last 10 kept + synopsis) |
+| ✅ | Model routing — Opus as strategic advisor, configurable executioner model for implementation tasks |
+| ✅ | Dual-model architecture — advisor/executioner split with UI model selector in Forge settings |
+| ✅ | Prompt caching — Anthropic cache_control breakpoints on system prompt + first user turn |
+| ✅ | Token usage logged per request — input/output/cached tokens tracked, cost estimated in `/api/chat` response headers |
+| ✅ | Cost alert when a single agent run exceeds configurable threshold — checked server-side, fires via `/api/alerts` |
 | ⬜ | Retrieval-Augmented Generation (RAG) — agents query knowledge base not full history |
-| ⬜ | Model routing — use Claude Haiku for simple tasks, Opus for complex reasoning |
-| ⬜ | Prompt caching — use Anthropic prompt caching for repeated system prompts |
-| ⬜ | Token usage logged per agent/task to Dashboard |
-| ⬜ | Cost alert when a single agent run exceeds configurable threshold |
 
 ---
 
@@ -188,7 +246,6 @@ These are the tasks agents should be able to execute autonomously:
 4. **Add Stripe webhook** → real revenue on Dashboard
 5. **Implement Notion API** → agents write to knowledge base
 6. **Enable Clerk MFA** → security baseline for production use
-7. **Add prompt caching** → cut token costs immediately
 
 ---
 
@@ -200,7 +257,8 @@ These are the tasks agents should be able to execute autonomously:
 | UI | React 19 + Tailwind CSS 4 + lucide-react | ✅ Live |
 | Auth | Clerk v7 (MFA capable) | ✅ Live |
 | Secrets | Doppler | ✅ Integrated |
-| AI (primary) | Anthropic Claude (Sonnet 4.6) | ✅ Wired up |
+| AI (advisor) | Claude Opus 4.6 (strategic reasoning) | ✅ Wired up |
+| AI (executioner) | Claude Sonnet 4.6 (default, configurable) | ✅ Wired up |
 | AI (fallback) | OpenAI GPT-4o | ⬜ Configured, not wired |
 | Agent orchestration | OpenClaw / MyClaw | 🔧 Partial |
 | Database | Supabase (Postgres + Realtime) | ⬜ Not set up |

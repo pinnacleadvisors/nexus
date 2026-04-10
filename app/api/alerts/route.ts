@@ -1,52 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { sendSlackOrEmail } from '@/lib/alert-dispatch'
 import type { AlertThreshold } from '@/lib/types'
 
 export const runtime = 'nodejs'
-
-// ── Alert helpers ─────────────────────────────────────────────────────────────
-
-async function sendSlackAlert(webhookUrl: string, message: string): Promise<void> {
-  await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: `🚨 *Nexus Alert*\n${message}` }),
-  })
-}
-
-async function sendEmailAlert(to: string, subject: string, body: string): Promise<void> {
-  // Requires RESEND_API_KEY — scaffold only, fill in when Resend is configured
-  const resendKey = process.env.RESEND_API_KEY
-  if (!resendKey) {
-    console.warn('[alerts] RESEND_API_KEY not set — email alert skipped')
-    return
-  }
-  await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${resendKey}`,
-    },
-    body: JSON.stringify({
-      from: 'Nexus Alerts <alerts@nexus.pinnacleadvisors.com>',
-      to,
-      subject,
-      text: body,
-    }),
-  })
-}
-
-async function dispatchAlert(threshold: AlertThreshold, message: string): Promise<void> {
-  if (threshold.channel === 'slack') {
-    await sendSlackAlert(threshold.destination, message)
-  } else {
-    await sendEmailAlert(
-      threshold.destination,
-      `Nexus Alert: ${threshold.metric}`,
-      message,
-    )
-  }
-}
 
 // ── GET — list thresholds ─────────────────────────────────────────────────────
 export async function GET() {
@@ -143,7 +100,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (message) {
-        await dispatchAlert(threshold, message)
+        await sendSlackOrEmail(threshold, message)
         fired.push(t.metric)
       }
     }
