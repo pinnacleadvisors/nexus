@@ -4,12 +4,14 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useChat, Chat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import type { UIMessage } from 'ai'
-import { Send, Square } from 'lucide-react'
-import type { Milestone } from '@/lib/types'
+import { Send, Square, Settings2 } from 'lucide-react'
+import type { Milestone, ModelConfig } from '@/lib/types'
+import { ADVISOR_MODELS, DEFAULT_MODEL_CONFIG } from '@/lib/types'
 import ChatMessages from '@/components/forge/ChatMessages'
 import MilestoneTimeline from '@/components/forge/MilestoneTimeline'
 import GanttChart from '@/components/forge/GanttChart'
 import ForgeActionBar from '@/components/forge/ForgeActionBar'
+import ModelSelector from '@/components/forge/ModelSelector'
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
 function loadMessages(projectId: string): UIMessage[] {
@@ -25,9 +27,7 @@ function loadMessages(projectId: string): UIMessage[] {
 function saveMessages(projectId: string, messages: UIMessage[]) {
   try {
     localStorage.setItem(`forge:msgs:${projectId}`, JSON.stringify(messages))
-  } catch {
-    // Ignore quota errors
-  }
+  } catch {}
 }
 
 function loadMilestones(projectId: string): Milestone[] {
@@ -43,9 +43,35 @@ function loadMilestones(projectId: string): Milestone[] {
 function saveMilestones(projectId: string, milestones: Milestone[]) {
   try {
     localStorage.setItem(`forge:miles:${projectId}`, JSON.stringify(milestones))
+  } catch {}
+}
+
+function loadModelConfig(projectId: string): ModelConfig {
+  if (typeof window === 'undefined') return DEFAULT_MODEL_CONFIG
+  try {
+    const raw = localStorage.getItem(`forge:models:${projectId}`)
+    return raw ? (JSON.parse(raw) as ModelConfig) : DEFAULT_MODEL_CONFIG
   } catch {
-    // Ignore quota errors
+    return DEFAULT_MODEL_CONFIG
   }
+}
+
+function saveModelConfig(projectId: string, config: ModelConfig) {
+  try {
+    localStorage.setItem(`forge:models:${projectId}`, JSON.stringify(config))
+  } catch {}
+}
+
+// ── Rough token estimate (1 token ≈ 4 chars) ─────────────────────────────────
+function estimateTokens(messages: UIMessage[]): number {
+  const totalChars = messages.reduce((sum, m) => {
+    const text = m.parts
+      .filter(p => p.type === 'text')
+      .map(p => (p as { type: 'text'; text: string }).text)
+      .join('')
+    return sum + text.length
+  }, 0)
+  return Math.round(totalChars / 4)
 }
 
 // ── PDF export ────────────────────────────────────────────────────────────────
@@ -58,9 +84,7 @@ const PHASE_LABELS: Record<number, string> = {
 
 function exportBusinessPlanPdf(projectName: string, milestones: Milestone[], agentCount: number) {
   const today = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    year: 'numeric', month: 'long', day: 'numeric',
   })
   const estimatedCost = agentCount * 500
 
@@ -130,37 +154,60 @@ interface Props {
 }
 
 export default function ForgeSession({ projectId, projectName }: Props) {
-  const [agentCount, setAgentCount] = useState(3)
-  const [showGantt, setShowGantt] = useState(false)
-  const [input, setInput] = useState('')
+  const [agentCount, setAgentCount]     = useState(3)
+  const [showGantt, setShowGantt]       = useState(false)
+  const [input, setInput]               = useState('')
+  const [showModelSelector, setShowModelSelector] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const modelSelectorRef = useRef<HTMLDivElement>(null)
 
-  // Load saved milestones once on mount (projectId is stable within this component's lifetime)
+  // ── Model config ──────────────────────────────────────────────────────────
+  const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig(projectId))
+
+  // Ref so the custom fetch interceptor always reads the latest value
+  const modelConfigRef = useRef(modelConfig)
+  useEffect(() => {
+    modelConfigRef.current = modelConfig
+    saveModelConfig(projectId, modelConfig)
+  }, [modelConfig, projectId])
+
+  // ── Milestones ────────────────────────────────────────────────────────────
   const [milestones, setMilestones] = useState<Milestone[]>(() => loadMilestones(projectId))
 
-  // Create the Chat instance seeded with saved messages
+  // ── Chat setup ────────────────────────────────────────────────────────────
   const chat = useMemo(
     () => new Chat({ messages: loadMessages(projectId) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [], // only once — component is re-keyed when projectId changes
+    [], // only once — parent re-keys this component when projectId changes
   )
 
-  const { messages, sendMessage, status, stop, error } = useChat({
-    chat,
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
-  })
+  // Custom transport that injects model config into every request body
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat',
+        fetch: async (url, init) => {
+          const body = JSON.parse((init?.body as string) ?? '{}')
+          body.advisorModel  = modelConfigRef.current.advisorModel
+          body.executorModel = modelConfigRef.current.executorModel
+          return globalThis.fetch(url, { ...init, body: JSON.stringify(body) })
+        },
+      }),
+    [], // created once; reads from ref dynamically
+  )
 
-  // Persist messages to localStorage on every change
+  const { messages, sendMessage, status, stop, error } = useChat({ chat, transport })
+
+  // ── Persistence ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (messages.length > 0) saveMessages(projectId, messages)
   }, [messages, projectId])
 
-  // Persist milestones to localStorage on every change
   useEffect(() => {
     saveMilestones(projectId, milestones)
   }, [milestones, projectId])
 
-  // Extract milestones from completed assistant messages
+  // ── Milestone extraction ──────────────────────────────────────────────────
   useEffect(() => {
     if (status === 'streaming' || status === 'submitted') return
     const lastMsg = messages.at(-1)
@@ -186,6 +233,18 @@ export default function ForgeSession({ projectId, projectName }: Props) {
     }
   }, [messages, status])
 
+  // ── Close model selector on outside click ─────────────────────────────────
+  useEffect(() => {
+    if (!showModelSelector) return
+    function handler(e: MouseEvent) {
+      if (modelSelectorRef.current && !modelSelectorRef.current.contains(e.target as Node)) {
+        setShowModelSelector(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showModelSelector])
+
   function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
     const trimmed = input.trim()
@@ -201,29 +260,69 @@ export default function ForgeSession({ projectId, projectName }: Props) {
     }
   }
 
-  const isStreaming = status === 'streaming' || status === 'submitted'
+  const isStreaming   = status === 'streaming' || status === 'submitted'
+  const advisorLabel  = ADVISOR_MODELS.find(m => m.id === modelConfig.advisorModel)?.label ?? 'Opus 4.6'
+  const estimatedToks = estimateTokens(messages)
+  const isCompressed  = messages.length > 20 // matches server-side MSG_THRESHOLD
 
   return (
     <div className="flex flex-1 min-h-0">
-      {/* ── Left panel: Chat ───────────────────────────────────────────── */}
-      <div
-        className="w-1/2 flex flex-col"
-        style={{ borderRight: '1px solid #24243e' }}
-      >
+      {/* ── Left panel: Chat ──────────────────────────────────────────── */}
+      <div className="w-1/2 flex flex-col" style={{ borderRight: '1px solid #24243e' }}>
+
         {/* Header */}
         <div
           className="shrink-0 flex items-center justify-between px-4 h-12"
           style={{ borderBottom: '1px solid #24243e', backgroundColor: '#0d0d14' }}
         >
-          <span className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
-            Consulting Agent
-          </span>
-          <span
-            className="text-xs px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: '#1a1a2e', color: '#6c63ff', border: '1px solid #24243e' }}
-          >
-            Claude Sonnet
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
+              Consulting Agent
+            </span>
+            {/* Token count */}
+            {messages.length > 0 && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{
+                  backgroundColor: '#12121e',
+                  color: isCompressed ? '#f59e0b' : '#55556a',
+                  border: `1px solid ${isCompressed ? '#f59e0b44' : '#24243e'}`,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+                title={isCompressed ? 'Sliding window active — older messages compressed' : 'Estimated session tokens'}
+              >
+                ~{estimatedToks.toLocaleString()} tok{isCompressed ? ' 🗜' : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Model selector toggle */}
+          <div className="flex items-center gap-2" ref={modelSelectorRef}>
+            <button
+              onClick={() => setShowModelSelector(s => !s)}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-colors"
+              style={{
+                backgroundColor: showModelSelector ? '#1a1a2e' : 'transparent',
+                color: '#6c63ff',
+                border: '1px solid #24243e',
+              }}
+              title="Configure advisor & executor models"
+            >
+              <Settings2 size={11} />
+              <span className="text-xs">{advisorLabel}</span>
+            </button>
+
+            {showModelSelector && (
+              <ModelSelector
+                config={modelConfig}
+                onChange={config => {
+                  setModelConfig(config)
+                  setShowModelSelector(false)
+                }}
+                onClose={() => setShowModelSelector(false)}
+              />
+            )}
+          </div>
         </div>
 
         {/* Messages */}
@@ -248,11 +347,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
               rows={1}
               disabled={isStreaming}
               className="flex-1 bg-transparent resize-none text-sm outline-none py-1"
-              style={{
-                color: '#e8e8f0',
-                maxHeight: '120px',
-                minHeight: '24px',
-              }}
+              style={{ color: '#e8e8f0', maxHeight: '120px', minHeight: '24px' }}
             />
             <button
               type={isStreaming ? 'button' : 'submit'}
@@ -263,11 +358,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
                 cursor: input.trim() || isStreaming ? 'pointer' : 'default',
               }}
             >
-              {isStreaming ? (
-                <Square size={13} className="text-white" />
-              ) : (
-                <Send size={13} className="text-white" />
-              )}
+              {isStreaming ? <Square size={13} className="text-white" /> : <Send size={13} className="text-white" />}
             </button>
           </div>
           <p className="text-xs mt-1.5 text-center" style={{ color: '#55556a' }}>
@@ -276,9 +367,8 @@ export default function ForgeSession({ projectId, projectName }: Props) {
         </form>
       </div>
 
-      {/* ── Right panel: Timeline / Gantt ────────────────────────────── */}
+      {/* ── Right panel: Timeline / Gantt ─────────────────────────── */}
       <div className="w-1/2 flex flex-col">
-        {/* Header */}
         <div
           className="shrink-0 flex items-center justify-between px-4 h-12"
           style={{ borderBottom: '1px solid #24243e', backgroundColor: '#0d0d14' }}

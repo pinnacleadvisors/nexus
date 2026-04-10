@@ -84,6 +84,61 @@ export interface AlertThreshold {
   enabled: boolean
 }
 
+// ── AI Model configuration ────────────────────────────────────────────────────
+export interface ModelOption {
+  id: string
+  label: string
+  note: string
+  /** USD per 1M input tokens */
+  costInput: number
+  /** USD per 1M output tokens */
+  costOutput: number
+}
+
+export const ADVISOR_MODELS: ModelOption[] = [
+  {
+    id: 'claude-opus-4-6',
+    label: 'Opus 4.6',
+    note: 'Best quality · strategic reasoning',
+    costInput: 15,
+    costOutput: 75,
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Sonnet 4.6',
+    note: 'Fast · balanced cost',
+    costInput: 3,
+    costOutput: 15,
+  },
+]
+
+export const EXECUTOR_MODELS: ModelOption[] = [
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Sonnet 4.6',
+    note: 'Balanced · implementation tasks',
+    costInput: 3,
+    costOutput: 15,
+  },
+  {
+    id: 'claude-haiku-4-5-20251001',
+    label: 'Haiku 4.5',
+    note: 'Cheapest · simple tasks',
+    costInput: 0.8,
+    costOutput: 4,
+  },
+]
+
+export interface ModelConfig {
+  advisorModel: string
+  executorModel: string
+}
+
+export const DEFAULT_MODEL_CONFIG: ModelConfig = {
+  advisorModel: 'claude-opus-4-6',
+  executorModel: 'claude-sonnet-4-6',
+}
+
 // ── Tools ─────────────────────────────────────────────────────────────────────
 export type ToolCategory = 'AI' | 'Analytics' | 'Automation' | 'Communication' | 'DevOps' | 'Finance' | 'Database'
 export type ToolStatus = 'available' | 'coming-soon' | 'beta'
