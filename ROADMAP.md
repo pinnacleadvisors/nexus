@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-12
+> Last updated: 2026-04-10
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -106,6 +106,40 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] Run `npm install @sentry/nextjs`
 - [ ] Run `npx @sentry/wizard@latest -i nextjs` (generates config files)
 - [ ] Add `SENTRY_DSN` to Doppler — Sentry project → Settings → Client Keys
+
+---
+
+### 🗄️ Cloudflare R2 (Asset Storage — alternative to Supabase Storage)
+
+- [ ] Create R2 bucket in Cloudflare Dashboard → R2 → Create bucket (e.g. `nexus-assets`)
+- [ ] Create R2 API token: Cloudflare Dashboard → R2 → Manage R2 API Tokens → Create API Token
+- [ ] Add `R2_ACCOUNT_ID` to Doppler — Cloudflare Dashboard → right sidebar → Account ID
+- [ ] Add `R2_ACCESS_KEY_ID` to Doppler — from R2 API token creation
+- [ ] Add `R2_SECRET_ACCESS_KEY` to Doppler — from R2 API token creation
+- [ ] Add `R2_BUCKET_NAME` to Doppler — bucket name (e.g. `nexus-assets`)
+- [ ] Optional: Add `R2_PUBLIC_URL` to Doppler — public bucket URL for direct links (enable public access in R2 dashboard)
+
+---
+
+### ⚙️ Inngest (Background Jobs)
+
+- [ ] Sign up at https://inngest.com → create an app called `nexus`
+- [ ] Add `INNGEST_EVENT_KEY` to Doppler — Inngest dashboard → App → Event Key
+- [ ] Add `INNGEST_SIGNING_KEY` to Doppler — Inngest dashboard → App → Signing Key
+- [ ] Add `NEXT_PUBLIC_APP_URL` to Doppler — your Vercel deployment URL (e.g. `https://nexus.pinnacleadvisors.com`)
+- [ ] Register the Inngest endpoint in Inngest dashboard → Syncs → Add endpoint: `https://<your-vercel-domain>/api/inngest`
+- [ ] For local dev: run `npx inngest-cli@latest dev` alongside `npm run dev`
+
+---
+
+### 🔐 Row-Level Security (RLS — Clerk + Supabase JWT)
+
+- [ ] In Clerk Dashboard → JWT Templates → New template → choose "Supabase"
+  - Set audience to your Supabase project URL
+  - Ensure `sub` claim maps to `{{user.id}}`
+- [ ] In Supabase Dashboard → Settings → API → copy JWT Secret
+- [ ] Paste the JWT Secret into the Clerk JWT template "Signing key" field
+- [ ] Run `npm run migrate` to apply migration 004 (enables RLS + policies)
 
 ---
 
@@ -221,17 +255,17 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 7 — Backend & Data Layer (Not Started)
+## Phase 7 — Backend & Data Layer (Complete)
 
 | Status | Item |
 |--------|------|
-| ⬜ | Supabase project setup (PostgreSQL + Realtime + Storage) |
-| ⬜ | Prisma schema — businesses, projects, milestones, agents, tasks, users |
-| ⬜ | Migrate all mock data to live database queries |
-| ⬜ | Row-level security (RLS) policies per user |
-| ⬜ | Supabase Storage — agent-generated assets (PDFs, images, docs) |
-| ⬜ | Cloudflare R2 for large binary asset storage (alternative) |
-| ⬜ | Background job queue (e.g. Inngest or Trigger.dev) for async tasks |
+| ✅ | Supabase project setup — client in `lib/supabase.ts`; migrations 001–004; Realtime on agents, tasks, projects, milestones, businesses |
+| ✅ | Schema — `businesses` + `milestones` tables added (migration 003); `user_id` column on projects + agents for future RLS isolation |
+| ✅ | Migrate all mock data to live database queries — all API routes (`/api/dashboard`, `/api/board`, `/api/projects`, `/api/milestones`) try Supabase first, fall back to mock when unconfigured |
+| ✅ | Row-level security (RLS) policies — migration 004 enables RLS on all tables; `businesses` policies use Clerk `sub` JWT claim; see Manual Steps → RLS to activate Clerk JWT integration |
+| ✅ | Supabase Storage — `POST /api/storage` uploads files; `GET /api/storage` lists + returns signed URLs; auto-creates bucket if missing |
+| ✅ | Cloudflare R2 — `lib/r2.ts` S3-compatible client; `POST/GET/DELETE /api/r2`; presigned upload + download URLs; remote-URL mirror helper |
+| ✅ | Background job queue (Inngest) — `inngest/client.ts` + `inngest/functions/`; 4 functions: milestone completed, asset created, daily cost check (cron), agent-down alert; served at `POST /api/inngest` |
 
 ---
 
@@ -245,7 +279,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | ✅ | Prompt caching — Anthropic cache_control breakpoints on system prompt + first user turn |
 | ✅ | Token usage logged per request — input/output/cached tokens tracked, cost estimated in `/api/chat` response headers |
 | ✅ | Cost alert when a single agent run exceeds configurable threshold — checked server-side, fires via `/api/alerts` |
-| ⬜ | Retrieval-Augmented Generation (RAG) — agents query knowledge base not full history |
+| ✅ | Retrieval-Augmented Generation (RAG) — Notion page content injected into system prompt via `/api/notion/search`; see Phase 6 |
 
 ---
 
@@ -309,12 +343,12 @@ These are the tasks agents should be able to execute autonomously:
 | Agent orchestration | OpenClaw / MyClaw | ✅ Integrated |
 | Database | Supabase (Postgres + Realtime) | ⬜ Not set up |
 | ORM | Prisma | ⬜ Not set up |
-| Storage | Supabase Storage / Cloudflare R2 | ⬜ Not set up |
+| Storage | Supabase Storage / Cloudflare R2 | ✅ API routes wired |
 | Payments | Stripe | ⬜ Not set up |
 | Email | Resend | ⬜ Not set up |
 | Monitoring | Sentry | ⬜ Not set up |
 | Analytics | PostHog | ⬜ Not set up |
-| Notes | Notion API | ⬜ Not set up |
+| Notes | Notion API | ✅ Integrated (Phase 6) |
 | Hosting | Vercel | ✅ Live |
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |

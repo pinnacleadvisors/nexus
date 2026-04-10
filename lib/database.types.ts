@@ -19,6 +19,7 @@ export type Database = {
           error_count: number
           last_active: string
           created_at: string
+          user_id: string | null
         }
         Insert: {
           id: string
@@ -30,6 +31,7 @@ export type Database = {
           error_count?: number
           last_active?: string
           created_at?: string
+          user_id?: string | null
         }
         Update: {
           id?: string
@@ -40,22 +42,96 @@ export type Database = {
           cost_usd?: number
           error_count?: number
           last_active?: string
+          user_id?: string | null
         }
         Relationships: []
+      }
+      businesses: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          name?: string
+          description?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      milestones: {
+        Row: {
+          id: string
+          project_id: string | null
+          forge_id: string | null
+          title: string
+          description: string
+          phase: number
+          status: 'pending' | 'in-progress' | 'done'
+          target_date: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id?: string | null
+          forge_id?: string | null
+          title: string
+          description?: string
+          phase?: number
+          status?: 'pending' | 'in-progress' | 'done'
+          target_date?: string | null
+          created_at?: string
+        }
+        Update: {
+          project_id?: string | null
+          forge_id?: string | null
+          title?: string
+          description?: string
+          phase?: number
+          status?: 'pending' | 'in-progress' | 'done'
+          target_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'milestones_project_id_fkey'
+            columns: ['project_id']
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+        ]
       }
       projects: {
         Row: {
           id: string
           name: string
+          user_id: string | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           name: string
+          user_id?: string | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           name?: string
+          user_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
