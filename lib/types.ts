@@ -11,6 +11,10 @@ export interface KanbanCard {
   assetUrl?: string
   createdAt: string
   revisionNote?: string
+  /** Links card to a Forge project for board filtering */
+  projectId?: string
+  /** Links card to a Forge milestone; used to dispatch next task on Approve */
+  milestoneId?: string
 }
 
 export interface KanbanColumn {

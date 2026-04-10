@@ -2,18 +2,27 @@
 
 import { useState } from 'react'
 import type { KanbanCard } from '@/lib/types'
-import { XCircle, CheckCircle2, ExternalLink } from 'lucide-react'
+import { XCircle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
 
 interface Props {
   card: KanbanCard
   onClose: () => void
-  onApprove: () => void
-  onReject: (revision: string) => void
+  onApprove: (card: KanbanCard, onResult: (ok: boolean) => void) => void
+  onReject:  (card: KanbanCard, revision: string) => void
 }
 
 export default function ReviewModal({ card, onClose, onApprove, onReject }: Props) {
-  const [showRevision, setShowRevision] = useState(false)
-  const [revision, setRevision] = useState('')
+  const [showRevision,    setShowRevision]    = useState(false)
+  const [revision,        setRevision]        = useState('')
+  const [approveState,    setApproveState]    = useState<'idle' | 'dispatching' | 'ok' | 'err'>('idle')
+
+  function handleApprove() {
+    setApproveState('dispatching')
+    onApprove(card, ok => {
+      setApproveState(ok ? 'ok' : 'err')
+      // Modal will close via parent after onApprove runs; brief state flash only if user stays
+    })
+  }
 
   return (
     <div
@@ -31,23 +40,21 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
           style={{ borderBottom: '1px solid #24243e' }}
         >
           <div>
-            <h2 className="font-semibold" style={{ color: '#e8e8f0' }}>
-              {card.title}
-            </h2>
+            <h2 className="font-semibold" style={{ color: '#e8e8f0' }}>{card.title}</h2>
             <p className="text-xs mt-0.5" style={{ color: '#9090b0' }}>
               {card.assignee} · Ready for review
             </p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
             style={{ color: '#55556a' }}
             onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1a1a2e'
+              ;(e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1a1a2e'
               ;(e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0'
             }}
             onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'
+              ;(e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'
               ;(e.currentTarget as HTMLButtonElement).style.color = '#55556a'
             }}
           >
@@ -69,20 +76,19 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-sm" style={{ color: '#55556a' }}>
-                No preview available
-              </span>
+              <span className="text-sm" style={{ color: '#55556a' }}>No preview available</span>
             </div>
           )}
         </div>
 
+        {/* Asset link */}
         {card.assetUrl && (
           <div className="px-5 mt-2">
             <a
               href={card.assetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs transition-colors"
+              className="flex items-center gap-1.5 text-xs"
               style={{ color: '#6c63ff' }}
             >
               <ExternalLink size={12} />
@@ -92,11 +98,28 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
         )}
 
         {/* Description */}
-        <p className="px-5 mt-3 text-sm" style={{ color: '#9090b0' }}>
-          {card.description}
-        </p>
+        <p className="px-5 mt-3 text-sm" style={{ color: '#9090b0' }}>{card.description}</p>
 
-        {/* Revision input (shown when rejecting) */}
+        {/* Dispatch status */}
+        {approveState === 'dispatching' && (
+          <div className="mx-5 mt-3 flex items-center gap-2 text-xs" style={{ color: '#6c63ff' }}>
+            <Loader2 size={12} className="animate-spin" />
+            Dispatching next task to OpenClaw…
+          </div>
+        )}
+        {approveState === 'ok' && (
+          <div className="mx-5 mt-3 flex items-center gap-2 text-xs" style={{ color: '#22c55e' }}>
+            <CheckCircle2 size={12} />
+            Approved &amp; next task dispatched to OpenClaw
+          </div>
+        )}
+        {approveState === 'err' && (
+          <div className="mx-5 mt-3 text-xs" style={{ color: '#f59e0b' }}>
+            Approved locally. OpenClaw dispatch failed — check connection at /tools/claw
+          </div>
+        )}
+
+        {/* Revision input */}
         {showRevision && (
           <div className="px-5 mt-4">
             <textarea
@@ -105,13 +128,9 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
               placeholder="Describe what direction the regeneration should take..."
               rows={3}
               className="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none"
-              style={{
-                backgroundColor: '#0d0d14',
-                border: '1px solid #24243e',
-                color: '#e8e8f0',
-              }}
+              style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e', color: '#e8e8f0' }}
               onFocus={e => ((e.currentTarget as HTMLTextAreaElement).style.borderColor = '#6c63ff')}
-              onBlur={e => ((e.currentTarget as HTMLTextAreaElement).style.borderColor = '#24243e')}
+              onBlur={e  => ((e.currentTarget as HTMLTextAreaElement).style.borderColor = '#24243e')}
               autoFocus
             />
           </div>
@@ -123,13 +142,13 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
             <>
               <button
                 onClick={() => setShowRevision(false)}
-                className="px-4 py-2 rounded-lg text-sm transition-colors"
+                className="px-4 py-2 rounded-lg text-sm"
                 style={{ color: '#9090b0' }}
               >
                 Cancel
               </button>
               <button
-                onClick={() => onReject(revision)}
+                onClick={() => onReject(card, revision)}
                 disabled={!revision.trim()}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
                 style={
@@ -146,7 +165,7 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
             <>
               <button
                 onClick={() => setShowRevision(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
                 style={{ backgroundColor: '#1a1a2e', color: '#ef4444', border: '1px solid #24243e' }}
                 onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444')}
                 onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.borderColor = '#24243e')}
@@ -155,12 +174,20 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
                 Reject
               </button>
               <button
-                onClick={onApprove}
+                onClick={handleApprove}
+                disabled={approveState === 'dispatching'}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{ backgroundColor: '#22c55e', color: '#fff', cursor: 'pointer' }}
+                style={
+                  approveState === 'dispatching'
+                    ? { backgroundColor: '#1a1a2e', color: '#55556a', cursor: 'not-allowed' }
+                    : { backgroundColor: '#22c55e', color: '#fff', cursor: 'pointer' }
+                }
               >
-                <CheckCircle2 size={14} />
-                Approve
+                {approveState === 'dispatching'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <CheckCircle2 size={14} />
+                }
+                {approveState === 'dispatching' ? 'Approving…' : 'Approve'}
               </button>
             </>
           )}

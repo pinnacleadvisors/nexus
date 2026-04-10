@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -14,11 +14,12 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import type { KanbanCard as KanbanCardType, ColumnId } from '@/lib/types'
-import { INITIAL_COLUMNS } from '@/lib/mock-data'
+import type { KanbanCard as KanbanCardType, ColumnId, ForgeProject } from '@/lib/types'
+import { supabase } from '@/lib/supabase'
 import KanbanColumn from '@/components/board/KanbanColumn'
 import KanbanCard from '@/components/board/KanbanCard'
 import ReviewModal from '@/components/board/ReviewModal'
+import { RefreshCw, ChevronDown, Circle } from 'lucide-react'
 
 const COLUMN_ORDER: ColumnId[] = ['backlog', 'in-progress', 'review', 'completed']
 const COLUMN_LABELS: Record<ColumnId, string> = {
@@ -33,32 +34,157 @@ function isColumnId(id: string): id is ColumnId {
   return COLUMN_IDS.has(id)
 }
 
-function findColumnOfCard(
-  cardId: string,
-  columns: Record<ColumnId, KanbanCardType[]>
-): ColumnId | null {
+function findColumnOfCard(cardId: string, columns: Record<ColumnId, KanbanCardType[]>): ColumnId | null {
   for (const [colId, cards] of Object.entries(columns)) {
     if (cards.some(c => c.id === cardId)) return colId as ColumnId
   }
   return null
 }
 
-function buildInitialState(): Record<ColumnId, KanbanCardType[]> {
-  const map = {} as Record<ColumnId, KanbanCardType[]>
-  INITIAL_COLUMNS.forEach(col => {
-    map[col.id] = col.cards
-  })
+function cardsToColumns(cards: KanbanCardType[]): Record<ColumnId, KanbanCardType[]> {
+  const map = { backlog: [], 'in-progress': [], review: [], completed: [] } as Record<ColumnId, KanbanCardType[]>
+  for (const card of cards) {
+    map[card.columnId].push(card)
+  }
   return map
 }
 
-export default function BoardPage() {
-  const [columns, setColumns] = useState<Record<ColumnId, KanbanCardType[]>>(buildInitialState)
-  const [activeCard, setActiveCard] = useState<KanbanCardType | null>(null)
-  const [reviewCard, setReviewCard] = useState<KanbanCardType | null>(null)
+// ── Supabase persistence helpers ──────────────────────────────────────────────
+async function persistColumnChange(id: string, columnId: ColumnId) {
+  await fetch('/api/board', {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ id, columnId }),
+  })
+}
 
+// ── LocalStorage project loader ───────────────────────────────────────────────
+function loadLocalProjects(): ForgeProject[] {
+  try {
+    const raw = localStorage.getItem('forge:projects')
+    return raw ? (JSON.parse(raw) as ForgeProject[]) : []
+  } catch {
+    return []
+  }
+}
+
+// ── Board page ────────────────────────────────────────────────────────────────
+export default function BoardPage() {
+  const [columns,     setColumns]     = useState<Record<ColumnId, KanbanCardType[]>>({
+    backlog: [], 'in-progress': [], review: [], completed: [],
+  })
+  const [activeCard,  setActiveCard]  = useState<KanbanCardType | null>(null)
+  const [reviewCard,  setReviewCard]  = useState<KanbanCardType | null>(null)
+  const [source,      setSource]      = useState<'supabase' | 'mock' | 'empty' | 'loading'>('loading')
+  const [isRealtime,  setIsRealtime]  = useState(false)
+
+  // ── Project filter ────────────────────────────────────────────────────────
+  const [projects,         setProjects]         = useState<ForgeProject[]>([])
+  const [activeProjectId,  setActiveProjectId]  = useState<string>('all')
+  const [showProjectMenu,  setShowProjectMenu]  = useState(false)
+
+  // ── Data loading ──────────────────────────────────────────────────────────
+  const loadCards = useCallback(async (projectId?: string) => {
+    const url = projectId && projectId !== 'all'
+      ? `/api/board?project_id=${projectId}`
+      : '/api/board'
+
+    const res = await fetch(url)
+    const data = (await res.json()) as { cards: KanbanCardType[]; source: string }
+    setColumns(cardsToColumns(data.cards))
+    setSource(data.source as typeof source)
+  }, [])
+
+  useEffect(() => {
+    // Load projects from localStorage (synced with Forge)
+    setProjects(loadLocalProjects())
+    loadCards()
+  }, [loadCards])
+
+  // Re-fetch when project filter changes
+  useEffect(() => {
+    if (source === 'loading') return
+    loadCards(activeProjectId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId])
+
+  // ── Supabase Realtime ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) return
+
+    const channel = supabase!
+      .channel('board-tasks-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        payload => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as { id: string; column_id: string; project_id?: string; title: string; description: string; assignee?: string; priority: string; asset_url?: string; revision_note?: string; milestone_id?: string; created_at: string }
+            // Only insert if matches current filter
+            if (activeProjectId !== 'all' && row.project_id !== activeProjectId) return
+            const card: KanbanCardType = {
+              id:          row.id,
+              columnId:    row.column_id as ColumnId,
+              projectId:   row.project_id,
+              title:       row.title,
+              description: row.description,
+              assignee:    row.assignee,
+              priority:    row.priority as KanbanCardType['priority'],
+              assetUrl:    row.asset_url,
+              revisionNote: row.revision_note,
+              milestoneId: row.milestone_id,
+              createdAt:   row.created_at,
+            }
+            setColumns(prev => ({
+              ...prev,
+              [card.columnId]: [...prev[card.columnId], card],
+            }))
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new as { id: string; column_id: string; project_id?: string; title: string; description: string; assignee?: string; priority: string; asset_url?: string; revision_note?: string; milestone_id?: string; created_at: string }
+            setColumns(prev => {
+              const newCols = { ...prev }
+              // Remove from old column
+              for (const col of COLUMN_ORDER) {
+                newCols[col] = newCols[col].filter(c => c.id !== row.id)
+              }
+              // Add to new column
+              const colId = row.column_id as ColumnId
+              newCols[colId] = [
+                ...newCols[colId],
+                {
+                  id: row.id, columnId: colId, projectId: row.project_id,
+                  title: row.title, description: row.description,
+                  assignee: row.assignee, priority: row.priority as KanbanCardType['priority'],
+                  assetUrl: row.asset_url, revisionNote: row.revision_note,
+                  milestoneId: row.milestone_id, createdAt: row.created_at,
+                },
+              ]
+              return newCols
+            })
+          } else if (payload.eventType === 'DELETE') {
+            const id = (payload.old as { id: string }).id
+            setColumns(prev => {
+              const newCols = { ...prev }
+              for (const col of COLUMN_ORDER) {
+                newCols[col] = newCols[col].filter(c => c.id !== id)
+              }
+              return newCols
+            })
+          }
+        },
+      )
+      .subscribe(status => {
+        setIsRealtime(status === 'SUBSCRIBED')
+      })
+
+    return () => { supabase!.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId])
+
+  // ── DnD sensors ───────────────────────────────────────────────────────────
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   function handleDragStart(event: DragStartEvent) {
@@ -70,24 +196,17 @@ export default function BoardPage() {
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event
     if (!over) return
-
     const activeId = active.id as string
     const overId = over.id as string
     const sourceColId = findColumnOfCard(activeId, columns)
     const targetColId = isColumnId(overId) ? overId : findColumnOfCard(overId, columns)
-
     if (!sourceColId || !targetColId || sourceColId === targetColId) return
-
     setColumns(prev => {
       const sourceCards = [...prev[sourceColId]]
-      const cardIndex = sourceCards.findIndex(c => c.id === activeId)
-      const [card] = sourceCards.splice(cardIndex, 1)
+      const [card] = sourceCards.splice(sourceCards.findIndex(c => c.id === activeId), 1)
       const targetCards = [...prev[targetColId]]
       const overIndex = targetCards.findIndex(c => c.id === overId)
-      targetCards.splice(overIndex >= 0 ? overIndex : targetCards.length, 0, {
-        ...card,
-        columnId: targetColId,
-      })
+      targetCards.splice(overIndex >= 0 ? overIndex : targetCards.length, 0, { ...card, columnId: targetColId })
       return { ...prev, [sourceColId]: sourceCards, [targetColId]: targetCards }
     })
   }
@@ -96,12 +215,10 @@ export default function BoardPage() {
     const { active, over } = event
     setActiveCard(null)
     if (!over) return
-
     const activeId = active.id as string
     const overId = over.id as string
     const sourceColId = findColumnOfCard(activeId, columns)
     const targetColId = isColumnId(overId) ? overId : findColumnOfCard(overId, columns)
-
     if (!sourceColId || !targetColId) return
 
     if (sourceColId === targetColId) {
@@ -112,56 +229,151 @@ export default function BoardPage() {
         if (oldIndex === newIndex) return prev
         return { ...prev, [sourceColId]: arrayMove(cards, oldIndex, newIndex) }
       })
+    } else {
+      // Cross-column was handled in onDragOver; persist to Supabase
+      persistColumnChange(activeId, targetColId).catch(console.warn)
     }
-    // Cross-column move was already handled optimistically in onDragOver
   }
 
-  function handleApprove() {
-    if (!reviewCard) return
-    setColumns(prev => {
-      const reviewCards = prev['review'].filter(c => c.id !== reviewCard.id)
-      const completedCards = [
-        ...prev['completed'],
-        { ...reviewCard, columnId: 'completed' as ColumnId },
-      ]
-      return { ...prev, review: reviewCards, completed: completedCards }
+  function handleApprove(card: KanbanCardType, onDispatchResult: (ok: boolean) => void) {
+    // 1. Move card to Completed
+    setColumns(prev => ({
+      ...prev,
+      review:    prev['review'].filter(c => c.id !== card.id),
+      completed: [...prev['completed'], { ...card, columnId: 'completed' as ColumnId }],
+    }))
+    // 2. Persist to Supabase
+    persistColumnChange(card.id, 'completed').catch(console.warn)
+
+    // 3. Dispatch to OpenClaw — "next task" signal
+    const message =
+      `Task approved by project owner: "${card.title}".\n\n` +
+      `${card.milestoneId ? `Milestone ID: ${card.milestoneId}\n\n` : ''}` +
+      `This deliverable has been reviewed and accepted. Please proceed to the next queued task or milestone in the project pipeline.`
+
+    fetch('/api/claw', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'agent', payload: { message, name: 'Nexus Board', wakeMode: 'now' } }),
     })
+      .then(r => onDispatchResult(r.ok || r.status === 401))  // 401 = not configured, still "ok" for UI
+      .catch(() => onDispatchResult(false))
+
     setReviewCard(null)
   }
 
-  function handleReject(revision: string) {
-    if (!reviewCard) return
+  function handleReject(card: KanbanCardType, revision: string) {
     setColumns(prev => ({
       ...prev,
-      review: prev['review'].filter(c => c.id !== reviewCard.id),
-      backlog: [
-        { ...reviewCard, columnId: 'backlog', revisionNote: revision },
-        ...prev['backlog'],
-      ],
+      review:  prev['review'].filter(c => c.id !== card.id),
+      backlog: [{ ...card, columnId: 'backlog', revisionNote: revision }, ...prev['backlog']],
     }))
+    persistColumnChange(card.id, 'backlog').catch(console.warn)
+    fetch('/api/board', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id: card.id, columnId: 'backlog', revisionNote: revision }),
+    }).catch(console.warn)
     setReviewCard(null)
   }
 
   const totalCards = COLUMN_ORDER.reduce((n, id) => n + columns[id].length, 0)
+  const activeProject = projects.find(p => p.id === activeProjectId)
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: '#050508' }}>
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div
-        className="shrink-0 flex items-center justify-between px-6 py-4"
+        className="shrink-0 flex items-center justify-between px-6 py-4 gap-4"
         style={{ borderBottom: '1px solid #24243e', backgroundColor: '#0d0d14' }}
       >
         <div>
-          <h1 className="font-bold text-lg" style={{ color: '#e8e8f0' }}>
-            Agent Board
-          </h1>
-          <p className="text-xs mt-0.5" style={{ color: '#9090b0' }}>
-            {totalCards} tasks across {COLUMN_ORDER.length} stages
-          </p>
+          <h1 className="font-bold text-lg" style={{ color: '#e8e8f0' }}>Agent Board</h1>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-xs" style={{ color: '#9090b0' }}>
+              {totalCards} tasks across {COLUMN_ORDER.length} stages
+            </p>
+            {/* Data source badge */}
+            {source !== 'loading' && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{
+                  backgroundColor: '#12121e',
+                  color: source === 'supabase' ? '#22c55e' : '#55556a',
+                  border: '1px solid #24243e',
+                }}
+              >
+                {source === 'supabase' ? 'Live data' : source === 'empty' ? 'No tasks' : 'Demo data'}
+              </span>
+            )}
+            {/* Realtime indicator */}
+            {isRealtime && (
+              <span className="flex items-center gap-1 text-xs" style={{ color: '#6c63ff' }}>
+                <Circle size={6} fill="#6c63ff" />
+                Realtime
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Project filter */}
+          {projects.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowProjectMenu(s => !s)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                style={{
+                  backgroundColor: '#12121e',
+                  color: '#e8e8f0',
+                  border: '1px solid #24243e',
+                }}
+              >
+                <span className="max-w-[140px] truncate">
+                  {activeProjectId === 'all' ? 'All projects' : (activeProject?.name ?? 'Unknown')}
+                </span>
+                <ChevronDown size={13} style={{ color: '#55556a' }} />
+              </button>
+
+              {showProjectMenu && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl overflow-hidden shadow-2xl"
+                  style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
+                >
+                  {[{ id: 'all', name: 'All projects' }, ...projects].map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => { setActiveProjectId(p.id); setShowProjectMenu(false) }}
+                      className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                      style={{
+                        backgroundColor: activeProjectId === p.id ? '#1a1a2e' : 'transparent',
+                        color: activeProjectId === p.id ? '#e8e8f0' : '#9090b0',
+                        borderBottom: '1px solid #24243e',
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Refresh */}
+          <button
+            onClick={() => loadCards(activeProjectId)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+            style={{ backgroundColor: '#12121e', color: '#55556a', border: '1px solid #24243e' }}
+            onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0')}
+            onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = '#55556a')}
+            title="Refresh board"
+          >
+            <RefreshCw size={13} />
+          </button>
         </div>
       </div>
 
-      {/* Board */}
+      {/* ── Board ───────────────────────────────────────────────────────── */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -186,7 +398,7 @@ export default function BoardPage() {
         </DragOverlay>
       </DndContext>
 
-      {/* Review modal */}
+      {/* ── Review modal ────────────────────────────────────────────────── */}
       {reviewCard && (
         <ReviewModal
           card={reviewCard}

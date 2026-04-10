@@ -1,5 +1,5 @@
 /**
- * Supabase database schema types — generated from the SQL in lib/schema.sql
+ * Supabase database schema types — matches supabase/migrations/*.sql
  * Run `npx supabase gen types typescript --local` after schema changes.
  */
 
@@ -40,6 +40,66 @@ export type Database = {
           cost_usd?: number
           error_count?: number
           last_active?: string
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          id: string
+          name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          created_at?: string
+        }
+        Update: {
+          name?: string
+        }
+        Relationships: []
+      }
+      tasks: {
+        Row: {
+          id: string
+          project_id: string | null
+          title: string
+          description: string
+          column_id: 'backlog' | 'in-progress' | 'review' | 'completed'
+          assignee: string | null
+          priority: 'low' | 'medium' | 'high'
+          asset_url: string | null
+          revision_note: string | null
+          milestone_id: string | null
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id?: string | null
+          title: string
+          description?: string
+          column_id?: 'backlog' | 'in-progress' | 'review' | 'completed'
+          assignee?: string | null
+          priority?: 'low' | 'medium' | 'high'
+          asset_url?: string | null
+          revision_note?: string | null
+          milestone_id?: string | null
+          position?: number
+          created_at?: string
+        }
+        Update: {
+          project_id?: string | null
+          title?: string
+          description?: string
+          column_id?: 'backlog' | 'in-progress' | 'review' | 'completed'
+          assignee?: string | null
+          priority?: 'low' | 'medium' | 'high'
+          asset_url?: string | null
+          revision_note?: string | null
+          milestone_id?: string | null
+          position?: number
         }
         Relationships: []
       }
@@ -131,6 +191,10 @@ export type Database = {
     Functions: {
       increment_agent_cost: {
         Args: { p_agent_id: string; p_tokens: number; p_cost: number }
+        Returns: undefined
+      }
+      set_updated_at: {
+        Args: Record<never, never>
         Returns: undefined
       }
     }

@@ -35,6 +35,7 @@ Tracked automatically — `npm run migrate` records each applied file in the `sc
 | File | Description | Applied |
 |------|-------------|---------|
 | `supabase/migrations/001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds | ⬜ |
+| `supabase/migrations/002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
 
 > **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row to this table with ⬜, then run `npm run migrate`. Claude will do this automatically when generating new SQL.
 
@@ -130,13 +131,13 @@ Tracked automatically — `npm run migrate` records each applied file in the `sc
 | ✅ | Drag-and-drop between columns (dnd-kit) |
 | ✅ | Review modal: asset preview, approve / reject |
 | ✅ | Reject flow: revision note input → card moves back to Backlog |
-| ⬜ | Connect to real agent task queue (Supabase) |
-| ⬜ | Hover preview on Completed cards (thumbnail of asset created) |
-| ⬜ | Click-through on asset links — Google Drive, hosted URLs, GitHub PRs |
-| ⬜ | Real-time card updates when agents complete tasks (Supabase Realtime) |
-| ⬜ | Card shows which agent is actively working on it |
-| ⬜ | Filter board by project / business |
-| ⬜ | Approve triggers next milestone dispatch to OpenClaw |
+| ✅ | Connect to real agent task queue (Supabase) — `/api/board` CRUD, falls back to mock when unconfigured |
+| ✅ | Hover preview on Completed cards — asset type detection (Drive, GitHub, PDF, Notion, Miro) + tooltip on hover |
+| ✅ | Click-through on asset links — Google Drive, hosted URLs, GitHub PRs; opens in new tab |
+| ✅ | Real-time card updates when agents complete tasks (Supabase Realtime on `tasks` table) |
+| ✅ | Card shows which agent is actively working on it — animated pulse badge on In Progress cards |
+| ✅ | Filter board by project / business — project dropdown reads from localStorage (synced with Forge) |
+| ✅ | Approve triggers next milestone dispatch to OpenClaw — fires `/api/claw` agent dispatch on approval |
 
 ---
 
