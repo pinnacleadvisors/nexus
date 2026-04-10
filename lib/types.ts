@@ -41,10 +41,18 @@ export interface AgentRow {
   tasksCompleted: number
   tokensUsed: number
   costUsd: number
+  errorCount?: number
   lastActive: string
 }
 
 // ── Forge ─────────────────────────────────────────────────────────────────────
+export interface ForgeProject {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Milestone {
   id: string
   title: string
@@ -64,8 +72,20 @@ export interface GanttTask {
   agent?: string
 }
 
+// ── Dashboard filters & alerts ────────────────────────────────────────────────
+export type DateRange = '7d' | '30d' | '90d' | 'all'
+
+export interface AlertThreshold {
+  id: string
+  metric: 'daily_cost' | 'error_rate' | 'agent_down'
+  threshold: number
+  channel: 'email' | 'slack'
+  destination: string
+  enabled: boolean
+}
+
 // ── Tools ─────────────────────────────────────────────────────────────────────
-export type ToolCategory = 'AI' | 'Analytics' | 'Communication' | 'DevOps' | 'Finance' | 'Database'
+export type ToolCategory = 'AI' | 'Analytics' | 'Automation' | 'Communication' | 'DevOps' | 'Finance' | 'Database'
 export type ToolStatus = 'available' | 'coming-soon' | 'beta'
 
 export interface Tool {
@@ -76,4 +96,29 @@ export interface Tool {
   category: ToolCategory
   status: ToolStatus
   href?: string
+}
+
+// ── OpenClaw / MyClaw ─────────────────────────────────────────────────────────
+export interface ClawConfig {
+  gatewayUrl: string
+  hookToken: string
+}
+
+// ── OAuth ─────────────────────────────────────────────────────────────────────
+export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
+
+export interface OAuthProvider {
+  id: OAuthProviderName
+  name: string
+  icon: string
+  description: string
+  scopes: string[]
+  color: string
+  authUrl: string
+  envClientId: string
+}
+
+export interface OAuthConnection {
+  provider: OAuthProviderName
+  connectedAt: string
 }

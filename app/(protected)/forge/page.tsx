@@ -1,176 +1,132 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
-import { Send, Square } from 'lucide-react'
-import type { Milestone } from '@/lib/types'
-import ChatMessages from '@/components/forge/ChatMessages'
-import MilestoneTimeline from '@/components/forge/MilestoneTimeline'
-import GanttChart from '@/components/forge/GanttChart'
-import ForgeActionBar from '@/components/forge/ForgeActionBar'
+import { useState, useEffect } from 'react'
+import type { ForgeProject } from '@/lib/types'
+import ProjectSelectorBar from '@/components/forge/ProjectSelectorBar'
+import ForgeSession from '@/components/forge/ForgeSession'
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
+const PROJECTS_KEY = 'forge:projects'
+const ACTIVE_KEY = 'forge:active'
+
+function loadProjects(): ForgeProject[] {
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY)
+    return raw ? (JSON.parse(raw) as ForgeProject[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveProjects(projects: ForgeProject[]) {
+  try {
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects))
+  } catch {
+    // Ignore quota errors
+  }
+}
+
+function loadActiveId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function saveActiveId(id: string) {
+  try {
+    localStorage.setItem(ACTIVE_KEY, id)
+  } catch {
+    // Ignore quota errors
+  }
+}
+
+function makeProject(name: string): ForgeProject {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function ForgePage() {
-  const [milestones, setMilestones] = useState<Milestone[]>([])
-  const [agentCount, setAgentCount] = useState(3)
-  const [showGantt, setShowGantt] = useState(false)
-  const [input, setInput] = useState('')
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [projects, setProjects] = useState<ForgeProject[]>([])
+  const [activeId, setActiveId] = useState<string>('')
 
-  const { messages, sendMessage, status, stop } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
-  })
-
-  // Extract milestones from completed assistant messages
+  // Initialise from localStorage once on mount
   useEffect(() => {
-    if (status === 'streaming' || status === 'submitted') return
-    const lastMsg = messages.at(-1)
-    if (!lastMsg || lastMsg.role !== 'assistant') return
-
-    const text = lastMsg.parts
-      .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
-      .map(p => p.text)
-      .join('')
-
-    const match = text.match(/<milestones>([\s\S]*?)<\/milestones>/)
-    if (!match) return
-
-    try {
-      const parsed: Milestone[] = JSON.parse(match[1])
-      setMilestones(prev => {
-        const existingIds = new Set(prev.map(m => m.id))
-        const newOnes = parsed.filter(m => !existingIds.has(m.id))
-        return newOnes.length > 0 ? [...prev, ...newOnes] : prev
-      })
-    } catch {
-      // Malformed JSON — ignore
+    let saved = loadProjects()
+    if (saved.length === 0) {
+      const defaultProject = makeProject('My First Business')
+      saved = [defaultProject]
+      saveProjects(saved)
     }
-  }, [messages, status])
+    setProjects(saved)
 
-  function handleSubmit(e?: React.FormEvent) {
-    e?.preventDefault()
-    const trimmed = input.trim()
-    if (!trimmed || status === 'streaming' || status === 'submitted') return
-    sendMessage({ text: trimmed })
-    setInput('')
+    const storedActive = loadActiveId()
+    const validActive = saved.find(p => p.id === storedActive)
+    const id = validActive ? storedActive! : saved[0].id
+    setActiveId(id)
+    saveActiveId(id)
+  }, [])
+
+  function switchProject(id: string) {
+    setActiveId(id)
+    saveActiveId(id)
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit()
+  function createProject() {
+    const newProject = makeProject(`New Project ${projects.length + 1}`)
+    const updated = [...projects, newProject]
+    setProjects(updated)
+    saveProjects(updated)
+    switchProject(newProject.id)
+  }
+
+  function renameProject(id: string, name: string) {
+    const updated = projects.map(p =>
+      p.id === id ? { ...p, name, updatedAt: new Date().toISOString() } : p,
+    )
+    setProjects(updated)
+    saveProjects(updated)
+  }
+
+  function deleteProject(id: string) {
+    let updated = projects.filter(p => p.id !== id)
+    if (updated.length === 0) {
+      updated = [makeProject('My First Business')]
+    }
+    setProjects(updated)
+    saveProjects(updated)
+    if (id === activeId) {
+      switchProject(updated[0].id)
     }
   }
 
-  const isStreaming = status === 'streaming' || status === 'submitted'
+  if (!activeId) return null // waiting for hydration
+
+  const activeProject = projects.find(p => p.id === activeId) ?? projects[0]
 
   return (
-    <div className="flex h-full" style={{ backgroundColor: '#050508' }}>
-      {/* ── Left panel: Chat ──────────────────────────────────────────── */}
-      <div
-        className="w-1/2 flex flex-col"
-        style={{ borderRight: '1px solid #24243e' }}
-      >
-        {/* Header */}
-        <div
-          className="shrink-0 flex items-center justify-between px-4 h-12"
-          style={{ borderBottom: '1px solid #24243e', backgroundColor: '#0d0d14' }}
-        >
-          <span className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
-            Consulting Agent
-          </span>
-          <span
-            className="text-xs px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: '#1a1a2e', color: '#6c63ff', border: '1px solid #24243e' }}
-          >
-            Claude Sonnet
-          </span>
-        </div>
-
-        {/* Messages */}
-        <ChatMessages messages={messages} status={status} />
-
-        {/* Input */}
-        <form
-          onSubmit={handleSubmit}
-          className="shrink-0 p-3"
-          style={{ borderTop: '1px solid #24243e', backgroundColor: '#0d0d14' }}
-        >
-          <div
-            className="flex items-end gap-2 rounded-xl px-3 py-2"
-            style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
-          >
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe your business idea..."
-              rows={1}
-              disabled={isStreaming}
-              className="flex-1 bg-transparent resize-none text-sm outline-none py-1"
-              style={{
-                color: '#e8e8f0',
-                maxHeight: '120px',
-                minHeight: '24px',
-              }}
-            />
-            <button
-              type={isStreaming ? 'button' : 'submit'}
-              onClick={isStreaming ? stop : undefined}
-              className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{
-                backgroundColor: isStreaming ? '#ef4444' : input.trim() ? '#6c63ff' : '#1a1a2e',
-                cursor: input.trim() || isStreaming ? 'pointer' : 'default',
-              }}
-            >
-              {isStreaming ? (
-                <Square size={13} className="text-white" />
-              ) : (
-                <Send size={13} className="text-white" />
-              )}
-            </button>
-          </div>
-          <p className="text-xs mt-1.5 text-center" style={{ color: '#55556a' }}>
-            Enter to send · Shift+Enter for new line
-          </p>
-        </form>
-      </div>
-
-      {/* ── Right panel: Timeline / Gantt ────────────────────────────── */}
-      <div className="w-1/2 flex flex-col">
-        {/* Header */}
-        <div
-          className="shrink-0 flex items-center justify-between px-4 h-12"
-          style={{ borderBottom: '1px solid #24243e', backgroundColor: '#0d0d14' }}
-        >
-          <span className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
-            {showGantt ? 'Project Gantt' : 'Milestones'}
-          </span>
-          {milestones.length > 0 && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: '#1a1a2e', color: '#22c55e', border: '1px solid #24243e' }}
-            >
-              {milestones.length} milestone{milestones.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-
-        {showGantt ? (
-          <GanttChart milestones={milestones} />
-        ) : (
-          <MilestoneTimeline milestones={milestones} />
-        )}
-
-        <ForgeActionBar
-          agentCount={agentCount}
-          setAgentCount={setAgentCount}
-          onLaunch={() => setShowGantt(s => !s)}
-          milestonesReady={milestones.length > 0}
-          showGantt={showGantt}
+    <div className="flex flex-col h-full" style={{ backgroundColor: '#050508' }}>
+      <ProjectSelectorBar
+        projects={projects}
+        activeProjectId={activeId}
+        onSelect={switchProject}
+        onNew={createProject}
+        onRename={renameProject}
+        onDelete={deleteProject}
+      />
+      {activeProject && (
+        <ForgeSession
+          key={activeId}
+          projectId={activeId}
+          projectName={activeProject.name}
         />
-      </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-09
+> Last updated: 2026-04-10
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -189,16 +189,17 @@ Tracked automatically — `npm run migrate` records each applied file in the `sc
 
 ---
 
-## Phase 8 — Token Efficiency & Agent Intelligence (Not Started)
+## Phase 8 — Token Efficiency & Agent Intelligence (In Progress)
 
 | Status | Item |
 |--------|------|
-| ⬜ | Sliding window summarisation — compress old messages before context limit |
+| ✅ | Sliding window summarisation — compress old messages before context limit (20-message window, last 10 kept + synopsis) |
+| ✅ | Model routing — Opus as strategic advisor, configurable executioner model for implementation tasks |
+| ✅ | Dual-model architecture — advisor/executioner split with UI model selector in Forge settings |
+| ✅ | Prompt caching — Anthropic cache_control breakpoints on system prompt + first user turn |
+| ✅ | Token usage logged per request — input/output/cached tokens tracked, cost estimated in `/api/chat` response headers |
+| ✅ | Cost alert when a single agent run exceeds configurable threshold — checked server-side, fires via `/api/alerts` |
 | ⬜ | Retrieval-Augmented Generation (RAG) — agents query knowledge base not full history |
-| ⬜ | Model routing — use Claude Haiku for simple tasks, Opus for complex reasoning |
-| ⬜ | Prompt caching — use Anthropic prompt caching for repeated system prompts |
-| ⬜ | Token usage logged per agent/task to Dashboard |
-| ⬜ | Cost alert when a single agent run exceeds configurable threshold |
 
 ---
 
@@ -245,7 +246,6 @@ These are the tasks agents should be able to execute autonomously:
 4. **Add Stripe webhook** → real revenue on Dashboard
 5. **Implement Notion API** → agents write to knowledge base
 6. **Enable Clerk MFA** → security baseline for production use
-7. **Add prompt caching** → cut token costs immediately
 
 ---
 
@@ -257,7 +257,8 @@ These are the tasks agents should be able to execute autonomously:
 | UI | React 19 + Tailwind CSS 4 + lucide-react | ✅ Live |
 | Auth | Clerk v7 (MFA capable) | ✅ Live |
 | Secrets | Doppler | ✅ Integrated |
-| AI (primary) | Anthropic Claude (Sonnet 4.6) | ✅ Wired up |
+| AI (advisor) | Claude Opus 4.6 (strategic reasoning) | ✅ Wired up |
+| AI (executioner) | Claude Sonnet 4.6 (default, configurable) | ✅ Wired up |
 | AI (fallback) | OpenAI GPT-4o | ⬜ Configured, not wired |
 | Agent orchestration | OpenClaw / MyClaw | 🔧 Partial |
 | Database | Supabase (Postgres + Realtime) | ⬜ Not set up |

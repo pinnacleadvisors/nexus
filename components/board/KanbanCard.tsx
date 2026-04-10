@@ -32,7 +32,6 @@ export default function KanbanCard({ card, overlay, onClick }: Props) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...attributes}
       {...listeners}
       onClick={onClick}

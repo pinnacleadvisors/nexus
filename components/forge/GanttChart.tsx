@@ -39,7 +39,7 @@ function milestonesToGantt(milestones: Milestone[]): GanttTask[] {
         startWeek,
         durationWeeks: duration,
         phase,
-        status: m.status,
+        status: m.status === 'in-progress' ? 'active' : m.status,
         agent: `Agent-${phase}${i + 1}`,
       })
       // Stagger tasks — some run in parallel within a phase

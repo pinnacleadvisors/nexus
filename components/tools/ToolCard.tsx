@@ -1,10 +1,14 @@
-import type { Tool, ToolCategory } from '@/lib/types'
+'use client'
+
+import Link from 'next/link'
+import type { Tool } from '@/lib/types'
 import {
   Bot,
+  Cpu,
   Sparkles,
   Network,
   Database,
-  Github,
+  GitBranch,
   Rocket,
   KeyRound,
   BarChart2,
@@ -16,10 +20,11 @@ import {
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Bot,
+  Cpu,
   Sparkles,
   Network,
   Database,
-  Github,
+  GitBranch,
   Rocket,
   KeyRound,
   BarChart2,
@@ -34,8 +39,6 @@ const STATUS_STYLE: Record<Tool['status'], { label: string; color: string; bg: s
   beta:         { label: 'Beta',         color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)' },
   'coming-soon':{ label: 'Coming Soon',  color: '#55556a', bg: 'rgba(85,85,106,0.1)',   border: 'rgba(85,85,106,0.25)' },
 }
-
-const CATEGORY_ORDER: ToolCategory[] = ['AI', 'Database', 'DevOps', 'Analytics', 'Finance', 'Communication']
 
 interface Props {
   tool: Tool
@@ -82,20 +85,32 @@ export default function ToolCard({ tool }: Props) {
   )
 
   if (tool.href && tool.status === 'available') {
+    const hoverHandlers = {
+      onMouseEnter: (e: React.MouseEvent) => {
+        const div = (e.currentTarget as HTMLElement).querySelector('div') as HTMLDivElement
+        if (div) { div.style.borderColor = '#32325a'; div.style.backgroundColor = '#1a1a2e' }
+      },
+      onMouseLeave: (e: React.MouseEvent) => {
+        const div = (e.currentTarget as HTMLElement).querySelector('div') as HTMLDivElement
+        if (div) { div.style.borderColor = '#24243e'; div.style.backgroundColor = '#12121e' }
+      },
+    }
+
+    if (tool.href.startsWith('/')) {
+      return (
+        <Link href={tool.href} className="block h-full no-underline" {...hoverHandlers}>
+          {card}
+        </Link>
+      )
+    }
+
     return (
       <a
         href={tool.href}
         target="_blank"
         rel="noopener noreferrer"
         className="block h-full no-underline"
-        onMouseEnter={e => {
-          const div = (e.currentTarget as HTMLAnchorElement).querySelector('div') as HTMLDivElement
-          if (div) { div.style.borderColor = '#32325a'; div.style.backgroundColor = '#1a1a2e' }
-        }}
-        onMouseLeave={e => {
-          const div = (e.currentTarget as HTMLAnchorElement).querySelector('div') as HTMLDivElement
-          if (div) { div.style.borderColor = '#24243e'; div.style.backgroundColor = '#12121e' }
-        }}
+        {...hoverHandlers}
       >
         {card}
       </a>
@@ -105,4 +120,3 @@ export default function ToolCard({ tool }: Props) {
   return card
 }
 
-export { CATEGORY_ORDER }

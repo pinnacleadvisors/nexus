@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { UIMessage } from 'ai'
-import { Bot, User } from 'lucide-react'
+import { Bot, User, AlertTriangle } from 'lucide-react'
 
 function stripMilestones(text: string) {
   return text.replace(/<milestones>[\s\S]*?<\/milestones>/g, '').trim()
@@ -11,9 +11,10 @@ function stripMilestones(text: string) {
 interface Props {
   messages: UIMessage[]
   status: string
+  error?: Error
 }
 
-export default function ChatMessages({ messages, status }: Props) {
+export default function ChatMessages({ messages, status, error }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -87,6 +88,22 @@ export default function ChatMessages({ messages, status }: Props) {
           </div>
         )
       })}
+
+      {/* Error banner */}
+      {error && (
+        <div
+          className="flex gap-3 items-start rounded-xl px-4 py-3"
+          style={{ backgroundColor: '#2e0d0d', border: '1px solid #ef444433' }}
+        >
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
+          <div className="text-sm" style={{ color: '#ef4444' }}>
+            <span className="font-semibold">Error — </span>
+            {error.message.includes('500') || error.message.includes('Internal server error')
+              ? 'The AI provider is temporarily unavailable. Please try again.'
+              : error.message}
+          </div>
+        </div>
+      )}
 
       {/* Streaming indicator */}
       {status === 'submitted' && (

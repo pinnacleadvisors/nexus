@@ -238,7 +238,7 @@ export const TOOLS: Tool[] = [
     id: 't5',
     name: 'GitHub',
     description: 'All code versioned here. Agents commit and open PRs automatically.',
-    icon: 'Github',
+    icon: 'GitBranch',
     category: 'DevOps',
     status: 'available',
     href: 'https://github.com',
@@ -306,5 +306,15 @@ export const TOOLS: Tool[] = [
     icon: 'MessageSquare',
     category: 'Communication',
     status: 'coming-soon',
+  },
+  // Automation
+  {
+    id: 't13',
+    name: 'OpenClaw (MyClaw)',
+    description: 'Cloud-hosted AI agent that autonomously executes business tasks via messaging channels. Connect your MyClaw.ai instance to dispatch milestones for hands-free implementation.',
+    icon: 'Cpu',
+    category: 'Automation',
+    status: 'available',
+    href: '/tools/claw',
   },
 ]

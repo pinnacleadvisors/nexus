@@ -1,6 +1,10 @@
 'use client'
 
-import { Zap, Minus, Plus, DollarSign } from 'lucide-react'
+import { useState } from 'react'
+import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle, FileDown } from 'lucide-react'
+import type { Milestone } from '@/lib/types'
+
+type DispatchStatus = 'idle' | 'loading' | 'success' | 'error'
 
 interface Props {
   agentCount: number
@@ -8,6 +12,8 @@ interface Props {
   onLaunch: () => void
   milestonesReady: boolean
   showGantt: boolean
+  milestones?: Milestone[]
+  onExportPdf?: () => void
 }
 
 export default function ForgeActionBar({
@@ -16,8 +22,74 @@ export default function ForgeActionBar({
   onLaunch,
   milestonesReady,
   showGantt,
+  milestones = [],
+  onExportPdf,
 }: Props) {
   const estimatedCost = agentCount * 500
+  const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>('idle')
+
+  async function handleDispatch() {
+    setDispatchStatus('loading')
+
+    const milestoneList = milestones
+      .map(m => `  • [Phase ${m.phase}] ${m.title}: ${m.description}${m.targetDate ? ` (target: ${m.targetDate})` : ''}`)
+      .join('\n')
+
+    const message = `You have been dispatched a new business project from Nexus.\n\nProject milestones:\n${milestoneList}\n\nPlease begin executing Phase 1 milestones. Use your available skills to complete each task autonomously and report progress when done.`
+
+    try {
+      const res = await fetch('/api/claw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'agent',
+          payload: {
+            message,
+            name: 'Nexus Forge',
+            wakeMode: 'now',
+          },
+        }),
+      })
+
+      if (res.status === 401) {
+        // Not configured — send user to the config page
+        window.location.href = '/tools/claw'
+        return
+      }
+
+      if (res.ok) {
+        setDispatchStatus('success')
+        setTimeout(() => setDispatchStatus('idle'), 4000)
+      } else {
+        setDispatchStatus('error')
+        setTimeout(() => setDispatchStatus('idle'), 4000)
+      }
+    } catch {
+      setDispatchStatus('error')
+      setTimeout(() => setDispatchStatus('idle'), 4000)
+    }
+  }
+
+  const clawLabel = {
+    idle: 'Dispatch to OpenClaw',
+    loading: 'Dispatching…',
+    success: 'Dispatched!',
+    error: 'Dispatch failed',
+  }[dispatchStatus]
+
+  const clawIcon = {
+    idle: null,
+    loading: <Loader2 size={13} className="animate-spin" />,
+    success: <CheckCircle2 size={13} />,
+    error: <AlertCircle size={13} />,
+  }[dispatchStatus]
+
+  const clawColor = {
+    idle: '#6c63ff',
+    loading: '#55556a',
+    success: '#22c55e',
+    error: '#ef4444',
+  }[dispatchStatus]
 
   return (
     <div
@@ -68,32 +140,96 @@ export default function ForgeActionBar({
         </span>
       </div>
 
-      {/* Launch / Gantt toggle */}
-      <button
-        onClick={onLaunch}
-        disabled={!milestonesReady}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-        style={
-          milestonesReady
-            ? {
-                background: showGantt
-                  ? 'transparent'
-                  : 'linear-gradient(135deg, #6c63ff, #4c45cc)',
-                color: showGantt ? '#6c63ff' : '#fff',
-                border: showGantt ? '1px solid #6c63ff' : 'none',
-                cursor: 'pointer',
-              }
-            : {
-                backgroundColor: '#1a1a2e',
-                color: '#55556a',
-                border: '1px solid #24243e',
-                cursor: 'not-allowed',
-              }
-        }
-      >
-        <Zap size={14} />
-        {showGantt ? 'Back to Timeline' : 'Launch Agents'}
-      </button>
+      {/* Right side buttons */}
+      <div className="flex items-center gap-2">
+        {/* Export PDF */}
+        {onExportPdf && (
+          <button
+            onClick={onExportPdf}
+            disabled={!milestonesReady}
+            title="Export business plan as PDF"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={
+              milestonesReady
+                ? {
+                    backgroundColor: '#1a1a2e',
+                    color: '#9090b0',
+                    border: '1px solid #24243e',
+                    cursor: 'pointer',
+                  }
+                : {
+                    backgroundColor: '#1a1a2e',
+                    color: '#55556a',
+                    border: '1px solid #24243e',
+                    cursor: 'not-allowed',
+                  }
+            }
+            onMouseEnter={e => {
+              if (milestonesReady)
+                (e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0'
+            }}
+            onMouseLeave={e => {
+              if (milestonesReady)
+                (e.currentTarget as HTMLButtonElement).style.color = '#9090b0'
+            }}
+          >
+            <FileDown size={13} />
+            Export PDF
+          </button>
+        )}
+
+        {/* Dispatch to OpenClaw */}
+        <button
+          onClick={handleDispatch}
+          disabled={!milestonesReady || dispatchStatus === 'loading'}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+          style={
+            milestonesReady && dispatchStatus !== 'loading'
+              ? {
+                  backgroundColor: '#1a1a2e',
+                  color: clawColor,
+                  border: `1px solid ${clawColor}33`,
+                  cursor: 'pointer',
+                }
+              : {
+                  backgroundColor: '#1a1a2e',
+                  color: '#55556a',
+                  border: '1px solid #24243e',
+                  cursor: milestonesReady ? 'default' : 'not-allowed',
+                }
+          }
+        >
+          {clawIcon}
+          {clawLabel}
+        </button>
+
+        {/* Launch / Gantt toggle */}
+        <button
+          onClick={onLaunch}
+          disabled={!milestonesReady}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+          style={
+            milestonesReady
+              ? {
+                  background: showGantt
+                    ? 'transparent'
+                    : 'linear-gradient(135deg, #6c63ff, #4c45cc)',
+                  color: showGantt ? '#6c63ff' : '#fff',
+                  border: showGantt ? '1px solid #6c63ff' : 'none',
+                  cursor: 'pointer',
+                }
+              : {
+                  backgroundColor: '#1a1a2e',
+                  color: '#55556a',
+                  border: '1px solid #24243e',
+                  cursor: 'not-allowed',
+                }
+          }
+        >
+          <Zap size={14} />
+          {showGantt ? 'Back to Timeline' : 'Launch Agents'}
+        </button>
+      </div>
     </div>
   )
 }

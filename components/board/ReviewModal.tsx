@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { KanbanCard } from '@/lib/types'
-import { X, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
+import { XCircle, CheckCircle2, ExternalLink } from 'lucide-react'
 
 interface Props {
   card: KanbanCard
@@ -51,7 +51,7 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
               ;(e.currentTarget as HTMLButtonElement).style.color = '#55556a'
             }}
           >
-            <X size={16} />
+            <XCircle size={16} />
           </button>
         </div>
 
@@ -159,7 +159,7 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
                 style={{ backgroundColor: '#22c55e', color: '#fff', cursor: 'pointer' }}
               >
-                <CheckCircle size={14} />
+                <CheckCircle2 size={14} />
                 Approve
               </button>
             </>
