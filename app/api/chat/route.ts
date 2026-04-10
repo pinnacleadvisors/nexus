@@ -8,6 +8,7 @@ import {
   type SystemModelMessage,
   type LanguageModelUsage,
 } from 'ai'
+import { getPageContent, resolveNotionToken } from '@/lib/notion'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -203,20 +204,49 @@ async function callOpenClaw(
   }
 }
 
+// ── Notion RAG context injection ──────────────────────────────────────────────
+// If the user has linked a Notion page to their project, fetch its content and
+// inject it into the system prompt so the agent doesn't repeat prior research.
+async function buildNotionContext(req: NextRequest, notionPageId?: string): Promise<string> {
+  if (!notionPageId) return ''
+
+  const token = resolveNotionToken(req.cookies.get('oauth_token_notion')?.value)
+  if (!token) return ''
+
+  try {
+    const content = await getPageContent(token, notionPageId)
+    if (!content || content.length < 10) return ''
+    // Trim to stay within token budget (~2000 chars ≈ ~500 tokens)
+    const trimmed = content.slice(0, 2000)
+    return (
+      `\n\n---\n\n## Project Knowledge Base\n` +
+      `The following notes were previously recorded for this project. ` +
+      `Use them to avoid repeating research and build on prior work:\n\n` +
+      trimmed +
+      `\n\n---`
+    )
+  } catch { return '' }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const body = await req.json() as {
-    messages: UIMessage[]
-    advisorModel?: string
+    messages:       UIMessage[]
+    advisorModel?:  string
     executorModel?: string
+    notionPageId?:  string
   }
 
   const messages      = body.messages
   const advisorModel  = body.advisorModel  ?? 'claude-opus-4-6'
   const executorModel = body.executorModel ?? 'claude-sonnet-4-6'
 
+  // RAG: fetch Notion knowledge base for this project
+  const notionContext = await buildNotionContext(req, body.notionPageId)
+  const systemText    = notionContext ? SYSTEM_PROMPT_TEXT + notionContext : SYSTEM_PROMPT_TEXT
+
   // Apply sliding window + build cached system message
-  const { system, messages: windowedMessages } = applyMessageWindow(messages, SYSTEM_PROMPT_TEXT)
+  const { system, messages: windowedMessages } = applyMessageWindow(messages, systemText)
 
   // ── PRIMARY: OpenClaw (Claude Code CLI) ──────────────────────────────────
   const clawCfg = resolveClawConfig(req)

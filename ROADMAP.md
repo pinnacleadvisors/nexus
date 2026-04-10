@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-11
+> Last updated: 2026-04-12
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -41,6 +41,16 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | `supabase/migrations/002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
 
 > **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row above with ⬜, then run `npm run migrate`.
+
+---
+
+### 📓 Notion (Knowledge Base)
+
+- [ ] Connect Notion at `/tools/knowledge` — click "Connect Notion" (uses OAuth flow)
+- [ ] Optional: Set `NOTION_API_KEY` in Doppler — internal integration token (bypasses OAuth, for server-side agent writes)
+  - Create at https://www.notion.so/my-integrations → New integration → copy "Internal Integration Token"
+  - Share your target pages/databases with the integration in Notion
+- [ ] Link a Notion page to each Forge project at `/tools/knowledge` — agents will read + write to it
 
 ---
 
@@ -198,16 +208,16 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 6 — Knowledge Base / Notes (Not Started)
+## Phase 6 — Knowledge Base / Notes (Complete)
 
 | Status | Item |
 |--------|------|
-| ⬜ | Notion API integration — agents write research notes as pages |
-| ⬜ | Notion database as project knowledge base (linked across businesses) |
-| ⬜ | Each milestone completion appends to a shared Notion doc |
-| ⬜ | Research PDFs auto-uploaded to Notion / Google Drive |
-| ⬜ | Agent context window uses Notion docs to avoid repetition |
-| ⬜ | Alternative: self-hosted Obsidian vault synced via Obsidian Sync |
+| ✅ | Notion API integration — `lib/notion.ts` client; agents create pages, append blocks, query databases via OAuth token |
+| ✅ | Notion database as project knowledge base — `/tools/knowledge` UI; link any Notion page to a Forge project; KB entries stored per-project in localStorage |
+| ✅ | Each milestone completion appends to a shared Notion doc — board `handleApprove` fires `POST /api/notion/append` with milestone title, description, agent, timestamp, and asset bookmark |
+| ✅ | Research PDFs auto-uploaded to Notion / Google Drive — `POST /api/gdrive/upload` (type=pdf) fetches PDF from URL and uploads to Drive; `POST /api/notion` creates bookmark page |
+| ✅ | Agent context window uses Notion docs to avoid repetition — `GET /api/notion/search?pageId=` fetches page text; `/api/chat` injects it into system prompt before each reply (RAG) |
+| ✅ | Alternative: self-hosted Obsidian vault synced via Obsidian Sync — `/tools/knowledge` Obsidian tab with setup guide, Local REST API plugin config (URL + key saved to localStorage) |
 
 ---
 

@@ -181,7 +181,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
     [], // only once — parent re-keys this component when projectId changes
   )
 
-  // Custom transport that injects model config into every request body
+  // Custom transport that injects model config + Notion page ID into every request body
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -190,10 +190,19 @@ export default function ForgeSession({ projectId, projectName }: Props) {
           const body = JSON.parse((init?.body as string) ?? '{}')
           body.advisorModel  = modelConfigRef.current.advisorModel
           body.executorModel = modelConfigRef.current.executorModel
+          // Inject Notion knowledge-base page for RAG context
+          try {
+            const notionPageId =
+              localStorage.getItem(`knowledge:notion:${projectId}`) ??
+              localStorage.getItem('knowledge:notion:default') ??
+              undefined
+            if (notionPageId) body.notionPageId = notionPageId
+          } catch { /* localStorage unavailable */ }
           return globalThis.fetch(url, { ...init, body: JSON.stringify(body) })
         },
       }),
-    [], // created once; reads from ref dynamically
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [], // created once; reads from ref + localStorage dynamically
   )
 
   const { messages, sendMessage, status, stop, error } = useChat({ chat, transport })

@@ -317,4 +317,23 @@ export const TOOLS: Tool[] = [
     status: 'available',
     href: '/tools/claw',
   },
+  // Knowledge
+  {
+    id: 't14',
+    name: 'Notion',
+    description: 'Agent knowledge base — research notes, milestones, and assets stored as Notion pages. Injected into agent context to prevent repeated work.',
+    icon: 'BookOpen',
+    category: 'Automation',
+    status: 'available',
+    href: '/tools/knowledge',
+  },
+  {
+    id: 't15',
+    name: 'Knowledge Base',
+    description: 'Connect Notion, Google Drive, or a self-hosted Obsidian vault. Agents read prior research before each session and write completions back automatically.',
+    icon: 'BookMarked',
+    category: 'Automation',
+    status: 'available',
+    href: '/tools/knowledge',
+  },
 ]

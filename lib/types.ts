@@ -163,6 +163,17 @@ export interface ClawConfig {
   hookToken: string
 }
 
+// ── Knowledge Base ────────────────────────────────────────────────────────────
+export interface KnowledgeEntry {
+  id:        string
+  title:     string
+  source:    'notion' | 'gdrive' | 'obsidian'
+  url:       string
+  projectId?: string
+  createdAt: string
+  type:      'research' | 'milestone' | 'note' | 'asset'
+}
+
 // ── OpenClaw Skills ───────────────────────────────────────────────────────────
 export type SkillRisk = 'low' | 'medium' | 'high'
 export type SkillStatus = 'active' | 'requires_oauth' | 'requires_config' | 'disabled'
