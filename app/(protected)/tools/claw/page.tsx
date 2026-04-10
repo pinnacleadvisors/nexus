@@ -5,10 +5,17 @@ import Link from 'next/link'
 import {
   ArrowLeft, Cpu, CheckCircle2, XCircle, Loader2, ExternalLink,
   GitBranch, Mail, MessageSquare, FileText, Unlink,
-  Send, Bot, User,
+  Send, Bot, User, Code2, Gauge,
 } from 'lucide-react'
 import type { OAuthConnection } from '@/lib/types'
 import { OAUTH_PROVIDERS } from '@/lib/oauth-providers'
+
+// ── Tab nav ───────────────────────────────────────────────────────────────────
+const TABS = [
+  { label: 'Configure', href: '/tools/claw' },
+  { label: 'Status',    href: '/tools/claw/status' },
+  { label: 'Skills',    href: '/tools/claw/skills' },
+]
 
 // ── Icon map for OAuth providers ──────────────────────────────────────────────
 const PROVIDER_ICON: Record<string, React.ElementType> = {
@@ -18,6 +25,7 @@ const PROVIDER_ICON: Record<string, React.ElementType> = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 type TestStatus = 'idle' | 'loading' | 'success' | 'error'
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
+type CapData = { cap: number; used: number; remaining: number; resetAt: string }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ClawConfigPage() {
@@ -30,6 +38,7 @@ export default function ClawConfigPage() {
   const [testError, setTestError]     = useState('')
   const [connections, setConnections] = useState<OAuthConnection[]>([])
   const [oauthMsg, setOauthMsg]       = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [capData, setCapData]         = useState<CapData | null>(null)
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -37,6 +46,12 @@ export default function ClawConfigPage() {
   const [chatLoading, setChatLoading]   = useState(false)
   const [chatError, setChatError]       = useState('')
   const chatBottomRef                   = useRef<HTMLDivElement>(null)
+
+  // Code-task dispatch state
+  const [codeTask,       setCodeTask]       = useState('')
+  const [codeRepo,       setCodeRepo]       = useState('')
+  const [codeDispatch,   setCodeDispatch]   = useState<'idle' | 'loading' | 'ok' | 'err'>('idle')
+  const [codeDispatchErr, setCodeDispatchErr] = useState('')
 
   // Load config status from server (never receives the token)
   const loadConfig = useCallback(async () => {
@@ -54,13 +69,25 @@ export default function ClawConfigPage() {
   }, [])
 
   // Parse OAuth redirect messages from URL
+  const loadCap = useCallback(async () => {
+    try {
+      const res = await fetch('/api/claw')
+      if (res.ok) setCapData(await res.json() as CapData)
+    } catch {}
+  }, [])
+
   useEffect(() => {
     loadConfig()
     loadConnections()
+    loadCap()
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConfig, loadConnections, loadCap])
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const connected = params.get('oauth_connected')
-    const error = params.get('oauth_error')
+    const error     = params.get('oauth_error')
     if (connected) {
       setOauthMsg({ type: 'success', text: `Successfully connected ${connected}` })
       window.history.replaceState({}, '', window.location.pathname)
@@ -69,7 +96,8 @@ export default function ClawConfigPage() {
       setOauthMsg({ type: 'error', text: decodeURIComponent(error) })
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [loadConfig, loadConnections])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleSave() {
     if (!gatewayUrl.trim() || !hookToken.trim()) return
@@ -121,6 +149,47 @@ export default function ClawConfigPage() {
   async function handleOAuthDisconnect(providerId: string) {
     await fetch(`/api/oauth/disconnect?provider=${providerId}`, { method: 'DELETE' })
     setConnections(prev => prev.filter(c => c.provider !== providerId))
+  }
+
+  async function handleCodeDispatch(e: React.FormEvent) {
+    e.preventDefault()
+    const task = codeTask.trim()
+    if (!task || codeDispatch === 'loading') return
+    setCodeDispatch('loading')
+    setCodeDispatchErr('')
+    try {
+      const res = await fetch('/api/claw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'code',
+          payload: {
+            task,
+            repo:      codeRepo.trim() || undefined,
+            wakeMode:  'now',
+            toolchain: 'claude-code-cli',
+          },
+        }),
+      })
+      const data = await res.json() as { ok?: boolean; error?: string; remaining?: number }
+      if (res.ok) {
+        setCodeDispatch('ok')
+        setCodeTask('')
+        setCodeRepo('')
+        if (data.remaining !== undefined) {
+          setCapData(prev => prev ? { ...prev, remaining: data.remaining!, used: prev.cap - data.remaining! } : prev)
+        }
+        setTimeout(() => setCodeDispatch('idle'), 4000)
+      } else {
+        setCodeDispatch('err')
+        setCodeDispatchErr(data.error ?? `HTTP ${res.status}`)
+        setTimeout(() => setCodeDispatch('idle'), 5000)
+      }
+    } catch {
+      setCodeDispatch('err')
+      setCodeDispatchErr('Network error')
+      setTimeout(() => setCodeDispatch('idle'), 5000)
+    }
   }
 
   // Auto-scroll chat to latest message
@@ -197,16 +266,57 @@ export default function ClawConfigPage() {
         </div>
       </div>
 
-      {/* Status badge */}
-      {configured && (
-        <div
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full mb-6"
-          style={{ backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e' }}
-        >
-          <CheckCircle2 size={11} />
-          Connected — {savedUrl}
-        </div>
-      )}
+      {/* Tab nav */}
+      <div className="flex gap-1 my-5 p-1 rounded-xl" style={{ backgroundColor: '#0d0d14', border: '1px solid #1a1a2e' }}>
+        {TABS.map(tab => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className="flex-1 text-center py-2 text-sm rounded-lg no-underline font-medium transition-all"
+            style={
+              tab.href === '/tools/claw'
+                ? { backgroundColor: '#1a1a2e', color: '#e8e8f0' }
+                : { color: '#55556a' }
+            }
+            onMouseEnter={e => {
+              if (tab.href !== '/tools/claw')
+                (e.currentTarget as HTMLAnchorElement).style.color = '#9090b0'
+            }}
+            onMouseLeave={e => {
+              if (tab.href !== '/tools/claw')
+                (e.currentTarget as HTMLAnchorElement).style.color = '#55556a'
+            }}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* Connection + dispatch cap status row */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        {configured && (
+          <div
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full"
+            style={{ backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e' }}
+          >
+            <CheckCircle2 size={11} />
+            Connected — {savedUrl}
+          </div>
+        )}
+        {capData && (
+          <div
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full"
+            style={{
+              backgroundColor: capData.remaining < 10 ? 'rgba(245,158,11,0.1)' : '#1a1a2e',
+              border: `1px solid ${capData.remaining < 10 ? 'rgba(245,158,11,0.25)' : '#24243e'}`,
+              color: capData.remaining < 10 ? '#f59e0b' : '#9090b0',
+            }}
+          >
+            <Gauge size={11} />
+            {capData.used}/{capData.cap} dispatches today
+          </div>
+        )}
+      </div>
 
       {/* OAuth notification */}
       {oauthMsg && (
@@ -551,6 +661,112 @@ export default function ClawConfigPage() {
             {chatLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             {chatLoading ? 'Sending…' : 'Send'}
           </button>
+        </form>
+      </section>
+
+      {/* ── Code Task Dispatch ────────────────────────────────────────────────── */}
+      <section
+        className="rounded-xl mt-6"
+        style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
+      >
+        <div
+          className="flex items-center gap-2 px-5 py-3.5"
+          style={{ borderBottom: '1px solid #24243e' }}
+        >
+          <Code2 size={15} style={{ color: '#6c63ff' }} />
+          <h2 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
+            Code Task (Claude Code CLI)
+          </h2>
+          <span
+            className="ml-auto text-xs px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: '#1a1a2e', color: '#9090b0', border: '1px solid #24243e' }}
+          >
+            POST /hooks/code
+          </span>
+        </div>
+
+        <form onSubmit={handleCodeDispatch} className="p-5 space-y-3">
+          <p className="text-xs" style={{ color: '#9090b0' }}>
+            Dispatch a code-generation task to your OpenClaw agent. It will use Claude Code CLI to
+            write code, run tests, and open a pull request on the specified repository.
+          </p>
+
+          {/* Task description */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>Task description</label>
+            <textarea
+              value={codeTask}
+              onChange={e => setCodeTask(e.target.value)}
+              placeholder="e.g. Add a contact form to the landing page with email validation and Resend integration"
+              rows={3}
+              disabled={!configured || codeDispatch === 'loading'}
+              className="w-full rounded-lg px-3 py-2.5 text-sm resize-none outline-none"
+              style={{
+                backgroundColor: '#0d0d14',
+                border: '1px solid #24243e',
+                color: '#e8e8f0',
+                opacity: !configured ? 0.5 : 1,
+              }}
+              onFocus={e => { if (configured) (e.currentTarget as HTMLTextAreaElement).style.borderColor = '#6c63ff' }}
+              onBlur={e => ((e.currentTarget as HTMLTextAreaElement).style.borderColor = '#24243e')}
+            />
+          </div>
+
+          {/* Repo URL (optional) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: '#9090b0' }}>
+              Repository URL <span style={{ color: '#55556a' }}>(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={codeRepo}
+              onChange={e => setCodeRepo(e.target.value)}
+              placeholder="https://github.com/org/repo"
+              disabled={!configured || codeDispatch === 'loading'}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{
+                backgroundColor: '#0d0d14',
+                border: '1px solid #24243e',
+                color: '#e8e8f0',
+                opacity: !configured ? 0.5 : 1,
+              }}
+              onFocus={e => { if (configured) (e.currentTarget as HTMLInputElement).style.borderColor = '#6c63ff' }}
+              onBlur={e => ((e.currentTarget as HTMLInputElement).style.borderColor = '#24243e')}
+            />
+          </div>
+
+          {/* Status / submit */}
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="submit"
+              disabled={!codeTask.trim() || !configured || codeDispatch === 'loading'}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
+              style={
+                codeTask.trim() && configured && codeDispatch !== 'loading'
+                  ? { background: 'linear-gradient(135deg, #6c63ff, #4c45cc)', color: '#fff', cursor: 'pointer' }
+                  : { backgroundColor: '#1a1a2e', color: '#55556a', border: '1px solid #24243e', cursor: 'not-allowed' }
+              }
+            >
+              {codeDispatch === 'loading'
+                ? <><Loader2 size={14} className="animate-spin" /> Dispatching…</>
+                : <><Code2 size={14} /> Dispatch Code Task</>
+              }
+            </button>
+
+            {codeDispatch === 'ok' && (
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
+                <CheckCircle2 size={13} /> Task dispatched to Claude Code CLI
+              </span>
+            )}
+            {codeDispatch === 'err' && (
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: '#ef4444' }}>
+                <XCircle size={13} /> {codeDispatchErr || 'Dispatch failed'}
+              </span>
+            )}
+            {!configured && (
+              <span className="text-xs" style={{ color: '#55556a' }}>Configure gateway first</span>
+            )}
+          </div>
         </form>
       </section>
     </div>

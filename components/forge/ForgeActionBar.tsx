@@ -1,10 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle, FileDown } from 'lucide-react'
+import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle, FileDown, GitBranch } from 'lucide-react'
 import type { Milestone } from '@/lib/types'
 
 type DispatchStatus = 'idle' | 'loading' | 'success' | 'error'
+
+// Per-phase dispatch result shown in tooltip
+interface PhaseResult { phase: number; ok: boolean }
 
 interface Props {
   agentCount: number
@@ -13,6 +16,8 @@ interface Props {
   milestonesReady: boolean
   showGantt: boolean
   milestones?: Milestone[]
+  projectName?: string
+  projectId?: string
   onExportPdf?: () => void
 }
 
@@ -23,72 +28,109 @@ export default function ForgeActionBar({
   milestonesReady,
   showGantt,
   milestones = [],
+  projectName = 'Nexus Project',
+  projectId,
   onExportPdf,
 }: Props) {
   const estimatedCost = agentCount * 500
-  const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>('idle')
+  const [dispatchStatus,  setDispatchStatus]  = useState<DispatchStatus>('idle')
+  const [phaseResults,    setPhaseResults]    = useState<PhaseResult[]>([])
+  const [multiAgent,      setMultiAgent]      = useState(false) // toggle single vs multi
+
+  // Group milestones by phase
+  function groupByPhase(ms: Milestone[]) {
+    const map = new Map<number, Milestone[]>()
+    for (const m of ms) {
+      if (!map.has(m.phase)) map.set(m.phase, [])
+      map.get(m.phase)!.push(m)
+    }
+    return [...map.entries()].map(([phase, items]) => ({ phase, milestones: items }))
+  }
 
   async function handleDispatch() {
     setDispatchStatus('loading')
-
-    const milestoneList = milestones
-      .map(m => `  • [Phase ${m.phase}] ${m.title}: ${m.description}${m.targetDate ? ` (target: ${m.targetDate})` : ''}`)
-      .join('\n')
-
-    const message = `You have been dispatched a new business project from Nexus.\n\nProject milestones:\n${milestoneList}\n\nPlease begin executing Phase 1 milestones. Use your available skills to complete each task autonomously and report progress when done.`
+    setPhaseResults([])
 
     try {
-      const res = await fetch('/api/claw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'agent',
-          payload: {
-            message,
-            name: 'Nexus Forge',
-            wakeMode: 'now',
-          },
-        }),
-      })
+      if (multiAgent && milestones.length > 0) {
+        // ── Multi-agent: one session per phase ─────────────────────────────
+        const phases = groupByPhase(milestones).map(p => ({
+          phase:       p.phase,
+          milestones:  p.milestones.map(m => ({ title: m.title, description: m.description, targetDate: m.targetDate })),
+          projectName,
+          projectId,
+        }))
 
-      if (res.status === 401) {
-        // Not configured — send user to the config page
-        window.location.href = '/tools/claw'
-        return
-      }
+        const res = await fetch('/api/claw', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'dispatch_phases', payload: { phases } }),
+        })
 
-      if (res.ok) {
-        setDispatchStatus('success')
-        setTimeout(() => setDispatchStatus('idle'), 4000)
+        if (res.status === 401) { window.location.href = '/tools/claw'; return }
+
+        if (res.ok) {
+          const data = await res.json() as { phases?: Array<{ phase: number; ok: boolean }> }
+          const results: PhaseResult[] = (data.phases ?? []).map(p => ({ phase: p.phase, ok: p.ok }))
+          setPhaseResults(results)
+          setDispatchStatus(results.every(r => r.ok) ? 'success' : 'error')
+        } else {
+          setDispatchStatus('error')
+        }
       } else {
-        setDispatchStatus('error')
-        setTimeout(() => setDispatchStatus('idle'), 4000)
+        // ── Single agent: all milestones in one message ────────────────────
+        const milestoneList = milestones
+          .map(m => `  • [Phase ${m.phase}] ${m.title}: ${m.description}${m.targetDate ? ` (target: ${m.targetDate})` : ''}`)
+          .join('\n')
+
+        const message = [
+          `You have been dispatched a new business project from Nexus.`,
+          `Project: ${projectName}`,
+          ``,
+          `Milestones:`,
+          milestoneList,
+          ``,
+          `Begin executing Phase 1 milestones. Use your available skills autonomously and report progress when tasks are done.`,
+        ].join('\n')
+
+        const res = await fetch('/api/claw', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'agent', payload: { message, name: 'Nexus Forge', wakeMode: 'now' } }),
+        })
+
+        if (res.status === 401) { window.location.href = '/tools/claw'; return }
+        setDispatchStatus(res.ok ? 'success' : 'error')
       }
+
+      setTimeout(() => { setDispatchStatus('idle'); setPhaseResults([]) }, 5000)
     } catch {
       setDispatchStatus('error')
-      setTimeout(() => setDispatchStatus('idle'), 4000)
+      setTimeout(() => { setDispatchStatus('idle'); setPhaseResults([]) }, 5000)
     }
   }
 
+  const uniquePhases = [...new Set(milestones.map(m => m.phase))].length
+
   const clawLabel = {
-    idle: 'Dispatch to OpenClaw',
-    loading: 'Dispatching…',
-    success: 'Dispatched!',
-    error: 'Dispatch failed',
+    idle:    multiAgent ? `Dispatch ${uniquePhases} Agents` : 'Dispatch to OpenClaw',
+    loading: multiAgent ? 'Dispatching agents…' : 'Dispatching…',
+    success: multiAgent ? 'Agents dispatched!' : 'Dispatched!',
+    error:   'Dispatch failed',
   }[dispatchStatus]
 
   const clawIcon = {
-    idle: null,
+    idle:    multiAgent ? <GitBranch size={13} /> : null,
     loading: <Loader2 size={13} className="animate-spin" />,
     success: <CheckCircle2 size={13} />,
-    error: <AlertCircle size={13} />,
+    error:   <AlertCircle size={13} />,
   }[dispatchStatus]
 
   const clawColor = {
-    idle: '#6c63ff',
+    idle:    '#6c63ff',
     loading: '#55556a',
     success: '#22c55e',
-    error: '#ef4444',
+    error:   '#ef4444',
   }[dispatchStatus]
 
   return (
@@ -178,30 +220,58 @@ export default function ForgeActionBar({
           </button>
         )}
 
+        {/* Multi-agent toggle */}
+        {milestonesReady && uniquePhases > 1 && (
+          <button
+            onClick={() => setMultiAgent(v => !v)}
+            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg"
+            style={
+              multiAgent
+                ? { backgroundColor: 'rgba(108,99,255,0.15)', color: '#6c63ff', border: '1px solid rgba(108,99,255,0.3)', cursor: 'pointer' }
+                : { backgroundColor: '#12121e', color: '#55556a', border: '1px solid #24243e', cursor: 'pointer' }
+            }
+            title={multiAgent ? 'Switch to single-agent dispatch' : `Switch to multi-agent (${uniquePhases} phases)`}
+          >
+            <GitBranch size={11} />
+            {multiAgent ? 'Multi' : 'Single'}
+          </button>
+        )}
+
         {/* Dispatch to OpenClaw */}
-        <button
-          onClick={handleDispatch}
-          disabled={!milestonesReady || dispatchStatus === 'loading'}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
-          style={
-            milestonesReady && dispatchStatus !== 'loading'
-              ? {
-                  backgroundColor: '#1a1a2e',
-                  color: clawColor,
-                  border: `1px solid ${clawColor}33`,
-                  cursor: 'pointer',
-                }
-              : {
-                  backgroundColor: '#1a1a2e',
-                  color: '#55556a',
-                  border: '1px solid #24243e',
-                  cursor: milestonesReady ? 'default' : 'not-allowed',
-                }
-          }
-        >
-          {clawIcon}
-          {clawLabel}
-        </button>
+        <div className="relative">
+          <button
+            onClick={handleDispatch}
+            disabled={!milestonesReady || dispatchStatus === 'loading'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={
+              milestonesReady && dispatchStatus !== 'loading'
+                ? { backgroundColor: '#1a1a2e', color: clawColor, border: `1px solid ${clawColor}33`, cursor: 'pointer' }
+                : { backgroundColor: '#1a1a2e', color: '#55556a', border: '1px solid #24243e', cursor: milestonesReady ? 'default' : 'not-allowed' }
+            }
+          >
+            {clawIcon}
+            {clawLabel}
+          </button>
+
+          {/* Per-phase results tooltip */}
+          {phaseResults.length > 0 && (
+            <div
+              className="absolute bottom-full mb-2 right-0 rounded-xl p-3 space-y-1.5 z-50 w-44"
+              style={{ backgroundColor: '#12121e', border: '1px solid #24243e', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+            >
+              <p className="text-xs font-semibold mb-2" style={{ color: '#9090b0' }}>Agent dispatch</p>
+              {phaseResults.map(r => (
+                <div key={r.phase} className="flex items-center justify-between text-xs">
+                  <span style={{ color: '#9090b0' }}>Phase {r.phase}</span>
+                  {r.ok
+                    ? <span className="flex items-center gap-1" style={{ color: '#22c55e' }}><CheckCircle2 size={11} /> Sent</span>
+                    : <span className="flex items-center gap-1" style={{ color: '#ef4444' }}><AlertCircle size={11} /> Failed</span>
+                  }
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Launch / Gantt toggle */}
         <button

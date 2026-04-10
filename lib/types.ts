@@ -163,6 +163,53 @@ export interface ClawConfig {
   hookToken: string
 }
 
+// ── OpenClaw Skills ───────────────────────────────────────────────────────────
+export type SkillRisk = 'low' | 'medium' | 'high'
+export type SkillStatus = 'active' | 'requires_oauth' | 'requires_config' | 'disabled'
+
+export interface ClawSkill {
+  id: string
+  name: string
+  description: string
+  /** Permission scope, e.g. 'write:github', 'read:web' */
+  scope: string
+  risk: SkillRisk
+  status: SkillStatus
+  /** OAuth provider required (if status === 'requires_oauth') */
+  oauthProvider?: string
+  category: 'research' | 'code' | 'content' | 'communication' | 'finance' | 'data'
+}
+
+// ── OpenClaw Events & Sessions ────────────────────────────────────────────────
+export type ClawEventType = 'task_started' | 'task_completed' | 'asset_created' | 'status_update' | 'error'
+
+export interface ClawEvent {
+  id: string
+  type: ClawEventType
+  sessionId: string
+  timestamp: string
+  payload: {
+    title?: string
+    description?: string
+    assetUrl?: string
+    agentName?: string
+    projectId?: string
+    milestoneId?: string
+    error?: string
+    [key: string]: unknown
+  }
+}
+
+export interface ClawSession {
+  id: string
+  name: string
+  status: 'idle' | 'running' | 'error' | 'completed'
+  currentTask?: string
+  startedAt?: string
+  lastEventAt?: string
+  phase?: number
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
 

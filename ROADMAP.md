@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-10
+> Last updated: 2026-04-11
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -13,12 +13,15 @@
 
 ---
 
-## Manual Setup Checklist
+## Manual Steps
 
-> These are one-time steps that require action in a browser or terminal.
-> Tick each box once done — Claude tracks which SQL migrations have been applied automatically via `schema_migrations` in your database, but everything else here is manual.
+> One-time tasks that require action in a browser, terminal, or third-party dashboard.
+> Claude tracks SQL migrations automatically via `schema_migrations`; everything else here is manual.
+> Tick each box when done.
 
-### Supabase (Database)
+---
+
+### ☁️ Supabase (Database)
 
 - [ ] Create a Supabase project at https://supabase.com/dashboard
 - [ ] Add `NEXT_PUBLIC_SUPABASE_URL` to Doppler — Project Settings → API → Project URL
@@ -30,44 +33,76 @@
 
 #### SQL Migrations
 
-Tracked automatically — `npm run migrate` records each applied file in the `schema_migrations` table so nothing runs twice. Update the ✅/⬜ below after each successful run.
+Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful run.
 
 | File | Description | Applied |
 |------|-------------|---------|
 | `supabase/migrations/001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds | ⬜ |
 | `supabase/migrations/002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
 
-> **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row to this table with ⬜, then run `npm run migrate`. Claude will do this automatically when generating new SQL.
+> **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row above with ⬜, then run `npm run migrate`.
 
 ---
 
-### Stripe (Payments)
+### 🤖 OpenClaw / MyClaw (AI Agent)
+
+- [ ] Configure gateway URL + hook token at `/tools/claw` in the Nexus dashboard
+- [ ] Set `OPENCLAW_GATEWAY_URL` in Doppler — your MyClaw instance base URL (e.g. `https://xyz.myclaw.ai`)
+- [ ] Set `OPENCLAW_BEARER_TOKEN` in Doppler — your bearer token (overrides cookie-based config when set)
+- [ ] Register the Nexus webhook receiver in your OpenClaw / MyClaw config:
+  - URL: `https://<your-vercel-domain>/api/webhooks/claw`
+  - Events to enable: `task_completed`, `asset_created`, `status_update`
+- [ ] Audit skill permissions at `/tools/claw/skills` — enable only what you need
+
+---
+
+### 🔌 OAuth Apps (platform access for agents)
+
+- [ ] **Google** — https://console.cloud.google.com → APIs & Services → Credentials → Create OAuth 2.0 Client ID
+  - Redirect URI: `https://<your-vercel-domain>/api/oauth/google/callback`
+  - Scopes: `drive.file`, `docs`, `spreadsheets`
+  - Add `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` to Doppler
+- [ ] **GitHub** — https://github.com/settings/developers → New OAuth App
+  - Redirect URI: `https://<your-vercel-domain>/api/oauth/github/callback`
+  - Add `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` to Doppler
+- [ ] **Slack** — https://api.slack.com/apps → Create New App → From scratch
+  - Redirect URI: `https://<your-vercel-domain>/api/oauth/slack/callback`
+  - Add `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` to Doppler
+- [ ] **Notion** — https://www.notion.so/my-integrations → New integration
+  - Redirect URI: `https://<your-vercel-domain>/api/oauth/notion/callback`
+  - Add `NOTION_CLIENT_ID` + `NOTION_CLIENT_SECRET` to Doppler
+
+---
+
+### 💳 Stripe (Payments)
 
 - [ ] Add `STRIPE_WEBHOOK_SECRET` to Doppler — Stripe Dashboard → Developers → Webhooks → endpoint secret
 - [ ] Register webhook endpoint in Stripe Dashboard:
   - URL: `https://<your-vercel-domain>/api/webhooks/stripe`
-  - Events to subscribe: `payment_intent.succeeded`, `invoice.payment_succeeded`
+  - Events: `payment_intent.succeeded`, `invoice.payment_succeeded`
 
 ---
 
-### Sentry (Error Tracking)
+### 📧 Resend (Email Alerts)
+
+- [ ] Add `RESEND_API_KEY` to Doppler — resend.com → API Keys
+- [ ] Verify your sending domain in the Resend dashboard
+- [ ] Set `ALERT_FROM_EMAIL` in Doppler — verified sender address (e.g. `alerts@yourdomain.com`)
+
+---
+
+### 📊 Sentry (Error Tracking)
 
 - [ ] Run `npm install @sentry/nextjs`
-- [ ] Run `npx @sentry/wizard@latest -i nextjs` (generates config files automatically)
+- [ ] Run `npx @sentry/wizard@latest -i nextjs` (generates config files)
 - [ ] Add `SENTRY_DSN` to Doppler — Sentry project → Settings → Client Keys
 
 ---
 
-### Resend (Email Alerts)
+### 💰 Cost & Rate Caps
 
-- [ ] Add `RESEND_API_KEY` to Doppler — resend.com → API Keys
-- [ ] Verify your sending domain in the Resend dashboard
-
----
-
-### OpenClaw / MyClaw (AI Agent)
-
-- [ ] Configure gateway URL + hook token at `/tools/claw` in the Nexus dashboard
+- [ ] Set `CLAW_DAILY_DISPATCH_CAP` in Doppler — max Claw agent dispatches per day (default: `100`)
+- [ ] Set `COST_ALERT_PER_RUN_USD` in Doppler — alert threshold per AI run (default: `0.50`)
 
 ---
 
@@ -141,7 +176,7 @@ Tracked automatically — `npm run migrate` records each applied file in the `sc
 
 ---
 
-## Phase 5 — OpenClaw / MyClaw Integration (In Progress)
+## Phase 5 — OpenClaw / MyClaw Integration (Complete)
 
 | Status | Item |
 |--------|------|
@@ -153,13 +188,13 @@ Tracked automatically — `npm run migrate` records each applied file in the `sc
 | 🔧 | OAuth token storage — currently uses cookies, move to encrypted DB |
 | 🔒 | Security audit on OAuth proxy and token handling |
 | ✅ | `/api/chat` uses OpenClaw (Claude Code CLI) as primary AI, `ANTHROPIC_API_KEY` as fallback |
-| ⬜ | Connect Claw to Claude Code CLI (Command) for code generation tasks |
-| ⬜ | Skill registry — list and audit each OpenClaw skill with permission scope |
-| ⬜ | Claw webhook receiver — agent posts task completions back to Nexus |
-| ⬜ | Claw status page — live view of what the agent is currently doing |
-| ⬜ | Multi-agent parallelism — dispatch separate Claw instances per phase |
-| ⬜ | Rate limiting + cost cap on Claw API proxy |
-| ⬜ | Claw produces assets → auto-creates Kanban card in Review column |
+| ✅ | Connect Claw to Claude Code CLI — `code` action dispatches to `/hooks/code`; UI at `/tools/claw` → Code Task section |
+| ✅ | Skill registry — `/tools/claw/skills` lists all skills with scope, risk level, enable/disable audit per browser |
+| ✅ | Claw webhook receiver — `POST /api/webhooks/claw`; HMAC-verified; `task_completed`/`asset_created` auto-create Kanban cards |
+| ✅ | Claw status page — `/tools/claw/status`; live session list, current task, auto-refresh every 8 s |
+| ✅ | Multi-agent parallelism — `dispatch_phases` action; Forge groups milestones by phase, dispatches one session per phase in parallel |
+| ✅ | Rate limiting + cost cap — per-IP rate limit (30 req/min) + daily dispatch cap (`CLAW_DAILY_DISPATCH_CAP`, default 100); `GET /api/claw` returns usage |
+| ✅ | Claw produces assets → auto-creates Kanban card in Review column — webhook receiver handles `asset_created` events |
 
 ---
 
@@ -261,7 +296,7 @@ These are the tasks agents should be able to execute autonomously:
 | AI (advisor) | Claude Opus 4.6 (strategic reasoning) | ✅ Wired up |
 | AI (executioner) | Claude Sonnet 4.6 (default, configurable) | ✅ Wired up |
 | AI (fallback) | OpenAI GPT-4o | ⬜ Configured, not wired |
-| Agent orchestration | OpenClaw / MyClaw | 🔧 Partial |
+| Agent orchestration | OpenClaw / MyClaw | ✅ Integrated |
 | Database | Supabase (Postgres + Realtime) | ⬜ Not set up |
 | ORM | Prisma | ⬜ Not set up |
 | Storage | Supabase Storage / Cloudflare R2 | ⬜ Not set up |

@@ -399,6 +399,8 @@ export default function ForgeSession({ projectId, projectName }: Props) {
           milestonesReady={milestones.length > 0}
           showGantt={showGantt}
           milestones={milestones}
+          projectName={projectName}
+          projectId={projectId}
           onExportPdf={() => exportBusinessPlanPdf(projectName, milestones, agentCount)}
         />
       </div>
