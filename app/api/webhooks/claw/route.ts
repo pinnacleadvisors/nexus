@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import type { ClawEvent } from '@/lib/types'
+import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
@@ -100,6 +101,18 @@ export async function POST(req: NextRequest) {
         })
     }
   }
+
+  audit(req, {
+    action: `claw.${type}`,
+    resource: 'agent',
+    resourceId: String(payload.agentName ?? event.sessionId ?? ''),
+    metadata: {
+      title:       payload.title,
+      projectId:   payload.projectId,
+      milestoneId: payload.milestoneId,
+      assetUrl:    payload.assetUrl,
+    },
+  })
 
   return NextResponse.json({ ok: true, received: type })
 }

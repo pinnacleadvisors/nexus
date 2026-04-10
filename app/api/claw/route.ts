@@ -1,26 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
 const CONFIG_COOKIE = 'nexus_claw_cfg'
 const TIMEOUT_MS    = 20_000
-
-// ── In-memory rate limiter (per-IP, resets on cold start) ────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT      = 30
-const RATE_WINDOW_MS  = 60_000
-
-function checkRateLimit(ip: string): boolean {
-  const now   = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
 
 // ── Daily dispatch cap (agent cost control) ───────────────────────────────────
 const dispatchCounter = { count: 0, resetAt: Date.now() + 86_400_000 }
@@ -101,14 +86,9 @@ async function callGateway(
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Per-IP rate limit
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json(
-      { error: 'Too many requests — try again in a minute.' },
-      { status: 429, headers: { 'Retry-After': '60' } },
-    )
-  }
+  // Per-IP rate limit (Upstash when configured, in-memory fallback)
+  const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'claw' })
+  if (!rl.success) return rateLimitResponse(rl)
 
   // Read config
   const cfg = resolveConfig(req)
@@ -171,6 +151,11 @@ export async function POST(req: NextRequest) {
       }),
     )
 
+    audit(req, {
+      action: 'claw.dispatch_phases',
+      resource: 'agent',
+      metadata: { phaseCount: phases.length, projectName: phases[0]?.projectName },
+    })
     return NextResponse.json({
       ok: true,
       phases: results.map((r, i) =>

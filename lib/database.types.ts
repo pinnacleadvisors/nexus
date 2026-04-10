@@ -232,6 +232,37 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          id: string
+          user_id: string | null
+          action: string
+          resource: string
+          resource_id: string | null
+          metadata: Json | null
+          ip: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          action: string
+          resource: string
+          resource_id?: string | null
+          metadata?: Json | null
+          ip?: string | null
+          created_at?: string
+        }
+        Update: {
+          user_id?: string | null
+          action?: string
+          resource?: string
+          resource_id?: string | null
+          metadata?: Json | null
+          ip?: string | null
+        }
+        Relationships: []
+      }
       alert_thresholds: {
         Row: {
           id: string

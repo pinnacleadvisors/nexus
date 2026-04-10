@@ -11,12 +11,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createGoogleDoc, uploadPdfFromUrl, uploadFile } from '@/lib/gdrive'
+import { decryptIfNeeded } from '@/lib/crypto'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
-  const token = req.cookies.get('oauth_token_google')?.value
+  const rawToken = req.cookies.get('oauth_token_google')?.value
     ?? process.env.GOOGLE_ACCESS_TOKEN
+  const token = rawToken ? decryptIfNeeded(rawToken) : undefined
 
   if (!token) return NextResponse.json({ error: 'Google Drive not connected' }, { status: 401 })
 

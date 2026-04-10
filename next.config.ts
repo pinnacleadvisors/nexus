@@ -1,7 +1,65 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
+
+/**
+ * Content Security Policy — restricts what resources the browser can load.
+ * Adjusted for Next.js (requires 'unsafe-inline' for styles and dev HMR).
+ */
+const CSP = [
+  "default-src 'self'",
+  // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev",
+  // Styles: self + inline (Tailwind CSS utility classes are inline)
+  "style-src 'self' 'unsafe-inline'",
+  // Images: self + data URIs + Clerk avatar CDN + common asset CDNs
+  "img-src 'self' data: blob: https://img.clerk.com https://*.supabase.co",
+  // Fonts: self
+  "font-src 'self' data:",
+  // API + WebSocket connections
+  [
+    "connect-src 'self'",
+    'https://api.anthropic.com',
+    'https://*.supabase.co',
+    'wss://*.supabase.co',
+    'https://api.openai.com',
+    'https://*.clerk.com',
+    'https://*.clerk.accounts.dev',
+    'https://inngest.com',
+    'https://api.us-1.inngest.com',
+    'https://*.upstash.io',
+    'https://api.notion.com',
+    process.env.NEXT_PUBLIC_APP_URL ?? '',
+  ]
+    .filter(Boolean)
+    .join(' '),
+  // Frames: Clerk hosted pages only
+  "frame-src 'self' https://accounts.clerk.dev https://*.clerk.accounts.dev",
+  // Workers: none
+  "worker-src 'self' blob:",
+  // Form actions: self only
+  "form-action 'self'",
+  // Base URI: self only (prevent base-tag injection)
+  "base-uri 'self'",
+].join('; ')
+
+const securityHeaders = [
+  { key: 'Content-Security-Policy',     value: CSP },
+  { key: 'X-Frame-Options',             value: 'SAMEORIGIN' },
+  { key: 'X-Content-Type-Options',      value: 'nosniff' },
+  { key: 'Referrer-Policy',             value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy',          value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
+  { key: 'Strict-Transport-Security',   value: 'max-age=63072000; includeSubDomains; preload' },
+  { key: 'Cross-Origin-Opener-Policy',  value: 'same-origin-allow-popups' },
+]
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ]
+  },
+}
 
-export default nextConfig;
+export default nextConfig

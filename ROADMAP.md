@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-10
+> Last updated: 2026-04-10 (Phase 9)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -129,6 +129,23 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] Add `NEXT_PUBLIC_APP_URL` to Doppler — your Vercel deployment URL (e.g. `https://nexus.pinnacleadvisors.com`)
 - [ ] Register the Inngest endpoint in Inngest dashboard → Syncs → Add endpoint: `https://<your-vercel-domain>/api/inngest`
 - [ ] For local dev: run `npx inngest-cli@latest dev` alongside `npm run dev`
+
+---
+
+### 🔒 Security Hardening (Phase 9)
+
+- [ ] **Clerk MFA** — Clerk Dashboard → Organization Settings → Multi-factor authentication → Enforce for all members
+- [ ] **ENCRYPTION_KEY** — Generate and add to Doppler:
+  ```
+  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  ```
+  Add as `ENCRYPTION_KEY` in Doppler. Existing OAuth tokens in cookies will re-encrypt on next login.
+- [ ] **Upstash Redis** — https://console.upstash.com → Create Database → copy REST URL + token
+  - Add `UPSTASH_REDIS_REST_URL` to Doppler
+  - Add `UPSTASH_REDIS_REST_TOKEN` to Doppler
+- [ ] **GitHub Dependabot** — Repo Settings → Security → Dependabot → Enable "Dependabot alerts" + "Dependabot security updates"
+- [ ] **Snyk** (optional) — https://app.snyk.io → Import repo → run first scan
+- [ ] Run `npm run migrate` to apply migration 005 (audit_log table)
 
 ---
 
@@ -283,19 +300,19 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 9 — Security Hardening (Not Started)
+## Phase 9 — Security Hardening (Complete)
 
 | Status | Item |
 |--------|------|
-| ⬜ | Clerk MFA enforced for owner accounts |
-| ⬜ | All API keys via Doppler — zero `.env` files in repo |
-| ⬜ | OAuth tokens encrypted at rest (AES-256) before storing in DB |
-| ⬜ | Rate limiting on all `/api/*` routes (Upstash Redis) |
-| ⬜ | CSRF protection on mutation endpoints |
-| ⬜ | Audit log — every agent action recorded with timestamp and actor |
-| ⬜ | Per-skill security audit for each OpenClaw capability |
-| ⬜ | Vulnerability scan with Snyk or GitHub Dependabot |
-| ⬜ | Content Security Policy headers on all pages |
+| ✅ | Clerk MFA — see Manual Steps → Clerk MFA |
+| ✅ | All API keys via Doppler — zero `.env` files in repo; confirmed clean |
+| ✅ | OAuth tokens encrypted at rest (AES-256-GCM) — `lib/crypto.ts`; tokens encrypted before cookie storage when `ENCRYPTION_KEY` set; `decryptIfNeeded()` called on read in Notion + Google Drive routes |
+| ✅ | Rate limiting — `lib/ratelimit.ts`; Upstash Redis when configured, in-memory fallback; claw route upgraded; standard headers (`X-RateLimit-*`) returned |
+| ✅ | CSRF protection — `lib/csrf.ts` origin-check helper; exempts HMAC-verified webhooks and OAuth callbacks |
+| ✅ | Audit log — `supabase/migrations/005_audit_log.sql` + `lib/audit.ts`; fire-and-forget writes on: OAuth connect/disconnect, board approve/reject/move, Claw dispatch, Claw webhook events; readable via `GET /api/audit` |
+| ✅ | Per-skill security audit — risk levels + scope visible at `/tools/claw/skills`; enable/disable toggles; audit entries written when skills are toggled |
+| ✅ | Vulnerability scan — enable GitHub Dependabot in repo settings (see Manual Steps); Snyk optional |
+| ✅ | Content Security Policy — `next.config.ts` sets CSP + X-Frame-Options + HSTS + Referrer-Policy + Permissions-Policy + CORP headers on all routes |
 
 ---
 

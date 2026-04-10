@@ -300,7 +300,17 @@ export async function createKnowledgeDatabase(
   } catch { return null }
 }
 
-/** Resolve a token from env (NOTION_API_KEY) or an optional cookie value */
+/** Resolve a token from env (NOTION_API_KEY) or an optional cookie value.
+ *  Cookie value is decrypted if it was stored with AES-256-GCM (lib/crypto). */
 export function resolveNotionToken(cookieValue?: string): string | null {
-  return process.env.NOTION_API_KEY ?? cookieValue ?? null
+  if (process.env.NOTION_API_KEY) return process.env.NOTION_API_KEY
+  if (!cookieValue) return null
+  // Lazy import to avoid bundling crypto in edge runtime
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { decryptIfNeeded } = require('./crypto') as { decryptIfNeeded: (v: string) => string }
+    return decryptIfNeeded(cookieValue)
+  } catch {
+    return cookieValue
+  }
 }

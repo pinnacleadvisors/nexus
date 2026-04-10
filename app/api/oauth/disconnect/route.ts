@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/oauth-providers'
+import { audit } from '@/lib/audit'
 
 /** DELETE /api/oauth/disconnect?provider=google — revoke and clear a provider connection */
 export async function DELETE(req: NextRequest) {
@@ -9,6 +10,8 @@ export async function DELETE(req: NextRequest) {
   if (!provider) {
     return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
   }
+
+  audit(req, { action: 'oauth.disconnect', resource: 'oauth', resourceId: providerId ?? undefined })
 
   const res = NextResponse.json({ ok: true })
   res.cookies.delete(`oauth_token_${providerId}`)

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/oauth-providers'
+import { encryptIfConfigured } from '@/lib/crypto'
+import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
@@ -76,11 +78,15 @@ export async function GET(
       throw new Error(tokenData.error_description ?? tokenData.error ?? 'No access token returned')
     }
 
-    // Store access token in HTTP-only cookie (never exposed to client JS)
+    // Store access token in HTTP-only cookie (never exposed to client JS).
+    // Encrypted with AES-256-GCM when ENCRYPTION_KEY is set in Doppler.
+    const storedToken = encryptIfConfigured(accessToken)
     redirectBase.searchParams.set('oauth_connected', providerId)
     const res = NextResponse.redirect(redirectBase.toString())
 
-    res.cookies.set(`oauth_token_${providerId}`, accessToken, {
+    audit(req, { action: 'oauth.connect', resource: 'oauth', resourceId: providerId })
+
+    res.cookies.set(`oauth_token_${providerId}`, storedToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,

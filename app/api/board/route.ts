@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import type { KanbanCard, ColumnId } from '@/lib/types'
 import type { Database } from '@/lib/database.types'
+import { audit } from '@/lib/audit'
 
 type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 import { INITIAL_COLUMNS } from '@/lib/mock-data'
@@ -114,6 +115,20 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Audit column moves (approve = → completed, reject = → backlog)
+  if (body.columnId) {
+    const action =
+      body.columnId === 'completed' ? 'board.approve' :
+      body.columnId === 'backlog'   ? 'board.reject'  : 'board.move'
+    audit(req, {
+      action,
+      resource: 'task',
+      resourceId: body.id,
+      metadata: { column: body.columnId, title: data.title },
+    })
+  }
+
   return NextResponse.json({ card: rowToCard(data) })
 }
 
