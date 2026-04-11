@@ -10,6 +10,7 @@ import {
   Kanban,
   Wrench,
   Bot,
+  Network,
   ChevronLeft,
   ChevronRight,
   Zap,
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { href: '/forge',        label: 'Forge',     segment: 'forge',     icon: Hammer },
   { href: '/dashboard',    label: 'Dashboard', segment: 'dashboard', icon: LayoutDashboard },
   { href: '/board',        label: 'Board',     segment: 'board',     icon: Kanban },
+  { href: '/swarm',        label: 'Swarm',     segment: 'swarm',     icon: Network },
   { href: '/tools/agents', label: 'Agents',    segment: 'tools',     icon: Bot },
   { href: '/tools',        label: 'Tools',     segment: 'tools',     icon: Wrench },
 ]

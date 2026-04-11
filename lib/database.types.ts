@@ -263,6 +263,152 @@ export type Database = {
         }
         Relationships: []
       }
+      swarm_runs: {
+        Row: {
+          id:             string
+          goal:           string
+          context:        string | null
+          queen_type:     string
+          consensus_type: string
+          status:         string
+          phases:         Json
+          current_phase:  number
+          total_tokens:   number
+          total_cost_usd: number
+          budget_usd:     number | null
+          created_at:     string
+          updated_at:     string
+          completed_at:   string | null
+          error:          string | null
+        }
+        Insert: {
+          id?:             string
+          goal:            string
+          context?:        string | null
+          queen_type?:     string
+          consensus_type?: string
+          status?:         string
+          phases?:         Json
+          current_phase?:  number
+          total_tokens?:   number
+          total_cost_usd?: number
+          budget_usd?:     number | null
+          created_at?:     string
+          updated_at?:     string
+          completed_at?:   string | null
+          error?:          string | null
+        }
+        Update: {
+          goal?:           string
+          context?:        string | null
+          queen_type?:     string
+          consensus_type?: string
+          status?:         string
+          phases?:         Json
+          current_phase?:  number
+          total_tokens?:   number
+          total_cost_usd?: number
+          budget_usd?:     number | null
+          updated_at?:     string
+          completed_at?:   string | null
+          error?:          string | null
+        }
+        Relationships: []
+      }
+      swarm_tasks: {
+        Row: {
+          id:          string
+          swarm_id:    string
+          phase:       number
+          title:       string
+          description: string
+          role:        string
+          status:      string
+          result:      string | null
+          votes:       Json | null
+          tokens_used: number | null
+          model:       string | null
+          duration_ms: number | null
+          created_at:  string
+          updated_at:  string
+        }
+        Insert: {
+          id?:          string
+          swarm_id:     string
+          phase?:       number
+          title:        string
+          description:  string
+          role:         string
+          status?:      string
+          result?:      string | null
+          votes?:       Json | null
+          tokens_used?: number | null
+          model?:       string | null
+          duration_ms?: number | null
+          created_at?:  string
+        }
+        Update: {
+          swarm_id?:    string
+          phase?:       number
+          title?:       string
+          description?: string
+          role?:        string
+          status?:      string
+          result?:      string | null
+          votes?:       Json | null
+          tokens_used?: number | null
+          model?:       string | null
+          duration_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'swarm_tasks_swarm_id_fkey'
+            columns: ['swarm_id']
+            referencedRelation: 'swarm_runs'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      reasoning_patterns: {
+        Row: {
+          id:             string
+          task_type:      string
+          task_hash:      string
+          agent_role:     string
+          model:          string
+          prompt_hash:    string
+          result_quality: number
+          tokens_used:    number
+          duration_ms:    number
+          approved:       boolean
+          created_at:     string
+        }
+        Insert: {
+          id?:             string
+          task_type:       string
+          task_hash:       string
+          agent_role:      string
+          model:           string
+          prompt_hash:     string
+          result_quality?: number
+          tokens_used?:    number
+          duration_ms?:    number
+          approved?:       boolean
+          created_at?:     string
+        }
+        Update: {
+          task_type?:      string
+          task_hash?:      string
+          agent_role?:     string
+          model?:          string
+          prompt_hash?:    string
+          result_quality?: number
+          tokens_used?:    number
+          duration_ms?:    number
+          approved?:       boolean
+        }
+        Relationships: []
+      }
       alert_thresholds: {
         Row: {
           id: string

@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-11 (Phases 11–16 planned)
+> Last updated: 2026-04-11 (Phase 11 complete; Phases 12–16 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -42,6 +42,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | `supabase/migrations/003_businesses_milestones.sql` | businesses + milestones tables; user_id on projects + agents; Realtime enabled | ⬜ |
 | `supabase/migrations/004_rls_policies.sql` | Row-level security on all tables; businesses per-user via Clerk JWT sub | ⬜ |
 | `supabase/migrations/005_audit_log.sql` | audit_log table with indexes on user_id, action, resource, created_at | ⬜ |
+| `supabase/migrations/006_swarm.sql` | swarm_runs, swarm_tasks, reasoning_patterns tables; Realtime enabled | ⬜ |
 
 > **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row above with ⬜, then run `npm run migrate`.
 
@@ -355,31 +356,35 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 11 — Multi-Agent Orchestration (Not Started)
+## Phase 11 — Multi-Agent Orchestration (Complete)
 
-> Inspired by [ruvnet/ruflo](https://github.com/ruvnet/ruflo) — a production-grade swarm intelligence platform with Byzantine fault-tolerant consensus, self-optimising routing, and 100+ specialist agents.
->
-> Architecture: **Queen agents** coordinate swarms of specialist agents. A `StrategicQueen` breaks goals into phases, a `TacticalQueen` assigns tasks to specialists, an `AdaptiveQueen` re-routes when agents fail. All decisions go through a configurable consensus layer so a single bad agent cannot corrupt the swarm.
+> Inspired by [ruvnet/ruflo](https://github.com/ruvnet/ruflo). Architecture: **Queen agents** coordinate swarms of specialist agents. A `StrategicQueen` breaks goals into phases, a `TacticalQueen` assigns tasks to specialists, an `AdaptiveQueen` monitors for drift. All decisions go through a configurable consensus layer.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Swarm kernel** — `lib/swarm/` directory: `Queen.ts`, `Agent.ts`, `Consensus.ts`, `ReasoningBank.ts`; queen types: strategic / tactical / adaptive |
-| ⬜ | **Agent registry** — 20+ specialist agent definitions (coder, tester, reviewer, researcher, marketer, SEO, copywriter, data-analyst, legal, finance, customer-support, designer-brief, social-media, email, devops, security-auditor, architect, QA, product-manager, brand) stored in `lib/swarm/agents/` |
-| ⬜ | **Consensus layer** — Raft (default, 3-node quorum), Byzantine Fault Tolerant (2/3 majority for high-risk decisions), Gossip (async broadcast for low-stakes coordination); configurable per swarm |
-| ⬜ | **Intelligent router** — Q-Learning router learns optimal agent → model assignments; simple tasks → Haiku (cheapest), medium → Sonnet, strategic → Opus; saves routing decisions in ReasoningBank |
-| ⬜ | **ReasoningBank** — Supabase `reasoning_patterns` table; stores (task_type, agent_id, prompt_hash, result_quality, tokens_used, model); semantic search finds best prior pattern in <50ms; prevents re-solving solved problems |
-| ⬜ | **WASM fast-path** — Rust/WASM kernel for deterministic transforms (format conversion, schema validation, text normalisation) at zero LLM cost; falls back to LLM only when WASM can't handle the task |
-| ⬜ | **Token optimiser** — compresses context 30–50% before sending to LLM: strips whitespace, summarises repetitive sections, injects cached prefix; uses Ruflo's hierarchical pattern retrieval approach |
-| ⬜ | **Swarm API** — `POST /api/swarm/dispatch` starts a swarm run; `GET /api/swarm/:id` streams SSE status events; `DELETE /api/swarm/:id` aborts |
-| ⬜ | **Swarm dashboard panel** — `/dashboard` gains a "Swarm" tab showing active queens, agent statuses, consensus rounds, cost savings vs baseline, routing accuracy over time |
-| ⬜ | **MCP server** — expose swarm as an MCP tool so OpenClaw + Claude Code can spawn swarms natively (`create_swarm`, `dispatch_task`, `get_swarm_status`, `abort_swarm`) |
-| ⬜ | **Drift prevention** — checkpoint every N tasks; if swarm diverges from original goal (measured by embedding distance), TacticalQueen re-aligns before continuing |
-| ⬜ | **Fault tolerance** — agent timeout detection; automatic re-spawn with exponential backoff; failed tasks re-queued to next available specialist; all failures written to audit log |
+| ✅ | **Swarm kernel** — `lib/swarm/`: `Queen.ts`, `Consensus.ts`, `Router.ts`, `ReasoningBank.ts`, `TokenOptimiser.ts`, `WasmFastPath.ts`, `index.ts` |
+| ✅ | **Agent registry** — 22 specialist agent definitions in `lib/swarm/agents/registry.ts`: researcher, analyst, strategist, coder, reviewer, tester, architect, security-auditor, marketer, copywriter, SEO, social-media, email, designer, data-analyst, finance-analyst, legal-advisor, customer-support, devops, product-manager, qa-engineer, brand-strategist |
+| ✅ | **Consensus layer** — Raft (simple majority, default), BFT (strict 2/3 with confidence weighting, for finance/legal), Gossip (fast-accept for content tasks) |
+| ✅ | **Intelligent router** — Q-Learning router (`lib/swarm/Router.ts`); ε-greedy exploration; reward = quality / normalised token cost; routing decisions saved to ReasoningBank |
+| ✅ | **ReasoningBank** — `supabase/migrations/006_swarm.sql` `reasoning_patterns` table; stores task_type, agent_role, model, result_quality, tokens_used; in-memory fallback when Supabase unconfigured |
+| ✅ | **WASM fast-path** — `lib/swarm/WasmFastPath.ts` JS implementation of 6 transforms (format-json, extract-urls, normalise, word-count, parse-date, strip-markdown) at zero LLM cost |
+| ✅ | **Token optimiser** — `lib/swarm/TokenOptimiser.ts`; whitespace normalisation, paragraph deduplication, code block compression, smart truncation; target 12k token context |
+| ✅ | **Swarm API** — `POST /api/swarm/dispatch` (SSE stream, X-Swarm-Id header); `GET /api/swarm/:id` (state + tasks); `DELETE /api/swarm/:id` (abort) |
+| ✅ | **Swarm UI** — `/swarm` page with goal/context input, queen/consensus/budget settings, real-time event log, phase/task progress cards, synthesis output |
+| ✅ | **MCP server** — `lib/swarm/mcp.ts` tool definitions; served at `GET/POST /api/swarm/mcp/:tool`; tools: `create_swarm`, `get_swarm_status`, `abort_swarm`, `list_agents` |
+| ✅ | **Drift prevention** — AdaptiveQueen checks alignment at every N tasks; re-emits `drift` event when swarm diverges from goal |
+| ✅ | **Fault tolerance** — per-task error isolation; failed tasks don't block phase; all failures written to audit log; budget cap enforced per phase |
 
-### Key design decisions
-- Ruflo's full HNSW/PostgreSQL vector layer is **not** ported directly — Supabase `pgvector` extension serves the same role with much less infrastructure overhead
-- WASM kernels sourced from Ruflo's open-source release and bundled under `lib/swarm/wasm/`
-- Consensus threshold configurable at swarm creation time (`raft` default; `bft` for financial/legal tasks; `gossip` for content drafts)
+### Implementation details
+- `lib/swarm/Queen.ts` — `strategicDecompose()` uses Opus; `tacticalAssign()` uses Router; `executeTask()` runs fast-path → LLM → consensus pipeline; `runSwarm()` orchestrates phases
+- `supabase/migrations/006_swarm.sql` — `swarm_runs`, `swarm_tasks`, `reasoning_patterns` tables; Realtime enabled
+- `lib/database.types.ts` — updated with all 3 new tables
+- Sidebar — Swarm nav item added (Network icon)
+
+### Manual steps
+- Run `npm run migrate` to apply migration 006
+- `ANTHROPIC_API_KEY` required (already documented in Phase 10 manual steps)
+- MCP integration: `claude mcp add nexus-swarm <your-vercel-url>/api/swarm/mcp/manifest`
 
 ---
 
