@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-11 (Phase 10)
+> Last updated: 2026-04-11 (Phases 11–16 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -353,6 +353,159 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
+---
+
+## Phase 11 — Multi-Agent Orchestration (Not Started)
+
+> Inspired by [ruvnet/ruflo](https://github.com/ruvnet/ruflo) — a production-grade swarm intelligence platform with Byzantine fault-tolerant consensus, self-optimising routing, and 100+ specialist agents.
+>
+> Architecture: **Queen agents** coordinate swarms of specialist agents. A `StrategicQueen` breaks goals into phases, a `TacticalQueen` assigns tasks to specialists, an `AdaptiveQueen` re-routes when agents fail. All decisions go through a configurable consensus layer so a single bad agent cannot corrupt the swarm.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Swarm kernel** — `lib/swarm/` directory: `Queen.ts`, `Agent.ts`, `Consensus.ts`, `ReasoningBank.ts`; queen types: strategic / tactical / adaptive |
+| ⬜ | **Agent registry** — 20+ specialist agent definitions (coder, tester, reviewer, researcher, marketer, SEO, copywriter, data-analyst, legal, finance, customer-support, designer-brief, social-media, email, devops, security-auditor, architect, QA, product-manager, brand) stored in `lib/swarm/agents/` |
+| ⬜ | **Consensus layer** — Raft (default, 3-node quorum), Byzantine Fault Tolerant (2/3 majority for high-risk decisions), Gossip (async broadcast for low-stakes coordination); configurable per swarm |
+| ⬜ | **Intelligent router** — Q-Learning router learns optimal agent → model assignments; simple tasks → Haiku (cheapest), medium → Sonnet, strategic → Opus; saves routing decisions in ReasoningBank |
+| ⬜ | **ReasoningBank** — Supabase `reasoning_patterns` table; stores (task_type, agent_id, prompt_hash, result_quality, tokens_used, model); semantic search finds best prior pattern in <50ms; prevents re-solving solved problems |
+| ⬜ | **WASM fast-path** — Rust/WASM kernel for deterministic transforms (format conversion, schema validation, text normalisation) at zero LLM cost; falls back to LLM only when WASM can't handle the task |
+| ⬜ | **Token optimiser** — compresses context 30–50% before sending to LLM: strips whitespace, summarises repetitive sections, injects cached prefix; uses Ruflo's hierarchical pattern retrieval approach |
+| ⬜ | **Swarm API** — `POST /api/swarm/dispatch` starts a swarm run; `GET /api/swarm/:id` streams SSE status events; `DELETE /api/swarm/:id` aborts |
+| ⬜ | **Swarm dashboard panel** — `/dashboard` gains a "Swarm" tab showing active queens, agent statuses, consensus rounds, cost savings vs baseline, routing accuracy over time |
+| ⬜ | **MCP server** — expose swarm as an MCP tool so OpenClaw + Claude Code can spawn swarms natively (`create_swarm`, `dispatch_task`, `get_swarm_status`, `abort_swarm`) |
+| ⬜ | **Drift prevention** — checkpoint every N tasks; if swarm diverges from original goal (measured by embedding distance), TacticalQueen re-aligns before continuing |
+| ⬜ | **Fault tolerance** — agent timeout detection; automatic re-spawn with exponential backoff; failed tasks re-queued to next available specialist; all failures written to audit log |
+
+### Key design decisions
+- Ruflo's full HNSW/PostgreSQL vector layer is **not** ported directly — Supabase `pgvector` extension serves the same role with much less infrastructure overhead
+- WASM kernels sourced from Ruflo's open-source release and bundled under `lib/swarm/wasm/`
+- Consensus threshold configurable at swarm creation time (`raft` default; `bft` for financial/legal tasks; `gossip` for content drafts)
+
+---
+
+## Phase 12 — Tribe v2: Neuro-Optimised Content Engine (Not Started)
+
+> Content creation informed by cognitive neuroscience: dopamine anticipation loops, curiosity gaps, social proof triggers, novelty detection, and narrative tension arcs — proven to increase engagement and memorability.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Neuro-content agent** — new agent capability in `lib/agent-capabilities.ts`; system prompt encodes 12 cognitive engagement principles (curiosity gap, open loops, social proof, contrast effect, loss aversion framing, specificity anchoring, future-pacing, micro-tension, identity mirroring, pattern interrupts, sensory language, progressive disclosure) |
+| ⬜ | **Content scoring API** — `POST /api/content/score` takes any text and returns a JSON score (0–100) per principle + an overall "neural activation score"; built on Claude structured output |
+| ⬜ | **Revision loop** — agent generates draft → scores it → if score < 75, self-revises targeting the lowest-scoring dimensions → iterates up to 3 times before returning |
+| ⬜ | **Format templates** — LinkedIn post, X/Twitter thread, Instagram caption, long-form blog (SEO + neuro), cold email, landing page hero, VSL script, YouTube description; each template has format-specific neuro guidelines |
+| ⬜ | **Tribe tone profiles** — "authority", "peer", "challenger", "storyteller", "data-driven"; user selects at `/tools/agents` and profile is injected into every content prompt |
+| ⬜ | **A/B variant generator** — given one piece of content, produce 3 variants each emphasising a different cognitive trigger; displayed side-by-side for user to pick |
+| ⬜ | **Content analytics** — connect published content performance (CTR, time-on-page, shares) back to neuro score; surface correlation on dashboard to improve future scoring weights |
+| ⬜ | **muapi.ai media pairing** — after content is generated, automatically call muapi.ai to generate a matching image/visual; result attached to board card and uploaded to R2/Supabase Storage |
+
+### Reference
+- Tribe v2 philosophy: content is a neurological event before it is a marketing event — engineer for brain state first, message second.
+
+---
+
+## Phase 13 — Consultant Agent + n8n Workflow Automation (Not Started)
+
+> A strategic consultant agent researches the best tool combinations for your business, then generates executable n8n workflow blueprints. Every step the user must take (add API key, create account, review workflow) is automatically added as a Kanban card and Notion note so agents stay in context.
+
+### 13a — Consultant Agent
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Consultant capability** — new agent capability: given business description + current tool stack, researches optimal automation workflows; outputs ranked recommendations with rationale, cost estimates, and complexity scores |
+| ⬜ | **Tool research** — consultant calls `/api/tools/research` which queries a curated tool database (seeded from lib/mock-data.ts Tools list + additional SaaS integrations) and returns compatibility matrix |
+| ⬜ | **Workflow gap analysis** — identifies which steps can be automated via n8n, which require OpenClaw, and which are manual; produces a gap report saved to Notion and displayed in Forge |
+| ⬜ | **Recommendation cards** — each recommendation auto-creates a Board card in Backlog with: tool name, workflow description, estimated setup time, required credentials |
+
+### 13b — n8n Workflow Generation
+
+| Status | Item |
+|--------|------|
+| ⬜ | **n8n blueprint generator** — `POST /api/n8n/generate` accepts a workflow description and outputs a valid n8n JSON workflow file (compatible with n8n v1+ import format) |
+| ⬜ | **Workflow templates** — pre-built blueprint library: social post scheduler, lead capture → CRM, invoice generation, content republishing pipeline, competitor monitoring, onboarding email sequence, support ticket routing, analytics digest |
+| ⬜ | **muapi.ai node** — custom n8n HTTP node configuration for muapi.ai; generates images/video/audio assets as part of content workflows; credentials stored in n8n credential store (not Doppler) |
+| ⬜ | **Setup checklist generation** — for each workflow blueprint, consultant generates a human-readable checklist of: accounts to create, API keys to obtain, OAuth connections to authorise, n8n credentials to configure; list is saved to Notion + added to Board as sequential Backlog cards |
+| ⬜ | **n8n webhook receiver** — `POST /api/webhooks/n8n` receives workflow completion events; parses payload, updates relevant Board card status, appends result to Notion |
+| ⬜ | **Workflow status page** — `/tools/n8n` shows all active n8n workflows, last run status, next scheduled run, and a "trigger now" button |
+
+### 13c — OpenClaw Fallback Bridge
+
+| Status | Item |
+|--------|------|
+| ⬜ | **API gap detection** — consultant flags any workflow step that cannot be accomplished via a public API (e.g. scraping, browser automation, actions requiring 2FA); these steps are automatically dispatched to OpenClaw |
+| ⬜ | **Hybrid workflow** — n8n handles API-native steps → OpenClaw handles browser/scraping steps → result flows back into n8n via webhook; orchestrated from `/api/swarm/dispatch` |
+| ⬜ | **Priority routing rule** — Consultant agent always checks n8n first; only escalates to OpenClaw when n8n cannot accomplish the task natively |
+
+### Manual Steps — n8n
+- [ ] Deploy n8n: self-hosted (`docker run n8nio/n8n`) or n8n Cloud (https://n8n.io/cloud/)
+- [ ] Add `N8N_BASE_URL` to Doppler — your n8n instance URL (e.g. `https://n8n.yourdomain.com`)
+- [ ] Add `N8N_API_KEY` to Doppler — n8n Settings → API → Create API Key
+- [ ] Register Nexus webhook in n8n: URL = `https://<your-vercel-domain>/api/webhooks/n8n`
+- [ ] Add `MUAPI_AI_KEY` to Doppler — register at https://muapi.ai → API Keys
+- [ ] Import starter workflow blueprints from `/tools/n8n` after Phase 13b is deployed
+
+---
+
+## Phase 14 — 3D Relational Knowledge Graph (Not Started)
+
+> A live 3D graph where every business, project, milestone, agent, tool, workflow, and code repository is a node. Edges show relationships: "project uses tool", "agent created asset", "milestone depends on milestone", "workflow triggers agent". Agents query the graph via a lightweight API to get full relational context in a single call — inspired by Graphify's 71x token reduction and GitNexus's precomputed relational intelligence.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Graph data model** — `lib/graph/types.ts`: `GraphNode` (id, type, label, metadata, position3d), `GraphEdge` (source, target, relation, weight, createdAt); node types: `business`, `project`, `milestone`, `agent`, `tool`, `workflow`, `repository`, `asset`, `prompt`, `skill` |
+| ⬜ | **Graph builder** — `lib/graph/builder.ts`: queries Supabase for all entities and relationships; constructs in-memory graph; runs Leiden community detection to assign cluster IDs; exports `graph.json`; incremental update on entity change |
+| ⬜ | **Graph API** — `GET /api/graph` returns full serialised graph; `GET /api/graph/node/:id` returns node + 1-hop neighbourhood; `GET /api/graph/path?from=&to=` returns shortest path; `POST /api/graph/query` accepts natural language query, returns subgraph |
+| ⬜ | **3D renderer** — `/graph` page using `react-three-fiber` + `@react-three/drei`; nodes rendered as glowing spheres sized by PageRank score; edges as lines with opacity proportional to relationship strength; clusters occupy distinct 3D regions; camera orbit/zoom/pan |
+| ⬜ | **Node type visual encoding** — businesses: gold, projects: indigo, milestones: teal, agents: purple, tools: grey, workflows: orange, repos: green, assets: pink; node size = connection count; edge colour = relation type |
+| ⬜ | **Agent context API** — `POST /api/graph/context` accepts a task description; returns the minimal subgraph of relevant nodes (cosine similarity on node embeddings); agents call this before starting any task to get relational context without scanning all files |
+| ⬜ | **MCP tool exposure** — `get_graph_context(task_description)` MCP tool so OpenClaw and Claude Code can call it natively; returns JSON subgraph of ≤20 nodes; target: 50–70x token reduction vs raw file scanning (per Graphify benchmarks) |
+| ⬜ | **Search + filter panel** — sidebar on `/graph` with text search, node type filter, relationship filter, time-range slider; matching nodes pulse in the 3D view |
+| ⬜ | **Temporal replay** — scrub through time to see how the graph grew: each node appears at its `createdAt` timestamp; reveals growth patterns and bottlenecks |
+| ⬜ | **Auto-layout modes** — force-directed (default), hierarchical (org-chart), radial (business-centric), cluster-grid; toggle in UI |
+| ⬜ | **Embed in Forge / Dashboard** — minimap 2D projection of the graph shown in Forge sidebar; clicking a node deep-links to the relevant project or tool |
+
+### Technical approach
+- **Renderer**: `react-three-fiber` + `@react-three/drei` + `three.js` (already a transitive dep) — no new rendering engine needed
+- **Graph computation**: `graphology` + `graphology-communities-louvain` (JS-native, no Python); runs server-side at build/refresh time
+- **Embeddings**: Supabase `pgvector` + `text-embedding-3-small` (OpenAI) or Anthropic's embedding endpoint for `POST /api/graph/context`
+- **Performance**: graph snapshot cached in Redis/Supabase, rebuilt on entity mutation; 3D scene uses instanced meshes for up to 10,000 nodes at 60 fps
+
+---
+
+## Phase 15 — Library Layer & Token Efficiency (Not Started)
+
+> A structured, searchable store of reusable building blocks — code functions, agent configs, prompt templates, and skill definitions. Agents query the library before writing anything new, dramatically reducing duplicate generation and per-task token spend.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Database schema** — migration `006_libraries.sql`: tables `code_snippets`, `agent_templates`, `prompt_templates`, `skill_definitions`; all with `embedding vector(1536)`, `tags text[]`, `usage_count int`, `avg_quality_score float` |
+| ⬜ | **Code function library** — `/tools/library/code`: stores reusable TypeScript/Python/SQL snippets; each tagged with language, purpose, dependencies; agents call `GET /api/library/code?q=` before generating boilerplate |
+| ⬜ | **Agent template library** — `/tools/library/agents`: stores agent system prompt blueprints (role, constraints, output format, example); versioned; consultant agent uses this to spawn specialist agents without re-writing prompts |
+| ⬜ | **Prompt library** — `/tools/library/prompts`: curated prompt templates for common tasks; each template has fill-in variables, neuro-optimisation score, and usage analytics; agents retrieve best-scoring template for task type |
+| ⬜ | **Skill definitions library** — `/tools/library/skills`: structured skill definitions compatible with MCP tool format; agents check this library before requesting new OpenClaw skills |
+| ⬜ | **Semantic search** — `POST /api/library/search?type=code|agent|prompt|skill&q=` does pgvector cosine similarity search; returns top-5 matches with similarity score; embedded at task start in every swarm run |
+| ⬜ | **Auto-population** — after every completed agent run: extract reusable fragments (functions, prompts, patterns) via a post-processing agent; auto-add to library with quality score derived from user approval |
+| ⬜ | **Library UI** — `/tools/library` with tabbed interface (Code / Agents / Prompts / Skills); search bar, tag filter, usage stats, copy button, "use in Forge" button |
+| ⬜ | **Token savings tracker** — dashboard widget showing estimated tokens saved this week via library hits vs cold generation; motivates curation |
+
+---
+
+## Phase 16 — Organisation Chart & Agent Hierarchy (Not Started)
+
+> A live org chart showing the full hierarchy of agents active in Nexus: who spawned whom, which queen is coordinating which specialists, what each layer is currently doing, and the accountability chain back to the user.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Agent hierarchy model** — extend `agents` table: add `parent_agent_id`, `layer` (strategic/tactical/operational), `spawned_by`, `swarm_id`; all agent spawning events written to audit log |
+| ⬜ | **Org chart page** — `/dashboard/org` renders a top-down tree: User → Strategic Queens → Tactical Queens → Specialist Agents → Background Workers; each node shows current status (idle/running/error), task count, and cost |
+| ⬜ | **Layer definitions** — **L0: User** (approves, rejects, redirects); **L1: Strategic Queens** (goal decomposition, phase planning); **L2: Tactical Queens** (task assignment, resource allocation); **L3: Specialist Agents** (execution — coder, researcher, marketer etc.); **L4: Workers** (background jobs — Inngest functions, webhooks) |
+| ⬜ | **Real-time updates** — org chart subscribes to Supabase Realtime `agents` channel; spawned agents appear instantly; completed agents dim; errors glow red |
+| ⬜ | **Drill-down panel** — click any agent node to see: current task, last 5 actions, tokens used this session, model being used, associated board cards, and a "terminate" button |
+| ⬜ | **Swimlane view** — alternative layout grouping agents by business/project rather than by hierarchy; shows cross-project agent sharing |
+| ⬜ | **Accountability chain** — every Board card, Notion append, and file commit links back to the agent that created it and the queen that assigned it; visible in card detail view |
+| ⬜ | **Agent utilisation chart** — stacked bar chart on dashboard showing agent hours (token-equivalent) by layer; highlights if strategic layer is over-indexing (plan-heavy) or if operational layer is bottlenecked |
+
+---
+
 ## Immediate Next Steps (Priority Order)
 
 1. **Configure OpenClaw** at `/tools/claw` → Forge chat goes live using Claude Pro subscription (no API key needed)
@@ -388,3 +541,9 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |
 | Charts | Recharts | ✅ Live |
+| Workflow automation | n8n (self-hosted or cloud) | ⬜ Phase 13 |
+| Media generation | muapi.ai | ⬜ Phase 12/13 |
+| 3D graph rendering | react-three-fiber + three.js | ⬜ Phase 14 |
+| Graph computation | graphology + Louvain community detection | ⬜ Phase 14 |
+| Swarm orchestration | Ruflo-inspired (custom) | ⬜ Phase 11 |
+| Vector search | Supabase pgvector | ⬜ Phase 14/15 |
