@@ -221,6 +221,9 @@ export interface ClawSession {
   phase?: number
 }
 
+// ── Agent Capabilities ────────────────────────────────────────────────────────
+export type { AgentCapability, CapabilityInput } from '@/lib/agent-capabilities'
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
 

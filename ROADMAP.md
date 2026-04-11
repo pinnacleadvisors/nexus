@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-10 (Phase 9)
+> Last updated: 2026-04-11 (Phase 10)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -39,6 +39,9 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 |------|-------------|---------|
 | `supabase/migrations/001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds | ⬜ |
 | `supabase/migrations/002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
+| `supabase/migrations/003_businesses_milestones.sql` | businesses + milestones tables; user_id on projects + agents; Realtime enabled | ⬜ |
+| `supabase/migrations/004_rls_policies.sql` | Row-level security on all tables; businesses per-user via Clerk JWT sub | ⬜ |
+| `supabase/migrations/005_audit_log.sql` | audit_log table with indexes on user_id, action, resource, created_at | ⬜ |
 
 > **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row above with ⬜, then run `npm run migrate`.
 
@@ -157,6 +160,15 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] In Supabase Dashboard → Settings → API → copy JWT Secret
 - [ ] Paste the JWT Secret into the Clerk JWT template "Signing key" field
 - [ ] Run `npm run migrate` to apply migration 004 (enables RLS + policies)
+
+---
+
+### 🤖 Agent Capabilities (Phase 10)
+
+- [ ] Add `ANTHROPIC_API_KEY` to Doppler — required for `/tools/agents` to function
+  - Get key at https://console.anthropic.com → API Keys → Create Key
+  - Without this key the agents page returns a 503 with a clear error message
+- [ ] Optional: set `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN` to route agent runs through OpenClaw (Claude Pro subscription) instead of direct API
 
 ---
 
@@ -316,22 +328,28 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 10 — Agent Capabilities (Not Started)
+## Phase 10 — Agent Capabilities (Complete)
 
-These are the tasks agents should be able to execute autonomously:
+10 specialised AI agents accessible at `/tools/agents`. Each produces a full deliverable document, saves to your knowledge base, and creates a Review card on the board.
 
 | Status | Capability |
 |--------|------------|
-| ⬜ | **Research** — web search, competitor analysis, market sizing → Notion doc |
-| ⬜ | **Content** — landing page copy, blog posts, email sequences |
-| ⬜ | **Code** — web app scaffolding via Claude Code CLI, auto-PR to GitHub |
-| ⬜ | **SEO** — keyword research, on-page optimisation recommendations |
-| ⬜ | **Social media** — post drafts for LinkedIn, X, Instagram |
-| ⬜ | **Customer service** — reply agent trained on business context |
-| ⬜ | **Email outreach** — cold outreach sequences via Resend |
-| ⬜ | **Design briefs** — structured prompts for image/brand generation |
-| ⬜ | **Financial modelling** — revenue projections, cost breakdowns |
-| ⬜ | **Legal** — terms of service / privacy policy draft generation |
+| ✅ | **Research** — competitor analysis, market sizing → deliverable report → Notion |
+| ✅ | **Content** — landing page copy, blog posts, email sequences → full draft |
+| ✅ | **Code** — full-stack app spec + architecture → technical blueprint |
+| ✅ | **SEO** — keyword research, on-page optimisation → actionable report |
+| ✅ | **Social Media** — post drafts for LinkedIn, X, Instagram → content calendar |
+| ✅ | **Customer Service** — reply agent trained on business context → response templates |
+| ✅ | **Email Outreach** — cold outreach sequences via Resend → sequence copy |
+| ✅ | **Design Briefs** — structured prompts for image/brand generation → brief doc |
+| ✅ | **Financial Modelling** — revenue projections, cost breakdowns → financial model |
+| ✅ | **Legal** — terms of service / privacy policy draft generation → legal doc |
+
+### Implementation details
+- `lib/agent-capabilities.ts` — 10 capability definitions with detailed system prompts, input schemas, and output flags
+- `app/api/agent/route.ts` — streaming dispatch endpoint; rate-limited (10 req/min); creates board card + appends to Notion on completion
+- `app/(protected)/tools/agents/page.tsx` — capability browser with category filter, launch panel with streaming output, copy, and stop
+- `components/layout/Sidebar.tsx` — Agents nav item added
 
 ---
 
