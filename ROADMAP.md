@@ -23,12 +23,12 @@
 
 ### ☁️ Supabase (Database)
 
-- [ ] Create a Supabase project at https://supabase.com/dashboard
-- [ ] Add `NEXT_PUBLIC_SUPABASE_URL` to Doppler — Project Settings → API → Project URL
-- [ ] Add `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Doppler — Project Settings → API → anon public key
-- [ ] Add `SUPABASE_SERVICE_ROLE_KEY` to Doppler — Project Settings → API → service_role secret key
-- [ ] Add `SUPABASE_PROJECT_REF` to Doppler — Project Settings → General → Reference ID (e.g. `abcdefghijklmnop`)
-- [ ] Add `SUPABASE_ACCESS_TOKEN` to Doppler — https://supabase.com/account/tokens → Generate new token
+- [✅] Create a Supabase project at https://supabase.com/dashboard
+- [✅] Add `NEXT_PUBLIC_SUPABASE_URL` to Doppler — Project Settings → API → Project URL
+- [✅] Add `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Doppler — Project Settings → API → anon public key
+- [✅] Add `SUPABASE_SERVICE_ROLE_KEY` to Doppler — Project Settings → API → service_role secret key
+- [✅] Add `SUPABASE_PROJECT_REF` to Doppler — Project Settings → General → Reference ID (e.g. `abcdefghijklmnop`)
+- [✅] Add `SUPABASE_ACCESS_TOKEN` to Doppler — https://supabase.com/account/tokens → Generate new token
 - [ ] Run `npm run migrate` to apply all pending SQL migrations
 
 #### SQL Migrations
@@ -90,8 +90,8 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 💳 Stripe (Payments)
 
-- [ ] Add `STRIPE_WEBHOOK_SECRET` to Doppler — Stripe Dashboard → Developers → Webhooks → endpoint secret
-- [ ] Register webhook endpoint in Stripe Dashboard:
+- [✅] Add `STRIPE_WEBHOOK_SECRET` to Doppler — Stripe Dashboard → Developers → Webhooks → endpoint secret
+- [✅] Register webhook endpoint in Stripe Dashboard:
   - URL: `https://<your-vercel-domain>/api/webhooks/stripe`
   - Events: `payment_intent.succeeded`, `invoice.payment_succeeded`
 
@@ -115,12 +115,12 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 🗄️ Cloudflare R2 (Asset Storage — alternative to Supabase Storage)
 
-- [ ] Create R2 bucket in Cloudflare Dashboard → R2 → Create bucket (e.g. `nexus-assets`)
-- [ ] Create R2 API token: Cloudflare Dashboard → R2 → Manage R2 API Tokens → Create API Token
-- [ ] Add `R2_ACCOUNT_ID` to Doppler — Cloudflare Dashboard → right sidebar → Account ID
-- [ ] Add `R2_ACCESS_KEY_ID` to Doppler — from R2 API token creation
-- [ ] Add `R2_SECRET_ACCESS_KEY` to Doppler — from R2 API token creation
-- [ ] Add `R2_BUCKET_NAME` to Doppler — bucket name (e.g. `nexus-assets`)
+- [✅] Create R2 bucket in Cloudflare Dashboard → R2 → Create bucket (e.g. `nexus-assets`)
+- [✅] Create R2 API token: Cloudflare Dashboard → R2 → Manage R2 API Tokens → Create API Token
+- [✅] Add `R2_ACCOUNT_ID` to Doppler — Cloudflare Dashboard → right sidebar → Account ID
+- [✅] Add `R2_ACCESS_KEY_ID` to Doppler — from R2 API token creation
+- [✅] Add `R2_SECRET_ACCESS_KEY` to Doppler — from R2 API token creation
+- [✅] Add `R2_BUCKET_NAME` to Doppler — bucket name (e.g. `nexus-assets`)
 - [ ] Optional: Add `R2_PUBLIC_URL` to Doppler — public bucket URL for direct links (enable public access in R2 dashboard)
 
 ---
