@@ -51,7 +51,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 ### 📓 Notion (Knowledge Base)
 
 - [ ] Connect Notion at `/tools/knowledge` — click "Connect Notion" (uses OAuth flow)
-- [ ] Optional: Set `NOTION_API_KEY` in Doppler — internal integration token (bypasses OAuth, for server-side agent writes)
+- [ ] Optional: Set `NOTION_API_KEY` in Doppler — internal integration token (bypasses OAuth, for server-side agent writes) (membership required)
   - Create at https://www.notion.so/my-integrations → New integration → copy "Internal Integration Token"
   - Share your target pages/databases with the integration in Notion
 - [ ] Link a Notion page to each Forge project at `/tools/knowledge` — agents will read + write to it
@@ -138,16 +138,16 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 🔒 Security Hardening (Phase 9)
 
-- [ ] **Clerk MFA** — Clerk Dashboard → Organization Settings → Multi-factor authentication → Enforce for all members
-- [ ] **ENCRYPTION_KEY** — Generate and add to Doppler:
+- [ ] **Clerk MFA** — Clerk Dashboard → Organization Settings → Multi-factor authentication → Enforce for all members (pro membership required)
+- [ ] **ENCRYPTION_KEY** — Generate and add to Doppler (how-to?): 
   ```
   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   ```
   Add as `ENCRYPTION_KEY` in Doppler. Existing OAuth tokens in cookies will re-encrypt on next login.
-- [ ] **Upstash Redis** — https://console.upstash.com → Create Database → copy REST URL + token
+- [✅] **Upstash Redis** — https://console.upstash.com → Create Database → copy REST URL + token
   - Add `UPSTASH_REDIS_REST_URL` to Doppler
   - Add `UPSTASH_REDIS_REST_TOKEN` to Doppler
-- [ ] **GitHub Dependabot** — Repo Settings → Security → Dependabot → Enable "Dependabot alerts" + "Dependabot security updates"
+- [✅] **GitHub Dependabot** — Repo Settings → Security → Dependabot → Enable "Dependabot alerts" + "Dependabot security updates"
 - [ ] **Snyk** (optional) — https://app.snyk.io → Import repo → run first scan
 - [ ] Run `npm run migrate` to apply migration 005 (audit_log table)
 
@@ -155,18 +155,18 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 🔐 Row-Level Security (RLS — Clerk + Supabase JWT)
 
-- [ ] In Clerk Dashboard → JWT Templates → New template → choose "Supabase"
+- [✅] In Clerk Dashboard → JWT Templates → New template → choose "Supabase"
   - Set audience to your Supabase project URL
   - Ensure `sub` claim maps to `{{user.id}}`
-- [ ] In Supabase Dashboard → Settings → API → copy JWT Secret
-- [ ] Paste the JWT Secret into the Clerk JWT template "Signing key" field
+- [✅] In Supabase Dashboard → Settings → API → copy JWT Secret
+- [✅] Paste the JWT Secret into the Clerk JWT template "Signing key" field
 - [ ] Run `npm run migrate` to apply migration 004 (enables RLS + policies)
 
 ---
 
 ### 🤖 Agent Capabilities (Phase 10)
 
-- [ ] Add `ANTHROPIC_API_KEY` to Doppler — required for `/tools/agents` to function
+- [✅] Add `ANTHROPIC_API_KEY` to Doppler — required for `/tools/agents` to function
   - Get key at https://console.anthropic.com → API Keys → Create Key
   - Without this key the agents page returns a 503 with a clear error message
 - [ ] Optional: set `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN` to route agent runs through OpenClaw (Claude Pro subscription) instead of direct API
@@ -175,8 +175,8 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 💰 Cost & Rate Caps
 
-- [ ] Set `CLAW_DAILY_DISPATCH_CAP` in Doppler — max Claw agent dispatches per day (default: `100`)
-- [ ] Set `COST_ALERT_PER_RUN_USD` in Doppler — alert threshold per AI run (default: `0.50`)
+- [✅] Set `CLAW_DAILY_DISPATCH_CAP` in Doppler — max Claw agent dispatches per day (default: `100`)
+- [✅] Set `COST_ALERT_PER_RUN_USD` in Doppler — alert threshold per AI run (default: `0.50`)
 
 ---
 
