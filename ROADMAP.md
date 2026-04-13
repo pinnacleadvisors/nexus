@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-11 (Phase 11 complete; Phases 12–16 planned)
+> Last updated: 2026-04-13 (Phases 11–12 complete; Phases 13–16 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -388,20 +388,30 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 12 — Tribe v2: Neuro-Optimised Content Engine (Not Started)
+## Phase 12 — Tribe v2: Neuro-Optimised Content Engine ✅ Complete
 
 > Content creation informed by cognitive neuroscience: dopamine anticipation loops, curiosity gaps, social proof triggers, novelty detection, and narrative tension arcs — proven to increase engagement and memorability.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Neuro-content agent** — new agent capability in `lib/agent-capabilities.ts`; system prompt encodes 12 cognitive engagement principles (curiosity gap, open loops, social proof, contrast effect, loss aversion framing, specificity anchoring, future-pacing, micro-tension, identity mirroring, pattern interrupts, sensory language, progressive disclosure) |
-| ⬜ | **Content scoring API** — `POST /api/content/score` takes any text and returns a JSON score (0–100) per principle + an overall "neural activation score"; built on Claude structured output |
-| ⬜ | **Revision loop** — agent generates draft → scores it → if score < 75, self-revises targeting the lowest-scoring dimensions → iterates up to 3 times before returning |
-| ⬜ | **Format templates** — LinkedIn post, X/Twitter thread, Instagram caption, long-form blog (SEO + neuro), cold email, landing page hero, VSL script, YouTube description; each template has format-specific neuro guidelines |
-| ⬜ | **Tribe tone profiles** — "authority", "peer", "challenger", "storyteller", "data-driven"; user selects at `/tools/agents` and profile is injected into every content prompt |
-| ⬜ | **A/B variant generator** — given one piece of content, produce 3 variants each emphasising a different cognitive trigger; displayed side-by-side for user to pick |
+| ✅ | **Neuro-content library** — `lib/neuro-content/` with types, 12 principles, 8 format templates, 5 tone profiles; scoring + revision prompt builders; full re-export via index |
+| ✅ | **Neuro-content agent** — new `'neuro-content'` capability in `lib/agent-capabilities.ts`; system prompt encodes all 12 cognitive engagement principles with application guidance |
+| ✅ | **Content scoring API** — `POST /api/content/score` scores text against all 12 principles using Claude Sonnet; returns `ContentScore` with per-principle scores (0–100), overall score, grade (A–F), topStrengths, topWeaknesses, and 3 concrete suggestions |
+| ✅ | **Revision loop** — `POST /api/content/generate` generates draft → scores with Claude Haiku (fast) → if score < `targetScore`, rewrites targeting the weakest principles → up to 3 iterations; returns `X-Neuro-Score`, `X-Neuro-Grade`, `X-Neuro-Iterations` headers |
+| ✅ | **Format templates** — 8 formats: LinkedIn post, X/Twitter thread, Instagram caption, long-form blog, cold email, landing page hero, VSL script, YouTube description; each with structure blueprint, format-specific neuro guidelines, and a structural example |
+| ✅ | **Tribe tone profiles** — 5 profiles: authority (declarative, data-backed), peer (warm, conversational), challenger (provocative, counterintuitive), storyteller (narrative-driven, sensory), data-driven (precise, evidence-first); each with voice paragraph, do/don't lists, sample phrase |
+| ✅ | **A/B variant generator** — `POST /api/content/variants` produces 3 variants in parallel, each emphasising a different trigger: curiosity gap, loss aversion, social proof; side-by-side in UI with copy buttons |
+| ✅ | **Tribe v2 UI** — `app/(protected)/tools/content/page.tsx`; format picker (dropdown), tone picker (pill buttons), topic/context inputs, target score slider, generate button, streaming output, score panel with 12 principle bars (expandable), variant tabs; "Content" added to sidebar (Sparkles icon) |
 | ⬜ | **Content analytics** — connect published content performance (CTR, time-on-page, shares) back to neuro score; surface correlation on dashboard to improve future scoring weights |
 | ⬜ | **muapi.ai media pairing** — after content is generated, automatically call muapi.ai to generate a matching image/visual; result attached to board card and uploaded to R2/Supabase Storage |
+
+### Implementation Notes
+- `lib/neuro-content/types.ts` — all TypeScript interfaces: `NeuroPrinciple`, `PrincipleScore`, `ContentScore`, `FormatTemplate`, `ToneProfile`, `GenerateContentRequest`, `ContentVariant`, `VariantsResponse`
+- `lib/neuro-content/principles.ts` — 12 `NeuroPrinciple` objects + `buildScoringPrompt()` + `buildRevisionPrompt()`
+- `lib/neuro-content/templates.ts` — 8 `FormatTemplate` objects + `getTemplate()` helper
+- `lib/neuro-content/tones.ts` — 5 `ToneProfile` objects + `getToneProfile()` helper
+- Scoring uses Claude Sonnet 4.6 for quality, Claude Haiku for fast revision-loop scoring
+- Rate limits: score 20/min, generate 10/min, variants 5/min (expensive — 3 parallel Sonnet calls)
 
 ### Reference
 - Tribe v2 philosophy: content is a neurological event before it is a marketing event — engineer for brain state first, message second.

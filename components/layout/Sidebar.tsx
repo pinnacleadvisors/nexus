@@ -11,6 +11,7 @@ import {
   Wrench,
   Bot,
   Network,
+  Sparkles,
   ChevronLeft,
   ChevronRight,
   Zap,
@@ -18,12 +19,13 @@ import {
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
-  { href: '/forge',        label: 'Forge',     segment: 'forge',     icon: Hammer },
-  { href: '/dashboard',    label: 'Dashboard', segment: 'dashboard', icon: LayoutDashboard },
-  { href: '/board',        label: 'Board',     segment: 'board',     icon: Kanban },
-  { href: '/swarm',        label: 'Swarm',     segment: 'swarm',     icon: Network },
-  { href: '/tools/agents', label: 'Agents',    segment: 'tools',     icon: Bot },
-  { href: '/tools',        label: 'Tools',     segment: 'tools',     icon: Wrench },
+  { href: '/forge',          label: 'Forge',     segment: 'forge',     icon: Hammer },
+  { href: '/dashboard',      label: 'Dashboard', segment: 'dashboard', icon: LayoutDashboard },
+  { href: '/board',          label: 'Board',     segment: 'board',     icon: Kanban },
+  { href: '/swarm',          label: 'Swarm',     segment: 'swarm',     icon: Network },
+  { href: '/tools/content',  label: 'Content',   segment: 'tools',     icon: Sparkles },
+  { href: '/tools/agents',   label: 'Agents',    segment: 'tools',     icon: Bot },
+  { href: '/tools',          label: 'Tools',     segment: 'tools',     icon: Wrench },
 ]
 
 export default function Sidebar() {

@@ -610,7 +610,61 @@ Impact on Month 12 ARR if churn is 2% vs 5% vs 8%.
 State all assumptions clearly. Mark uncertain figures with *.`,
   },
 
-  // 10 — Legal
+  // 10 — Tribe v2 Neuro-Content
+  {
+    id: 'neuro-content',
+    name: 'Neuro-Content (Tribe v2)',
+    description: 'Generate high-performing content using all 12 cognitive engagement principles: curiosity gap, open loops, social proof, contrast, loss aversion, specificity, future pacing, micro-tension, identity mirroring, pattern interrupts, sensory language, and progressive disclosure.',
+    icon: 'Sparkles',
+    category: 'content',
+    savesToNotion: true,
+    createsBoardCard: true,
+    inputs: [
+      {
+        key: 'topic',
+        label: 'Topic / Core Idea',
+        placeholder: 'e.g. Why most cold emails fail and the 3-line fix that doubled our reply rate',
+        required: true,
+        multiline: false,
+      },
+      {
+        key: 'businessContext',
+        label: 'Business Context',
+        placeholder: 'e.g. B2B SaaS tool for sales teams, targeting startup founders, $49/mo',
+        multiline: true,
+      },
+      {
+        key: 'format',
+        label: 'Content Format',
+        placeholder: 'linkedin-post | x-thread | instagram-caption | long-form-blog | cold-email | landing-page-hero | vsl-script | youtube-description',
+      },
+      {
+        key: 'tone',
+        label: 'Tone Profile',
+        placeholder: 'authority | peer | challenger | storyteller | data-driven',
+      },
+    ],
+    systemPrompt: `You are a master conversion copywriter who applies cognitive neuroscience to every sentence.
+
+Apply all 12 neuro-engagement principles:
+
+1. **Curiosity Gap** — Open an information gap the reader is compelled to close. Delay resolution.
+2. **Open Loops** — Start patterns the brain needs to complete (Zeigarnik effect). Layer multiple open loops.
+3. **Social Proof** — Specific numbers, named individuals, vivid group references. Never vague.
+4. **Contrast Effect** — Establish a reference point (before/after, old/new way) then present the alternative.
+5. **Loss Aversion** — Frame benefits as preventing loss: "stop leaving $10k on the table."
+6. **Specificity Anchoring** — Replace every vague claim with specific number, name, date, or place.
+7. **Future Pacing** — Project reader into vivid desired future. Engage multiple senses.
+8. **Micro-Tension** — Small moments of discomfort: counterintuitive claims, brief challenges to belief.
+9. **Identity Mirroring** — Reflect reader's existing or aspirational identity.
+10. **Pattern Interrupts** — Break expected patterns with unexpected formatting, pivots, or bold claims.
+11. **Sensory Language** — Words that evoke physical sensation. "The sharp click of a deal closing."
+12. **Progressive Disclosure** — Each sentence earns the right to the next. Build a staircase of revelation.
+
+Write ONLY the final content. No preamble, no meta-commentary, no explanations.`,
+  },
+
+  // 11 — Legal
   {
     id: 'legal',
     name: 'Legal Documents',
