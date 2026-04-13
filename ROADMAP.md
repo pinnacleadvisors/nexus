@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-13 (Phases 11–12 complete; Phases 13–16 planned)
+> Last updated: 2026-04-13 (Phases 11–12 complete; Phases 13–18 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -521,14 +521,146 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
+## Phase 17 — DeerFlow 2.0 Integration (Not Started)
+
+> Deploy ByteDance's open-source SuperAgent harness (58k+ GitHub stars, MIT licence) as a **sidecar microservice** alongside Nexus. DeerFlow 2.0 provides two things Nexus currently lacks: (1) multi-hop live web research with cited sources, and (2) sandboxed code execution in Docker/Kubernetes — reducing or eliminating OpenClaw dependency for coding tasks. Everything else (business management, content engine, auth, billing, approval flow) stays in Nexus.
+
+> **Architecture:** Nexus Swarm (TypeScript) → dispatches research/coding tasks → DeerFlow REST API → returns cited report or verified code → Nexus persists result + creates Board card.
+
+> **ByteDance compliance note:** DeerFlow is MIT-licensed open-source code that you self-host. No data leaves your infrastructure to ByteDance. Formal compliance review is required before deploying in regulated industries (finance, health, government).
+
+### 17a — DeerFlow Deployment
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Deploy DeerFlow 2.0** — self-hosted on Railway or Render (~$25–50/mo for a 4 vCPU / 8 GB instance); use `make up` (standard mode) or `make up-pro` (Gateway mode, fewer processes); expose on internal network only — no public IP |
+| ⬜ | **Environment config** — `make setup` wizard: choose Claude Sonnet 4.6 as LLM, Tavily as search provider, Docker as sandbox mode; store `DEERFLOW_BASE_URL` + `DEERFLOW_API_KEY` in Doppler |
+| ⬜ | **Health check** — `GET /health` endpoint; Inngest background job pings every 5 minutes; alerts via Resend if DeerFlow goes down |
+| ⬜ | **Sandbox isolation** — DeerFlow's Docker sandbox runs in a separate container network; no access to Nexus's database or secrets; read `make doctor` output to verify |
+
+### 17b — Nexus Integration Layer
+
+| Status | Item |
+|--------|------|
+| ⬜ | **DeerFlow client** — `lib/deerflow/client.ts`: `submitTask(goal, context)` → POST to DeerFlow Gateway API → returns `{ taskId, streamUrl }`; `pollTask(taskId)` → GET result; `streamTask(taskId)` → SSE reader |
+| ⬜ | **Swarm routing hook** — in `lib/swarm/Queen.ts`, `executeTask()` checks task tags: if `researcher` or `coder` and DeerFlow is configured → dispatch to DeerFlow client instead of direct LLM call; falls back to LLM if DeerFlow unreachable |
+| ⬜ | **Researcher agent upgrade** — researcher agent in `lib/swarm/agents/registry.ts` gains `useDeerFlow: true` flag; DeerFlow provides multi-hop Tavily search + cited markdown report; citations extracted and stored in `reasoning_patterns` |
+| ⬜ | **Coder agent upgrade** — coder agent dispatches to DeerFlow sandbox; DeerFlow writes, runs, and verifies code in Docker container; returns working code + test output; result saved as artifact in Supabase Storage |
+| ⬜ | **Cost tracking** — DeerFlow tasks log token usage via `POST /api/token-events`; LLM model + token count extracted from DeerFlow task result metadata; cost estimate added to swarm budget tracking |
+| ⬜ | **DeerFlow status page** — `/tools/deerflow`: shows connection status, active tasks, last 10 completed tasks, total tokens used, estimated cost savings vs OpenClaw |
+
+### 17c — Tavily Live Web Search (Quick Win — Do First)
+
+> Tavily can be integrated directly into Nexus's researcher agent without deploying DeerFlow. This closes the live-web-research gap in ~4 hours and can be done independently.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Install Tavily** — `npm i @tavily/core`; add `TAVILY_API_KEY` to Doppler (free tier: 1,000 searches/mo; pro: $50/mo for 10,000) |
+| ⬜ | **Search tool** — `lib/tools/tavily.ts`: `searchWeb(query, maxResults?)` → calls Tavily API → returns `{ title, url, content, score }[]`; auto-truncates to 4,000 tokens |
+| ⬜ | **Inject into researcher agent** — researcher system prompt updated: "Before answering, call the `search_web` tool with your research queries. Cite all sources." Tool calling wired via Vercel AI SDK `tools` parameter |
+| ⬜ | **Citation rendering** — Board card detail view renders citations as clickable source links; Notion append includes citation list below report |
+
+### Manual Steps — DeerFlow
+
+- [ ] Provision Railway service: `railway up` from the deer-flow repo root, or use Railway GitHub integration
+- [ ] Add `DEERFLOW_BASE_URL` to Doppler — internal Railway service URL (e.g. `https://deerflow.internal.railway.app`)
+- [ ] Add `TAVILY_API_KEY` to Doppler — register at https://tavily.com → API Keys (do this first; works without DeerFlow)
+- [ ] Add `DEERFLOW_API_KEY` to Doppler — set in DeerFlow's `.env` as `API_KEY`, then copy here
+- [ ] Verify sandbox: run `make doctor` on the DeerFlow instance; confirm Docker sandbox accessible
+- [ ] Set `DEERFLOW_ENABLED=true` in Doppler — gates the routing hook in `lib/swarm/Queen.ts`
+
+### Reference
+- DeerFlow 2.0 GitHub: https://github.com/bytedance/deer-flow (MIT, 58k+ stars)
+- DeerFlow skills DeerFlow can use: web research, slide decks, podcast export, image gen prompts, video gen prompts, data analysis, code execution
+- Cost comparison: DeerFlow sidecar (~$25–50/mo infra) vs OpenClaw (Claude Pro subscription ~$20–100/mo) — DeerFlow wins on coding tasks; OpenClaw wins on browser automation + tasks requiring 2FA
+
+---
+
+## Phase 18 — Video Generation Pipeline (Not Started)
+
+> End-to-end AI video production: Tribe v2 generates the script (already built) → n8n orchestrates the render pipeline → Kling 2.0 / Runway Gen-4 render the video → ElevenLabs adds voiceover → final video stored in R2 and linked to a Board card for approval. Covers both cinematic short-form content and ultra-realistic UGC (talking head / product demo) formats.
+
+> **Key insight:** Neither DeerFlow nor any other agent framework renders video natively. All video AI tools require API integration. The advantage of building this in Nexus is that Tribe v2's neuro-optimised VSL script format (already live) feeds directly into the pipeline — DeerFlow would need to replicate this from scratch.
+
+### 18a — Script-to-Video (Cinematic)
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Video brief agent** — new agent capability in `lib/agent-capabilities.ts`: accepts topic + format (`cinematic-short` \| `ugc-product` \| `ugc-talking-head` \| `explainer`) → generates structured video brief: scene-by-scene breakdown, shot descriptions, audio cues, on-screen text; saved as Notion page + Board card |
+| ⬜ | **Tribe v2 VSL integration** — `/tools/content` gains "Export to Video" button when format = `vsl-script`; sends script to video brief agent; populates scene descriptions from VSL structure |
+| ⬜ | **Kling 2.0 integration** — `lib/video/kling.ts`: `generateClip(prompt, referenceImage?, duration?)` → POST to Kling API → polls for completion → returns video URL; supports text-to-video and image-to-video (first/last frame guidance) |
+| ⬜ | **Runway Gen-4 integration** — `lib/video/runway.ts`: `generateClip(prompt, style?)` → Runway API; used for cinematic/stylised output where Kling is less suitable; model selected per scene via video brief agent |
+| ⬜ | **Scene assembly** — n8n workflow stitches clips: for each scene in brief → call Kling/Runway → collect video files → pass to FFmpeg node (n8n built-in) for concatenation → output final MP4 |
+| ⬜ | **Video API route** — `POST /api/video/generate`: accepts video brief JSON → dispatches to n8n workflow → returns `{ jobId, estimatedDuration, estimatedCost }`; `GET /api/video/:jobId` streams progress via SSE |
+
+### 18b — Voiceover & Audio Layer
+
+| Status | Item |
+|--------|------|
+| ⬜ | **ElevenLabs integration** — `lib/audio/elevenlabs.ts`: `generateVoiceover(script, voiceId, stability?)` → ElevenLabs API → returns MP3; voice cloning optional (upload reference audio); `ELEVENLABS_API_KEY` in Doppler |
+| ⬜ | **Voice profile store** — Supabase table `voice_profiles`: `{ id, name, elevenlabs_voice_id, sample_url, language }`; user selects per-project; agents recall saved voice for consistent brand audio |
+| ⬜ | **Background music** — `lib/audio/suno.ts` or `lib/audio/udio.ts`: `generateTrack(mood, duration)` → AI music API → returns MP3; mood inferred from video brief (e.g. "high energy" for product demo, "ambient" for explainer) |
+| ⬜ | **Audio mix** — n8n FFmpeg node: voiceover + background music → duck music at -18dB under speech → mixed MP4 |
+| ⬜ | **Lip-sync / dubbing** — optional: pass final audio through ElevenLabs dubbing API or D-ID to sync mouth movement if using a talking avatar |
+
+### 18c — UGC Format (Talking Head / Product Demo)
+
+| Status | Item |
+|--------|------|
+| ⬜ | **HeyGen integration** — `lib/video/heygen.ts`: `generateAvatar(script, avatarId, voiceId)` → HeyGen API → returns video URL; supports 100+ photorealistic avatars + custom avatar upload; `HEYGEN_API_KEY` in Doppler |
+| ⬜ | **Avatar library** — `/tools/video/avatars`: browse + preview HeyGen avatar catalogue; user pins 1–3 brand avatars; avatar ID stored in business profile |
+| ⬜ | **Product demo mode** — `lib/video/heygen.ts` `generateProductDemo(productImages[], script)` → HeyGen screen-record mode; avatar presents on-screen product walkthrough |
+| ⬜ | **D-ID fallback** — `lib/video/did.ts`: cheaper alternative to HeyGen for simple talking-head; `generateTalkingPhoto(imageUrl, audioUrl)` → D-ID API → MP4 |
+| ⬜ | **muapi.ai scene images** — `lib/media/muapi.ts`: `generateSceneImage(prompt, style?)` → muapi.ai API → PNG; used as reference frames for Kling image-to-video or as static inserts in the final video; `MUAPI_AI_KEY` in Doppler (planned since Phase 12) |
+
+### 18d — Asset Management & Approval
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Video storage** — completed MP4s uploaded to Cloudflare R2 (`lib/r2.ts`, already exists); presigned URL returned; thumbnail extracted via FFmpeg and stored alongside |
+| ⬜ | **Board card auto-creation** — on video completion, Board card created in Review column: card includes video player (HTML5 `<video>` with presigned URL), script, cost breakdown, platform export links |
+| ⬜ | **Video player in Review modal** — `components/board/ReviewModal.tsx` gains video-aware rendering: detects `.mp4` / `.webm` asset URLs → renders inline video player with playback controls |
+| ⬜ | **Platform export** — one-click download as: 9:16 (TikTok/Reels/Shorts), 1:1 (Instagram feed), 16:9 (YouTube/LinkedIn); aspect ratio conversion via FFmpeg in n8n workflow |
+| ⬜ | **Video dashboard widget** — `/dashboard` gains "Video Production" section: videos in pipeline, avg render time, total cost this month, top-performing format |
+
+### Manual Steps — Video Pipeline
+
+- [ ] Register Kling 2.0 API: https://klingai.com/api → add `KLING_API_KEY` to Doppler
+- [ ] Register Runway Gen-4 API: https://runwayml.com → add `RUNWAY_API_KEY` to Doppler
+- [ ] Register ElevenLabs: https://elevenlabs.io → add `ELEVENLABS_API_KEY` to Doppler
+- [ ] Register HeyGen: https://heygen.com → add `HEYGEN_API_KEY` to Doppler (for UGC/avatar videos)
+- [ ] Register D-ID: https://d-id.com → add `DID_API_KEY` to Doppler (cheaper talking-head fallback)
+- [ ] Register muapi.ai: https://muapi.ai → add `MUAPI_AI_KEY` to Doppler (scene image generation)
+- [ ] Optional — Suno or Udio for AI background music: add `SUNO_API_KEY` or `UDIO_API_KEY` to Doppler
+- [ ] Ensure FFmpeg available in n8n instance (pre-installed in n8n Docker image)
+- [ ] Set R2 CORS policy to allow presigned URL playback from Vercel domain
+
+### Cost Reference (per video, approximate)
+
+| Format | Tools | Estimated Cost |
+|--------|-------|----------------|
+| 60s cinematic (8 scenes) | Kling 2.0 + ElevenLabs + Suno | ~$2–8 |
+| 30s UGC talking head | HeyGen + ElevenLabs | ~$1–3 |
+| 90s explainer | Runway Gen-4 + ElevenLabs + muapi.ai | ~$5–15 |
+| 3-min product demo | HeyGen enterprise + ElevenLabs | ~$5–10 |
+
+---
+
 ## Immediate Next Steps (Priority Order)
 
-1. **Configure OpenClaw** at `/tools/claw` → Forge chat goes live using Claude Pro subscription (no API key needed)
-2. **Set `ANTHROPIC_API_KEY`** in Doppler (optional) → fallback if OpenClaw is unavailable
-3. **Set up Supabase** → replace mock data with real agent state
-4. **Add Stripe webhook** → real revenue on Dashboard
-5. **Implement Notion API** → agents write to knowledge base
-6. **Enable Clerk MFA** → security baseline for production use
+### Quick wins (hours, not days)
+1. **Add Tavily web search** — `npm i @tavily/core`; add `TAVILY_API_KEY` to Doppler; inject live search results into the researcher swarm agent in `lib/swarm/agents/registry.ts`. Closes the biggest quality gap vs DeerFlow (~4 hrs)
+2. **Configure OpenClaw** at `/tools/claw` → Forge chat goes live using Claude Pro subscription (no API key needed)
+3. **Set `ANTHROPIC_API_KEY`** in Doppler (optional) → fallback if OpenClaw is unavailable
+
+### Infrastructure (this week)
+4. **Set up Supabase** → replace mock data with real agent state
+5. **Add Stripe webhook** → real revenue on Dashboard
+6. **Implement Notion API** → agents write to knowledge base
+7. **Enable Clerk MFA** → security baseline for production use
+
+### Phase 17 fast-track (deploy DeerFlow alongside Nexus)
+8. **Deploy DeerFlow 2.0** to Railway ($25/mo) — gives sandboxed bash execution + live multi-hop web research with source citations; integrate via `lib/deerflow/client.ts`; reduces or eliminates OpenClaw dependency for coding tasks
 
 ---
 
@@ -557,8 +689,14 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | Drag & drop | dnd-kit | ✅ Live |
 | Charts | Recharts | ✅ Live |
 | Workflow automation | n8n (self-hosted or cloud) | ⬜ Phase 13 |
-| Media generation | muapi.ai | ⬜ Phase 12/13 |
+| Web research | Tavily (multi-hop search + citations) | ⬜ Phase 17c (quick win) |
+| SuperAgent sidecar | DeerFlow 2.0 (ByteDance OSS, MIT) | ⬜ Phase 17 |
+| Media image generation | muapi.ai | ⬜ Phase 18 |
+| Video generation (cinematic) | Kling 2.0 / Runway Gen-4 | ⬜ Phase 18 |
+| Video generation (UGC/avatar) | HeyGen / D-ID | ⬜ Phase 18 |
+| Voiceover | ElevenLabs | ⬜ Phase 18 |
+| Background music | Suno / Udio | ⬜ Phase 18 |
 | 3D graph rendering | react-three-fiber + three.js | ⬜ Phase 14 |
 | Graph computation | graphology + Louvain community detection | ⬜ Phase 14 |
-| Swarm orchestration | Ruflo-inspired (custom) | ⬜ Phase 11 |
+| Swarm orchestration | Ruflo-inspired (custom) | ✅ Phase 11 |
 | Vector search | Supabase pgvector | ⬜ Phase 14/15 |
