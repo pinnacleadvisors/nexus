@@ -18,9 +18,13 @@ import {
   Loader2,
   ExternalLink,
   AlertCircle,
+  GitBranch,
+  Bot,
+  ArrowRight,
 } from 'lucide-react'
 import { WORKFLOW_TEMPLATES, WORKFLOW_CATEGORIES } from '@/lib/n8n/templates'
 import type { WorkflowTemplate, N8nWorkflowStatus } from '@/lib/n8n/types'
+import type { GapAnalysis } from '@/lib/n8n/gap-detector'
 
 type ExecutionStatus = 'success' | 'error' | 'running' | 'waiting'
 
@@ -272,24 +276,163 @@ function WorkflowRow({
   )
 }
 
+// ── Gap analysis panel (shown inside GeneratePanel result area) ───────────────
+function GapAnalysisPanel({
+  gap,
+  onBridge,
+  bridging,
+  bridgeResult,
+}: {
+  gap:          GapAnalysis
+  onBridge:     () => void
+  bridging:     boolean
+  bridgeResult: { openClawDispatched: boolean; openClawSessionId?: string } | null
+}) {
+  return (
+    <div
+      className="rounded-xl p-4 space-y-3"
+      style={{
+        backgroundColor: gap.hybridRequired ? '#1a1a2e' : '#0d1a0d',
+        border: `1px solid ${gap.hybridRequired ? '#6c63ff' : '#166534'}`,
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <GitBranch size={13} style={{ color: gap.hybridRequired ? '#6c63ff' : '#4ade80' }} />
+        <p className="text-xs font-semibold" style={{ color: gap.hybridRequired ? '#a5b4fc' : '#4ade80' }}>
+          {gap.hybridRequired ? 'Hybrid Routing Required' : 'Pure n8n — No Gaps'}
+        </p>
+        <span
+          className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium"
+          style={{
+            backgroundColor: gap.hybridRequired ? '#2e2860' : '#1a2e1a',
+            color:           gap.hybridRequired ? '#818cf8' : '#22c55e',
+          }}
+        >
+          {gap.summary}
+        </span>
+      </div>
+
+      {/* Routing explanation */}
+      <p className="text-[11px] leading-relaxed" style={{ color: '#7070a0' }}>
+        {gap.routingExplanation}
+      </p>
+
+      {/* Step columns */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* n8n steps */}
+        <div>
+          <p className="text-[10px] font-medium mb-1.5 flex items-center gap-1" style={{ color: '#4ade80' }}>
+            <Workflow size={10} /> n8n ({gap.apiNativeSteps.length})
+          </p>
+          <ul className="space-y-1">
+            {gap.apiNativeSteps.map(s => (
+              <li key={s.id} className="text-[10px] flex items-start gap-1" style={{ color: '#55556a' }}>
+                <span style={{ color: '#4ade80' }}>✓</span>
+                {s.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* OpenClaw steps */}
+        {gap.hybridRequired && (
+          <div>
+            <p className="text-[10px] font-medium mb-1.5 flex items-center gap-1" style={{ color: '#a5b4fc' }}>
+              <Bot size={10} /> OpenClaw ({gap.openClawSteps.length})
+            </p>
+            <ul className="space-y-1">
+              {gap.openClawSteps.map(s => (
+                <li key={s.id} className="text-[10px] flex items-start gap-1" style={{ color: '#55556a' }}>
+                  <span style={{ color: '#a5b4fc' }}>→</span>
+                  <span>
+                    {s.description}
+                    {s.openClawReason && (
+                      <span style={{ color: '#3d3d60' }}> — {s.openClawReason}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Dispatch button */}
+      {gap.hybridRequired && !bridgeResult && (
+        <button
+          onClick={onBridge}
+          disabled={bridging}
+          className="flex items-center justify-center gap-2 w-full py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+          style={{ backgroundColor: '#2e2860', color: '#a5b4fc' }}
+        >
+          {bridging
+            ? <><Loader2 size={12} className="animate-spin" /> Dispatching to OpenClaw…</>
+            : <><ArrowRight size={12} /> Dispatch OpenClaw Steps</>
+          }
+        </button>
+      )}
+
+      {/* Bridge result */}
+      {bridgeResult && (
+        <div
+          className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]"
+          style={{
+            backgroundColor: bridgeResult.openClawDispatched ? '#1a2e1a' : '#2e2818',
+            color:           bridgeResult.openClawDispatched ? '#4ade80' : '#fbbf24',
+          }}
+        >
+          {bridgeResult.openClawDispatched ? (
+            <>
+              <CheckCircle2 size={12} className="shrink-0 mt-0.5" />
+              <span>
+                OpenClaw dispatched{bridgeResult.openClawSessionId
+                  ? ` (session: ${bridgeResult.openClawSessionId})`
+                  : ''
+                }. Results will arrive via webhook.
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertCircle size={12} className="shrink-0 mt-0.5" />
+              <span>
+                OpenClaw not configured — set{' '}
+                <code style={{ color: '#fbbf24' }}>OPENCLAW_GATEWAY_URL</code> +{' '}
+                <code style={{ color: '#fbbf24' }}>OPENCLAW_BEARER_TOKEN</code> in Doppler.
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Generate panel ────────────────────────────────────────────────────────────
 function GeneratePanel({ onClose }: { onClose: () => void }) {
   const [description,     setDescription]     = useState('')
   const [businessContext, setBusinessContext] = useState('')
   const [loading,         setLoading]         = useState(false)
   const [result,          setResult]          = useState<{
-    workflow:    Record<string, unknown>
-    checklist:   string[]
-    explanation: string
-    importUrl?:  string
+    workflow:     Record<string, unknown>
+    checklist:    string[]
+    explanation:  string
+    importUrl?:   string
+    gapAnalysis?: GapAnalysis
   } | null>(null)
-  const [error,           setError]           = useState('')
-  const [copied,          setCopied]          = useState(false)
+  const [error,       setError]       = useState('')
+  const [copied,      setCopied]      = useState(false)
+  const [bridging,    setBridging]    = useState(false)
+  const [bridgeResult, setBridgeResult] = useState<{
+    openClawDispatched: boolean
+    openClawSessionId?: string
+  } | null>(null)
 
   async function handleGenerate() {
     if (!description.trim()) { setError('Please describe your workflow.'); return }
     setError('')
     setResult(null)
+    setBridgeResult(null)
     setLoading(true)
     try {
       const res = await fetch('/api/n8n/generate', {
@@ -307,6 +450,30 @@ function GeneratePanel({ onClose }: { onClose: () => void }) {
       setError((err as Error).message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleBridge() {
+    setBridging(true)
+    setBridgeResult(null)
+    try {
+      const res = await fetch('/api/n8n/bridge', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ description, businessContext }),
+      })
+      const data = await res.json() as {
+        openClawDispatched: boolean
+        openClawSessionId?: string
+      }
+      setBridgeResult({
+        openClawDispatched: data.openClawDispatched,
+        openClawSessionId:  data.openClawSessionId,
+      })
+    } catch {
+      setBridgeResult({ openClawDispatched: false })
+    } finally {
+      setBridging(false)
     }
   }
 
@@ -342,7 +509,7 @@ function GeneratePanel({ onClose }: { onClose: () => void }) {
               Generate Custom Workflow
             </h2>
             <p className="text-xs" style={{ color: '#55556a' }}>
-              Describe what you want to automate — Claude writes the n8n JSON
+              Claude writes the n8n JSON · gap detection routes browser steps to OpenClaw
             </p>
           </div>
           <button
@@ -426,6 +593,16 @@ function GeneratePanel({ onClose }: { onClose: () => void }) {
                 Open in n8n
               </a>
             )}
+
+            {/* Bridge info */}
+            <div
+              className="rounded-lg p-3 text-[10px] leading-relaxed"
+              style={{ backgroundColor: '#0d0d14', border: '1px solid #1a1a2e', color: '#3d3d60' }}
+            >
+              <span style={{ color: '#55556a' }}>Priority routing:</span>{' '}
+              n8n handles API-native steps first. Browser automation / scraping
+              steps are automatically flagged and dispatched to OpenClaw.
+            </div>
           </div>
 
           {/* Right: result */}
@@ -437,6 +614,16 @@ function GeneratePanel({ onClose }: { onClose: () => void }) {
                   <p className="text-xs font-medium mb-1" style={{ color: '#9090b0' }}>What this workflow does</p>
                   <p className="text-xs leading-relaxed" style={{ color: '#c8c8e0' }}>{result.explanation}</p>
                 </div>
+
+                {/* Gap analysis */}
+                {result.gapAnalysis && (
+                  <GapAnalysisPanel
+                    gap={result.gapAnalysis}
+                    onBridge={handleBridge}
+                    bridging={bridging}
+                    bridgeResult={bridgeResult}
+                  />
+                )}
 
                 {/* Checklist */}
                 <div>
@@ -729,7 +916,8 @@ export default function N8nPage() {
       <p className="mt-8 text-xs text-center" style={{ color: '#24243e' }}>
         Requires <code style={{ color: '#55556a' }}>N8N_BASE_URL</code> +{' '}
         <code style={{ color: '#55556a' }}>N8N_API_KEY</code> in Doppler for live integration ·{' '}
-        Webhook receiver at <code style={{ color: '#55556a' }}>/api/webhooks/n8n</code>
+        Webhook receiver at <code style={{ color: '#55556a' }}>/api/webhooks/n8n</code> ·{' '}
+        Hybrid bridge at <code style={{ color: '#55556a' }}>/api/n8n/bridge</code>
       </p>
 
       {/* Modals */}

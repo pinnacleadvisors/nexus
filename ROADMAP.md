@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 11–13b complete; 13c + Phases 14–18 planned)
+> Last updated: 2026-04-14 (Phases 11–13c complete; Phases 14–18 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -418,7 +418,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 13 — Consultant Agent + n8n Workflow Automation (Partial — 13a + 13b Complete)
+## Phase 13 — Consultant Agent + n8n Workflow Automation (Complete — 13a + 13b + 13c)
 
 > A strategic consultant agent researches the best tool combinations for your business, then generates executable n8n workflow blueprints. Every step the user must take (add API key, create account, review workflow) is automatically added as a Kanban card and Notion note so agents stay in context.
 
@@ -458,13 +458,19 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - `app/(protected)/tools/n8n/page.tsx` — full workflow management UI: live list, template grid, generate panel, import toast
 - `components/layout/Sidebar.tsx` — Workflows nav item added (Workflow icon, `/tools/n8n`)
 
-### 13c — OpenClaw Fallback Bridge
+### 13c — OpenClaw Fallback Bridge ✅ Complete
 
 | Status | Item |
 |--------|------|
-| ⬜ | **API gap detection** — consultant flags any workflow step that cannot be accomplished via a public API (e.g. scraping, browser automation, actions requiring 2FA); these steps are automatically dispatched to OpenClaw |
-| ⬜ | **Hybrid workflow** — n8n handles API-native steps → OpenClaw handles browser/scraping steps → result flows back into n8n via webhook; orchestrated from `/api/swarm/dispatch` |
-| ⬜ | **Priority routing rule** — Consultant agent always checks n8n first; only escalates to OpenClaw when n8n cannot accomplish the task natively |
+| ✅ | **API gap detection** — `lib/n8n/gap-detector.ts`: `analyzeWorkflow()` inspects every n8n node type + parameter for browser-automation signals; `analyzeDescription()` scans free-text descriptions using 25 keyword patterns; both return a `GapAnalysis` with `apiNativeSteps`, `openClawSteps`, `hybridRequired`, `routingExplanation`, and `summary` |
+| ✅ | **Hybrid workflow** — `POST /api/n8n/bridge`: Claude Sonnet splits the description into n8n-native vs OpenClaw steps, generates an n8n v1 workflow for the API-native half (with a Webhook trigger node for callback), dispatches OpenClaw steps to the configured gateway, and returns a unified plan; results flow back via the existing `POST /api/webhooks/n8n` receiver |
+| ✅ | **Priority routing rule** — n8n is always attempted first (all node types checked against 50-entry allowlist); OpenClaw is escalated only when a step genuinely requires browser automation, 2FA, JS-rendered scraping, or platform DM APIs without a public REST tier; routing decision documented in every response as `routingExplanation` |
+
+### Implementation Notes (13c)
+- `lib/n8n/gap-detector.ts` — `WorkflowStep`, `GapAnalysis` types; `analyzeWorkflow(workflow)` (node-level); `analyzeDescription(text)` (heuristic, no LLM); 50-node allowlist + 25 browser-automation keyword patterns
+- `app/api/n8n/bridge/route.ts` — `POST /api/n8n/bridge`; rate-limited (5/min); Claude-powered split analysis + n8n workflow generation; OpenClaw dispatch with HMAC-free direct session POST; board card creation; returns `plan`, `n8nWorkflow`, `openClawDispatched`, `openClawSessionId`, `importUrl`
+- `app/api/n8n/generate/route.ts` — now also returns `gapAnalysis` (from `analyzeWorkflow`) alongside the generated workflow
+- `app/(protected)/tools/n8n/page.tsx` — `GapAnalysisPanel` component: shows routing summary badge, per-step n8n vs OpenClaw breakdown, "Dispatch OpenClaw Steps" button that calls `/api/n8n/bridge`; displayed inline in the `GeneratePanel` result area after each generation
 
 ### Manual Steps — n8n
 - [ ] Deploy n8n: self-hosted (`docker run n8nio/n8n`) or n8n Cloud (https://n8n.io/cloud/)

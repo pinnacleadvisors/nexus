@@ -29,6 +29,7 @@ import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { getTemplate } from '@/lib/n8n/templates'
 import { getBaseUrl } from '@/lib/n8n/client'
+import { analyzeWorkflow } from '@/lib/n8n/gap-detector'
 import type { N8nWorkflow } from '@/lib/n8n/types'
 
 export const maxDuration = 60
@@ -143,6 +144,7 @@ export async function POST(req: NextRequest) {
   })
 
   const { workflow, checklist, explanation } = parseGeneratedOutput(text)
+  const gapAnalysis = workflow ? analyzeWorkflow(workflow) : null
 
   if (!workflow) {
     return new Response(
@@ -176,7 +178,7 @@ export async function POST(req: NextRequest) {
     : undefined
 
   return new Response(
-    JSON.stringify({ workflow, checklist, explanation, importUrl }),
+    JSON.stringify({ workflow, checklist, explanation, importUrl, gapAnalysis }),
     { headers: { 'Content-Type': 'application/json' } },
   )
 }
