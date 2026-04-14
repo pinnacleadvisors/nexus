@@ -113,6 +113,7 @@ function LaunchPanel({
   const [done, setDone]           = useState(false)
   const [error, setError]         = useState('')
   const [copied, setCopied]       = useState(false)
+  const [sourceCount, setSourceCount] = useState(0)
   const abortRef                  = useRef<AbortController | null>(null)
   const outputRef                 = useRef<HTMLPreElement>(null)
 
@@ -136,6 +137,7 @@ function LaunchPanel({
     setOutput('')
     setDone(false)
     setRunning(true)
+    setSourceCount(0)
 
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -159,6 +161,10 @@ function LaunchPanel({
         const json = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
         throw new Error(json.error ?? `Server error ${res.status}`)
       }
+
+      // Show live-source count from Tavily header
+      const tavilyCount = parseInt(res.headers.get('X-Tavily-Count') ?? '0', 10)
+      if (tavilyCount > 0) setSourceCount(tavilyCount)
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
@@ -317,9 +323,21 @@ function LaunchPanel({
                   <span className="flex items-center gap-1.5">
                     <Loader2 size={11} className="animate-spin" style={{ color: '#6c63ff' }} />
                     Generating…
+                    {sourceCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: '#1a2e1a', color: '#4ade80' }}>
+                        {sourceCount} live sources
+                      </span>
+                    )}
                   </span>
                 ) : done ? (
-                  <span style={{ color: '#22c55e' }}>✓ Complete — board card created</span>
+                  <span className="flex items-center gap-1.5" style={{ color: '#22c55e' }}>
+                    ✓ Complete — board card created
+                    {sourceCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: '#1a2e1a', color: '#4ade80' }}>
+                        {sourceCount} web sources
+                      </span>
+                    )}
+                  </span>
                 ) : (
                   'Output will appear here'
                 )}

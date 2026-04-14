@@ -595,22 +595,23 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | ⬜ | **Cost tracking** — DeerFlow tasks log token usage via `POST /api/token-events`; LLM model + token count extracted from DeerFlow task result metadata; cost estimate added to swarm budget tracking |
 | ⬜ | **DeerFlow status page** — `/tools/deerflow`: shows connection status, active tasks, last 10 completed tasks, total tokens used, estimated cost savings vs OpenClaw |
 
-### 17c — Tavily Live Web Search (Quick Win — Do First)
+### 17c — Tavily Live Web Search ✅
 
-> Tavily can be integrated directly into Nexus's researcher agent without deploying DeerFlow. This closes the live-web-research gap in ~4 hours and can be done independently.
+> Tavily integrated directly into Nexus's researcher agent without deploying DeerFlow. Closes the live-web-research gap independently of the DeerFlow sidecar.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Install Tavily** — `npm i @tavily/core`; add `TAVILY_API_KEY` to Doppler (free tier: 1,000 searches/mo; pro: $50/mo for 10,000) |
-| ⬜ | **Search tool** — `lib/tools/tavily.ts`: `searchWeb(query, maxResults?)` → calls Tavily API → returns `{ title, url, content, score }[]`; auto-truncates to 4,000 tokens |
-| ⬜ | **Inject into researcher agent** — researcher system prompt updated: "Before answering, call the `search_web` tool with your research queries. Cite all sources." Tool calling wired via Vercel AI SDK `tools` parameter |
-| ⬜ | **Citation rendering** — Board card detail view renders citations as clickable source links; Notion append includes citation list below report |
+| ✅ | **Install Tavily** — `@tavily/core` installed; add `TAVILY_API_KEY` to Doppler (free: 1k searches/mo; pro: $50/mo for 10k) |
+| ✅ | **Search tool** — `lib/tools/tavily.ts`: `searchWeb()`, `searchWebMulti()`, `formatResultsAsContext()`, `formatCitations()`, `buildResearchQueries()`; auto-truncates to 4,000 tokens; `SEARCH_ENABLED_CAPABILITIES` set |
+| ✅ | **Inject into capability agent route** — `app/api/agent/route.ts`: pre-search fires for `research`, `seo`, `consultant`, `financial`, `legal` capabilities; results injected as `## Live Web Research` block above user prompt; `X-Tavily-Count` header returned |
+| ✅ | **Inject into swarm researcher** — `lib/swarm/Queen.ts`: `executeTask()` fires Tavily search for `researcher`, `analyst`, `strategist` roles before LLM call; `lib/swarm/agents/registry.ts` researcher prompt updated to cite sources inline |
+| ✅ | **Citation rendering** — Notion append includes `formatCitations()` footer with source URLs; agents page shows live "N web sources" badge during and after generation |
 
 ### Manual Steps — DeerFlow
 
 - [ ] Provision Railway service: `railway up` from the deer-flow repo root, or use Railway GitHub integration
 - [ ] Add `DEERFLOW_BASE_URL` to Doppler — internal Railway service URL (e.g. `https://deerflow.internal.railway.app`)
-- [ ] Add `TAVILY_API_KEY` to Doppler — register at https://tavily.com → API Keys (do this first; works without DeerFlow)
+- [x] Add `TAVILY_API_KEY` to Doppler — register at https://tavily.com → API Keys (**Phase 17c complete; Tavily wired without DeerFlow**)
 - [ ] Add `DEERFLOW_API_KEY` to Doppler — set in DeerFlow's `.env` as `API_KEY`, then copy here
 - [ ] Verify sandbox: run `make doctor` on the DeerFlow instance; confirm Docker sandbox accessible
 - [ ] Set `DEERFLOW_ENABLED=true` in Doppler — gates the routing hook in `lib/swarm/Queen.ts`

@@ -26,6 +26,13 @@ import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createEntry, extractCodeBlocksFromOutput } from '@/lib/library/client'
 import type { CodeLanguage } from '@/lib/library/types'
+import {
+  searchWebMulti,
+  formatResultsAsContext,
+  formatCitations,
+  buildResearchQueries,
+  SEARCH_ENABLED_CAPABILITIES,
+} from '@/lib/tools/tavily'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -114,7 +121,23 @@ export async function POST(req: NextRequest) {
     /\{\{businessName\}\}/g,
     body.inputs.businessName ?? 'this business',
   )
-  const userPrompt = buildUserPrompt(body.inputs)
+
+  // ── Tavily live web search (fire before streaming, non-blocking on failure) ──
+  let tavilyContext = ''
+  let tavilyResults: Awaited<ReturnType<typeof searchWebMulti>> = []
+  if (SEARCH_ENABLED_CAPABILITIES.has(body.capabilityId) && process.env.TAVILY_API_KEY) {
+    const queries = buildResearchQueries(body.capabilityId, body.inputs)
+    if (queries.length > 0) {
+      tavilyResults = await searchWebMulti(queries, { maxResults: 4, searchDepth: 'basic', maxTokens: 3500 })
+      if (tavilyResults.length > 0) {
+        tavilyContext = formatResultsAsContext(tavilyResults)
+      }
+    }
+  }
+
+  const userPrompt = tavilyContext
+    ? `${tavilyContext}\n\n${buildUserPrompt(body.inputs)}`
+    : buildUserPrompt(body.inputs)
 
   audit(req, {
     action:     `agent.${body.capabilityId}`,
@@ -229,8 +252,9 @@ export async function POST(req: NextRequest) {
           req.cookies.get('oauth_token_notion')?.value,
         )
         if (notionToken) {
-          const heading = `🤖 ${capability.name}: ${body.inputs.businessName ?? ''}`
-          const trimmed = text.slice(0, 2000) // Notion block text limit
+          const heading   = `🤖 ${capability.name}: ${body.inputs.businessName ?? ''}`
+          const citations = tavilyResults.length > 0 ? formatCitations(tavilyResults) : ''
+          const trimmed   = (text + citations).slice(0, 2000)
           await appendBlocks(notionToken, body.notionPageId, [
             { type: 'heading_2', text: heading },
             { type: 'paragraph', text: trimmed },
@@ -245,9 +269,10 @@ export async function POST(req: NextRequest) {
   // Stream plain text back to client
   return new Response(result.textStream.pipeThrough(new TextEncoderStream()), {
     headers: {
-      'Content-Type':  'text/plain; charset=utf-8',
-      'X-Capability':  capability.id,
-      'X-Model':       model,
+      'Content-Type':   'text/plain; charset=utf-8',
+      'X-Capability':   capability.id,
+      'X-Model':        model,
+      'X-Tavily-Count': String(tavilyResults.length),
       'Cache-Control': 'no-cache',
     },
   })

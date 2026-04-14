@@ -23,6 +23,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
     "@supabase/supabase-js": "^2.103.0",
+    "@tavily/core": "^0.7.2",
     "@types/three": "^0.183.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",

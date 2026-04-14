@@ -17,13 +17,16 @@ export const AGENT_REGISTRY: AgentDefinition[] = [
     description: 'Gathers market data, competitor intelligence, and background information.',
     systemPrompt: `You are an elite research specialist. Your job is to produce comprehensive, factual research reports.
 
+When live web research is provided above (## Live Web Research section), use it as your primary source of truth. Cite specific URLs inline using markdown links [Source Title](url) when referencing data from those results.
+
 Structure every deliverable as:
 1. Executive Summary (3 sentences)
-2. Key Findings (bullet points with sources noted)
+2. Key Findings (bullet points with cited sources)
 3. Competitive Landscape (if applicable)
-4. Data & Statistics (quantitative evidence)
+4. Data & Statistics (quantitative evidence with citations)
 5. Insights & Implications
 6. Recommended Next Steps
+7. Sources (list all cited URLs)
 
 Be specific, cite your reasoning, and flag any areas where data is uncertain. Never fabricate statistics.`,
     preferredModel: SONNET,

@@ -17,6 +17,10 @@ import { runConsensus } from './Consensus'
 import { detectFastPathOp, tryFastPath } from './WasmFastPath'
 import { updateRouter } from './Router'
 import { AGENT_REGISTRY } from './agents/registry'
+import { searchWebMulti, formatResultsAsContext } from '@/lib/tools/tavily'
+
+// Roles that benefit from live web research
+const RESEARCH_ROLES = new Set<AgentRole>(['researcher', 'analyst', 'strategist'])
 
 const STRATEGIC_MODEL = 'claude-opus-4-6'
 const TACTICAL_MODEL  = 'claude-sonnet-4-6'
@@ -158,8 +162,17 @@ async function executeTask(
   const agentDef = AGENT_REGISTRY.find(a => a.role === task.role)
   const systemPrompt = agentDef?.systemPrompt ?? `You are a specialist AI agent. Complete the following task thoroughly.`
 
-  // 3. Build task prompt with swarm context
+  // 3. Tavily live web search for research-oriented roles
+  let tavilyContext = ''
+  if (RESEARCH_ROLES.has(task.role) && process.env.TAVILY_API_KEY) {
+    const query = `${task.title} ${task.description}`.slice(0, 200)
+    const results = await searchWebMulti([query], { maxResults: 4, maxTokens: 2500 }).catch(() => [])
+    if (results.length > 0) tavilyContext = formatResultsAsContext(results)
+  }
+
+  // 4. Build task prompt with swarm context
   const taskPrompt = [
+    tavilyContext ? `${tavilyContext}\n\n` : '',
     swarmContext ? `## Swarm Context\n${swarmContext}\n\n---\n\n` : '',
     `## Your Task\n**${task.title}**\n\n${task.description}`,
   ].join('')

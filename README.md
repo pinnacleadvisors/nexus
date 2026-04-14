@@ -62,7 +62,8 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 14 | 3D relational knowledge graph | ✅ Complete |
 | 15 | Library layer + token efficiency (code, agents, prompts, skills; auto-extraction; token savings counter) | ✅ Complete |
 | 16 | Organisation chart + agent hierarchy (tree + swimlane views, drill-down panel, live stats) | ✅ Complete |
-| 17 | DeerFlow 2.0 integration (live web search, sandboxed code execution) | ⬜ Planned |
+| 17c | Tavily live web search — injected into research/SEO/consultant agents + swarm researcher; citation footer on every report | ✅ Complete |
+| 17a/b | DeerFlow 2.0 sidecar (sandboxed code execution + multi-hop research) | ⬜ Planned |
 | 18 | Video generation pipeline (Kling, Runway, HeyGen, ElevenLabs) | ⬜ Planned |
 | 19 | Self-development mode — Nexus builds Nexus via `/build` dev console + autonomous research loop | ⬜ Planned |
 | 20 | Local-first memory engine — GitHub repo as free Notion replacement; optional Notion sync on revenue | ⬜ Planned |
