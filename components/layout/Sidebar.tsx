@@ -18,12 +18,14 @@ import {
   Zap,
   Share2,
   BookOpen,
+  GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
   { href: '/forge',          label: 'Forge',      segment: 'forge',     icon: Hammer },
   { href: '/dashboard',      label: 'Dashboard',  segment: 'dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/org',  label: 'Org Chart',  segment: 'dashboard', icon: GitBranch },
   { href: '/board',          label: 'Board',      segment: 'board',     icon: Kanban },
   { href: '/swarm',          label: 'Swarm',      segment: 'swarm',     icon: Network },
   { href: '/graph',          label: 'Graph',      segment: 'graph',     icon: Share2 },

@@ -8,6 +8,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 |------|-------------|
 | `/forge` | Describe a business idea. A Claude consulting agent refines it, extracts milestones, builds a Gantt chart, and dispatches the project to your agent swarm or OpenClaw |
 | `/dashboard` | Live view of cost vs revenue, agent performance, token usage, and KPIs |
+| `/dashboard/org` | Organisation chart — full agent hierarchy (L0 User → L1 Strategic Queens → L2 Tactical → L3 Specialists → L4 Workers); tree + swimlane views; drill-down panel with current task, actions, tokens, cost; 15s live refresh |
 | `/board` | Kanban board — see what agents are working on, approve or reject completed work |
 | `/swarm` | Launch a multi-agent swarm: Strategic Queen decomposes goal → 22 specialist agents execute in phases → Raft/BFT/Gossip consensus → synthesised output |
 | `/tools/content` | Tribe v2 — generate neuro-optimised content using 12 cognitive engagement principles; score, revise, and A/B test across 8 formats × 5 tone profiles |
@@ -60,7 +61,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 13c | OpenClaw fallback bridge (API gap detection + hybrid routing) | ✅ Complete |
 | 14 | 3D relational knowledge graph | ✅ Complete |
 | 15 | Library layer + token efficiency (code, agents, prompts, skills; auto-extraction; token savings counter) | ✅ Complete |
-| 16 | Organisation chart + agent hierarchy | ⬜ Planned |
+| 16 | Organisation chart + agent hierarchy (tree + swimlane views, drill-down panel, live stats) | ✅ Complete |
 | 17 | DeerFlow 2.0 integration (live web search, sandboxed code execution) | ⬜ Planned |
 | 18 | Video generation pipeline (Kling, Runway, HeyGen, ElevenLabs) | ⬜ Planned |
 | 19 | Self-development mode — Nexus builds Nexus via `/build` dev console + autonomous research loop | ⬜ Planned |

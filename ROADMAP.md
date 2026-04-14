@@ -541,20 +541,23 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 16 — Organisation Chart & Agent Hierarchy (Not Started)
+## Phase 16 — Organisation Chart & Agent Hierarchy ✅
 
 > A live org chart showing the full hierarchy of agents active in Nexus: who spawned whom, which queen is coordinating which specialists, what each layer is currently doing, and the accountability chain back to the user.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Agent hierarchy model** — extend `agents` table: add `parent_agent_id`, `layer` (strategic/tactical/operational), `spawned_by`, `swarm_id`; all agent spawning events written to audit log |
-| ⬜ | **Org chart page** — `/dashboard/org` renders a top-down tree: User → Strategic Queens → Tactical Queens → Specialist Agents → Background Workers; each node shows current status (idle/running/error), task count, and cost |
-| ⬜ | **Layer definitions** — **L0: User** (approves, rejects, redirects); **L1: Strategic Queens** (goal decomposition, phase planning); **L2: Tactical Queens** (task assignment, resource allocation); **L3: Specialist Agents** (execution — coder, researcher, marketer etc.); **L4: Workers** (background jobs — Inngest functions, webhooks) |
-| ⬜ | **Real-time updates** — org chart subscribes to Supabase Realtime `agents` channel; spawned agents appear instantly; completed agents dim; errors glow red |
-| ⬜ | **Drill-down panel** — click any agent node to see: current task, last 5 actions, tokens used this session, model being used, associated board cards, and a "terminate" button |
-| ⬜ | **Swimlane view** — alternative layout grouping agents by business/project rather than by hierarchy; shows cross-project agent sharing |
-| ⬜ | **Accountability chain** — every Board card, Notion append, and file commit links back to the agent that created it and the queen that assigned it; visible in card detail view |
-| ⬜ | **Agent utilisation chart** — stacked bar chart on dashboard showing agent hours (token-equivalent) by layer; highlights if strategic layer is over-indexing (plan-heavy) or if operational layer is bottlenecked |
+| ✅ | **Agent hierarchy model** — migration `008_agent_hierarchy.sql`: adds `parent_agent_id`, `layer` (0–4), `swarm_id`, `tokens_used`, `cost_usd`, `current_task`, `model`, `last_active_at` to `agents`; new `agent_actions` table with RLS |
+| ✅ | **Org chart page** — `/dashboard/org` renders a top-down tree: User → Strategic Queens → Tactical Queens → Specialist Agents → Background Workers; each node shows status, task count, tokens |
+| ✅ | **Layer definitions** — **L0: User** · **L1: Strategic Queens** (Opus) · **L2: Tactical Queens** (Sonnet) · **L3: Specialist Agents** · **L4: Workers** (Haiku / Inngest) |
+| ✅ | **Auto-refresh** — page polls `/api/org` every 15 seconds; running agents have animated spinner, errors glow red with pulse ring |
+| ✅ | **Drill-down panel** — click any agent node to see: current task, last actions, tokens, cost, model, layer description, terminate button |
+| ✅ | **Swimlane view** — toggle between tree and swimlane layout; swimlane groups agents by business/project with per-layer rows inside each lane |
+| ✅ | **Stats bar** — total agents, active swarms, total tokens, total cost, layer breakdown bar chart, status overview |
+| ✅ | **Sidebar nav** — Org Chart nav item (GitBranch icon) added under Dashboard |
+| ⬜ | **Supabase Realtime** — subscribe to `agents` channel for push updates (replaces 15s polling) — wire when Supabase is set up |
+| ⬜ | **Accountability chain** — Board card detail links to spawning agent + queen — Phase 16b |
+| ⬜ | **Agent utilisation chart** — stacked bar on Dashboard by layer — Phase 16b |
 
 ---
 
