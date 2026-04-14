@@ -63,8 +63,20 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 16 | Organisation chart + agent hierarchy | ⬜ Planned |
 | 17 | DeerFlow 2.0 integration (live web search, sandboxed code execution) | ⬜ Planned |
 | 18 | Video generation pipeline (Kling, Runway, HeyGen, ElevenLabs) | ⬜ Planned |
+| 19 | Self-development mode — Nexus builds Nexus via `/build` dev console + autonomous research loop | ⬜ Planned |
+| 20 | Local-first memory engine — GitHub repo as free Notion replacement; optional Notion sync on revenue | ⬜ Planned |
+| 21 | OSS-first stack — free alternatives for every paid tool; validated upgrades tied to revenue milestones | ⬜ Planned |
+| 22 | Leiden community detection — replace Louvain in knowledge graph for stable, well-connected clusters | ⬜ Planned |
 
 See [`ROADMAP.md`](./ROADMAP.md) for the full feature backlog, implementation status, and next steps.
+
+## Design Principles
+
+**Nexus builds Nexus** — Phase 19 turns the platform on itself. The `/build` dev console lets you describe a feature or paste an error; an agent plans it and dispatches to OpenClaw (Claude Code) which edits the actual repo. Start on MacBook 2019 locally; graduate to cloud when revenue justifies it.
+
+**Own your stack until you can afford to delegate** — Phase 21 maps every paid tool to a free/OSS alternative. Clerk, Doppler, and n8n are already free-tier sufficient. Notion is replaced by a GitHub-backed memory repo (Phase 20). Video/voice tools swap to local OSS (Coqui TTS, SadTalker) until first revenue.
+
+**Memory without subscriptions** — A private GitHub repo (`nexus-memory`) stores all agent outputs as Markdown files, versioned and searchable via the GitHub API. No Notion subscription required. Optional one-way sync to Notion when revenue validates the cost.
 
 ## Getting started locally
 

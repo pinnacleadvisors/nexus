@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 11–14 complete; Phases 15–18 planned)
+> Last updated: 2026-04-14 (Phases 1–15 complete; Phases 16–21 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -683,6 +683,166 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
+## Phase 19 — Nexus Builds Nexus (Self-Development Mode) (Not Started)
+
+> Use the platform's own AI agent infrastructure to develop and improve itself — eliminating reliance on Claude Code CLI (and its usage limits) as the primary dev tool. Two sub-modes: **Dev Console** (user-driven feature requests and bug fixes) and **Research Loop** (scheduled agent that monitors AI/dev research and proposes improvements autonomously). Start on MacBook 2019 locally; graduate to cloud execution as the platform matures.
+
+### Design Decisions
+
+**MacBook 2019 as local dev host**
+OpenClaw / Claude Code CLI is already available locally via `claude` in your terminal. The platform can dispatch tasks to it via the existing OpenClaw gateway (`OPENCLAW_GATEWAY_URL` pointing to `localhost`). No new infrastructure needed for phase 1 — just run the dev server and OpenClaw sidecar side-by-side. When graduating to cloud, deploy OpenClaw on Railway or Fly.io.
+
+**Why this is safe**
+The agent only has access to the local repo. Git is the safety net — every change is on a branch, user reviews the diff, approves via the Board, and merges manually. No auto-merge to main without explicit approval.
+
+### 19a — Dev Console (User-Driven)
+
+| Status | Item |
+|--------|------|
+| ⬜ | **`/build` page** — dedicated page (separate from Forge) for platform development tasks; input accepts: feature request, bug description, or paste an error stack trace; tone is engineering-first, not business-first |
+| ⬜ | **Task planner agent** — Claude Opus decomposes the request into: affected files, implementation steps, estimated complexity (S/M/L/XL), risk level; output rendered as a mini-plan card before execution begins |
+| ⬜ | **OpenClaw dispatch** — on user approval of the plan, dispatches to OpenClaw with: full file tree context, relevant file contents (via `/api/graph/context`), the plan, and coding conventions from `AGENTS.md`; OpenClaw executes on the local repo |
+| ⬜ | **Git integration** — agent creates a feature branch (`claude/<slug>`), commits changes with conventional commit messages, opens a draft PR; PR URL surfaced in the Board card |
+| ⬜ | **Diff viewer** — Board Review card renders the git diff with syntax highlighting; user approves (merge) or rejects (close branch) from the UI |
+| ⬜ | **Error paste mode** — paste a TypeScript/Next.js error → agent reads the relevant source files via the graph → diagnoses root cause → proposes fix → dispatches to OpenClaw |
+| ⬜ | **CI status badge** — card shows Vercel deploy status; if deploy fails after merge, auto-creates a new fix task and re-dispatches |
+
+### 19b — Research Loop (Autonomous Improvement)
+
+| Status | Item |
+|--------|------|
+| ⬜ | **Weekly research cron** — Inngest scheduled function runs every Sunday 09:00; uses Tavily/DeerFlow to search: "AI agent frameworks this week", "Next.js performance updates", "LLM cost optimisation techniques", "open source tools for \[each tool in stack\]" |
+| ⬜ | **Research digest agent** — synthesises search results into a structured report: (1) new tools to evaluate, (2) deprecations / breaking changes to the current stack, (3) performance / cost improvements applicable to Nexus |
+| ⬜ | **Suggestion cards** — each suggestion auto-creates a Board card in Backlog with: source link, relevance score, estimated impact (High/Med/Low), required work estimate; user drags to In Progress to action it |
+| ⬜ | **Stack health monitor** — weekly `npm audit` + `npx tsc --noEmit` run by the agent; failures auto-create high-priority bug cards on the Board |
+| ⬜ | **`/build/research` tab** — shows the weekly digest, suggestion cards, and research history; filter by category (security, performance, cost, DX) |
+
+### Manual Steps — Phase 19
+
+- [ ] Ensure OpenClaw gateway is running locally: `claude` CLI in server mode or via MyClaw
+- [ ] Set `OPENCLAW_GATEWAY_URL=http://localhost:<port>` in Doppler for local dev
+- [ ] Set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` in Doppler for cron jobs
+- [ ] Create `claude/<branch>` branch protection rule: require PR review before merge to main
+
+---
+
+## Phase 20 — Local-First Memory Engine (Not Started)
+
+> Replace the Notion dependency for knowledge storage with a local-first, free, version-controlled alternative. Notion API requires a paid subscription ($8–$16/mo); this phase builds an equivalent store that is fully owned, costs nothing, and can optionally mirror to Notion or GitHub for backup.
+
+### Design Decision: GitHub Repo as Free Notion
+
+**The approach:** A private GitHub repo (`pinnacleadvisors/nexus-memory`) stores knowledge as Markdown files in a structured folder hierarchy. Every agent write operation commits a new file or appends to an existing one. GitHub's API is free for private repos (up to rate limits). The repo becomes a versioned, searchable, diffable knowledge base.
+
+```
+nexus-memory/
+├── businesses/
+│   └── <business-id>/
+│       ├── README.md          ← Business profile
+│       ├── market-research/   ← Research agent outputs
+│       ├── content/           ← Tribe v2 outputs
+│       └── financials/        ← Financial model outputs
+├── projects/
+│   └── <project-id>/
+│       ├── spec.md
+│       └── decisions/         ← ADRs
+├── agent-runs/
+│   └── <YYYY-MM-DD>/          ← Daily logs
+└── library/                   ← Phase 15 library entries as markdown
+```
+
+**Why not AppFlowy / AFFiNE / Obsidian?**
+- AppFlowy / AFFiNE require self-hosting (extra infra, maintenance)
+- Obsidian has no free API for programmatic writes
+- GitHub API: free, already authenticated (GitHub MCP in place), universally readable, zero extra infra
+
+**Migration path:** When business is generating revenue, add Notion as an optional sync target — one-way push from GitHub to Notion on each write. No lock-in.
+
+| Status | Item |
+|--------|------|
+| ⬜ | **`nexus-memory` repo** — create private GitHub repo `pinnacleadvisors/nexus-memory`; initialise folder structure above; add `README.md` explaining the schema |
+| ⬜ | **`lib/memory/github.ts`** — `writePage(path, content, message?)`: calls GitHub Contents API to create or update a file; `readPage(path)`: fetch and decode; `searchPages(q)`: GitHub code search API; `listPages(folder)`: directory listing |
+| ⬜ | **Memory API routes** — `POST /api/memory` (write page), `GET /api/memory?path=` (read), `GET /api/memory/search?q=` (search); all authenticated via Clerk; writes go to GitHub, reads served from cache (5-min TTL) |
+| ⬜ | **Agent write integration** — replace Notion append in `app/api/agent/route.ts` with `writeMemoryPage()`; Notion append kept as optional secondary sink if `NOTION_TOKEN` is set |
+| ⬜ | **Memory viewer** — `/tools/memory` page: file tree browser, markdown renderer with syntax highlighting, search bar backed by GitHub search API, edit button (opens inline editor that commits on save) |
+| ⬜ | **Context injection** — before every agent run, `GET /api/memory/search?q=<businessName>` retrieves relevant pages and injects as context (replacing the current Notion lookup); reduces cold-start hallucinations |
+| ⬜ | **Supabase cache layer** — `memory_cache` table: `{ path, content, sha, cached_at }`; reads hit cache first, revalidate after 5 min; avoids GitHub rate limits during high-volume agent sessions |
+| ⬜ | **Notion sync (optional)** — when `NOTION_TOKEN` is set: after each GitHub write, push the same content to the linked Notion page via the existing `lib/notion.ts` `appendBlocks()`; bidirectional sync is out of scope |
+
+### Manual Steps — Phase 20
+
+- [ ] Create private repo `pinnacleadvisors/nexus-memory` on GitHub
+- [ ] Generate GitHub PAT with `repo` scope → add as `GITHUB_MEMORY_TOKEN` in Doppler
+- [ ] Create `GITHUB_MEMORY_REPO=pinnacleadvisors/nexus-memory` in Doppler
+- [ ] (Optional) Upgrade to Notion paid plan for sync: add `NOTION_TOKEN` to Doppler
+
+---
+
+## Phase 21 — OSS-First Stack & Validated Tool Upgrades (Not Started)
+
+> For every paid tool in the stack: identify the best free/open-source alternative for the zero-revenue phase, and the right time to upgrade based on revenue milestones. Principle: **own your stack until you can afford to delegate**.
+
+### Tool Audit & Replacement Map
+
+| Layer | Current (Paid) | Free/OSS Alternative | Upgrade Trigger |
+|-------|---------------|----------------------|-----------------|
+| **Auth** | Clerk v7 (~$25/mo at scale) | **Keep Clerk** — free tier is 10k MAU which covers the entire zero-revenue phase | >10k users |
+| **Secrets** | Doppler (free tier) | **Infisical** (fully OSS, self-hostable) — same DX as Doppler, MIT licence | Never — Doppler free tier sufficient |
+| **Hosting** | Vercel (free tier, then $20/mo) | **Coolify** (self-host on Hetzner €4/mo) — one-click Next.js deploy, auto SSL, preview URLs | First paying customer or >100k page views |
+| **Database** | Supabase (free 500MB) | **PocketBase** (single binary, self-host) or **Neon** (free 10GB serverless Postgres) — migrate when Supabase free tier limit hit | >500MB data or >50k DB requests/day |
+| **Email** | Resend (free 3k/mo) | **Brevo** (free 10k/mo) or **Nodemailer + SMTP** (free via Gmail/Zoho) — swap transport in `lib/email.ts` | >10k emails/month |
+| **Error tracking** | Sentry (free 5k events) | **GlitchTip** (OSS Sentry clone, self-host free) or **OpenStatus** | >5k errors/mo or need data ownership |
+| **Analytics** | PostHog (free 1M events) | **Umami** (OSS, self-host, no limits) or **Plausible** (OSS) | >1M events/month |
+| **Workflow automation** | n8n (already self-host free) | ✅ Already free — n8n Community Edition is OSS | — |
+| **Notes/Memory** | Notion ($8–16/mo) | ✅ **Phase 20 GitHub memory engine** — replaces Notion entirely for free | When revenue > $500/mo, add Notion as premium sync |
+| **Video — cinematic** | Kling 2.0 / Runway ($per-use) | **CogVideoX** (OSS, run on GPU) or **AnimateDiff** — quality gap exists; use for internal/draft | First video product revenue |
+| **Video — talking head** | HeyGen / D-ID ($per-use) | **SadTalker** (OSS, local) or **Wav2Lip** (OSS) — lower quality, needs local GPU | First video product revenue |
+| **Voiceover** | ElevenLabs (free 10k chars/mo) | **Coqui TTS** (OSS, local, no limits) or **Bark** (OSS, local) — quality close to EL at ~60% | >10k chars/mo |
+| **Community detection** | Louvain (`graphology-communities-louvain`) | **Leiden algorithm** — better quality, no disconnected communities (see note below) | Already OSS; migrate in Phase 22 |
+| **Agent execution** | OpenClaw / MyClaw (Claude Pro ~$20/mo) | **Open-source Claude Code CLI** already free with API key — MyClaw adds convenience, not capability | Keep MyClaw; it IS the OSS tool |
+
+### Leiden vs Louvain — Decision
+
+**Current:** Louvain via `graphology-communities-louvain` (Phase 14).
+
+**The problem with Louvain for this use case:**
+Louvain can produce **disconnected communities** — nodes grouped into the same cluster that have no path between them inside that cluster. In the knowledge graph where clusters represent business domains (projects, agents, tools), this means visually unrelated nodes appear in the same colour group. It also gets stuck in local optima and produces different results on each run (non-deterministic), making the graph unstable across page loads.
+
+**Why Leiden is better here:**
+- Guarantees **well-connected communities** (no disconnected nodes within a cluster)
+- Produces higher modularity scores consistently
+- Deterministic output when seeded (stable graph across loads)
+- Developed specifically to fix Louvain's flaws (Traag, Waltman, van Eck 2019)
+
+**The catch:**
+`graphology-communities-leiden` does not exist yet in the JS ecosystem. Options:
+1. **Pure JS port** — implement the Leiden refinement phase as a TypeScript function in `lib/graph/leiden.ts` (medium complexity, ~200 lines)
+2. **Python sidecar via DeerFlow** — run Leiden via `leidenalg` Python package inside DeerFlow's sandbox; return cluster assignments as JSON
+3. **WASM build** — compile `igraph` or `libleidenalg` to WASM (complex, overkill at current graph scale)
+
+**Recommendation: Option 1 — Pure JS port** (Phase 22). The graph is small enough (<1000 nodes) that a clean TypeScript implementation outperforms calling a Python sidecar. Replace `assignClusters()` in `lib/graph/builder.ts`.
+
+**Verdict: Switch to Leiden in Phase 22.** Louvain is acceptable for now (graph is small, clusters are illustrative not analytical). When graph has real data and users are navigating by cluster, the stability and correctness of Leiden will matter.
+
+### OSS Tool Integration Order
+
+1. **Phase 21a — Brevo email** (drop-in Resend replacement for >3k/mo volume, same API shape)
+2. **Phase 21b — Umami analytics** (self-host alongside Nexus on same Coolify instance)
+3. **Phase 21c — GlitchTip error tracking** (Sentry-compatible SDK, zero code changes)
+4. **Phase 21d — Coolify hosting** (when Vercel free tier limits hit or first paid customer)
+5. **Phase 21e — Coqui TTS** (local voiceover for draft video content, no per-char cost)
+6. **Phase 21f — SadTalker / Wav2Lip** (local talking-head for internal demos)
+
+### Manual Steps — Phase 21
+
+- [ ] Self-host Umami: `docker run -d -p 3001:3000 ghcr.io/umami-software/umami` on same VPS as n8n
+- [ ] Self-host GlitchTip: `docker-compose` from `glitchtip/glitchtip-docker`; set `DSN` env var
+- [ ] Register Brevo: https://brevo.com → free 10k/mo → add `BREVO_API_KEY` to Doppler
+- [ ] Evaluate Coolify on Hetzner CX21 (€4/mo) when Vercel usage exceeds free tier
+- [ ] Install Coqui TTS locally: `pip install TTS` → test voice clone → wrap in FastAPI endpoint
+
+---
+
 ## Immediate Next Steps (Priority Order)
 
 ### Quick wins (hours, not days)
@@ -693,11 +853,16 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 ### Infrastructure (this week)
 4. **Set up Supabase** → replace mock data with real agent state
 5. **Add Stripe webhook** → real revenue on Dashboard
-6. **Implement Notion API** → agents write to knowledge base
+6. **Phase 20 memory engine** → create `nexus-memory` GitHub repo + `GITHUB_MEMORY_TOKEN` in Doppler; replaces Notion dependency entirely for free
 7. **Enable Clerk MFA** → security baseline for production use
 
+### Phase 19 — Start "Nexus builds Nexus" on MacBook
+8. **Run OpenClaw gateway locally** (`claude` CLI in server mode, `OPENCLAW_GATEWAY_URL=http://localhost:<port>`)
+9. **Build `/build` dev console page** → first task: have it implement itself
+10. **Wire research loop** → Inngest cron + Tavily → weekly improvement suggestions on Board
+
 ### Phase 17 fast-track (deploy DeerFlow alongside Nexus)
-8. **Deploy DeerFlow 2.0** to Railway ($25/mo) — gives sandboxed bash execution + live multi-hop web research with source citations; integrate via `lib/deerflow/client.ts`; reduces or eliminates OpenClaw dependency for coding tasks
+11. **Deploy DeerFlow 2.0** to Railway ($25/mo) — gives sandboxed bash execution + live multi-hop web research with source citations; integrate via `lib/deerflow/client.ts`; reduces or eliminates OpenClaw dependency for coding tasks
 
 ---
 
@@ -720,7 +885,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | Email | Resend | ⬜ Not set up |
 | Monitoring | Sentry | ⬜ Not set up |
 | Analytics | PostHog | ⬜ Not set up |
-| Notes | Notion API | ✅ Integrated (Phase 6) |
+| Memory / Notes | GitHub repo (Phase 20) → Notion optional sync | ⬜ Phase 20 |
 | Hosting | Vercel | ✅ Live |
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |
@@ -734,6 +899,6 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | Voiceover | ElevenLabs | ⬜ Phase 18 |
 | Background music | Suno / Udio | ⬜ Phase 18 |
 | 3D graph rendering | react-three-fiber + three.js | ⬜ Phase 14 |
-| Graph computation | graphology + Louvain community detection | ⬜ Phase 14 |
+| Graph computation | graphology + Louvain (→ Leiden in Phase 22) | ✅ Phase 14 |
 | Swarm orchestration | Ruflo-inspired (custom) | ✅ Phase 11 |
 | Vector search | Supabase pgvector | ⬜ Phase 14/15 |
