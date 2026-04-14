@@ -18,11 +18,14 @@
 import { NextRequest } from 'next/server'
 import { streamText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { getCapability } from '@/lib/agent-capabilities'
 import { createServerClient } from '@/lib/supabase'
 import { resolveNotionToken, appendBlocks } from '@/lib/notion'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { createEntry, extractCodeBlocksFromOutput } from '@/lib/library/client'
+import type { CodeLanguage } from '@/lib/library/types'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -120,6 +123,9 @@ export async function POST(req: NextRequest) {
     metadata:   { model, projectId: body.projectId, businessName: body.inputs.businessName },
   })
 
+  // Resolve user ID once (best-effort — agent routes are not always authed)
+  const { userId: clerkUserId } = await auth().catch(() => ({ userId: null }))
+
   const result = streamText({
     model: anthropic(model),
     system,
@@ -190,6 +196,31 @@ export async function POST(req: NextRequest) {
         }).then(({ error }) => {
           if (error) console.error('[agent] board card insert failed:', error.message)
         })
+      }
+
+      // ── Auto-extract code snippets into library ─────────────────────────────
+      if (clerkUserId) {
+        const VALID_LANGS: CodeLanguage[] = [
+          'typescript', 'javascript', 'python', 'sql', 'bash', 'json', 'yaml',
+        ]
+        const blocks = extractCodeBlocksFromOutput(text)
+        for (const block of blocks.slice(0, 3)) {  // max 3 snippets per run
+          const lang = VALID_LANGS.includes(block.language as CodeLanguage)
+            ? (block.language as CodeLanguage)
+            : 'typescript'
+          await createEntry('code', clerkUserId, {
+            title:          `${capability.name} — auto-extracted snippet`,
+            description:    `Auto-extracted from agent run: ${capability.name}`,
+            language:       lang,
+            purpose:        capability.category,
+            code:           block.code,
+            tags:           [capability.category, lang, 'auto-extracted'],
+            dependencies:   [],
+            source_agent_run: body.capabilityId,
+          }).catch(err => {
+            console.error('[agent] library auto-extract failed:', err)
+          })
+        }
       }
 
       // ── Append to Notion ────────────────────────────────────────────────────

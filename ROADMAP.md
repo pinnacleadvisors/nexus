@@ -521,21 +521,23 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 15 — Library Layer & Token Efficiency (Not Started)
+## Phase 15 — Library Layer & Token Efficiency ✅
 
 > A structured, searchable store of reusable building blocks — code functions, agent configs, prompt templates, and skill definitions. Agents query the library before writing anything new, dramatically reducing duplicate generation and per-task token spend.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Database schema** — migration `006_libraries.sql`: tables `code_snippets`, `agent_templates`, `prompt_templates`, `skill_definitions`; all with `embedding vector(1536)`, `tags text[]`, `usage_count int`, `avg_quality_score float` |
-| ⬜ | **Code function library** — `/tools/library/code`: stores reusable TypeScript/Python/SQL snippets; each tagged with language, purpose, dependencies; agents call `GET /api/library/code?q=` before generating boilerplate |
-| ⬜ | **Agent template library** — `/tools/library/agents`: stores agent system prompt blueprints (role, constraints, output format, example); versioned; consultant agent uses this to spawn specialist agents without re-writing prompts |
-| ⬜ | **Prompt library** — `/tools/library/prompts`: curated prompt templates for common tasks; each template has fill-in variables, neuro-optimisation score, and usage analytics; agents retrieve best-scoring template for task type |
-| ⬜ | **Skill definitions library** — `/tools/library/skills`: structured skill definitions compatible with MCP tool format; agents check this library before requesting new OpenClaw skills |
-| ⬜ | **Semantic search** — `POST /api/library/search?type=code|agent|prompt|skill&q=` does pgvector cosine similarity search; returns top-5 matches with similarity score; embedded at task start in every swarm run |
-| ⬜ | **Auto-population** — after every completed agent run: extract reusable fragments (functions, prompts, patterns) via a post-processing agent; auto-add to library with quality score derived from user approval |
-| ⬜ | **Library UI** — `/tools/library` with tabbed interface (Code / Agents / Prompts / Skills); search bar, tag filter, usage stats, copy button, "use in Forge" button |
-| ⬜ | **Token savings tracker** — dashboard widget showing estimated tokens saved this week via library hits vs cold generation; motivates curation |
+| ✅ | **Database schema** — migration `007_libraries.sql`: tables `code_snippets`, `agent_templates`, `prompt_templates`, `skill_definitions`; GIN tag indexes, `updated_at` triggers, RLS via Clerk JWT `sub`; keyword search via `ilike` (pgvector optional) |
+| ✅ | **Code function library** — 6 seed snippets (Supabase pagination, streaming Claude route, rate limiter, DnD kit helpers, Clerk auth, localStorage hook); `GET /api/library?type=code&q=` search |
+| ✅ | **Agent template library** — 4 seed templates (Market Research, Tech Spec Writer, Growth Copywriter, Legal Risk Reviewer); versioned, system-prompt copy button |
+| ✅ | **Prompt library** — 5 seed templates (milestone extractor, competitor analysis few-shot, CoT debugger, launch email, code review checklist); neuro score, variable pills |
+| ✅ | **Skill definitions library** — 5 seed skills (web_search, notion_create_page, github_create_issue, send_email, execute_bash); MCP tool name, risk level badge, input schema viewer |
+| ✅ | **Keyword search** — `GET /api/library?type=&q=&tags=&limit=&offset=` with Supabase `ilike` + in-memory scored fallback |
+| ✅ | **Auto-population** — `onFinish` in `/api/agent` extracts code blocks from every agent run and saves to library (max 3 per run, authenticated users only) |
+| ✅ | **Library UI** — `/tools/library` with tab bar (Code / Agents / Prompts / Skills), search, tag filter, expand/view, copy buttons, quality dots, usage count |
+| ✅ | **Token savings tracker** — header banner showing estimated tokens saved across all library hits; per-type breakdown (code=350, agent=800, prompt=250, skill=150) |
+| ✅ | **Sidebar** — Library nav item (BookOpen icon) added between Workflows and Tools |
+| ✅ | **CRUD API** — `POST /api/library`, `PATCH /api/library/:id` (increment_usage, update_score), `DELETE /api/library/:id?type=` |
 
 ---
 

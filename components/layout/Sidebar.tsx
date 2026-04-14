@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Zap,
   Share2,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/tools/content',  label: 'Content',    segment: 'tools',     icon: Sparkles },
   { href: '/tools/agents',   label: 'Agents',     segment: 'tools',     icon: Bot },
   { href: '/tools/n8n',      label: 'Workflows',  segment: 'tools',     icon: Workflow },
+  { href: '/tools/library',  label: 'Library',    segment: 'tools',     icon: BookOpen },
   { href: '/tools',          label: 'Tools',      segment: 'tools',     icon: Wrench },
 ]
 
