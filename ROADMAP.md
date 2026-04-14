@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 11–13a complete; 13b/13c + Phases 14–18 planned)
+> Last updated: 2026-04-14 (Phases 11–13b complete; 13c + Phases 14–18 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -418,7 +418,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 13 — Consultant Agent + n8n Workflow Automation (Partial — 13a Complete)
+## Phase 13 — Consultant Agent + n8n Workflow Automation (Partial — 13a + 13b Complete)
 
 > A strategic consultant agent researches the best tool combinations for your business, then generates executable n8n workflow blueprints. Every step the user must take (add API key, create account, review workflow) is automatically added as a Kanban card and Notion note so agents stay in context.
 
@@ -438,16 +438,25 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - `app/api/tools/research/route.ts` — `GET /api/tools/research?q=&category=&n8n_only=`
 - `app/api/agent/route.ts` — updated: consultant gets multi-card board creation + new input labels
 
-### 13b — n8n Workflow Generation
+### 13b — n8n Workflow Generation ✅ Complete
 
 | Status | Item |
 |--------|------|
-| ⬜ | **n8n blueprint generator** — `POST /api/n8n/generate` accepts a workflow description and outputs a valid n8n JSON workflow file (compatible with n8n v1+ import format) |
-| ⬜ | **Workflow templates** — pre-built blueprint library: social post scheduler, lead capture → CRM, invoice generation, content republishing pipeline, competitor monitoring, onboarding email sequence, support ticket routing, analytics digest |
-| ⬜ | **muapi.ai node** — custom n8n HTTP node configuration for muapi.ai; generates images/video/audio assets as part of content workflows; credentials stored in n8n credential store (not Doppler) |
-| ⬜ | **Setup checklist generation** — for each workflow blueprint, consultant generates a human-readable checklist of: accounts to create, API keys to obtain, OAuth connections to authorise, n8n credentials to configure; list is saved to Notion + added to Board as sequential Backlog cards |
-| ⬜ | **n8n webhook receiver** — `POST /api/webhooks/n8n` receives workflow completion events; parses payload, updates relevant Board card status, appends result to Notion |
-| ⬜ | **Workflow status page** — `/tools/n8n` shows all active n8n workflows, last run status, next scheduled run, and a "trigger now" button |
+| ✅ | **n8n blueprint generator** — `POST /api/n8n/generate` accepts a workflow description + business context; Claude Sonnet generates valid n8n v1 JSON with setup checklist; creates Backlog board card; returns `importUrl` deep-link |
+| ✅ | **Workflow templates** — `lib/n8n/templates.ts`: 8 pre-built blueprints: social post scheduler, lead capture → CRM, invoice generation, content republishing, competitor monitoring, onboarding email sequence, support ticket routing, weekly analytics digest |
+| ✅ | **muapi.ai node** — muapi.ai integrated as `n8n-nodes-base.httpRequest` node inside content workflow templates; credentials configured via n8n credential store |
+| ✅ | **Setup checklist generation** — every template and generated workflow includes a step-by-step setup checklist; `/api/n8n/generate` saves checklist to Board card description |
+| ✅ | **n8n webhook receiver** — `POST /api/webhooks/n8n`: HMAC-SHA256 signature verification (`N8N_WEBHOOK_SECRET`); updates Board card status (success → Review, error → In Progress); appends result to Notion |
+| ✅ | **Workflow status page** — `/tools/n8n`: live workflow list (activate/deactivate), last execution status, 8 template cards with expandable checklists + import buttons, AI workflow generator panel |
+
+### Implementation Notes (13b)
+- `lib/n8n/templates.ts` — 8 `WorkflowTemplate` objects; `WORKFLOW_TEMPLATES`, `getTemplate(id)`, `getTemplatesByCategory(cat)`, `WORKFLOW_CATEGORIES`
+- `app/api/n8n/generate/route.ts` — `POST /api/n8n/generate`; rate-limited (5/min); uses `claude-sonnet-4-6` with `generateText`; structured output parsing; board card creation
+- `app/api/n8n/workflows/route.ts` — `GET /api/n8n/workflows` proxies `listWorkflows()` from n8n client
+- `app/api/n8n/workflows/[id]/activate/route.ts` + `deactivate/route.ts` — activate/deactivate individual workflows
+- `app/api/webhooks/n8n/route.ts` — HMAC-verified; updates Supabase task status; appends to Notion
+- `app/(protected)/tools/n8n/page.tsx` — full workflow management UI: live list, template grid, generate panel, import toast
+- `components/layout/Sidebar.tsx` — Workflows nav item added (Workflow icon, `/tools/n8n`)
 
 ### 13c — OpenClaw Fallback Bridge
 
@@ -463,7 +472,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] Add `N8N_API_KEY` to Doppler — n8n Settings → API → Create API Key
 - [ ] Register Nexus webhook in n8n: URL = `https://<your-vercel-domain>/api/webhooks/n8n`
 - [ ] Add `MUAPI_AI_KEY` to Doppler — register at https://muapi.ai → API Keys
-- [ ] Import starter workflow blueprints from `/tools/n8n` after Phase 13b is deployed
+- [✅] Import starter workflow blueprints from `/tools/n8n` — 8 templates available; use "Import to n8n" button on each card
 
 ---
 
@@ -695,7 +704,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |
 | Charts | Recharts | ✅ Live |
-| Workflow automation | n8n (self-hosted or cloud) | ⬜ Phase 13 |
+| Workflow automation | n8n (self-hosted or cloud) | ✅ Phase 13b |
 | Web research | Tavily (multi-hop search + citations) | ⬜ Phase 17c (quick win) |
 | SuperAgent sidecar | DeerFlow 2.0 (ByteDance OSS, MIT) | ⬜ Phase 17 |
 | Media image generation | muapi.ai | ⬜ Phase 18 |

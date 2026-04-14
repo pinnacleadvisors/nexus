@@ -12,6 +12,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | `/swarm` | Launch a multi-agent swarm: Strategic Queen decomposes goal → 22 specialist agents execute in phases → Raft/BFT/Gossip consensus → synthesised output |
 | `/tools/content` | Tribe v2 — generate neuro-optimised content using 12 cognitive engagement principles; score, revise, and A/B test across 8 formats × 5 tone profiles |
 | `/tools/agents` | Run 10 specialist AI agents (research, SEO, financial model, legal, email outreach, social media, code spec, and more) |
+| `/tools/n8n` | n8n workflow hub — 8 pre-built blueprints, AI-powered custom workflow generator, live activate/deactivate |
 | `/tools/claw` | Configure your OpenClaw / MyClaw cloud agent and OAuth connections |
 | `/tools` | Directory of every integrated platform with links and connection status |
 
@@ -53,7 +54,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 11 | Multi-agent swarm orchestration (22 roles, Q-Learning, WASM) | ✅ Complete |
 | 12 | Tribe v2 neuro-content engine (12 principles, scoring, A/B) | ✅ Complete |
 | 13a | Consultant agent + tool research API (40+ tools, recommendation cards) | ✅ Complete |
-| 13b | n8n workflow blueprint generator + 8 templates + webhook receiver | ⬜ Planned |
+| 13b | n8n workflow blueprint generator + 8 templates + webhook receiver | ✅ Complete |
 | 13c | OpenClaw fallback bridge (API gap detection + hybrid routing) | ⬜ Planned |
 | 14 | 3D relational knowledge graph | ⬜ Planned |
 | 15 | Library layer + token efficiency | ⬜ Planned |
