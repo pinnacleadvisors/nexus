@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 1–15 complete; Phases 16–21 planned)
+> Last updated: 2026-04-14 (Phases 1–17c + 19a complete; Phases 19b–22 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -693,7 +693,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 19 — Nexus Builds Nexus (Self-Development Mode) (Not Started)
+## Phase 19 — Nexus Builds Nexus (Self-Development Mode) (19a Complete)
 
 > Use the platform's own AI agent infrastructure to develop and improve itself — eliminating reliance on Claude Code CLI (and its usage limits) as the primary dev tool. Two sub-modes: **Dev Console** (user-driven feature requests and bug fixes) and **Research Loop** (scheduled agent that monitors AI/dev research and proposes improvements autonomously). Start on MacBook 2019 locally; graduate to cloud execution as the platform matures.
 
@@ -705,14 +705,17 @@ OpenClaw / Claude Code CLI is already available locally via `claude` in your ter
 **Why this is safe**
 The agent only has access to the local repo. Git is the safety net — every change is on a branch, user reviews the diff, approves via the Board, and merges manually. No auto-merge to main without explicit approval.
 
-### 19a — Dev Console (User-Driven)
+### 19a — Dev Console (User-Driven) ✅
 
 | Status | Item |
 |--------|------|
-| ⬜ | **`/build` page** — dedicated page (separate from Forge) for platform development tasks; input accepts: feature request, bug description, or paste an error stack trace; tone is engineering-first, not business-first |
-| ⬜ | **Task planner agent** — Claude Opus decomposes the request into: affected files, implementation steps, estimated complexity (S/M/L/XL), risk level; output rendered as a mini-plan card before execution begins |
-| ⬜ | **OpenClaw dispatch** — on user approval of the plan, dispatches to OpenClaw with: full file tree context, relevant file contents (via `/api/graph/context`), the plan, and coding conventions from `AGENTS.md`; OpenClaw executes on the local repo |
-| ⬜ | **Git integration** — agent creates a feature branch (`claude/<slug>`), commits changes with conventional commit messages, opens a draft PR; PR URL surfaced in the Board card |
+| ✅ | **`/build` page** — dedicated dev console with feature/bug/error request types; split input + streaming plan view |
+| ✅ | **Task planner agent** — `POST /api/build/plan` streams Claude Opus; outputs human analysis then `<plan>…</plan>` JSON with title, steps, affected files, complexity (S/M/L/XL), risk, branchName, commitMessage, testInstructions |
+| ✅ | **OpenClaw dispatch** — `POST /api/build/dispatch` sends approved plan to OpenClaw gateway with full coding conventions; creates Board card in In-Progress column; returns sessionId + branchUrl |
+| ✅ | **File tree context** — `GET /api/build/filetree` returns recursive depth-3 file tree (excludes node_modules/.git/.next); injected into every plan prompt |
+| ✅ | **Git integration** — plan JSON includes `branchName: claude/<slug>` and `commitMessage` in conventional commit format; OpenClaw instructed to create branch, implement, tsc check, commit, push |
+| ✅ | **Board card creation** — dispatch creates a Supabase task in `in-progress` column with plan summary + branch link; visible at `/board` |
+| ✅ | **Sidebar nav** — Build (`Terminal` icon) added between Board and Swarm |
 | ⬜ | **Diff viewer** — Board Review card renders the git diff with syntax highlighting; user approves (merge) or rejects (close branch) from the UI |
 | ⬜ | **Error paste mode** — paste a TypeScript/Next.js error → agent reads the relevant source files via the graph → diagnoses root cause → proposes fix → dispatches to OpenClaw |
 | ⬜ | **CI status badge** — card shows Vercel deploy status; if deploy fails after merge, auto-creates a new fix task and re-dispatches |

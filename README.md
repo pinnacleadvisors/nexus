@@ -18,6 +18,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | `/tools/library` | Reusable building-block library — code snippets, agent templates, prompt templates, and skill definitions; agents query before generating anything new; token savings tracker shows estimated cost avoidance |
 | `/tools/claw` | Configure your OpenClaw / MyClaw cloud agent and OAuth connections |
 | `/tools` | Directory of every integrated platform with links and connection status |
+| `/build` | Dev Console — describe a feature/bug/error; Claude Opus plans it; approve to dispatch to Claude Code (OpenClaw) which edits the repo on a branch |
 
 ## Tech stack
 
@@ -65,7 +66,8 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 17c | Tavily live web search — injected into research/SEO/consultant agents + swarm researcher; citation footer on every report | ✅ Complete |
 | 17a/b | DeerFlow 2.0 sidecar (sandboxed code execution + multi-hop research) | ⬜ Planned |
 | 18 | Video generation pipeline (Kling, Runway, HeyGen, ElevenLabs) | ⬜ Planned |
-| 19 | Self-development mode — Nexus builds Nexus via `/build` dev console + autonomous research loop | ⬜ Planned |
+| 19a | Dev Console — `/build` page; Claude Opus planner; OpenClaw dispatch; Board card creation; file tree context injection | ✅ Complete |
+| 19b | Research Loop — weekly Inngest cron + Tavily digest; suggestion cards on Board; stack health monitor | ⬜ Planned |
 | 20 | Local-first memory engine — GitHub repo as free Notion replacement; optional Notion sync on revenue | ⬜ Planned |
 | 21 | OSS-first stack — free alternatives for every paid tool; validated upgrades tied to revenue milestones | ⬜ Planned |
 | 22 | Leiden community detection — replace Louvain in knowledge graph for stable, well-connected clusters | ⬜ Planned |

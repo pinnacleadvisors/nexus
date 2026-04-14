@@ -19,6 +19,7 @@ import {
   Share2,
   BookOpen,
   GitBranch,
+  Terminal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: '/dashboard',      label: 'Dashboard',  segment: 'dashboard', icon: LayoutDashboard },
   { href: '/dashboard/org',  label: 'Org Chart',  segment: 'dashboard', icon: GitBranch },
   { href: '/board',          label: 'Board',      segment: 'board',     icon: Kanban },
+  { href: '/build',          label: 'Build',      segment: 'build',     icon: Terminal },
   { href: '/swarm',          label: 'Swarm',      segment: 'swarm',     icon: Network },
   { href: '/graph',          label: 'Graph',      segment: 'graph',     icon: Share2 },
   { href: '/tools/content',  label: 'Content',    segment: 'tools',     icon: Sparkles },
