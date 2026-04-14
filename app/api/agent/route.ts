@@ -58,6 +58,13 @@ function buildUserPrompt(inputs: Record<string, string>): string {
     businessType:        'Business Type',
     dataCollected:       'Data Collected',
     jurisdiction:        'Jurisdiction',
+    // Consultant inputs
+    currentTools:        'Current Tools',
+    painPoints:          'Pain Points',
+    budget:              'Monthly Automation Budget',
+    // Neuro-content inputs
+    topic:               'Topic',
+    format:              'Content Format',
   }
   for (const [key, value] of Object.entries(inputs)) {
     if (value?.trim()) {
@@ -119,9 +126,59 @@ export async function POST(req: NextRequest) {
     messages: [{ role: 'user', content: userPrompt }],
 
     onFinish: async ({ text }) => {
-      // ── Create board card in Review column ─────────────────────────────────
       const db = createServerClient()
-      if (db) {
+
+      // ── Consultant: create one board card per recommendation ───────────────
+      if (body.capabilityId === 'consultant' && db) {
+        try {
+          const jsonMatch = text.match(/^\s*\{[\s\S]*?\}(?=\s*#)/m)
+          if (jsonMatch) {
+            const report = JSON.parse(jsonMatch[0]) as {
+              automationOpportunities?: Array<{
+                priority:    number
+                title:       string
+                description: string
+                tools:       string[]
+                estimatedSetupMinutes: number
+                requiresOpenClaw: boolean
+                complexity:  string
+              }>
+            }
+            const opps = report.automationOpportunities ?? []
+            for (const opp of opps.slice(0, 8)) {
+              const toolList = opp.tools.join(', ')
+              await db.from('tasks').insert({
+                title:       `[Automation] ${opp.title}`,
+                description: `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
+                column_id:   'backlog',
+                priority:    opp.priority <= 2 ? 'high' : opp.priority <= 4 ? 'medium' : 'low',
+                project_id:  body.projectId ?? null,
+                position:    opp.priority,
+              }).then(({ error }) => {
+                if (error) console.error('[agent/consultant] card insert:', error.message)
+              })
+            }
+          }
+        } catch (err) {
+          console.error('[agent/consultant] failed to parse recommendations:', err)
+        }
+
+        // Also create a single summary card in Review
+        if (db) {
+          await db.from('tasks').insert({
+            title:       `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
+            description: 'Full consultant report — approve to proceed with implementation.',
+            column_id:   'review',
+            priority:    'high',
+            project_id:  body.projectId ?? null,
+            position:    0,
+          }).then(({ error }) => {
+            if (error) console.error('[agent/consultant] summary card:', error.message)
+          })
+        }
+        // Skip the generic card below for consultant
+      } else if (db) {
+        // ── Default: create one board card in Review column ─────────────────
         const title = `${capability.name}: ${body.inputs.businessName ?? 'Untitled'}`
         await db.from('tasks').insert({
           title,

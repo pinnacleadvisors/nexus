@@ -52,7 +52,9 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 10 | 10 specialist agent capabilities | ✅ Complete |
 | 11 | Multi-agent swarm orchestration (22 roles, Q-Learning, WASM) | ✅ Complete |
 | 12 | Tribe v2 neuro-content engine (12 principles, scoring, A/B) | ✅ Complete |
-| 13 | Consultant agent + n8n workflow automation | ⬜ Planned |
+| 13a | Consultant agent + tool research API (40+ tools, recommendation cards) | ✅ Complete |
+| 13b | n8n workflow blueprint generator + 8 templates + webhook receiver | ⬜ Planned |
+| 13c | OpenClaw fallback bridge (API gap detection + hybrid routing) | ⬜ Planned |
 | 14 | 3D relational knowledge graph | ⬜ Planned |
 | 15 | Library layer + token efficiency | ⬜ Planned |
 | 16 | Organisation chart + agent hierarchy | ⬜ Planned |

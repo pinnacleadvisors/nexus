@@ -58,8 +58,117 @@ const COMMON_INPUTS: CapabilityInput[] = [
   },
 ]
 
-// ── 10 Capability definitions ─────────────────────────────────────────────────
+// ── Capability definitions ────────────────────────────────────────────────────
 export const AGENT_CAPABILITIES: AgentCapability[] = [
+  // 0 — Consultant (Phase 13a)
+  {
+    id: 'consultant',
+    name: 'Automation Consultant',
+    description: 'Analyses your business and current tool stack, identifies automation opportunities, maps them to n8n workflows, flags which steps need OpenClaw, and produces ranked recommendations with setup checklists.',
+    icon: 'Workflow',
+    category: 'research',
+    savesToNotion: true,
+    createsBoardCard: true,
+    inputs: [
+      ...COMMON_INPUTS,
+      {
+        key: 'currentTools',
+        label: 'Current Tools / Tech Stack',
+        placeholder: 'e.g. HubSpot CRM, Mailchimp, Stripe, Google Drive, Slack, Notion',
+        multiline: false,
+      },
+      {
+        key: 'painPoints',
+        label: 'Biggest Pain Points / Manual Tasks',
+        placeholder: 'e.g. Manually copy leads from Typeform to HubSpot every morning, manually post to LinkedIn weekly, chase invoices by hand',
+        multiline: true,
+        required: true,
+      },
+      {
+        key: 'budget',
+        label: 'Monthly Automation Budget',
+        placeholder: 'e.g. $50/mo, $200/mo, or "as low as possible"',
+      },
+    ],
+    systemPrompt: `You are a senior automation consultant and workflow architect with deep expertise in n8n, Zapier, and business process automation.
+
+You have access to a curated database of 40+ SaaS tools, each tagged with: n8n node availability, setup complexity, monthly cost, and whether it requires browser automation (OpenClaw).
+
+## Your Task
+
+Analyse the business described below and produce a structured automation strategy report. You MUST output a JSON block followed by a markdown report.
+
+## n8n Capability Reference
+n8n can natively automate (no OpenClaw needed):
+- CRM: HubSpot, Salesforce, Pipedrive
+- Email: Mailchimp, Gmail, Resend
+- Messaging: Slack, Telegram
+- Payments: Stripe, QuickBooks, Xero
+- Social: LinkedIn posts, Twitter/X (with API tier)
+- Storage: Google Drive, Dropbox, Notion
+- Dev: GitHub, Supabase, Vercel (HTTP Request)
+- Support: Zendesk, Intercom
+- Forms: Typeform, Google Forms → Sheets
+- AI: Claude (Anthropic), OpenAI, local LLMs
+
+Requires OpenClaw (browser automation — no public API):
+- LinkedIn scraping, connection requests, DM automation
+- Instagram DM / story automation
+- Any site with 2FA that blocks API access
+- JS-rendered pages without a public API
+
+## Instructions
+
+1. Identify 5–8 specific automation opportunities ranked by: time saved × implementation ease
+2. For each opportunity: name the tools, the n8n trigger → action chain, estimated monthly time saved, whether OpenClaw is needed
+3. Generate a setup checklist for the top 3 recommendations
+4. Flag any manual steps the user must take (create account, add API key, etc.)
+5. Note if n8n is not yet configured — the user must deploy it first
+
+## Output Format
+
+First output ONLY this JSON (no markdown fences):
+{
+  "businessSummary": "one sentence",
+  "automationOpportunities": [
+    {
+      "priority": 1,
+      "title": "string",
+      "description": "string",
+      "tools": ["Tool A", "Tool B"],
+      "estimatedSetupMinutes": 30,
+      "monthlyCostSaving": "~3 hrs",
+      "requiresOpenClaw": false,
+      "rationale": "string",
+      "complexity": "low"
+    }
+  ],
+  "openClawEscalations": ["step that needs browser automation"],
+  "nextSteps": ["Deploy n8n", "Add API key for X"],
+  "totalEstimatedSavingHrs": 12
+}
+
+Then output the full markdown report with these sections:
+
+# Automation Strategy: {{businessName}}
+
+## Executive Summary
+
+## Top Automation Opportunities (ranked)
+For each: ### [N]. Title, Tools needed, Setup time, Monthly saving, How it works (n8n trigger → action chain), Setup checklist
+
+## Steps Requiring OpenClaw
+List steps that need browser automation and why n8n can't handle them.
+
+## 90-Day Implementation Roadmap
+Week 1–2: quick wins (low complexity), Week 3–6: medium, Week 7–12: advanced
+
+## Estimated Total Saving
+X hours/month saved. ROI calculation at [budget] automation spend.
+
+Write concisely. Every recommendation must be immediately actionable.`,
+  },
+
   // 1 — Research
   {
     id: 'research',

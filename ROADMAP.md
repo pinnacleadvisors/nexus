@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-13 (Phases 11–12 complete; Phases 13–18 planned)
+> Last updated: 2026-04-14 (Phases 11–13a complete; 13b/13c + Phases 14–18 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -418,18 +418,25 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 13 — Consultant Agent + n8n Workflow Automation (Not Started)
+## Phase 13 — Consultant Agent + n8n Workflow Automation (Partial — 13a Complete)
 
 > A strategic consultant agent researches the best tool combinations for your business, then generates executable n8n workflow blueprints. Every step the user must take (add API key, create account, review workflow) is automatically added as a Kanban card and Notion note so agents stay in context.
 
-### 13a — Consultant Agent
+### 13a — Consultant Agent ✅ Complete
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Consultant capability** — new agent capability: given business description + current tool stack, researches optimal automation workflows; outputs ranked recommendations with rationale, cost estimates, and complexity scores |
-| ⬜ | **Tool research** — consultant calls `/api/tools/research` which queries a curated tool database (seeded from lib/mock-data.ts Tools list + additional SaaS integrations) and returns compatibility matrix |
-| ⬜ | **Workflow gap analysis** — identifies which steps can be automated via n8n, which require OpenClaw, and which are manual; produces a gap report saved to Notion and displayed in Forge |
-| ⬜ | **Recommendation cards** — each recommendation auto-creates a Board card in Backlog with: tool name, workflow description, estimated setup time, required credentials |
+| ✅ | **Consultant capability** — `'consultant'` in `lib/agent-capabilities.ts`; accepts business name + description + current tools + pain points + budget; outputs ranked automation recommendations with rationale, cost estimates, and complexity scores; JSON block + full markdown report |
+| ✅ | **Tool research** — `GET /api/tools/research`: curated database of 40+ SaaS tools in `lib/n8n/tools-db.ts`; filterable by keyword, category, n8n_only; returns compatibility matrix with n8n node types, setup time, monthly cost, OpenClaw flag |
+| ✅ | **Workflow gap analysis** — consultant system prompt identifies n8n-automatable steps vs OpenClaw-required steps; gap report saved to Notion via existing `/api/agent` `onFinish` hook; includes `openClawEscalations[]` in JSON output |
+| ✅ | **Recommendation cards** — `/api/agent` `onFinish` parses consultant JSON block; creates one Board card per recommendation in Backlog (priority → high/medium/low); summary card in Review; max 8 cards per run |
+
+### Implementation Notes (13a)
+- `lib/n8n/types.ts` — `N8nNode`, `N8nWorkflow`, `WorkflowTemplate`, `ToolEntry`, `AutomationRecommendation`, `ConsultantReport`
+- `lib/n8n/client.ts` — n8n REST API client: `listWorkflows`, `createWorkflow`, `activateWorkflow`, `listExecutions`, `checkHealth`; requires `N8N_BASE_URL` + `N8N_API_KEY`
+- `lib/n8n/tools-db.ts` — 40+ tools across CRM, email, social, payments, analytics, devops, AI, support
+- `app/api/tools/research/route.ts` — `GET /api/tools/research?q=&category=&n8n_only=`
+- `app/api/agent/route.ts` — updated: consultant gets multi-card board creation + new input labels
 
 ### 13b — n8n Workflow Generation
 
