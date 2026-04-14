@@ -464,7 +464,7 @@ export default function ClawConfigPage() {
             <div className="space-y-2">
               {OAUTH_PROVIDERS.map(provider => {
                 const connected = isConnected(provider.id)
-                const Icon = PROVIDER_ICON[provider.icon] ?? Mail
+                const Icon = (PROVIDER_ICON[provider.icon] ?? Mail) as React.ComponentType<{ size?: number; style?: React.CSSProperties }>
                 return (
                   <div
                     key={provider.id}

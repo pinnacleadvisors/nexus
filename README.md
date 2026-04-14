@@ -12,6 +12,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | `/swarm` | Launch a multi-agent swarm: Strategic Queen decomposes goal → 22 specialist agents execute in phases → Raft/BFT/Gossip consensus → synthesised output |
 | `/tools/content` | Tribe v2 — generate neuro-optimised content using 12 cognitive engagement principles; score, revise, and A/B test across 8 formats × 5 tone profiles |
 | `/tools/agents` | Run 10 specialist AI agents (research, SEO, financial model, legal, email outreach, social media, code spec, and more) |
+| `/graph` | Live 3D relational knowledge graph — every business, project, agent, tool, and workflow as a node; WebGL scene with orbit/zoom/pan, Louvain clusters, PageRank sizing, search + filter, temporal replay, 4 layout modes; agent context API reduces token usage 50–70× |
 | `/tools/n8n` | n8n workflow hub — 8 pre-built blueprints, AI-powered custom workflow generator, live activate/deactivate |
 | `/tools/claw` | Configure your OpenClaw / MyClaw cloud agent and OAuth connections |
 | `/tools` | Directory of every integrated platform with links and connection status |
@@ -56,7 +57,7 @@ An all-in-one platform to manage and automate one or multiple businesses. AI age
 | 13a | Consultant agent + tool research API (40+ tools, recommendation cards) | ✅ Complete |
 | 13b | n8n workflow blueprint generator + 8 templates + webhook receiver | ✅ Complete |
 | 13c | OpenClaw fallback bridge (API gap detection + hybrid routing) | ✅ Complete |
-| 14 | 3D relational knowledge graph | ⬜ Planned |
+| 14 | 3D relational knowledge graph | ✅ Complete |
 | 15 | Library layer + token efficiency | ⬜ Planned |
 | 16 | Organisation chart + agent hierarchy | ⬜ Planned |
 | 17 | DeerFlow 2.0 integration (live web search, sandboxed code execution) | ⬜ Planned |

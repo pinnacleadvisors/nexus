@@ -45,7 +45,7 @@ interface Props {
 }
 
 export default function ToolCard({ tool }: Props) {
-  const Icon = ICON_MAP[tool.icon] ?? Bot
+  const Icon = (ICON_MAP[tool.icon] ?? Bot) as React.ComponentType<{ size?: number; style?: React.CSSProperties }>
   const s = STATUS_STYLE[tool.status]
 
   const card = (

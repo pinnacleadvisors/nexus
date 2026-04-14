@@ -32,7 +32,7 @@ function CapabilityCard({
   cap: AgentCapability
   onLaunch: (cap: AgentCapability) => void
 }) {
-  const Icon = ICONS[cap.icon] ?? Play
+  const Icon = (ICONS[cap.icon] ?? Play) as React.ComponentType<{ size?: number; style?: React.CSSProperties }>
   const col  = CATEGORY_COLORS[cap.category] ?? { bg: '#1a1a2e', text: '#9090b0' }
   const catLabel = CAPABILITY_CATEGORIES.find(c => c.id === cap.category)?.label ?? cap.category
 
@@ -116,7 +116,7 @@ function LaunchPanel({
   const abortRef                  = useRef<AbortController | null>(null)
   const outputRef                 = useRef<HTMLPreElement>(null)
 
-  const Icon = ICONS[cap.icon] ?? Play
+  const Icon = (ICONS[cap.icon] ?? Play) as React.ComponentType<{ size?: number; style?: React.CSSProperties }>
   const col  = CATEGORY_COLORS[cap.category] ?? { bg: '#1a1a2e', text: '#9090b0' }
 
   function handleInput(key: string, value: string) {

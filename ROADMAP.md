@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 11–13c complete; Phases 14–18 planned)
+> Last updated: 2026-04-14 (Phases 11–14 complete; Phases 15–18 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -482,29 +482,42 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 14 — 3D Relational Knowledge Graph (Not Started)
+## Phase 14 — 3D Relational Knowledge Graph ✅ Complete
 
 > A live 3D graph where every business, project, milestone, agent, tool, workflow, and code repository is a node. Edges show relationships: "project uses tool", "agent created asset", "milestone depends on milestone", "workflow triggers agent". Agents query the graph via a lightweight API to get full relational context in a single call — inspired by Graphify's 71x token reduction and GitNexus's precomputed relational intelligence.
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Graph data model** — `lib/graph/types.ts`: `GraphNode` (id, type, label, metadata, position3d), `GraphEdge` (source, target, relation, weight, createdAt); node types: `business`, `project`, `milestone`, `agent`, `tool`, `workflow`, `repository`, `asset`, `prompt`, `skill` |
-| ⬜ | **Graph builder** — `lib/graph/builder.ts`: queries Supabase for all entities and relationships; constructs in-memory graph; runs Leiden community detection to assign cluster IDs; exports `graph.json`; incremental update on entity change |
-| ⬜ | **Graph API** — `GET /api/graph` returns full serialised graph; `GET /api/graph/node/:id` returns node + 1-hop neighbourhood; `GET /api/graph/path?from=&to=` returns shortest path; `POST /api/graph/query` accepts natural language query, returns subgraph |
-| ⬜ | **3D renderer** — `/graph` page using `react-three-fiber` + `@react-three/drei`; nodes rendered as glowing spheres sized by PageRank score; edges as lines with opacity proportional to relationship strength; clusters occupy distinct 3D regions; camera orbit/zoom/pan |
-| ⬜ | **Node type visual encoding** — businesses: gold, projects: indigo, milestones: teal, agents: purple, tools: grey, workflows: orange, repos: green, assets: pink; node size = connection count; edge colour = relation type |
-| ⬜ | **Agent context API** — `POST /api/graph/context` accepts a task description; returns the minimal subgraph of relevant nodes (cosine similarity on node embeddings); agents call this before starting any task to get relational context without scanning all files |
-| ⬜ | **MCP tool exposure** — `get_graph_context(task_description)` MCP tool so OpenClaw and Claude Code can call it natively; returns JSON subgraph of ≤20 nodes; target: 50–70x token reduction vs raw file scanning (per Graphify benchmarks) |
-| ⬜ | **Search + filter panel** — sidebar on `/graph` with text search, node type filter, relationship filter, time-range slider; matching nodes pulse in the 3D view |
-| ⬜ | **Temporal replay** — scrub through time to see how the graph grew: each node appears at its `createdAt` timestamp; reveals growth patterns and bottlenecks |
-| ⬜ | **Auto-layout modes** — force-directed (default), hierarchical (org-chart), radial (business-centric), cluster-grid; toggle in UI |
-| ⬜ | **Embed in Forge / Dashboard** — minimap 2D projection of the graph shown in Forge sidebar; clicking a node deep-links to the relevant project or tool |
+| ✅ | **Graph data model** — `lib/graph/types.ts`: `GraphNode` (id, type, label, metadata, position3d, clusterId, pageRank, connections), `GraphEdge` (source, target, relation, weight, createdAt); 10 node types; 10 edge relation types; `NODE_COLORS` + `EDGE_COLORS` visual encoding maps |
+| ✅ | **Graph builder** — `lib/graph/builder.ts`: queries Supabase (businesses, projects, milestones, agents, tasks); server-side force-directed spring simulation assigns 3D positions; Louvain community detection (graphology-communities-louvain) assigns cluster IDs; PageRank power iteration sizes nodes; 60 s in-memory cache; rich 30-node mock fallback when Supabase unconfigured |
+| ✅ | **Graph API** — `GET /api/graph` (full graph, 60 s cache); `GET /api/graph/node/:id` (node + 1-hop neighbourhood); `GET /api/graph/path?from=&to=` (BFS shortest path); `POST /api/graph/query` (keyword-ranked subgraph); `GET/POST /api/graph/mcp` (MCP manifest + tool invocation) |
+| ✅ | **3D renderer** — `/graph` page using `react-three-fiber` + `@react-three/drei`; nodes as glowing spheres (MeshStandardMaterial + emissive) sized by PageRank + degree; edges as `<Line>` with opacity ∝ weight; camera orbit/zoom/pan via OrbitControls; auto-fit camera to bounding sphere on load; SSR disabled via `next/dynamic` |
+| ✅ | **Node type visual encoding** — businesses: gold, projects: indigo, milestones: teal, agents: purple, tools: grey, workflows: orange, repos: green, assets: pink, prompts: sky, skills: amber; node size = PageRank + connections; edge colour = relation type; labels above each sphere |
+| ✅ | **Agent context API** — `POST /api/graph/context`: finds top-3 anchor nodes via keyword relevance scoring, expands 1 hop, returns minimal subgraph (≤20 nodes default); returns `summary`, `tokenEstimate`, `anchorNodeIds`; no embeddings needed (keyword + PageRank scoring) |
+| ✅ | **MCP tool exposure** — `GET /api/graph/mcp` returns manifest; `POST /api/graph/mcp` invokes `get_graph_context`, `query_graph`, or `get_node`; add with: `claude mcp add nexus-graph <url>/api/graph/mcp/manifest` |
+| ✅ | **Search + filter panel** — sidebar with text search (dims non-matching nodes in 3D view), node type filter pills with counts, clear filter button |
+| ✅ | **Temporal replay** — ON/OFF toggle + range slider (1–100%); shows oldest N% of nodes by `createdAt`; reveals graph growth over time |
+| ✅ | **Auto-layout modes** — force-directed (server-computed spring, default), hierarchical (layer by node type priority), radial (concentric rings by type), cluster-grid (grid by Louvain cluster); toggle in sidebar |
+| ⬜ | **Embed in Forge / Dashboard** — minimap 2D projection in Forge sidebar; deep-link on click (planned Phase 14b) |
 
-### Technical approach
-- **Renderer**: `react-three-fiber` + `@react-three/drei` + `three.js` (already a transitive dep) — no new rendering engine needed
-- **Graph computation**: `graphology` + `graphology-communities-louvain` (JS-native, no Python); runs server-side at build/refresh time
-- **Embeddings**: Supabase `pgvector` + `text-embedding-3-small` (OpenAI) or Anthropic's embedding endpoint for `POST /api/graph/context`
-- **Performance**: graph snapshot cached in Redis/Supabase, rebuilt on entity mutation; 3D scene uses instanced meshes for up to 10,000 nodes at 60 fps
+### Implementation Notes (Phase 14)
+- `lib/graph/types.ts` — all TypeScript interfaces + `NODE_COLORS`, `EDGE_COLORS`, `NODE_TYPE_LABELS` maps
+- `lib/graph/builder.ts` — `buildGraph()`, `getNodeNeighbourhood()`, `findShortestPath()`, `scoreNodeRelevance()`; `runForceLayout()` (spring simulation); `assignClusters()` (Louvain); `assignPageRank()` (power iteration)
+- `app/api/graph/route.ts` — GET full graph with `s-maxage=60` CDN cache
+- `app/api/graph/node/[id]/route.ts` — GET single node + 1-hop neighbourhood
+- `app/api/graph/path/route.ts` — GET BFS shortest path
+- `app/api/graph/query/route.ts` — POST keyword-ranked subgraph search
+- `app/api/graph/context/route.ts` — POST agent context API (anchor expansion)
+- `app/api/graph/mcp/route.ts` — MCP manifest + 3 tool dispatch handlers
+- `components/graph/GraphScene.tsx` — `'use client'` Three.js scene: `NodeMesh`, `EdgeLine`, `CameraFit`, `Scene`, `GraphScene`
+- `app/(protected)/graph/page.tsx` — full page: dynamic GraphScene import (ssr:false), sidebar (search/filter/layout/replay/stats/MCP info), node detail panel, legend, toolbar
+- `components/layout/Sidebar.tsx` — Graph nav item added (Share2 icon, `/graph`, segment `graph`)
+- New packages: `three`, `@types/three`, `@react-three/fiber`, `@react-three/drei`, `graphology`, `graphology-communities-louvain`, `graphology-shortest-path`
+
+### Manual Steps (Phase 14)
+- No additional secrets needed for mock mode
+- For live Supabase data: ensure migrations 001–006 are applied (`npm run migrate`)
+- MCP registration: `claude mcp add nexus-graph https://<your-vercel-domain>/api/graph/mcp/manifest`
 
 ---
 

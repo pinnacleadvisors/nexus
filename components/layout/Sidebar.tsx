@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  Share2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/dashboard',      label: 'Dashboard',  segment: 'dashboard', icon: LayoutDashboard },
   { href: '/board',          label: 'Board',      segment: 'board',     icon: Kanban },
   { href: '/swarm',          label: 'Swarm',      segment: 'swarm',     icon: Network },
+  { href: '/graph',          label: 'Graph',      segment: 'graph',     icon: Share2 },
   { href: '/tools/content',  label: 'Content',    segment: 'tools',     icon: Sparkles },
   { href: '/tools/agents',   label: 'Agents',     segment: 'tools',     icon: Bot },
   { href: '/tools/n8n',      label: 'Workflows',  segment: 'tools',     icon: Workflow },

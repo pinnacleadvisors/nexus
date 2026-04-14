@@ -37,7 +37,7 @@ function StatusBadge({ status }: { status: ExecutionStatus }) {
     waiting: { color: '#fbbf24', bg: '#2e2818', icon: Clock,        label: 'Waiting' },
   }
   const cfg = map[status] ?? map.waiting
-  const Icon = cfg.icon
+  const Icon = cfg.icon as React.ComponentType<{ size?: number; className?: string }>
   return (
     <span
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
