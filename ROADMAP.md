@@ -29,7 +29,9 @@
 - [✅] Add `SUPABASE_SERVICE_ROLE_KEY` to Doppler — Project Settings → API → service_role secret key
 - [✅] Add `SUPABASE_PROJECT_REF` to Doppler — Project Settings → General → Reference ID (e.g. `abcdefghijklmnop`)
 - [✅] Add `SUPABASE_ACCESS_TOKEN` to Doppler — https://supabase.com/account/tokens → Generate new token
-- [ ] Run `npm run migrate` to apply all pending SQL migrations
+- [ ] **Run migrations on your MacBook:** `cd nexus && npm run migrate`
+  > This uses Doppler to inject credentials and applies all pending `.sql` files via the Supabase Management API. Safe to re-run — already-applied files are skipped.
+  > Alternative: paste each file into Supabase dashboard → SQL Editor in order.
 
 #### SQL Migrations
 
@@ -37,13 +39,17 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 | File | Description | Applied |
 |------|-------------|---------|
-| `supabase/migrations/001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds | ⬜ |
-| `supabase/migrations/002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
-| `supabase/migrations/003_businesses_milestones.sql` | businesses + milestones tables; user_id on projects + agents; Realtime enabled | ⬜ |
-| `supabase/migrations/004_rls_policies.sql` | Row-level security on all tables; businesses per-user via Clerk JWT sub | ⬜ |
-| `supabase/migrations/005_audit_log.sql` | audit_log table with indexes on user_id, action, resource, created_at | ⬜ |
-| `supabase/migrations/006_swarm.sql` | swarm_runs, swarm_tasks, reasoning_patterns tables; Realtime enabled | ⬜ |
+| `001_initial_schema.sql` | Core tables: agents, revenue_events, token_events, alert_thresholds, schema_migrations | ⬜ |
+| `002_tasks_and_projects.sql` | Kanban tasks + projects tables with Supabase Realtime | ⬜ |
+| `003_businesses_milestones.sql` | businesses + milestones tables; user_id on projects + agents; Realtime enabled | ⬜ |
+| `004_rls_policies.sql` | Row-level security on all tables; businesses per-user via Clerk JWT sub | ⬜ |
+| `005_audit_log.sql` | audit_log table with indexes on user_id, action, resource, created_at | ⬜ |
+| `006_swarm.sql` | swarm_runs, swarm_tasks, reasoning_patterns tables; Realtime enabled | ⬜ |
+| `007_libraries.sql` | code_snippets, agent_templates, prompt_templates, skill_definitions; GIN tag indexes; RLS | ⬜ |
+| `008_agent_hierarchy.sql` | Extends agents table (parent_agent_id, layer, tokens, cost); new agent_actions table | ⬜ |
 
+> **⚠️ Cannot be run from the cloud dev environment** — migrations require `SUPABASE_PROJECT_REF` + `SUPABASE_ACCESS_TOKEN` which are only available via Doppler on your MacBook.
+>
 > **Adding a new migration?** Create `supabase/migrations/NNN_description.sql`, add a row above with ⬜, then run `npm run migrate`.
 
 ---
