@@ -48,12 +48,42 @@ See `ROADMAP.md` for the full feature backlog and implementation status.
 - Use `Kanban` instead of `Trello`
 - Always verify icon names with: `node -e "const l=require('./node_modules/lucide-react'); console.log('IconName' in l)"`
 
+### Access Control — Adding Yourself as Owner
+
+Nexus is a single-owner platform. Follow these steps the **first time** you access the live deployment:
+
+**Step 1 — Create your Clerk account**
+1. Open the deployed Vercel URL (e.g. `https://nexus-xxx.vercel.app`)
+2. Sign up with your email (or Google/GitHub OAuth) on the sign-in page
+3. Complete email verification if prompted
+
+**Step 2 — Get your Clerk User ID**
+1. Go to [clerk.com](https://clerk.com) → sign in → open your Nexus app
+2. Navigate to **Users** in the left sidebar
+3. Click your user → copy the **User ID** (format: `user_xxxxxxxxxxxxxxxxxxxxxxxx`)
+
+**Step 3 — Lock the platform to yourself**
+1. In Doppler (or Vercel environment variables), add:
+   ```
+   ALLOWED_USER_IDS=user_xxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+2. Also in Clerk Dashboard → **User & Authentication** → **Restrictions**:
+   - Enable **"Block sign-ups"** — prevents anyone new from creating an account
+   - (Optional) Add your email to the **Allowlist** for extra safety
+3. Redeploy (Vercel auto-deploys on Doppler push, or trigger manually)
+
+**How the guard works:** `proxy.ts` reads `ALLOWED_USER_IDS` (comma-separated for future team members). Any authenticated Clerk session whose user ID is not in the list is immediately redirected to the sign-in page. If `ALLOWED_USER_IDS` is unset, all authenticated users are allowed (useful pre-setup).
+
+**To add a team member later:** append their Clerk user ID: `ALLOWED_USER_IDS=user_yours,user_theirs`
+
 ### Secrets
 - All secrets managed via Doppler — never hardcode or commit `.env` files
 - Required env vars: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
+- Access control: `ALLOWED_USER_IDS` — comma-separated Clerk user IDs; if set, only these users can access protected routes
 - Optional env vars: `ANTHROPIC_API_KEY` (fallback AI), `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN` (primary AI via Claude Code CLI), `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` (database), `SUPABASE_SERVICE_ROLE_KEY` (server writes), `STRIPE_WEBHOOK_SECRET` (revenue), `RESEND_API_KEY` (email alerts), `SENTRY_DSN` (error tracking)
 - Phase 17 env vars: `TAVILY_API_KEY` (live web search — add first, works without DeerFlow), `DEERFLOW_BASE_URL` + `DEERFLOW_API_KEY` + `DEERFLOW_ENABLED` (DeerFlow 2.0 sidecar)
 - Phase 18 env vars: `KLING_API_KEY` (cinematic video), `RUNWAY_API_KEY` (stylised video), `ELEVENLABS_API_KEY` (voiceover), `HEYGEN_API_KEY` (UGC/avatar), `DID_API_KEY` (talking-head fallback), `MUAPI_AI_KEY` (scene images), `SUNO_API_KEY` or `UDIO_API_KEY` (background music)
+- Phase 20 env vars: `GITHUB_MEMORY_TOKEN` (PAT with repo scope), `GITHUB_MEMORY_REPO` (e.g. `pinnacleadvisors/nexus-memory`)
 - AI priority in `/api/chat`: OpenClaw (Claude Pro subscription) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 

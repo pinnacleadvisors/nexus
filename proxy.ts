@@ -11,12 +11,26 @@ const isProtectedRoute = createRouteMatcher([
   '/swarm(.*)',
 ])
 
+// Owner-only allowlist: comma-separated Clerk user IDs (e.g. "user_abc,user_xyz").
+// When set, any authenticated user NOT in this list is redirected to sign-in.
+// Leave unset to allow all authenticated users (useful when inviting a team later).
+function getAllowedUserIds(): Set<string> | null {
+  const raw = process.env.ALLOWED_USER_IDS
+  if (!raw?.trim()) return null
+  return new Set(raw.split(',').map(id => id.trim()).filter(Boolean))
+}
+
 // Pre-build the Clerk handler once at module load.
 // Clerk does NOT validate the publishable key here — only on first request.
 const _clerk = clerkMiddleware(async (auth, req) => {
   if (!isProtectedRoute(req)) return
   const session = await auth()
   if (!session.userId) {
+    return Response.redirect(new URL('/', req.url))
+  }
+  // Enforce owner-only allowlist when configured
+  const allowed = getAllowedUserIds()
+  if (allowed && !allowed.has(session.userId)) {
     return Response.redirect(new URL('/', req.url))
   }
 })
