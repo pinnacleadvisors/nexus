@@ -623,7 +623,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 18 — Video Generation Pipeline (Not Started)
+## Phase 18 — Video Generation Pipeline (In Progress)
 
 > End-to-end AI video production: Tribe v2 generates the script (already built) → n8n orchestrates the render pipeline → Kling 2.0 / Runway Gen-4 render the video → ElevenLabs adds voiceover → final video stored in R2 and linked to a Board card for approval. Covers both cinematic short-form content and ultra-realistic UGC (talking head / product demo) formats.
 
@@ -633,12 +633,12 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Video brief agent** — new agent capability in `lib/agent-capabilities.ts`: accepts topic + format (`cinematic-short` \| `ugc-product` \| `ugc-talking-head` \| `explainer`) → generates structured video brief: scene-by-scene breakdown, shot descriptions, audio cues, on-screen text; saved as Notion page + Board card |
-| ⬜ | **Tribe v2 VSL integration** — `/tools/content` gains "Export to Video" button when format = `vsl-script`; sends script to video brief agent; populates scene descriptions from VSL structure |
-| ⬜ | **Kling 2.0 integration** — `lib/video/kling.ts`: `generateClip(prompt, referenceImage?, duration?)` → POST to Kling API → polls for completion → returns video URL; supports text-to-video and image-to-video (first/last frame guidance) |
-| ⬜ | **Runway Gen-4 integration** — `lib/video/runway.ts`: `generateClip(prompt, style?)` → Runway API; used for cinematic/stylised output where Kling is less suitable; model selected per scene via video brief agent |
+| ✅ | **Video brief agent** — new agent capability in `lib/agent-capabilities.ts`: accepts topic + format (`cinematic-short` \| `ugc-product` \| `ugc-talking-head` \| `explainer`) → generates structured video brief: scene-by-scene breakdown, shot descriptions, audio cues, on-screen text |
+| ✅ | **Tribe v2 VSL integration** — `/tools/content` gains "Export to Video" button when format = `vsl-script`; sends script first 500 chars as visual prompt; shows real-time progress % and final video link |
+| ✅ | **Kling 2.0 integration** — `lib/video/kling.ts`: `generateClip`, `pollTask`, `getTask`, `estimateCost`; supports text-to-video and image-to-video (first/last frame guidance); models: `kling-v2`, `kling-v1-5`, `kling-v1` |
+| ✅ | **Runway Gen-4 integration** — `lib/video/runway.ts`: `generateClip`, `pollTask`, `getTask`, `estimateCost`; used for cinematic/stylised output; models: `gen4_turbo`, `gen3a_turbo` |
 | ⬜ | **Scene assembly** — n8n workflow stitches clips: for each scene in brief → call Kling/Runway → collect video files → pass to FFmpeg node (n8n built-in) for concatenation → output final MP4 |
-| ⬜ | **Video API route** — `POST /api/video/generate`: accepts video brief JSON → dispatches to n8n workflow → returns `{ jobId, estimatedDuration, estimatedCost }`; `GET /api/video/:jobId` streams progress via SSE |
+| ✅ | **Video API route** — `POST /api/video/generate`: accepts prompt + provider + duration → submits to Kling or Runway → returns `{ jobId, estimatedCostUsd }`; `GET /api/video/[jobId]` streams SSE progress until completion |
 
 ### 18b — Voiceover & Audio Layer
 
@@ -907,8 +907,8 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 | Web research | Tavily (multi-hop search + citations) | ⬜ Phase 17c (quick win) |
 | SuperAgent sidecar | DeerFlow 2.0 (ByteDance OSS, MIT) | ⬜ Phase 17 |
 | Media image generation | muapi.ai | ⬜ Phase 18 |
-| Video generation (cinematic) | Kling 2.0 / Runway Gen-4 | ⬜ Phase 18 |
-| Video generation (UGC/avatar) | HeyGen / D-ID | ⬜ Phase 18 |
+| Video generation (cinematic) | Kling 2.0 / Runway Gen-4 | ✅ Phase 18a (clients + API routes) |
+| Video generation (UGC/avatar) | HeyGen / D-ID | ⬜ Phase 18c |
 | Voiceover | ElevenLabs | ⬜ Phase 18 |
 | Background music | Suno / Udio | ⬜ Phase 18 |
 | 3D graph rendering | react-three-fiber + three.js | ⬜ Phase 14 |

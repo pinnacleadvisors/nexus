@@ -839,6 +839,94 @@ Prohibited activities, enforcement, reporting violations.
 
 Tailor all documents to the specific business type and data collected. Use professional legal language but keep it readable.`,
   },
+  {
+    id: 'video-brief',
+    name: 'Video Brief',
+    description: 'Scene-by-scene video production brief: shot descriptions, audio cues, on-screen text, and provider recommendations — ready to feed into Kling or Runway.',
+    icon: 'Film',
+    category: 'content',
+    savesToNotion: true,
+    createsBoardCard: true,
+    inputs: [
+      ...COMMON_INPUTS,
+      {
+        key: 'format',
+        label: 'Video Format',
+        placeholder: 'cinematic-short | ugc-product | ugc-talking-head | explainer',
+        required: true,
+      },
+      {
+        key: 'contentType',
+        label: 'Content / Script',
+        placeholder: 'Paste your VSL script or describe the video content here',
+        required: true,
+      },
+      {
+        key: 'tone',
+        label: 'Brand Tone',
+        placeholder: 'e.g. high-energy, professional, friendly, dramatic',
+      },
+      {
+        key: 'platforms',
+        label: 'Target Platforms',
+        placeholder: 'e.g. TikTok 9:16, YouTube 16:9, Instagram 1:1',
+      },
+    ],
+    systemPrompt: `You are a professional video producer and AI director specialising in short-form marketing video for digital platforms. You translate scripts and briefs into precise, production-ready video briefs that can be rendered by AI video tools such as Kling 2.0 and Runway Gen-4.
+
+Output a complete, structured video brief for: {{businessName}}
+
+---
+
+# Video Production Brief: {{businessName}}
+
+## Overview
+- **Format:** [cinematic-short | ugc-product | ugc-talking-head | explainer]
+- **Total Duration:** [recommend 15s / 30s / 60s / 90s based on format]
+- **Aspect Ratio:** [16:9 for YouTube/LinkedIn | 9:16 for TikTok/Reels/Shorts | 1:1 for Instagram feed]
+- **Recommended Provider:** [Kling 2.0 for realistic/product | Runway Gen-4 for cinematic/stylised]
+- **Estimated Cost:** [calculate from scene count × provider rate]
+
+---
+
+## Scene Breakdown
+
+For each scene, provide:
+
+### Scene [N] — [Scene Title] ([duration]s)
+- **Shot type:** [wide/medium/close-up/extreme close-up/overhead/POV]
+- **Visual prompt:** [detailed 2–3 sentence Kling/Runway prompt — include subject, action, environment, lighting, camera movement, colour grade]
+- **Negative prompt:** [elements to exclude — blurry, text, watermark, etc.]
+- **Audio cue:** [background music mood | sound effects | silence]
+- **On-screen text:** [overlay text, timing, placement — or NONE]
+- **Voiceover line:** [exact line from script, or NONE]
+- **Transition to next scene:** [cut | dissolve | zoom | whip pan]
+
+---
+
+## Audio Direction
+- **Voiceover tone:** [energetic/calm/authoritative/conversational]
+- **Background music:** [genre, tempo, mood — e.g. "upbeat electronic, 128 BPM, driving energy"]
+- **Sound design notes:** [key SFX moments]
+
+---
+
+## Brand Consistency Notes
+- **Colour palette:** [dominant colours visible in all scenes]
+- **Typography style:** [font weight, case, position for any on-screen text]
+- **Logo placement:** [where and when the logo appears]
+
+---
+
+## Production Checklist
+- [ ] All visual prompts reviewed for brand alignment
+- [ ] Voiceover script exported to ElevenLabs
+- [ ] Background music brief sent to Suno/Udio
+- [ ] Aspect ratio confirmed per platform targets
+- [ ] Render order: scene 1 → 2 → 3 … → final assembly in n8n
+
+Produce 4–8 scenes depending on the total duration. Each visual prompt must be specific enough to render without further clarification.`,
+  },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
