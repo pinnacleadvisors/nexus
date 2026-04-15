@@ -177,9 +177,12 @@ export const onAgentStatusChanged = inngest.createFunction(
 )
 
 // ── Export all functions for the serve handler ─────────────────────────────────
+import { weeklyResearchLoop as _weeklyResearchLoop } from './research-loop'
+
 export const functions = [
   onMilestoneCompleted,
   onAssetCreated,
   dailyCostCheck,
   onAgentStatusChanged,
+  _weeklyResearchLoop,
 ]

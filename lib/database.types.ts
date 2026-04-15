@@ -409,6 +409,40 @@ export type Database = {
         }
         Relationships: []
       }
+      build_research: {
+        Row: {
+          id:               string
+          user_id:          string | null
+          run_at:           string
+          queries_run:      string[]
+          suggestions:      unknown
+          stack_issues:     unknown
+          raw_search_count: number
+          duration_ms:      number
+          created_at:       string
+        }
+        Insert: {
+          id?:               string
+          user_id?:          string | null
+          run_at?:           string
+          queries_run?:      string[]
+          suggestions?:      unknown
+          stack_issues?:     unknown
+          raw_search_count?: number
+          duration_ms?:      number
+          created_at?:       string
+        }
+        Update: {
+          user_id?:          string | null
+          run_at?:           string
+          queries_run?:      string[]
+          suggestions?:      unknown
+          stack_issues?:     unknown
+          raw_search_count?: number
+          duration_ms?:      number
+        }
+        Relationships: []
+      }
       alert_thresholds: {
         Row: {
           id: string

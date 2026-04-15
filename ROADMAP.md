@@ -1,6 +1,6 @@
 # Nexus — Platform Roadmap
 
-> Last updated: 2026-04-14 (Phases 1–17c + 19a complete; Phases 19b–22 planned)
+> Last updated: 2026-04-15 (Phases 1–17c + 19a + 19b complete; Phases 20–22 planned)
 > Goal: A fully automated, cloud-native business management platform where AI agents build, market, and maintain business ideas 24/7 — managed through a single secure dashboard.
 
 ---
@@ -693,7 +693,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 19 — Nexus Builds Nexus (Self-Development Mode) (19a Complete)
+## Phase 19 — Nexus Builds Nexus (Self-Development Mode) (19a + 19b Complete)
 
 > Use the platform's own AI agent infrastructure to develop and improve itself — eliminating reliance on Claude Code CLI (and its usage limits) as the primary dev tool. Two sub-modes: **Dev Console** (user-driven feature requests and bug fixes) and **Research Loop** (scheduled agent that monitors AI/dev research and proposes improvements autonomously). Start on MacBook 2019 locally; graduate to cloud execution as the platform matures.
 
@@ -720,15 +720,15 @@ The agent only has access to the local repo. Git is the safety net — every cha
 | ⬜ | **Error paste mode** — paste a TypeScript/Next.js error → agent reads the relevant source files via the graph → diagnoses root cause → proposes fix → dispatches to OpenClaw |
 | ⬜ | **CI status badge** — card shows Vercel deploy status; if deploy fails after merge, auto-creates a new fix task and re-dispatches |
 
-### 19b — Research Loop (Autonomous Improvement)
+### 19b — Research Loop (Autonomous Improvement) ✅ Complete
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Weekly research cron** — Inngest scheduled function runs every Sunday 09:00; uses Tavily/DeerFlow to search: "AI agent frameworks this week", "Next.js performance updates", "LLM cost optimisation techniques", "open source tools for \[each tool in stack\]" |
-| ⬜ | **Research digest agent** — synthesises search results into a structured report: (1) new tools to evaluate, (2) deprecations / breaking changes to the current stack, (3) performance / cost improvements applicable to Nexus |
-| ⬜ | **Suggestion cards** — each suggestion auto-creates a Board card in Backlog with: source link, relevance score, estimated impact (High/Med/Low), required work estimate; user drags to In Progress to action it |
-| ⬜ | **Stack health monitor** — weekly `npm audit` + `npx tsc --noEmit` run by the agent; failures auto-create high-priority bug cards on the Board |
-| ⬜ | **`/build/research` tab** — shows the weekly digest, suggestion cards, and research history; filter by category (security, performance, cost, DX) |
+| ✅ | **Weekly research cron** — Inngest scheduled function (`inngest/functions/research-loop.ts`) runs every Sunday 09:00 UTC; uses Tavily to search 6 queries covering AI frameworks, Next.js, LLM cost, TypeScript, Vercel, Supabase, Tailwind, Clerk, Inngest, Anthropic |
+| ✅ | **Research digest agent** — Claude Haiku synthesises search results into up to 8 structured suggestions: new tools, deprecations, breaking changes, performance/cost improvements |
+| ✅ | **Suggestion cards** — high/medium impact suggestions auto-create Board cards in Backlog with source link, impact level, work estimate; critical/high security issues create priority cards |
+| ✅ | **Stack health monitor** — `npm audit --json` run by the agent; moderate+ vulnerabilities auto-create high-priority security cards on the Board |
+| ✅ | **Research tab on `/build`** — tab switcher (Console / Research) on the build page; shows digest, category-filtered suggestion cards (security/performance/cost/DX/deprecation/new-tool), stack health panel, run history; Run Now button triggers manual research run |
 
 ### Manual Steps — Phase 19
 

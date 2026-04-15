@@ -24,11 +24,24 @@ import {
   RefreshCw,
   ExternalLink,
   Kanban,
+  Search,
+  Shield,
+  Play,
+  Package,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BuildPlan, BuildRequestType } from '@/lib/build/types'
+import {
+  CATEGORY_META,
+  IMPACT_META,
+  WORK_META,
+  type ResearchDigest,
+  type ResearchCategory,
+} from '@/lib/build/research'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+type ActiveTab = 'console' | 'research'
+
 type PanelState =
   | 'idle'
   | 'fetching_tree'
@@ -364,27 +377,117 @@ export default function BuildPage() {
   const isLoading  = panelState === 'fetching_tree' || panelState === 'planning'
   const analysisText = streamText ? stripPlanTags(streamText) : ''
 
+  // ── Research tab state ─────────────────────────────────────────────────────
+  const [activeTab, setActiveTab]               = useState<ActiveTab>('console')
+  const [researchDigests, setResearchDigests]   = useState<ResearchDigest[]>([])
+  const [researchLoading, setResearchLoading]   = useState(false)
+  const [researchLoaded, setResearchLoaded]     = useState(false)
+  const [researchRunning, setResearchRunning]   = useState(false)
+  const [researchRunNote, setResearchRunNote]   = useState<string | null>(null)
+  const [researchError, setResearchError]       = useState<string | null>(null)
+  const [categoryFilter, setCategoryFilter]     = useState<ResearchCategory | 'all'>('all')
+  const [stackHealthOpen, setStackHealthOpen]   = useState(true)
+
+  async function loadResearch() {
+    if (researchLoaded) return
+    setResearchLoading(true)
+    try {
+      const res = await fetch('/api/build/research?limit=5')
+      if (res.ok) {
+        const data = await res.json() as { digests: ResearchDigest[] }
+        setResearchDigests(data.digests ?? [])
+        setResearchLoaded(true)
+      }
+    } catch { /* non-fatal */ }
+    finally { setResearchLoading(false) }
+  }
+
+  function handleTabChange(tab: ActiveTab) {
+    setActiveTab(tab)
+    if (tab === 'research' && !researchLoaded) loadResearch()
+  }
+
+  async function handleRunResearch() {
+    setResearchRunning(true)
+    setResearchRunNote(null)
+    setResearchError(null)
+    try {
+      const res = await fetch('/api/build/research', { method: 'POST' })
+      const data = await res.json() as {
+        ok: boolean; mode?: string; note?: string
+        digest?: ResearchDigest; error?: string
+      }
+      if (!res.ok) { setResearchError(data.error ?? 'Research run failed'); return }
+      if (data.mode === 'inngest') {
+        setResearchRunNote(data.note ?? 'Research loop queued — check back in ~1 minute.')
+      } else if (data.digest) {
+        setResearchDigests(prev => [data.digest!, ...prev])
+        setResearchLoaded(true)
+      }
+    } catch (err) {
+      setResearchError((err as Error).message)
+    } finally {
+      setResearchRunning(false)
+    }
+  }
+
+  const latestDigest      = researchDigests[0]
+  const filteredSuggestions = (latestDigest?.suggestions ?? []).filter(
+    s => categoryFilter === 'all' || s.category === categoryFilter,
+  )
+  const SEVERITY_COLOR: Record<string, string> = {
+    critical: '#ef4444', high: '#f97316', moderate: '#f59e0b', low: '#22c55e',
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: '#050508' }}>
       {/* Page header */}
       <div className="px-6 py-5 border-b shrink-0" style={{ borderColor: '#1a1a2e' }}>
-        <div className="flex items-center gap-3">
-          <div
-            className="flex items-center justify-center w-9 h-9 rounded-lg"
-            style={{ backgroundColor: '#6c63ff22', border: '1px solid #6c63ff44' }}
-          >
-            <Terminal size={18} style={{ color: '#6c63ff' }} />
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="flex items-center justify-center w-9 h-9 rounded-lg"
+              style={{ backgroundColor: '#6c63ff22', border: '1px solid #6c63ff44' }}
+            >
+              {activeTab === 'console'
+                ? <Terminal size={18} style={{ color: '#6c63ff' }} />
+                : <Search   size={18} style={{ color: '#6c63ff' }} />}
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>
+                {activeTab === 'console' ? 'Dev Console' : 'Research Loop'}
+              </h1>
+              <p className="text-xs" style={{ color: '#6c6c88' }}>
+                {activeTab === 'console'
+                  ? 'Nexus builds Nexus — describe a change, approve the plan, dispatch to Claude Code'
+                  : 'Weekly AI/dev research digest — suggestions, stack health, improvement ideas'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>Dev Console</h1>
-            <p className="text-xs" style={{ color: '#6c6c88' }}>
-              Nexus builds Nexus — describe a change, approve the plan, dispatch to Claude Code
-            </p>
+          {/* Tab switcher */}
+          <div
+            className="flex rounded-lg p-0.5 shrink-0"
+            style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
+          >
+            {(['console', 'research'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => handleTabChange(tab)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                style={activeTab === tab
+                  ? { backgroundColor: '#6c63ff', color: '#fff' }
+                  : { backgroundColor: 'transparent', color: '#6c6c88' }}
+              >
+                {tab === 'console' ? <Terminal size={12} /> : <Search size={12} />}
+                {tab === 'console' ? 'Console' : 'Research'}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Main split */}
+      {/* ── Console tab ───────────────────────────────────────────────────── */}
+      {activeTab === 'console' && (
       <div className="flex flex-1 overflow-hidden min-h-0">
 
         {/* ── Left: Input panel ──────────────────────────────────────────── */}
@@ -686,6 +789,217 @@ export default function BuildPage() {
           )}
         </div>
       </div>
+      )}
+
+      {/* ── Research tab ──────────────────────────────────────────────────── */}
+      {activeTab === 'research' && (
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+          {/* Top bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-4 text-sm" style={{ color: '#9090b0' }}>
+              {latestDigest ? (
+                <>
+                  <span>Last run: <span style={{ color: '#c0c0d8' }}>{new Date(latestDigest.runAt).toLocaleString()}</span></span>
+                  <span>{latestDigest.suggestions.length} suggestions</span>
+                  <span>{latestDigest.stackIssues.length} stack issues</span>
+                  <span>{latestDigest.rawSearchCount} sources</span>
+                </>
+              ) : researchLoading ? (
+                <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" />Loading digest…</span>
+              ) : (
+                <span>No research runs yet — click Run Now to start</span>
+              )}
+            </div>
+            <button
+              onClick={handleRunResearch}
+              disabled={researchRunning}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-60"
+              style={{ backgroundColor: '#6c63ff', color: '#fff' }}
+            >
+              {researchRunning
+                ? <><Loader2 size={14} className="animate-spin" />Running…</>
+                : <><Play size={14} />Run Now</>}
+            </button>
+          </div>
+
+          {/* Note / error banners */}
+          {researchRunNote && (
+            <div className="rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+              style={{ backgroundColor: '#0d1a0d', border: '1px solid #22c55e44', color: '#6c9e6c' }}>
+              <CheckCircle2 size={14} style={{ color: '#22c55e' }} />
+              {researchRunNote}
+            </div>
+          )}
+          {researchError && (
+            <div className="rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+              style={{ backgroundColor: '#1a0d0d', border: '1px solid #ef444444', color: '#c08080' }}>
+              <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+              {researchError}
+            </div>
+          )}
+
+          {/* Category filter pills */}
+          {latestDigest && latestDigest.suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'security', 'performance', 'cost', 'dx', 'deprecation', 'new-tool'] as const).map(cat => {
+                const meta = cat === 'all' ? null : CATEGORY_META[cat]
+                const isActive = categoryFilter === cat
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+                    style={isActive && meta
+                      ? { backgroundColor: meta.bg, color: meta.color, border: `1px solid ${meta.color}44` }
+                      : isActive
+                      ? { backgroundColor: '#6c63ff22', color: '#6c63ff', border: '1px solid #6c63ff44' }
+                      : { backgroundColor: '#12121e', color: '#6c6c88', border: '1px solid #24243e' }}
+                  >
+                    {cat === 'all' ? 'All' : CATEGORY_META[cat].label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Suggestion cards */}
+          {filteredSuggestions.length > 0 && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {filteredSuggestions.map(s => {
+                const cat    = CATEGORY_META[s.category] ?? { label: s.category, color: '#9090b0', bg: '#9090b022' }
+                const impact = IMPACT_META[s.impact]     ?? { label: s.impact, color: '#9090b0' }
+                const work   = WORK_META[s.estimatedWork] ?? { label: s.estimatedWork, color: '#9090b0' }
+                return (
+                  <div
+                    key={s.id ?? s.title}
+                    className="rounded-xl border p-4 space-y-3"
+                    style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold leading-snug" style={{ color: '#e8e8f0' }}>{s.title}</p>
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium shrink-0"
+                        style={{ backgroundColor: cat.bg, color: cat.color }}
+                      >{cat.label}</span>
+                    </div>
+                    <p className="text-xs leading-relaxed" style={{ color: '#9090b0' }}>{s.description}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{ backgroundColor: impact.color + '22', color: impact.color }}>
+                        {impact.label} impact
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{ backgroundColor: work.color + '22', color: work.color }}>
+                        {work.label}
+                      </span>
+                      {s.boardCardId && (
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+                          style={{ backgroundColor: '#22c55e22', color: '#22c55e' }}>
+                          <Kanban size={10} />Board card
+                        </span>
+                      )}
+                    </div>
+                    {s.sourceUrl && (
+                      <a
+                        href={s.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs truncate"
+                        style={{ color: '#6c63ff' }}
+                      >
+                        <ExternalLink size={10} />
+                        {s.sourceTitle || s.sourceUrl}
+                      </a>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Empty suggestions state */}
+          {latestDigest && filteredSuggestions.length === 0 && (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <Search size={28} style={{ color: '#24243e' }} />
+              <p className="text-sm" style={{ color: '#6c6c88' }}>
+                {categoryFilter === 'all' ? 'No suggestions in this digest.' : `No ${CATEGORY_META[categoryFilter as ResearchCategory]?.label ?? categoryFilter} suggestions.`}
+              </p>
+            </div>
+          )}
+
+          {/* Stack health */}
+          {latestDigest && (
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#24243e' }}>
+              <button
+                className="w-full flex items-center justify-between px-5 py-3"
+                style={{ backgroundColor: '#12121e' }}
+                onClick={() => setStackHealthOpen(v => !v)}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium" style={{ color: '#c0c0d8' }}>
+                  <Shield size={14} style={{ color: latestDigest.stackIssues.length > 0 ? '#ef4444' : '#22c55e' }} />
+                  Stack Health
+                  {latestDigest.stackIssues.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-xs font-bold"
+                      style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
+                      {latestDigest.stackIssues.length}
+                    </span>
+                  )}
+                </span>
+                {stackHealthOpen ? <ChevronDown size={14} style={{ color: '#6c6c88' }} /> : <ChevronRight size={14} style={{ color: '#6c6c88' }} />}
+              </button>
+              {stackHealthOpen && (
+                <div className="p-4" style={{ backgroundColor: '#0d0d14' }}>
+                  {latestDigest.stackIssues.length === 0 ? (
+                    <p className="flex items-center gap-2 text-sm" style={{ color: '#22c55e' }}>
+                      <CheckCircle2 size={14} />No vulnerabilities found
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {latestDigest.stackIssues.map((issue, i) => (
+                        <div key={i} className="flex items-start gap-3 p-3 rounded-lg"
+                          style={{ backgroundColor: '#12121e', border: '1px solid #1a1a2e' }}>
+                          <Package size={14} className="mt-0.5 shrink-0"
+                            style={{ color: SEVERITY_COLOR[issue.severity] ?? '#9090b0' }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <code className="text-xs font-mono" style={{ color: '#e8e8f0' }}>{issue.package}</code>
+                              <span className="px-1.5 py-0.5 rounded text-xs font-semibold"
+                                style={{ backgroundColor: (SEVERITY_COLOR[issue.severity] ?? '#9090b0') + '22', color: SEVERITY_COLOR[issue.severity] ?? '#9090b0' }}>
+                                {issue.severity}
+                              </span>
+                              {issue.fixAvailable && (
+                                <span className="text-xs" style={{ color: '#22c55e' }}>fix available</span>
+                              )}
+                            </div>
+                            <p className="text-xs mt-0.5" style={{ color: '#6c6c88' }}>{issue.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Research history */}
+          {researchDigests.length > 1 && (
+            <div>
+              <p className="text-xs font-medium mb-2" style={{ color: '#6c6c88' }}>PREVIOUS RUNS</p>
+              <div className="space-y-2">
+                {researchDigests.slice(1).map(d => (
+                  <div key={d.id} className="flex items-center justify-between px-4 py-2.5 rounded-lg text-xs"
+                    style={{ backgroundColor: '#0d0d14', border: '1px solid #1a1a2e' }}>
+                    <span style={{ color: '#9090b0' }}>{new Date(d.runAt).toLocaleString()}</span>
+                    <span style={{ color: '#6c6c88' }}>{d.suggestions.length} suggestions · {d.stackIssues.length} issues</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -54,4 +54,8 @@ export type Events = {
       newStatus: string
     }
   }
+  /** Fired to manually trigger the weekly research loop immediately */
+  'build/research-loop': {
+    data: { triggeredBy?: string }
+  }
 }
