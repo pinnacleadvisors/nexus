@@ -471,6 +471,26 @@ export type Database = {
         }
         Relationships: []
       }
+      memory_cache: {
+        Row: {
+          path:      string
+          content:   string
+          sha:       string
+          cached_at: string
+        }
+        Insert: {
+          path:       string
+          content:    string
+          sha:        string
+          cached_at?: string
+        }
+        Update: {
+          content?:   string
+          sha?:       string
+          cached_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

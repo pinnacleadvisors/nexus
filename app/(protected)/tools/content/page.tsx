@@ -8,7 +8,7 @@
 import { useState, useRef } from 'react'
 import {
   Sparkles, FileText, RefreshCw, Copy, Check, ChevronDown,
-  BarChart2, Zap, AlertCircle, Layers,
+  BarChart2, Zap, AlertCircle, Layers, Film, Loader2, ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FORMAT_TEMPLATES, TONE_PROFILES, NEURO_PRINCIPLES } from '@/lib/neuro-content'
@@ -199,6 +199,13 @@ export default function ContentPage() {
   const [copied, setCopied]           = useState<string | null>(null)
   const [targetScore, setTargetScore] = useState(75)
 
+  // ── Video export state ────────────────────────────────────────────────────
+  const [videoStatus, setVideoStatus]   = useState<'idle' | 'submitting' | 'polling' | 'done' | 'error'>('idle')
+  const [videoUrl, setVideoUrl]         = useState<string | null>(null)
+  const [videoError, setVideoError]     = useState<string | null>(null)
+  const [videoProgress, setVideoProgress] = useState<number | null>(null)
+  const [videoCost, setVideoCost]       = useState<number | null>(null)
+
   const abortRef = useRef<AbortController | null>(null)
 
   async function handleGenerate() {
@@ -314,6 +321,66 @@ export default function ContentPage() {
       setError((err as Error).message ?? 'Variant generation failed')
     } finally {
       setStatus('idle')
+    }
+  }
+
+  async function handleExportVideo() {
+    if (!output.trim() || videoStatus !== 'idle') return
+    setVideoStatus('submitting')
+    setVideoError(null)
+    setVideoUrl(null)
+    setVideoProgress(null)
+
+    try {
+      // Use the first ~500 chars of the script as the visual prompt
+      const prompt = output.slice(0, 500).trim()
+
+      const res = await fetch('/api/video/generate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt, duration: 5, provider: 'auto' }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json() as { error?: string }
+        throw new Error(err.error ?? 'Failed to submit video job')
+      }
+
+      const { jobId, estimatedCostUsd } = await res.json() as {
+        jobId: string
+        estimatedCostUsd: number
+      }
+      setVideoCost(estimatedCostUsd)
+      setVideoStatus('polling')
+
+      // SSE poll
+      const sse = new EventSource(`/api/video/${jobId}`)
+      sse.onmessage = (e) => {
+        const data = JSON.parse(e.data as string) as {
+          status:   string
+          progress?: number
+          videoUrl?: string
+          error?:   string
+        }
+        if (data.progress != null) setVideoProgress(data.progress)
+        if (data.status === 'succeeded') {
+          setVideoUrl(data.videoUrl ?? null)
+          setVideoStatus('done')
+          sse.close()
+        } else if (data.status === 'failed') {
+          setVideoError(data.error ?? 'Video generation failed')
+          setVideoStatus('error')
+          sse.close()
+        }
+      }
+      sse.onerror = () => {
+        setVideoError('Lost connection to video job stream')
+        setVideoStatus('error')
+        sse.close()
+      }
+    } catch (err) {
+      setVideoError((err as Error).message)
+      setVideoStatus('error')
     }
   }
 
@@ -530,18 +597,66 @@ export default function ContentPage() {
                     {FORMAT_TEMPLATES.find(t => t.id === format)?.name}
                   </span>
                 </div>
-                <button
-                  onClick={() => copyText(output, 'output')}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
-                >
-                  {copied === 'output' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied === 'output' ? 'Copied!' : 'Copy'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Export to Video — VSL scripts only */}
+                  {format === 'vsl-script' && (
+                    <button
+                      onClick={handleExportVideo}
+                      disabled={videoStatus !== 'idle' && videoStatus !== 'done' && videoStatus !== 'error'}
+                      className="flex items-center gap-1 text-xs text-purple hover:text-purple/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {videoStatus === 'submitting' || videoStatus === 'polling'
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Film className="h-3.5 w-3.5" />}
+                      {videoStatus === 'submitting' ? 'Submitting…'
+                        : videoStatus === 'polling'   ? `Generating${videoProgress != null ? ` ${Math.round(videoProgress * 100)}%` : '…'}`
+                        : videoStatus === 'done'      ? 'Regenerate Video'
+                        : 'Export to Video'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => copyText(output, 'output')}
+                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+                  >
+                    {copied === 'output' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied === 'output' ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
               </div>
               <pre className="p-4 text-sm text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">
                 {output}
                 {status === 'generating' && <span className="animate-pulse text-purple">|</span>}
               </pre>
+              {/* Video result / error strip */}
+              {videoStatus === 'done' && videoUrl && (
+                <div className="border-t border-space-700 px-4 py-3 flex items-center gap-3">
+                  <Film className="h-4 w-4 text-green-400 shrink-0" />
+                  <span className="text-xs text-green-400 font-medium">Video ready</span>
+                  {videoCost != null && (
+                    <span className="text-xs text-gray-500">(~${videoCost.toFixed(2)})</span>
+                  )}
+                  <a
+                    href={videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto flex items-center gap-1 text-xs text-purple hover:text-purple/80 transition-colors"
+                  >
+                    Open video <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+              {videoStatus === 'error' && videoError && (
+                <div className="border-t border-space-700 px-4 py-3 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                  <span className="text-xs text-red-400">{videoError}</span>
+                  <button
+                    onClick={() => setVideoStatus('idle')}
+                    className="ml-auto text-xs text-gray-400 hover:text-white transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

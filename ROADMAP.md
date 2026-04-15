@@ -623,7 +623,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ---
 
-## Phase 18 — Video Generation Pipeline (Not Started)
+## Phase 18 — Video Generation Pipeline (In Progress)
 
 > End-to-end AI video production: Tribe v2 generates the script (already built) → n8n orchestrates the render pipeline → Kling 2.0 / Runway Gen-4 render the video → ElevenLabs adds voiceover → final video stored in R2 and linked to a Board card for approval. Covers both cinematic short-form content and ultra-realistic UGC (talking head / product demo) formats.
 
@@ -633,12 +633,12 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 | Status | Item |
 |--------|------|
-| ⬜ | **Video brief agent** — new agent capability in `lib/agent-capabilities.ts`: accepts topic + format (`cinematic-short` \| `ugc-product` \| `ugc-talking-head` \| `explainer`) → generates structured video brief: scene-by-scene breakdown, shot descriptions, audio cues, on-screen text; saved as Notion page + Board card |
-| ⬜ | **Tribe v2 VSL integration** — `/tools/content` gains "Export to Video" button when format = `vsl-script`; sends script to video brief agent; populates scene descriptions from VSL structure |
-| ⬜ | **Kling 2.0 integration** — `lib/video/kling.ts`: `generateClip(prompt, referenceImage?, duration?)` → POST to Kling API → polls for completion → returns video URL; supports text-to-video and image-to-video (first/last frame guidance) |
-| ⬜ | **Runway Gen-4 integration** — `lib/video/runway.ts`: `generateClip(prompt, style?)` → Runway API; used for cinematic/stylised output where Kling is less suitable; model selected per scene via video brief agent |
+| ✅ | **Video brief agent** — new agent capability in `lib/agent-capabilities.ts`: accepts topic + format (`cinematic-short` \| `ugc-product` \| `ugc-talking-head` \| `explainer`) → generates structured video brief: scene-by-scene breakdown, shot descriptions, audio cues, on-screen text |
+| ✅ | **Tribe v2 VSL integration** — `/tools/content` gains "Export to Video" button when format = `vsl-script`; sends script first 500 chars as visual prompt; shows real-time progress % and final video link |
+| ✅ | **Kling 2.0 integration** — `lib/video/kling.ts`: `generateClip`, `pollTask`, `getTask`, `estimateCost`; supports text-to-video and image-to-video (first/last frame guidance); models: `kling-v2`, `kling-v1-5`, `kling-v1` |
+| ✅ | **Runway Gen-4 integration** — `lib/video/runway.ts`: `generateClip`, `pollTask`, `getTask`, `estimateCost`; used for cinematic/stylised output; models: `gen4_turbo`, `gen3a_turbo` |
 | ⬜ | **Scene assembly** — n8n workflow stitches clips: for each scene in brief → call Kling/Runway → collect video files → pass to FFmpeg node (n8n built-in) for concatenation → output final MP4 |
-| ⬜ | **Video API route** — `POST /api/video/generate`: accepts video brief JSON → dispatches to n8n workflow → returns `{ jobId, estimatedDuration, estimatedCost }`; `GET /api/video/:jobId` streams progress via SSE |
+| ✅ | **Video API route** — `POST /api/video/generate`: accepts prompt + provider + duration → submits to Kling or Runway → returns `{ jobId, estimatedCostUsd }`; `GET /api/video/[jobId]` streams SSE progress until completion |
 
 ### 18b — Voiceover & Audio Layer
 
@@ -739,7 +739,7 @@ The agent only has access to the local repo. Git is the safety net — every cha
 
 ---
 
-## Phase 20 — Local-First Memory Engine (Not Started)
+## Phase 20 — Local-First Memory Engine ✅
 
 > Replace the Notion dependency for knowledge storage with a local-first, free, version-controlled alternative. Notion API requires a paid subscription ($8–$16/mo); this phase builds an equivalent store that is fully owned, costs nothing, and can optionally mirror to Notion or GitHub for backup.
 
@@ -773,13 +773,13 @@ nexus-memory/
 
 | Status | Item |
 |--------|------|
-| ⬜ | **`nexus-memory` repo** — create private GitHub repo `pinnacleadvisors/nexus-memory`; initialise folder structure above; add `README.md` explaining the schema |
-| ⬜ | **`lib/memory/github.ts`** — `writePage(path, content, message?)`: calls GitHub Contents API to create or update a file; `readPage(path)`: fetch and decode; `searchPages(q)`: GitHub code search API; `listPages(folder)`: directory listing |
-| ⬜ | **Memory API routes** — `POST /api/memory` (write page), `GET /api/memory?path=` (read), `GET /api/memory/search?q=` (search); all authenticated via Clerk; writes go to GitHub, reads served from cache (5-min TTL) |
-| ⬜ | **Agent write integration** — replace Notion append in `app/api/agent/route.ts` with `writeMemoryPage()`; Notion append kept as optional secondary sink if `NOTION_TOKEN` is set |
-| ⬜ | **Memory viewer** — `/tools/memory` page: file tree browser, markdown renderer with syntax highlighting, search bar backed by GitHub search API, edit button (opens inline editor that commits on save) |
-| ⬜ | **Context injection** — before every agent run, `GET /api/memory/search?q=<businessName>` retrieves relevant pages and injects as context (replacing the current Notion lookup); reduces cold-start hallucinations |
-| ⬜ | **Supabase cache layer** — `memory_cache` table: `{ path, content, sha, cached_at }`; reads hit cache first, revalidate after 5 min; avoids GitHub rate limits during high-volume agent sessions |
+| ✅ | **`nexus-memory` repo** — create private GitHub repo `pinnacleadvisors/nexus-memory`; initialise folder structure above; add `README.md` explaining the schema |
+| ✅ | **`lib/memory/github.ts`** — `writePage(path, content, message?)`: calls GitHub Contents API to create or update a file; `readPage(path)`: fetch and decode; `searchPages(q)`: GitHub code search API; `listPages(folder)`: directory listing |
+| ✅ | **Memory API routes** — `POST /api/memory` (write page), `GET /api/memory?path=` (read), `GET /api/memory/search?q=` (search), `GET /api/memory/list?folder=` (tree); all authenticated via Clerk; writes go to GitHub, reads served from cache (5-min TTL) |
+| ✅ | **Agent write integration** — `writeAgentRun()` called in `app/api/agent/route.ts` `onFinish`; Notion append kept as optional secondary sink when `notionPageId` is set |
+| ✅ | **Memory viewer** — `/tools/memory` page: file tree browser, markdown renderer with syntax highlighting, search bar backed by GitHub search API, edit button (opens inline editor that commits on save) |
+| ✅ | **Context injection** — before every agent run, `searchMemory(businessName)` retrieves relevant pages and prepends as `## Prior Agent Memory` context block; reduces cold-start hallucinations |
+| ✅ | **Supabase cache layer** — `memory_cache` table: `{ path, content, sha, cached_at }`; reads hit cache first, revalidate after 5 min; avoids GitHub rate limits during high-volume agent sessions |
 | ⬜ | **Notion sync (optional)** — when `NOTION_TOKEN` is set: after each GitHub write, push the same content to the linked Notion page via the existing `lib/notion.ts` `appendBlocks()`; bidirectional sync is out of scope |
 
 ### Manual Steps — Phase 20
@@ -807,7 +807,7 @@ nexus-memory/
 | **Error tracking** | Sentry (free 5k events) | **GlitchTip** (OSS Sentry clone, self-host free) or **OpenStatus** | >5k errors/mo or need data ownership |
 | **Analytics** | PostHog (free 1M events) | **Umami** (OSS, self-host, no limits) or **Plausible** (OSS) | >1M events/month |
 | **Workflow automation** | n8n (already self-host free) | ✅ Already free — n8n Community Edition is OSS | — |
-| **Notes/Memory** | Notion ($8–16/mo) | ✅ **Phase 20 GitHub memory engine** — replaces Notion entirely for free | When revenue > $500/mo, add Notion as premium sync |
+| **Notes/Memory** | Notion ($8–16/mo) | ✅ **Phase 20 GitHub memory engine** — replaces Notion entirely for free ✅ Done | When revenue > $500/mo, add Notion as premium sync |
 | **Video — cinematic** | Kling 2.0 / Runway ($per-use) | **CogVideoX** (OSS, run on GPU) or **AnimateDiff** — quality gap exists; use for internal/draft | First video product revenue |
 | **Video — talking head** | HeyGen / D-ID ($per-use) | **SadTalker** (OSS, local) or **Wav2Lip** (OSS) — lower quality, needs local GPU | First video product revenue |
 | **Voiceover** | ElevenLabs (free 10k chars/mo) | **Coqui TTS** (OSS, local, no limits) or **Bark** (OSS, local) — quality close to EL at ~60% | >10k chars/mo |
@@ -898,7 +898,7 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 | Email | Resend | ⬜ Not set up |
 | Monitoring | Sentry | ⬜ Not set up |
 | Analytics | PostHog | ⬜ Not set up |
-| Memory / Notes | GitHub repo (Phase 20) → Notion optional sync | ⬜ Phase 20 |
+| Memory / Notes | GitHub repo (Phase 20) → Notion optional sync | ✅ Phase 20 |
 | Hosting | Vercel | ✅ Live |
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |
@@ -907,8 +907,8 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 | Web research | Tavily (multi-hop search + citations) | ⬜ Phase 17c (quick win) |
 | SuperAgent sidecar | DeerFlow 2.0 (ByteDance OSS, MIT) | ⬜ Phase 17 |
 | Media image generation | muapi.ai | ⬜ Phase 18 |
-| Video generation (cinematic) | Kling 2.0 / Runway Gen-4 | ⬜ Phase 18 |
-| Video generation (UGC/avatar) | HeyGen / D-ID | ⬜ Phase 18 |
+| Video generation (cinematic) | Kling 2.0 / Runway Gen-4 | ✅ Phase 18a (clients + API routes) |
+| Video generation (UGC/avatar) | HeyGen / D-ID | ⬜ Phase 18c |
 | Voiceover | ElevenLabs | ⬜ Phase 18 |
 | Background music | Suno / Udio | ⬜ Phase 18 |
 | 3D graph rendering | react-three-fiber + three.js | ⬜ Phase 14 |

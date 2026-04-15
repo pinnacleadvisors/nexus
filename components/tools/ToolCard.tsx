@@ -4,6 +4,8 @@ import Link from 'next/link'
 import type { Tool } from '@/lib/types'
 import {
   Bot,
+  Brain,
+  BookMarked,
   Cpu,
   Sparkles,
   Network,
@@ -20,6 +22,8 @@ import {
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Bot,
+  Brain,
+  BookMarked,
   Cpu,
   Sparkles,
   Network,

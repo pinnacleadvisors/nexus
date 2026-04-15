@@ -320,12 +320,12 @@ export const TOOLS: Tool[] = [
   // Knowledge
   {
     id: 't14',
-    name: 'Notion',
-    description: 'Agent knowledge base — research notes, milestones, and assets stored as Notion pages. Injected into agent context to prevent repeated work.',
-    icon: 'BookOpen',
+    name: 'Memory Engine',
+    description: 'Local-first agent memory backed by a private GitHub repo. Every agent run is committed as markdown — searchable, version-controlled, free.',
+    icon: 'Brain',
     category: 'Automation',
     status: 'available',
-    href: '/tools/knowledge',
+    href: '/tools/memory',
   },
   {
     id: 't15',

@@ -54,3 +54,15 @@ create table if not exists alert_thresholds (
   enabled     boolean not null default true,
   created_at  timestamptz not null default now()
 );
+
+-- ── Phase 20: Memory cache (GitHub memory repo — 5-min TTL) ──────────────────
+-- Avoids GitHub API rate limits during high-volume agent sessions.
+-- path is the repo-relative file path, e.g. "agent-runs/2026-04-15/plan-123.md"
+create table if not exists memory_cache (
+  path        text primary key,
+  content     text        not null,
+  sha         text        not null,
+  cached_at   timestamptz not null default now()
+);
+
+create index if not exists memory_cache_cached_at on memory_cache (cached_at desc);
