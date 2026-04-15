@@ -62,12 +62,10 @@ Nexus is a single-owner platform. Follow these steps the **first time** you acce
 2. Navigate to **Users** in the left sidebar
 3. Click your user → copy the **User ID** (format: `user_xxxxxxxxxxxxxxxxxxxxxxxx`)
 
-**Step 2.5 — Disable bot protection (do this BEFORE signing up)**
-Clerk's bot-protection CAPTCHA (Cloudflare Turnstile) can block Google OAuth sign-up. Disable it for your app:
+**Step 2.5 — Verify bot protection is ON**
+Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.ts`) already allows `challenges.cloudflare.com` so the CAPTCHA loads correctly. No action needed — keep bot protection enabled:
 1. Clerk Dashboard → **Configure** → **Attack protection**
-2. Under **Bot sign-up protection** → toggle **OFF**
-
-> The CSP in `next.config.ts` already allows `challenges.cloudflare.com` as a fallback, but disabling bot protection is simpler and appropriate for a private single-owner app.
+2. **Bot sign-up protection** should be **ON** (leave it enabled)
 
 **Step 3 — Lock the platform to yourself**
 1. In Doppler (or Vercel environment variables), add:
