@@ -22,6 +22,7 @@ import { auth } from '@clerk/nextjs/server'
 import { getCapability } from '@/lib/agent-capabilities'
 import { createServerClient } from '@/lib/supabase'
 import { resolveNotionToken, appendBlocks } from '@/lib/notion'
+import { writeAgentRun, searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createEntry, extractCodeBlocksFromOutput } from '@/lib/library/client'
@@ -135,9 +136,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const userPrompt = tavilyContext
-    ? `${tavilyContext}\n\n${buildUserPrompt(body.inputs)}`
-    : buildUserPrompt(body.inputs)
+  // ── GitHub memory context injection ─────────────────────────────────────────
+  let memoryContext = ''
+  if (isMemoryConfigured() && body.inputs.businessName) {
+    try {
+      const memResults = await searchMemory(body.inputs.businessName, 5)
+      if (memResults.length > 0) {
+        const excerpts = memResults
+          .filter(r => r.excerpt)
+          .map(r => `- [${r.path}]: ${r.excerpt}`)
+          .join('\n')
+        if (excerpts) {
+          memoryContext = `## Prior Agent Memory (from nexus-memory)\n${excerpts}\n\nUse the above prior context to avoid repeating work and build on previous research.\n\n`
+        }
+      }
+    } catch { /* non-fatal — agent still runs without memory */ }
+  }
+
+  const userPrompt = [memoryContext, tavilyContext, buildUserPrompt(body.inputs)]
+    .filter(Boolean)
+    .join('\n\n')
 
   audit(req, {
     action:     `agent.${body.capabilityId}`,
@@ -246,7 +264,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ── Append to Notion ────────────────────────────────────────────────────
+      // ── Write to GitHub memory repo ────────────────────────────────────────
+      if (isMemoryConfigured()) {
+        const citations = tavilyResults.length > 0 ? formatCitations(tavilyResults) : undefined
+        await writeAgentRun(
+          body.capabilityId,
+          body.inputs.businessName ?? 'unknown',
+          text,
+          citations,
+        ).catch(err => {
+          console.error('[agent] memory write failed:', err)
+        })
+      }
+
+      // ── Append to Notion (optional secondary sink) ─────────────────────────
       if (body.notionPageId && capability.savesToNotion) {
         const notionToken = resolveNotionToken(
           req.cookies.get('oauth_token_notion')?.value,

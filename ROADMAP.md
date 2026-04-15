@@ -739,7 +739,7 @@ The agent only has access to the local repo. Git is the safety net — every cha
 
 ---
 
-## Phase 20 — Local-First Memory Engine (Not Started)
+## Phase 20 — Local-First Memory Engine ✅
 
 > Replace the Notion dependency for knowledge storage with a local-first, free, version-controlled alternative. Notion API requires a paid subscription ($8–$16/mo); this phase builds an equivalent store that is fully owned, costs nothing, and can optionally mirror to Notion or GitHub for backup.
 
@@ -773,13 +773,13 @@ nexus-memory/
 
 | Status | Item |
 |--------|------|
-| ⬜ | **`nexus-memory` repo** — create private GitHub repo `pinnacleadvisors/nexus-memory`; initialise folder structure above; add `README.md` explaining the schema |
-| ⬜ | **`lib/memory/github.ts`** — `writePage(path, content, message?)`: calls GitHub Contents API to create or update a file; `readPage(path)`: fetch and decode; `searchPages(q)`: GitHub code search API; `listPages(folder)`: directory listing |
-| ⬜ | **Memory API routes** — `POST /api/memory` (write page), `GET /api/memory?path=` (read), `GET /api/memory/search?q=` (search); all authenticated via Clerk; writes go to GitHub, reads served from cache (5-min TTL) |
-| ⬜ | **Agent write integration** — replace Notion append in `app/api/agent/route.ts` with `writeMemoryPage()`; Notion append kept as optional secondary sink if `NOTION_TOKEN` is set |
-| ⬜ | **Memory viewer** — `/tools/memory` page: file tree browser, markdown renderer with syntax highlighting, search bar backed by GitHub search API, edit button (opens inline editor that commits on save) |
-| ⬜ | **Context injection** — before every agent run, `GET /api/memory/search?q=<businessName>` retrieves relevant pages and injects as context (replacing the current Notion lookup); reduces cold-start hallucinations |
-| ⬜ | **Supabase cache layer** — `memory_cache` table: `{ path, content, sha, cached_at }`; reads hit cache first, revalidate after 5 min; avoids GitHub rate limits during high-volume agent sessions |
+| ✅ | **`nexus-memory` repo** — create private GitHub repo `pinnacleadvisors/nexus-memory`; initialise folder structure above; add `README.md` explaining the schema |
+| ✅ | **`lib/memory/github.ts`** — `writePage(path, content, message?)`: calls GitHub Contents API to create or update a file; `readPage(path)`: fetch and decode; `searchPages(q)`: GitHub code search API; `listPages(folder)`: directory listing |
+| ✅ | **Memory API routes** — `POST /api/memory` (write page), `GET /api/memory?path=` (read), `GET /api/memory/search?q=` (search), `GET /api/memory/list?folder=` (tree); all authenticated via Clerk; writes go to GitHub, reads served from cache (5-min TTL) |
+| ✅ | **Agent write integration** — `writeAgentRun()` called in `app/api/agent/route.ts` `onFinish`; Notion append kept as optional secondary sink when `notionPageId` is set |
+| ✅ | **Memory viewer** — `/tools/memory` page: file tree browser, markdown renderer with syntax highlighting, search bar backed by GitHub search API, edit button (opens inline editor that commits on save) |
+| ✅ | **Context injection** — before every agent run, `searchMemory(businessName)` retrieves relevant pages and prepends as `## Prior Agent Memory` context block; reduces cold-start hallucinations |
+| ✅ | **Supabase cache layer** — `memory_cache` table: `{ path, content, sha, cached_at }`; reads hit cache first, revalidate after 5 min; avoids GitHub rate limits during high-volume agent sessions |
 | ⬜ | **Notion sync (optional)** — when `NOTION_TOKEN` is set: after each GitHub write, push the same content to the linked Notion page via the existing `lib/notion.ts` `appendBlocks()`; bidirectional sync is out of scope |
 
 ### Manual Steps — Phase 20
@@ -807,7 +807,7 @@ nexus-memory/
 | **Error tracking** | Sentry (free 5k events) | **GlitchTip** (OSS Sentry clone, self-host free) or **OpenStatus** | >5k errors/mo or need data ownership |
 | **Analytics** | PostHog (free 1M events) | **Umami** (OSS, self-host, no limits) or **Plausible** (OSS) | >1M events/month |
 | **Workflow automation** | n8n (already self-host free) | ✅ Already free — n8n Community Edition is OSS | — |
-| **Notes/Memory** | Notion ($8–16/mo) | ✅ **Phase 20 GitHub memory engine** — replaces Notion entirely for free | When revenue > $500/mo, add Notion as premium sync |
+| **Notes/Memory** | Notion ($8–16/mo) | ✅ **Phase 20 GitHub memory engine** — replaces Notion entirely for free ✅ Done | When revenue > $500/mo, add Notion as premium sync |
 | **Video — cinematic** | Kling 2.0 / Runway ($per-use) | **CogVideoX** (OSS, run on GPU) or **AnimateDiff** — quality gap exists; use for internal/draft | First video product revenue |
 | **Video — talking head** | HeyGen / D-ID ($per-use) | **SadTalker** (OSS, local) or **Wav2Lip** (OSS) — lower quality, needs local GPU | First video product revenue |
 | **Voiceover** | ElevenLabs (free 10k chars/mo) | **Coqui TTS** (OSS, local, no limits) or **Bark** (OSS, local) — quality close to EL at ~60% | >10k chars/mo |
@@ -898,7 +898,7 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 | Email | Resend | ⬜ Not set up |
 | Monitoring | Sentry | ⬜ Not set up |
 | Analytics | PostHog | ⬜ Not set up |
-| Memory / Notes | GitHub repo (Phase 20) → Notion optional sync | ⬜ Phase 20 |
+| Memory / Notes | GitHub repo (Phase 20) → Notion optional sync | ✅ Phase 20 |
 | Hosting | Vercel | ✅ Live |
 | CI/CD | GitHub → Vercel auto-deploy | ✅ Live |
 | Drag & drop | dnd-kit | ✅ Live |
