@@ -11,7 +11,7 @@ export default function SignUpPage() {
         backgroundColor: '#050508',
       }}
     >
-      <SignUp />
+      <SignUp fallbackRedirectUrl="/dashboard" />
     </div>
   )
 }
