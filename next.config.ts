@@ -6,8 +6,8 @@ import type { NextConfig } from 'next'
  */
 const CSP = [
   "default-src 'self'",
-  // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev",
+  // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts + Cloudflare Turnstile (Clerk bot protection)
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
   // Styles: self + inline (Tailwind CSS utility classes are inline)
   "style-src 'self' 'unsafe-inline'",
   // Images: self + data URIs + Clerk avatar CDN + common asset CDNs
@@ -23,6 +23,7 @@ const CSP = [
     'https://api.openai.com',
     'https://*.clerk.com',
     'https://*.clerk.accounts.dev',
+    'https://challenges.cloudflare.com',
     'https://inngest.com',
     'https://api.us-1.inngest.com',
     'https://*.upstash.io',
@@ -31,8 +32,8 @@ const CSP = [
   ]
     .filter(Boolean)
     .join(' '),
-  // Frames: Clerk hosted pages only
-  "frame-src 'self' https://accounts.clerk.dev https://*.clerk.accounts.dev",
+  // Frames: Clerk hosted pages + Cloudflare Turnstile CAPTCHA (Clerk bot protection)
+  "frame-src 'self' https://accounts.clerk.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com",
   // Workers: none
   "worker-src 'self' blob:",
   // Form actions: self only
