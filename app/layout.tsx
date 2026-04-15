@@ -60,7 +60,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ClerkProvider signInUrl="/">
+        <ClerkProvider
+          signInUrl="/sign-in"
+          signUpUrl="/sign-up"
+          afterSignInUrl="/dashboard"
+          afterSignUpUrl="/dashboard"
+        >
           {children}
         </ClerkProvider>
       </body>

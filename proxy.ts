@@ -26,12 +26,12 @@ const _clerk = clerkMiddleware(async (auth, req) => {
   if (!isProtectedRoute(req)) return
   const session = await auth()
   if (!session.userId) {
-    return Response.redirect(new URL('/', req.url))
+    return Response.redirect(new URL('/sign-in', req.url))
   }
   // Enforce owner-only allowlist when configured
   const allowed = getAllowedUserIds()
   if (allowed && !allowed.has(session.userId)) {
-    return Response.redirect(new URL('/', req.url))
+    return Response.redirect(new URL('/sign-in', req.url))
   }
 })
 
