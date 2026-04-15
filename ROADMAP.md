@@ -784,9 +784,9 @@ nexus-memory/
 
 ### Manual Steps — Phase 20
 
-- [ ] Create private repo `pinnacleadvisors/nexus-memory` on GitHub
-- [ ] Generate GitHub PAT with `repo` scope → add as `GITHUB_MEMORY_TOKEN` in Doppler
-- [ ] Create `GITHUB_MEMORY_REPO=pinnacleadvisors/nexus-memory` in Doppler
+- [✅] Create private repo `pinnacleadvisors/nexus-memory` on GitHub
+- [✅] Generate GitHub PAT with `repo` scope → add as `GITHUB_MEMORY_TOKEN` in Doppler
+- [✅] Create `GITHUB_MEMORY_REPO=pinnacleadvisors/nexus-memory` in Doppler
 - [ ] (Optional) Upgrade to Notion paid plan for sync: add `NOTION_TOKEN` to Doppler
 
 ---
