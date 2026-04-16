@@ -13,7 +13,7 @@ do $$ begin
       select 1 from information_schema.columns
       where table_name = 'agents' and column_name = 'parent_agent_id'
     ) then
-      alter table agents add column parent_agent_id uuid references agents(id) on delete set null;
+      alter table agents add column parent_agent_id text references agents(id) on delete set null;
     end if;
 
     -- Hierarchy layer: 0=user, 1=strategic, 2=tactical, 3=specialist, 4=worker
@@ -101,7 +101,7 @@ end $$;
 -- ── Agent actions log ─────────────────────────────────────────────────────────
 create table if not exists agent_actions (
   id           uuid primary key default gen_random_uuid(),
-  agent_id     uuid not null,
+  agent_id     text not null,
   user_id      text not null,
   action       text not null,                  -- e.g. "spawned", "tool_call", "completed"
   description  text,
