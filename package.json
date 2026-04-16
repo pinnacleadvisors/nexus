@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "migrate": "doppler run -- node scripts/migrate.mjs",
-    "migrate:local": "node scripts/migrate.mjs"
+    "migrate:local": "node scripts/migrate.mjs",
+    "populate-memory": "doppler run -- node scripts/populate-memory.mjs",
+    "populate-memory:local": "node scripts/populate-memory.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",

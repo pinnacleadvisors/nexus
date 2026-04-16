@@ -123,7 +123,59 @@ lib/
 └── utils.ts              # cn() helper
 ```
 
-## Pre-commit Checklist
+## nexus-memory — Structured Knowledge Base
+
+The private repo `pinnacleadvisors/nexus-memory` stores all platform knowledge as Markdown files. It uses a **Graphify-style** structure: chunked by concern, precomputed relationships, dense summaries — designed so an agent can get full context in 1–2 reads instead of scanning whole documents.
+
+### Structure
+
+```
+nexus-memory/
+├── meta/
+│   ├── INDEX.md          ← START HERE — topic→file map, all 12 files listed
+│   └── GRAPH.md          ← precomputed relationship edges between files
+├── platform/
+│   ├── STACK.md          ← ALL dev rules (Next.js 16, Tailwind 4, Clerk v7, AI SDK 6, icons)
+│   ├── ARCHITECTURE.md   ← file structure, API patterns, DB access, migration guide
+│   ├── SECRETS.md        ← every env var, by phase, with where to get it
+│   └── OVERVIEW.md       ← what Nexus is, all pages, design principles
+├── roadmap/
+│   ├── SUMMARY.md        ← one-liner per phase (1–22) with ✅/⬜ status
+│   └── PENDING.md        ← all not-started items grouped by phase
+└── docs/
+    ├── agents-guide.md   ← full AGENTS.md
+    ├── readme.md         ← full README.md
+    ├── roadmap-full.md   ← full ROADMAP.md
+    └── claude-md.md      ← full CLAUDE.md
+```
+
+### How Claude Code Can Use It
+
+**Yes — Claude Code can query nexus-memory** via the MCP memory API or directly via HTTP:
+
+```
+GET  /api/memory?path=platform/STACK.md        → stack rules
+GET  /api/memory?path=roadmap/SUMMARY.md       → all phase statuses
+GET  /api/memory?path=roadmap/PENDING.md       → what needs building
+GET  /api/memory/search?q=video+pipeline       → find relevant pages
+GET  /api/memory/list?folder=platform          → list all platform docs
+```
+
+**Recommended query flow (token-efficient):**
+1. Read `meta/INDEX.md` (small) — find which 1–2 files contain what you need
+2. Read only those files — get complete, dense context on that concern
+3. Use `meta/GRAPH.md` to discover related files if needed
+
+This mirrors Graphify's **single-call context retrieval** — instead of reading the entire ROADMAP.md (5000 tokens), read `roadmap/SUMMARY.md` (400 tokens) and get all the status you need.
+
+### Repopulating
+
+Run on your MacBook when MD files change:
+```bash
+npm run populate-memory     # uses Doppler for GITHUB_MEMORY_TOKEN + GITHUB_MEMORY_REPO
+```
+
+### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors
 - [ ] All interactive components have `'use client'`
 - [ ] No browser globals (`window`, `document`) in Server Components
