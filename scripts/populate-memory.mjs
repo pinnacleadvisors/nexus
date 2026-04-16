@@ -10,7 +10,7 @@
  * Usage:
  *   doppler run -- node scripts/populate-memory.mjs
  *
- * Requires: GITHUB_MEMORY_TOKEN, GITHUB_MEMORY_REPO
+ * Requires: MEMORY_TOKEN, MEMORY_REPO
  */
 
 import { readFile, readdir, unlink } from 'fs/promises'
@@ -20,12 +20,12 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
-const REPO  = process.env.GITHUB_MEMORY_REPO
-const TOKEN = process.env.GITHUB_MEMORY_TOKEN
+const REPO  = process.env.MEMORY_REPO
+const TOKEN = process.env.MEMORY_TOKEN
 const BASE  = 'https://api.github.com'
 
 if (!REPO || !TOKEN) {
-  console.error('❌  GITHUB_MEMORY_REPO and GITHUB_MEMORY_TOKEN must be set')
+  console.error('❌  MEMORY_REPO and MEMORY_TOKEN must be set')
   console.error('    Run: doppler run -- node scripts/populate-memory.mjs')
   process.exit(1)
 }
@@ -470,8 +470,8 @@ pages.push(['platform/SECRETS.md', `# Nexus — Environment Variables
 
 | Var | Description | Phase |
 |-----|-------------|-------|
-| GITHUB_MEMORY_TOKEN | PAT with repo scope for nexus-memory | 20 |
-| GITHUB_MEMORY_REPO | e.g. pinnacleadvisors/nexus-memory | 20 |
+| MEMORY_TOKEN | PAT with repo scope for nexus-memory | 20 |
+| MEMORY_REPO | e.g. pinnacleadvisors/nexus-memory | 20 |
 
 ## Video Pipeline
 

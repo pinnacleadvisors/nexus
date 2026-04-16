@@ -785,8 +785,8 @@ nexus-memory/
 ### Manual Steps — Phase 20
 
 - [✅] Create private repo `pinnacleadvisors/nexus-memory` on GitHub
-- [✅] Generate GitHub PAT with `repo` scope → add as `GITHUB_MEMORY_TOKEN` in Doppler
-- [✅] Create `GITHUB_MEMORY_REPO=pinnacleadvisors/nexus-memory` in Doppler
+- [✅] Generate GitHub PAT with `repo` scope → add as `MEMORY_TOKEN` in Doppler
+- [✅] Create `MEMORY_REPO=pinnacleadvisors/nexus-memory` in Doppler
 - [ ] (Optional) Upgrade to Notion paid plan for sync: add `NOTION_TOKEN` to Doppler
 
 ---
@@ -866,7 +866,7 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 ### Infrastructure (this week)
 4. **Set up Supabase** → replace mock data with real agent state
 5. **Add Stripe webhook** → real revenue on Dashboard
-6. **Phase 20 memory engine** → create `nexus-memory` GitHub repo + `GITHUB_MEMORY_TOKEN` in Doppler; replaces Notion dependency entirely for free
+6. **Phase 20 memory engine** → create `nexus-memory` GitHub repo + `MEMORY_TOKEN` in Doppler; replaces Notion dependency entirely for free
 7. **Enable Clerk MFA** → security baseline for production use
 
 ### Phase 19 — Start "Nexus builds Nexus" on MacBook

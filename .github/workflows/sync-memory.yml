@@ -66,6 +66,6 @@ jobs:
       - name: Sync to nexus-memory
         if: steps.paths.outputs.paths != ''
         env:
-          GITHUB_MEMORY_TOKEN: ${{ secrets.GITHUB_MEMORY_TOKEN }}
-          GITHUB_MEMORY_REPO: ${{ secrets.GITHUB_MEMORY_REPO }}
+          MEMORY_TOKEN: ${{ secrets.MEMORY_TOKEN }}
+          MEMORY_REPO: ${{ secrets.MEMORY_REPO }}
         run: node scripts/populate-memory.mjs --only "${{ steps.paths.outputs.paths }}"
