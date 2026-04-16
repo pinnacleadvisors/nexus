@@ -30,6 +30,13 @@ if (!REPO || !TOKEN) {
   process.exit(1)
 }
 
+// --only path1,path2,... — write only the listed memory paths (CI targeted sync)
+const onlyPaths = (() => {
+  const i = process.argv.indexOf('--only')
+  if (i === -1) return null
+  return (process.argv[i + 1] ?? '').split(',').map(p => p.trim()).filter(Boolean)
+})()
+
 function ghHeaders() {
   return {
     Authorization: `Bearer ${TOKEN}`,
@@ -661,14 +668,17 @@ async function main() {
   }
 
   // ── Step 2: Write structured knowledge pages ─────────────────────────────
+  const toWrite = onlyPaths ? pages.filter(([p]) => onlyPaths.includes(p)) : pages
+
   console.log(`\n📚  Nexus Memory Populate`)
   console.log(`    Repo: ${REPO}`)
-  console.log(`    Files: ${pages.length}\n`)
+  console.log(`    Files: ${toWrite.length}${onlyPaths ? ` (targeted)` : ''}\n`)
+  if (onlyPaths) console.log(`    Paths: ${onlyPaths.join(', ')}\n`)
 
   let ok = 0
   let failed = 0
 
-  for (const [path, content] of pages) {
+  for (const [path, content] of toWrite) {
     process.stdout.write(`    ⏳  ${path} … `)
     try {
       await writePage(path, content, `populate: ${path} [${new Date().toISOString().slice(0,10)}]`)

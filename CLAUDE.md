@@ -21,73 +21,117 @@ nexus-memory/
 │   ├── SECRETS.md        ← every env var by phase, with where to get it
 │   └── OVERVIEW.md       ← what Nexus is, all pages, design principles
 ├── roadmap/
-│   ├── SUMMARY.md        ← one-liner per phase (1–22) with ✅/⬜ status
+│   ├── SUMMARY.md        ← one-liner per phase (1–22) with ✅/⬜ status  (~400 tokens)
 │   └── PENDING.md        ← all not-started items grouped by phase
 └── docs/
     ├── agents-guide.md   ← full AGENTS.md
     ├── readme.md         ← full README.md
-    ├── roadmap-full.md   ← full ROADMAP.md
+    ├── roadmap-full.md   ← full ROADMAP.md  (~5000 tokens — avoid unless essential)
     └── claude-md.md      ← full CLAUDE.md
 ```
 
-## How to Use nexus-memory
+## Token-Efficient Query Flow
 
-### Query Flow (Token-Efficient)
+**Always follow this order — the wrong order wastes 10× the tokens:**
 
-1. **Start with meta/INDEX.md** — small file listing which topics are in which files
-2. **Read the specific file(s)** — dense, precomputed summaries on that concern
-3. **Use meta/GRAPH.md** — discover related files if needed
+1. **Read `meta/INDEX.md` first** (~400 tokens) — tells you exactly which 1–2 files you need
+2. **Read only those files** — never read `docs/roadmap-full.md` when `roadmap/SUMMARY.md` has the answer
+3. **Use `meta/GRAPH.md`** only if you need to discover related files
 
-This mirrors Graphify's **single-call context retrieval** — instead of reading entire ROADMAP.md (5000 tokens), read `roadmap/SUMMARY.md` (400 tokens).
+## Reading from nexus-memory
 
-### Available Queries
-
-Use the Doppler-configured `GITHUB_MEMORY_TOKEN` to fetch:
+`GITHUB_MEMORY_TOKEN` lives in Doppler. Prefix every command with `doppler run --` to inject it.
 
 ```bash
-# Get the topic map
-curl -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
-  https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/meta/INDEX.md
-
-# Get stack rules
-curl -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
-  https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/platform/STACK.md
-
-# Get roadmap summary
-curl -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
-  https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/roadmap/SUMMARY.md
+# Template — replace the path at the end
+doppler run -- bash -c '
+  curl -s -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+    "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/meta/INDEX.md" \
+  | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d[\"content\"].replace(\"\\n\",\"\")).decode())"
+'
 ```
 
-## Updating nexus-memory After Changes
+**Common reads** — swap the path in the template above:
 
-### When to Update
+| What you need | Path |
+|---------------|------|
+| Topic map (start here) | `meta/INDEX.md` |
+| Stack & dev rules | `platform/STACK.md` |
+| All phase statuses | `roadmap/SUMMARY.md` |
+| What needs building | `roadmap/PENDING.md` |
+| All env vars | `platform/SECRETS.md` |
+| File structure / API patterns | `platform/ARCHITECTURE.md` |
 
-After implementing a feature, fixing a bug, or discovering a pattern, **update nexus-memory** if:
-- New dev rules or conventions emerged
-- Stack or architecture changed
-- Feature status changed (update `roadmap/SUMMARY.md` and `roadmap/PENDING.md`)
-- New relationships between concerns exist (add edges to `meta/GRAPH.md`)
+## Writing to nexus-memory
 
-### Update Pattern (Graphify)
+### Option A — memory-queue/ (preferred for targeted updates)
 
-Use the `claude/nexus-memory-integration-jXmrB` branch pattern:
-
-1. **Identify the file(s) to update** — use meta/INDEX.md + meta/GRAPH.md to locate
-2. **Dense summaries, not full docs** — chunk by concern, precompute relationships
-3. **Update meta/GRAPH.md** — add/remove edges as dependencies shift
-4. **Commit + push to `pinnacleadvisors/nexus-memory`**
-
-Example: After adding a new phase or feature:
-- Update `roadmap/SUMMARY.md` with one-liner + status
-- Update `roadmap/PENDING.md` to move item to done/in-progress
-- Update `meta/GRAPH.md` if the new feature relates to other concerns
-
-### Running the Populator
-
-To rebuild nexus-memory from source (after major updates):
+Drop a `.md` file with YAML frontmatter into `memory-queue/`, then run the populator. The script handles base64 encoding, SHA retrieval, and deletes the file after writing.
 
 ```bash
-npm run populate-memory
+# 1. Create the queue file
+cat > memory-queue/update-roadmap.md << 'EOF'
+---
+memory_path: roadmap/SUMMARY.md
+memory_mode: write
+---
+# Nexus — Roadmap Summary
+...updated content...
+EOF
+
+# 2. Process the queue (writes to nexus-memory, deletes queue file)
+doppler run -- node scripts/populate-memory.mjs
 ```
 
-Uses Doppler for `GITHUB_MEMORY_TOKEN` + `GITHUB_MEMORY_REPO` env vars.
+`memory_mode`:
+- `write` — replaces entire file
+- `append` — appends to end of existing content
+
+### Option B — Full repopulate (after source doc changes)
+
+Rebuilds all nexus-memory files from `ROADMAP.md`, `AGENTS.md`, `CLAUDE.md`, etc.:
+
+```bash
+doppler run -- node scripts/populate-memory.mjs
+```
+
+Use this when multiple platform files changed, not for single targeted updates.
+
+### Option C — Direct API write (single file, no queue)
+
+```bash
+doppler run -- bash -c '
+  SHA=$(curl -s -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+    "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/roadmap/SUMMARY.md" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)[\"sha\"])")
+
+  CONTENT=$(printf "%s" "# New content here" | base64 -w0)
+
+  curl -s -X PUT \
+    -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+    -H "Content-Type: application/json" \
+    "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/roadmap/SUMMARY.md" \
+    -d "{\"message\":\"update SUMMARY.md\",\"content\":\"$CONTENT\",\"sha\":\"$SHA\"}"
+'
+```
+
+## When to Update nexus-memory
+
+After implementing a feature or discovering a pattern, update if:
+- Feature status changed → `roadmap/SUMMARY.md` + `roadmap/PENDING.md`
+- New dev rules emerged → `platform/STACK.md`
+- Architecture changed → `platform/ARCHITECTURE.md`
+- New env vars added → `platform/SECRETS.md`
+- New relationships → add edges to `meta/GRAPH.md`
+
+**Always write dense summaries, not full docs** — chunk by concern, precompute relationships.
+
+## Doppler Setup (first-time)
+
+If `doppler run --` fails with "not configured", run:
+
+```bash
+doppler setup   # select project: nexus, config: dev
+```
+
+Requires Doppler CLI installed (`brew install dopplerhq/cli/doppler` or `npm install -g @dopplerhq/cli`) and a Doppler account with access to the `nexus` project.
