@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS businesses (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Safety net: if the table was created by a prior partial run without user_id,
+-- add the column now before the index tries to reference it.
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS user_id TEXT;
+
 CREATE INDEX IF NOT EXISTS businesses_user_id ON businesses (user_id);
 
 DROP TRIGGER IF EXISTS businesses_set_updated_at ON businesses;
@@ -21,7 +25,15 @@ CREATE TRIGGER businesses_set_updated_at
   BEFORE UPDATE ON businesses
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-ALTER PUBLICATION supabase_realtime ADD TABLE businesses;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'businesses'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE businesses;
+  END IF;
+END $$;
 
 -- ── Milestones ────────────────────────────────────────────────────────────────
 -- Milestones are extracted from Forge AI chat and stored per-project.
@@ -49,7 +61,15 @@ CREATE TRIGGER milestones_set_updated_at
   BEFORE UPDATE ON milestones
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-ALTER PUBLICATION supabase_realtime ADD TABLE milestones;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'milestones'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE milestones;
+  END IF;
+END $$;
 
 -- ── Extend existing tables ────────────────────────────────────────────────────
 -- Add user_id to projects so they can be filtered per-user in future RLS

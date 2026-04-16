@@ -25,10 +25,12 @@ create index if not exists build_research_suggestions_gin
 -- Row-level security
 alter table build_research enable row level security;
 
+drop policy if exists "Authenticated users can read research digests" on build_research;
 create policy "Authenticated users can read research digests"
   on build_research for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Service role can insert research digests" on build_research;
 create policy "Service role can insert research digests"
   on build_research for insert
   with check (true);

@@ -133,4 +133,4 @@ do $$ begin
 end $$;
 
 -- ── Record migration ──────────────────────────────────────────────────────────
-insert into schema_migrations (version) values ('008') on conflict do nothing;
+insert into schema_migrations (filename) values ('008_agent_hierarchy.sql') on conflict do nothing;

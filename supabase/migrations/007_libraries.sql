@@ -152,4 +152,4 @@ do $$ begin
 end $$;
 
 -- Record migration
-insert into schema_migrations (version) values ('007') on conflict do nothing;
+insert into schema_migrations (filename) values ('007_libraries.sql') on conflict do nothing;
