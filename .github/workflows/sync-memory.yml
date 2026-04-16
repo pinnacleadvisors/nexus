@@ -1,0 +1,71 @@
+name: Sync nexus-memory
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve changed memory paths
+        id: paths
+        run: |
+          # On first commit HEAD~1 won't exist — fall back to listing all files in HEAD
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git show --name-only --format="" HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          PATHS=""
+
+          # ROADMAP.md → roadmap summaries + full doc
+          if echo "$CHANGED" | grep -qE "^ROADMAP\.md$"; then
+            PATHS="$PATHS,roadmap/SUMMARY.md,roadmap/PENDING.md,docs/roadmap-full.md"
+          fi
+
+          # AGENTS.md → stack rules + agents guide
+          if echo "$CHANGED" | grep -qE "^AGENTS\.md$"; then
+            PATHS="$PATHS,platform/STACK.md,docs/agents-guide.md"
+          fi
+
+          # CLAUDE.md → claude doc mirror
+          if echo "$CHANGED" | grep -qE "^CLAUDE\.md$"; then
+            PATHS="$PATHS,docs/claude-md.md"
+          fi
+
+          # README.md → readme mirror + overview
+          if echo "$CHANGED" | grep -qE "^README\.md$"; then
+            PATHS="$PATHS,docs/readme.md,platform/OVERVIEW.md"
+          fi
+
+          # Code/config changes → architecture doc
+          if echo "$CHANGED" | grep -qE "^(app/|components/|lib/|proxy\.ts|next\.config)"; then
+            PATHS="$PATHS,platform/ARCHITECTURE.md"
+          fi
+
+          # Strip leading comma
+          PATHS="${PATHS#,}"
+
+          # Add meta files whenever any content file is being updated
+          if [ -n "$PATHS" ]; then
+            PATHS="meta/INDEX.md,meta/GRAPH.md,$PATHS"
+          fi
+
+          echo "Memory paths to sync: ${PATHS:-none}"
+          echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+
+      - name: Sync to nexus-memory
+        if: steps.paths.outputs.paths != ''
+        env:
+          GITHUB_MEMORY_TOKEN: ${{ secrets.GITHUB_MEMORY_TOKEN }}
+          GITHUB_MEMORY_REPO: ${{ secrets.GITHUB_MEMORY_REPO }}
+        run: node scripts/populate-memory.mjs --only "${{ steps.paths.outputs.paths }}"
