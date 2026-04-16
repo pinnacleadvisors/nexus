@@ -213,12 +213,7 @@ async function buildMemoryContext(messages: UIMessage[]): Promise<string> {
   // Build a search query from the last user message
   const lastUser = [...messages].reverse().find(m => m.role === 'user')
   if (!lastUser) return ''
-  const query = (lastUser.content as unknown as string | Array<{ type: string; text?: string }>)
-  const queryText = typeof query === 'string'
-    ? query
-    : Array.isArray(query)
-      ? query.filter(p => p.type === 'text').map(p => p.text ?? '').join(' ')
-      : ''
+  const queryText = getMessageText(lastUser)
   if (queryText.trim().length < 5) return ''
 
   try {
