@@ -88,7 +88,7 @@ Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.
 - Optional env vars: `ANTHROPIC_API_KEY` (fallback AI), `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN` (primary AI via Claude Code CLI), `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` (database), `SUPABASE_SERVICE_ROLE_KEY` (server writes), `STRIPE_WEBHOOK_SECRET` (revenue), `RESEND_API_KEY` (email alerts), `SENTRY_DSN` (error tracking)
 - Phase 17 env vars: `TAVILY_API_KEY` (live web search — add first, works without DeerFlow), `DEERFLOW_BASE_URL` + `DEERFLOW_API_KEY` + `DEERFLOW_ENABLED` (DeerFlow 2.0 sidecar)
 - Phase 18 env vars: `KLING_API_KEY` (cinematic video), `RUNWAY_API_KEY` (stylised video), `ELEVENLABS_API_KEY` (voiceover), `HEYGEN_API_KEY` (UGC/avatar), `DID_API_KEY` (talking-head fallback), `MUAPI_AI_KEY` (scene images), `SUNO_API_KEY` or `UDIO_API_KEY` (background music)
-- Phase 20 env vars: `GITHUB_MEMORY_TOKEN` (PAT with repo scope), `GITHUB_MEMORY_REPO` (e.g. `pinnacleadvisors/nexus-memory`)
+- Phase 20 env vars: `MEMORY_TOKEN` (PAT with repo scope), `MEMORY_REPO` (e.g. `pinnacleadvisors/nexus-memory`)
 - AI priority in `/api/chat`: OpenClaw (Claude Pro subscription) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 
@@ -172,7 +172,7 @@ This mirrors Graphify's **single-call context retrieval** — instead of reading
 
 Run on your MacBook when MD files change:
 ```bash
-npm run populate-memory     # uses Doppler for GITHUB_MEMORY_TOKEN + GITHUB_MEMORY_REPO
+npm run populate-memory     # uses Doppler for MEMORY_TOKEN + MEMORY_REPO
 ```
 
 ### Pre-commit Checklist

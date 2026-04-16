@@ -57,7 +57,7 @@ Added in Phase 18a. POST endpoint that auto-selects Kling or Runway...
 
 ## Processing
 
-Run locally on your MacBook (requires Doppler with GITHUB_MEMORY_TOKEN + GITHUB_MEMORY_REPO):
+Run locally on your MacBook (requires Doppler with MEMORY_TOKEN + MEMORY_REPO):
 
 ```bash
 npm run populate-memory

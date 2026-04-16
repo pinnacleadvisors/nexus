@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
   if (!isMemoryConfigured()) {
     return NextResponse.json(
-      { error: 'Memory engine not configured. Set GITHUB_MEMORY_TOKEN and GITHUB_MEMORY_REPO in Doppler.' },
+      { error: 'Memory engine not configured. Set MEMORY_TOKEN and MEMORY_REPO in Doppler.' },
       { status: 503 },
     )
   }
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
 
   if (!isMemoryConfigured()) {
     return NextResponse.json(
-      { error: 'Memory engine not configured. Set GITHUB_MEMORY_TOKEN and GITHUB_MEMORY_REPO in Doppler.' },
+      { error: 'Memory engine not configured. Set MEMORY_TOKEN and MEMORY_REPO in Doppler.' },
       { status: 503 },
     )
   }

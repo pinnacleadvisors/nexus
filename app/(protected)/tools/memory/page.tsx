@@ -318,8 +318,8 @@ export default function MemoryPage() {
           <div>
             <p className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>Memory engine not configured</p>
             <p className="text-xs mt-1" style={{ color: '#9090b0' }}>
-              Set <code style={{ color: '#a78bfa' }}>GITHUB_MEMORY_TOKEN</code> (PAT with repo scope) and{' '}
-              <code style={{ color: '#a78bfa' }}>GITHUB_MEMORY_REPO</code> (e.g.{' '}
+              Set <code style={{ color: '#a78bfa' }}>MEMORY_TOKEN</code> (PAT with repo scope) and{' '}
+              <code style={{ color: '#a78bfa' }}>MEMORY_REPO</code> (e.g.{' '}
               <code style={{ color: '#a78bfa' }}>pinnacleadvisors/nexus-memory</code>) in Doppler to activate.
             </p>
           </div>

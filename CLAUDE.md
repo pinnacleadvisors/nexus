@@ -40,12 +40,12 @@ nexus-memory/
 
 ## Reading from nexus-memory
 
-`GITHUB_MEMORY_TOKEN` lives in Doppler. Prefix every command with `doppler run --` to inject it.
+`MEMORY_TOKEN` lives in Doppler. Prefix every command with `doppler run --` to inject it.
 
 ```bash
 # Template — replace the path at the end
 doppler run -- bash -c '
-  curl -s -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+  curl -s -H "Authorization: token $MEMORY_TOKEN" \
     "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/meta/INDEX.md" \
   | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d[\"content\"].replace(\"\\n\",\"\")).decode())"
 '
@@ -101,14 +101,14 @@ Use this when multiple platform files changed, not for single targeted updates.
 
 ```bash
 doppler run -- bash -c '
-  SHA=$(curl -s -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+  SHA=$(curl -s -H "Authorization: token $MEMORY_TOKEN" \
     "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/roadmap/SUMMARY.md" \
     | python3 -c "import sys,json; print(json.load(sys.stdin)[\"sha\"])")
 
   CONTENT=$(printf "%s" "# New content here" | base64 -w0)
 
   curl -s -X PUT \
-    -H "Authorization: token $GITHUB_MEMORY_TOKEN" \
+    -H "Authorization: token $MEMORY_TOKEN" \
     -H "Content-Type: application/json" \
     "https://api.github.com/repos/pinnacleadvisors/nexus-memory/contents/roadmap/SUMMARY.md" \
     -d "{\"message\":\"update SUMMARY.md\",\"content\":\"$CONTENT\",\"sha\":\"$SHA\"}"

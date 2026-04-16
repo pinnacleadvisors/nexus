@@ -5,8 +5,8 @@
  * Replaces Notion for agent knowledge storage — free, version-controlled, zero infra.
  *
  * Env vars required:
- *   GITHUB_MEMORY_TOKEN  — PAT with repo scope
- *   GITHUB_MEMORY_REPO   — e.g. "pinnacleadvisors/nexus-memory"
+ *   MEMORY_TOKEN  — PAT with repo scope
+ *   MEMORY_REPO   — e.g. "pinnacleadvisors/nexus-memory"
  *
  * Folder schema (mirrors nexus-memory repo):
  *   businesses/<id>/README.md
@@ -22,14 +22,14 @@
 const BASE = 'https://api.github.com'
 
 function repo(): string {
-  const r = process.env.GITHUB_MEMORY_REPO
-  if (!r) throw new Error('GITHUB_MEMORY_REPO is not set')
+  const r = process.env.MEMORY_REPO
+  if (!r) throw new Error('MEMORY_REPO is not set')
   return r
 }
 
 function token(): string {
-  const t = process.env.GITHUB_MEMORY_TOKEN
-  if (!t) throw new Error('GITHUB_MEMORY_TOKEN is not set')
+  const t = process.env.MEMORY_TOKEN
+  if (!t) throw new Error('MEMORY_TOKEN is not set')
   return t
 }
 
@@ -253,5 +253,5 @@ export async function writeAgentRun(
 
 /** Returns true if the memory env vars are configured. */
 export function isMemoryConfigured(): boolean {
-  return Boolean(process.env.GITHUB_MEMORY_TOKEN && process.env.GITHUB_MEMORY_REPO)
+  return Boolean(process.env.MEMORY_TOKEN && process.env.MEMORY_REPO)
 }
