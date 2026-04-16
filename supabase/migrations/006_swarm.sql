@@ -70,8 +70,22 @@ CREATE OR REPLACE TRIGGER swarm_tasks_updated_at
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE swarm_runs;
-ALTER PUBLICATION supabase_realtime ADD TABLE swarm_tasks;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'swarm_runs'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE swarm_runs;
+  END IF;
+END $$;
 
--- Track migration
-INSERT INTO schema_migrations (version) VALUES ('006') ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'swarm_tasks'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE swarm_tasks;
+  END IF;
+END $$;
