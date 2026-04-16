@@ -245,30 +245,28 @@ export default function BoardPage() {
     // 2. Persist to Supabase
     persistColumnChange(card.id, 'completed').catch(console.warn)
 
-    // 3. Append milestone completion to Notion knowledge base (fire-and-forget)
-    try {
-      const notionPageId = card.projectId
-        ? localStorage.getItem(`knowledge:notion:${card.projectId}`)
-        : localStorage.getItem('knowledge:notion:default')
-
-      if (notionPageId) {
-        const now = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-        fetch('/api/notion/append', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pageId:  notionPageId,
-            heading: `✅ Milestone Completed — ${card.title}`,
-            blocks: [
-              { type: 'paragraph',          text: card.description },
-              { type: 'bulleted_list_item', text: `Completed: ${now}` },
-              { type: 'bulleted_list_item', text: `Agent: ${card.assignee ?? 'OpenClaw'}` },
-              ...(card.assetUrl ? [{ type: 'bookmark', url: card.assetUrl, caption: 'Deliverable asset' }] : []),
-            ],
-          }),
-        }).catch(console.warn)
-      }
-    } catch { /* localStorage unavailable (SSR guard) */ }
+    // 3. Append milestone completion to nexus-memory (fire-and-forget via API)
+    {
+      const now = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+      const content = [
+        `## ✅ Milestone Completed — ${card.title}`,
+        `_Completed: ${now}_`,
+        ``,
+        card.description ?? '',
+        `- Agent: ${card.assignee ?? 'OpenClaw'}`,
+        card.assetUrl ? `- Asset: ${card.assetUrl}` : '',
+      ].filter(Boolean).join('\n')
+      fetch('/api/memory', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path:    `projects/${card.projectId ?? 'global'}/milestones.md`,
+          mode:    'append',
+          content,
+          message: `board: milestone approved — ${card.title}`,
+        }),
+      }).catch(console.warn)
+    }
 
     // 4. Dispatch to OpenClaw — "next task" signal
     const message =

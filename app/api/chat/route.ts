@@ -8,7 +8,7 @@ import {
   type SystemModelMessage,
   type LanguageModelUsage,
 } from 'ai'
-import { getPageContent, resolveNotionToken } from '@/lib/notion'
+import { searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -204,25 +204,31 @@ async function callOpenClaw(
   }
 }
 
-// ── Notion RAG context injection ──────────────────────────────────────────────
-// If the user has linked a Notion page to their project, fetch its content and
-// inject it into the system prompt so the agent doesn't repeat prior research.
-async function buildNotionContext(req: NextRequest, notionPageId?: string): Promise<string> {
-  if (!notionPageId) return ''
+// ── Memory RAG context injection ──────────────────────────────────────────────
+// Search nexus-memory for context relevant to the latest user message and inject
+// matching excerpts into the system prompt to avoid repeating prior research.
+async function buildMemoryContext(messages: UIMessage[]): Promise<string> {
+  if (!isMemoryConfigured()) return ''
 
-  const token = resolveNotionToken(req.cookies.get('oauth_token_notion')?.value)
-  if (!token) return ''
+  // Build a search query from the last user message
+  const lastUser = [...messages].reverse().find(m => m.role === 'user')
+  if (!lastUser) return ''
+  const queryText = getMessageText(lastUser)
+  if (queryText.trim().length < 5) return ''
 
   try {
-    const content = await getPageContent(token, notionPageId)
-    if (!content || content.length < 10) return ''
-    // Trim to stay within token budget (~2000 chars ≈ ~500 tokens)
-    const trimmed = content.slice(0, 2000)
+    const results = await searchMemory(queryText.slice(0, 200), 3)
+    if (results.length === 0) return ''
+    const excerpts = results
+      .filter(r => r.excerpt)
+      .map(r => `**${r.path}**: ${r.excerpt}`)
+      .join('\n\n')
+    if (!excerpts) return ''
     return (
       `\n\n---\n\n## Project Knowledge Base\n` +
-      `The following notes were previously recorded for this project. ` +
+      `The following snippets from prior agent runs may be relevant. ` +
       `Use them to avoid repeating research and build on prior work:\n\n` +
-      trimmed +
+      excerpts +
       `\n\n---`
     )
   } catch { return '' }
@@ -234,16 +240,15 @@ export async function POST(req: NextRequest) {
     messages:       UIMessage[]
     advisorModel?:  string
     executorModel?: string
-    notionPageId?:  string
   }
 
   const messages      = body.messages
   const advisorModel  = body.advisorModel  ?? 'claude-opus-4-6'
   const executorModel = body.executorModel ?? 'claude-sonnet-4-6'
 
-  // RAG: fetch Notion knowledge base for this project
-  const notionContext = await buildNotionContext(req, body.notionPageId)
-  const systemText    = notionContext ? SYSTEM_PROMPT_TEXT + notionContext : SYSTEM_PROMPT_TEXT
+  // RAG: search nexus-memory for context relevant to this conversation
+  const memoryContext = await buildMemoryContext(messages)
+  const systemText    = memoryContext ? SYSTEM_PROMPT_TEXT + memoryContext : SYSTEM_PROMPT_TEXT
 
   // Apply sliding window + build cached system message
   const { system, messages: windowedMessages } = applyMessageWindow(messages, systemText)

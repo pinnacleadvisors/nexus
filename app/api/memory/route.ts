@@ -1,9 +1,9 @@
 /**
  * GET  /api/memory?path=<path>  — read a page (cache-first, 5-min TTL)
- * POST /api/memory              — write a page to GitHub memory repo
+ * POST /api/memory              — write or append a page to GitHub memory repo
  *
  * Body (POST):
- *   { path: string; content: string; message?: string }
+ *   { path: string; content: string; message?: string; mode?: 'write' | 'append' }
  *
  * All routes require Clerk authentication.
  * Reads are served from the Supabase memory_cache table first (5-min TTL).
@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { readPage, writePage, isMemoryConfigured } from '@/lib/memory/github'
+import { readPage, writePage, appendToPage, isMemoryConfigured } from '@/lib/memory/github'
 import { createServerClient } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
@@ -103,14 +103,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const body = await req.json() as { path?: string; content?: string; message?: string }
-  const { path, content, message } = body
+  const body = await req.json() as { path?: string; content?: string; message?: string; mode?: string }
+  const { path, content, message, mode } = body
 
   if (!path || !content) {
     return NextResponse.json({ error: 'path and content are required' }, { status: 400 })
   }
 
-  const result = await writePage(path, content, message)
+  const result = mode === 'append'
+    ? await appendToPage(path, content, message)
+    : await writePage(path, content, message)
   if (!result) return NextResponse.json({ error: 'GitHub write failed' }, { status: 502 })
 
   // Invalidate cache so next read fetches fresh
