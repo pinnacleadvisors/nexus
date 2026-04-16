@@ -20,14 +20,13 @@
  *     stoppedAt?:    string (ISO)
  *     errorMessage?: string
  *     taskCardId?:   string   — Supabase task ID to update
- *     notionPageId?: string
  *     summary?:      string   — brief output description
  *   }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { resolveNotionToken, appendBlocks } from '@/lib/notion'
+import { appendToPage, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -66,7 +65,6 @@ interface N8nExecutionEvent {
   stoppedAt?:    string
   errorMessage?: string
   taskCardId?:   string
-  notionPageId?: string
   summary?:      string
 }
 
@@ -153,20 +151,20 @@ export async function POST(req: NextRequest) {
       })
   }
 
-  // ── Append to Notion ─────────────────────────────────────────────────────
-  if (event.notionPageId) {
-    const notionToken = resolveNotionToken(
-      req.cookies.get('oauth_token_notion')?.value,
-    )
-    if (notionToken) {
-      const statusEmoji = event.status === 'success' ? '✅' : '❌'
-      await appendBlocks(notionToken, event.notionPageId, [
-        { type: 'heading_3', text: `${statusEmoji} n8n: ${event.workflowName}` },
-        { type: 'paragraph', text: event.summary ?? `Execution ${event.executionId} — ${event.status}` },
-      ]).catch(err => {
-        console.error('[n8n webhook] notion append failed:', err)
-      })
-    }
+  // ── Append to nexus-memory ───────────────────────────────────────────────
+  if (isMemoryConfigured() && event.workflowName) {
+    const statusEmoji = event.status === 'success' ? '✅' : '❌'
+    const path = `agent-runs/${new Date().toISOString().slice(0, 10)}/n8n-${event.workflowId}-${event.executionId}.md`
+    const text = [
+      `## ${statusEmoji} n8n: ${event.workflowName}`,
+      `_Execution: ${event.executionId} — ${event.status} — ${event.stoppedAt ?? new Date().toISOString()}_`,
+      ``,
+      event.summary ?? `Execution ${event.executionId} completed with status: ${event.status}`,
+      event.errorMessage ? `\n**Error:** ${event.errorMessage}` : '',
+    ].filter(Boolean).join('\n')
+    appendToPage(path, text, `n8n: ${event.workflowName} ${event.status}`).catch(err => {
+      console.error('[n8n webhook] memory append failed:', err)
+    })
   }
 
   audit(req, {

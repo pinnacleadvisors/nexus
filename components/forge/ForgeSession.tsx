@@ -190,14 +190,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
           const body = JSON.parse((init?.body as string) ?? '{}')
           body.advisorModel  = modelConfigRef.current.advisorModel
           body.executorModel = modelConfigRef.current.executorModel
-          // Inject Notion knowledge-base page for RAG context
-          try {
-            const notionPageId =
-              localStorage.getItem(`knowledge:notion:${projectId}`) ??
-              localStorage.getItem('knowledge:notion:default') ??
-              undefined
-            if (notionPageId) body.notionPageId = notionPageId
-          } catch { /* localStorage unavailable */ }
+          // Memory RAG context is injected server-side via nexus-memory search
           return globalThis.fetch(url, { ...init, body: JSON.stringify(body) })
         },
       }),

@@ -2,7 +2,7 @@
  * Inngest background functions — registered with the Inngest serve handler.
  *
  * Functions:
- *  1. onMilestoneCompleted  — appends to Notion, optionally dispatches next milestone
+ *  1. onMilestoneCompleted  — writes to nexus-memory, optionally dispatches next milestone
  *  2. onAssetCreated        — uploads asset to R2/Storage, creates Kanban card
  *  3. dailyCostCheck        — checks token cost totals and fires alerts
  *  4. onAgentStatusChanged  — fires alert when an agent enters error state
@@ -11,6 +11,7 @@
 import { inngest } from '@/inngest/client'
 import { createServerClient } from '@/lib/supabase'
 import { isR2Configured, uploadUrlToR2 } from '@/lib/r2'
+import { appendToPage, isMemoryConfigured } from '@/lib/memory/github'
 
 // ── 1. Milestone completed ─────────────────────────────────────────────────────
 export const onMilestoneCompleted = inngest.createFunction(
@@ -20,26 +21,26 @@ export const onMilestoneCompleted = inngest.createFunction(
     triggers: [{ event: 'milestone/completed' }],
   },
   async ({ event, step }: { event: { data: Record<string, string | undefined> }; step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
-    const { milestoneId, milestoneTitle, projectId, projectName, assetUrl, notionPageId } =
+    const { milestoneId, milestoneTitle, projectId, projectName, assetUrl } =
       event.data
 
-    // Step 1: Append milestone completion to Notion
-    if (notionPageId) {
-      await step['run']('append-to-notion', async () => {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-        const response = await fetch(`${baseUrl}/api/notion/append`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pageId: notionPageId,
-            heading: `✅ ${milestoneTitle}`,
-            text: `Milestone completed for project "${projectName}". Approved at ${new Date().toISOString()}.`,
-            blocks: assetUrl
-              ? [{ type: 'bookmark', bookmark: { url: assetUrl } }]
-              : [],
-          }),
-        })
-        return response.ok ? 'appended' : `failed: ${response.status}`
+    // Step 1: Append milestone completion to nexus-memory
+    if (isMemoryConfigured() && milestoneTitle && projectName) {
+      await step['run']('append-to-memory', async () => {
+        const path = `projects/${projectId ?? 'unknown'}/milestones.md`
+        const text = [
+          `## ✅ ${milestoneTitle}`,
+          `_Completed: ${new Date().toISOString()}_`,
+          ``,
+          `Project: ${projectName}`,
+          assetUrl ? `Asset: ${assetUrl}` : '',
+        ].filter(Boolean).join('\n')
+        const result = await appendToPage(
+          path,
+          text,
+          `milestone: ${milestoneTitle} completed`,
+        )
+        return result ? 'appended' : 'failed'
       })
     }
 

@@ -3,14 +3,13 @@
  *
  * Dispatch a one-shot agent capability run (not multi-turn chat).
  * Streams the response as plain text (UTF-8 chunks).
- * On completion: creates a board card in Review + appends to Notion (fire-and-forget).
+ * On completion: creates a board card in Review + writes to nexus-memory (fire-and-forget).
  *
  * Body:
  *   {
  *     capabilityId: string          — one of AGENT_CAPABILITIES[].id
  *     inputs: Record<string,string> — keyed form values
  *     projectId?: string
- *     notionPageId?: string
  *     model?: string                — defaults to claude-sonnet-4-6
  *   }
  */
@@ -21,7 +20,6 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { getCapability } from '@/lib/agent-capabilities'
 import { createServerClient } from '@/lib/supabase'
-import { resolveNotionToken, appendBlocks } from '@/lib/notion'
 import { writeAgentRun, searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
@@ -277,23 +275,8 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // ── Append to Notion (optional secondary sink) ─────────────────────────
-      if (body.notionPageId && capability.savesToNotion) {
-        const notionToken = resolveNotionToken(
-          req.cookies.get('oauth_token_notion')?.value,
-        )
-        if (notionToken) {
-          const heading   = `🤖 ${capability.name}: ${body.inputs.businessName ?? ''}`
-          const citations = tavilyResults.length > 0 ? formatCitations(tavilyResults) : ''
-          const trimmed   = (text + citations).slice(0, 2000)
-          await appendBlocks(notionToken, body.notionPageId, [
-            { type: 'heading_2', text: heading },
-            { type: 'paragraph', text: trimmed },
-          ]).catch(err => {
-            console.error('[agent] notion append failed:', err)
-          })
-        }
-      }
+      // Notion append removed — nexus-memory is the primary knowledge sink.
+      // Notion remains available as a future optional integration via /api/notion/* routes.
     },
   })
 

@@ -13,7 +13,7 @@
  * Requires: GITHUB_MEMORY_TOKEN, GITHUB_MEMORY_REPO
  */
 
-import { readFile } from 'fs/promises'
+import { readFile, readdir, unlink } from 'fs/promises'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -57,6 +57,94 @@ async function writePage(path, content, message) {
     throw new Error(`writePage(${path}) failed ${res.status}: ${err.slice(0, 200)}`)
   }
   return res.json()
+}
+
+async function readPageContent(path) {
+  const url = `${BASE}/repos/${REPO}/contents/${encodeURIComponent(path)}`
+  const r = await fetch(url, { headers: ghHeaders() })
+  if (!r.ok) return null
+  const data = await r.json()
+  if (data.encoding === 'base64') {
+    return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8')
+  }
+  return data.content
+}
+
+async function appendPage(path, text, message) {
+  const existing = await readPageContent(path)
+  const newContent = existing
+    ? `${existing.trimEnd()}\n\n${text}`
+    : text
+  return writePage(path, newContent, message)
+}
+
+/** Parse YAML frontmatter from a markdown string. Returns { meta, body }. */
+function parseFrontmatter(raw) {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/m)
+  if (!match) return { meta: {}, body: raw }
+  const meta = {}
+  for (const line of match[1].split('\n')) {
+    const colonIdx = line.indexOf(':')
+    if (colonIdx === -1) continue
+    const key = line.slice(0, colonIdx).trim()
+    const val = line.slice(colonIdx + 1).trim()
+    if (key) meta[key] = val
+  }
+  return { meta, body: match[2] }
+}
+
+/** Process all pending files in memory-queue/ */
+async function processQueue() {
+  const queueDir = join(ROOT, 'memory-queue')
+  let entries
+  try {
+    entries = await readdir(queueDir)
+  } catch {
+    return { processed: 0, failed: 0 }
+  }
+
+  const files = entries.filter(f => f.endsWith('.md') && f !== 'README.md')
+  if (files.length === 0) return { processed: 0, failed: 0 }
+
+  console.log(`\n📬  Processing ${files.length} queued file(s)…\n`)
+  let processed = 0
+  let failed = 0
+
+  for (const file of files) {
+    const filePath = join(queueDir, file)
+    process.stdout.write(`    ⏳  queue/${file} → `)
+    try {
+      const raw = await readFile(filePath, 'utf-8')
+      const { meta, body } = parseFrontmatter(raw)
+
+      const { memory_path, memory_mode } = meta
+      if (!memory_path) throw new Error('missing memory_path in frontmatter')
+      if (memory_mode !== 'write' && memory_mode !== 'append') {
+        throw new Error(`invalid memory_mode "${memory_mode}" — must be "write" or "append"`)
+      }
+
+      process.stdout.write(`${memory_path} (${memory_mode}) … `)
+
+      if (memory_mode === 'append') {
+        await appendPage(memory_path, body.trim(), `queue: append to ${memory_path}`)
+      } else {
+        await writePage(memory_path, body.trim(), `queue: write ${memory_path}`)
+      }
+
+      // Delete file to mark as processed
+      await unlink(filePath)
+      console.log('✅')
+      processed++
+    } catch (err) {
+      console.log('❌')
+      console.error(`       Error: ${err.message}`)
+      failed++
+    }
+
+    await new Promise(r => setTimeout(r, 300))
+  }
+
+  return { processed, failed }
 }
 
 // ── Content ───────────────────────────────────────────────────────────────────
@@ -566,6 +654,13 @@ pages.push(['docs/claude-md.md',     rawClaude])
 
 // ── Runner ────────────────────────────────────────────────────────────────────
 async function main() {
+  // ── Step 1: Process memory-queue/ pending files ──────────────────────────
+  const { processed: qProcessed, failed: qFailed } = await processQueue()
+  if (qProcessed > 0 || qFailed > 0) {
+    console.log(`\n    Queue summary: ${qProcessed} written, ${qFailed} failed.\n`)
+  }
+
+  // ── Step 2: Write structured knowledge pages ─────────────────────────────
   console.log(`\n📚  Nexus Memory Populate`)
   console.log(`    Repo: ${REPO}`)
   console.log(`    Files: ${pages.length}\n`)
@@ -590,7 +685,7 @@ async function main() {
   }
 
   console.log(`\n✅  ${ok} written, ${failed} failed.\n`)
-  if (failed > 0) process.exit(1)
+  if (failed > 0 || qFailed > 0) process.exit(1)
 }
 
 main().catch(err => {
