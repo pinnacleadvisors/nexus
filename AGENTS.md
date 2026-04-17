@@ -175,6 +175,18 @@ Run on your MacBook when MD files change:
 npm run populate-memory     # uses Doppler for MEMORY_TOKEN + MEMORY_REPO
 ```
 
+## Claude Code Managed Agents
+
+Specialist subagents in `.claude/agents/` — Claude Code auto-discovers and delegates to these:
+
+| Agent | File | Use when |
+|-------|------|----------|
+| **Nexus Memory** | `.claude/agents/nexus-memory.md` | Looking up platform context, reading/writing nexus-memory |
+| **Nexus Architect** | `.claude/agents/nexus-architect.md` | Designing new pages/APIs, enforcing stack rules |
+| **Nexus Tester** | `.claude/agents/nexus-tester.md` | Pre-commit TypeScript checks, validating component boundaries |
+
+These agents are spawned automatically by Claude Code when tasks match their description. They share the Doppler-injected environment and have access to the tools listed in their frontmatter.
+
 ### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors
 - [ ] All interactive components have `'use client'`

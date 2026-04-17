@@ -20,6 +20,7 @@ import {
   BookOpen,
   GitBranch,
   Terminal,
+  Lightbulb,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -31,11 +32,12 @@ const NAV_ITEMS = [
   { href: '/build',          label: 'Build',      segment: 'build',     icon: Terminal },
   { href: '/swarm',          label: 'Swarm',      segment: 'swarm',     icon: Network },
   { href: '/graph',          label: 'Graph',      segment: 'graph',     icon: Share2 },
-  { href: '/tools/content',  label: 'Content',    segment: 'tools',     icon: Sparkles },
-  { href: '/tools/agents',   label: 'Agents',     segment: 'tools',     icon: Bot },
-  { href: '/tools/n8n',      label: 'Workflows',  segment: 'tools',     icon: Workflow },
-  { href: '/tools/library',  label: 'Library',    segment: 'tools',     icon: BookOpen },
-  { href: '/tools',          label: 'Tools',      segment: 'tools',     icon: Wrench },
+  { href: '/tools/consultant', label: 'Consultant', segment: 'tools',     icon: Lightbulb },
+  { href: '/tools/content',   label: 'Content',   segment: 'tools',     icon: Sparkles },
+  { href: '/tools/agents',    label: 'Agents',    segment: 'tools',     icon: Bot },
+  { href: '/tools/n8n',       label: 'Workflows', segment: 'tools',     icon: Workflow },
+  { href: '/tools/library',   label: 'Library',   segment: 'tools',     icon: BookOpen },
+  { href: '/tools',           label: 'Tools',     segment: 'tools',     icon: Wrench },
 ]
 
 export default function Sidebar() {
