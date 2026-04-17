@@ -8,6 +8,9 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      MEMORY_TOKEN: ${{ secrets.MEMORY_TOKEN }}
+      MEMORY_REPO: ${{ secrets.MEMORY_REPO }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,6 +19,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Check secrets are set
+        run: |
+          if [ -z "$MEMORY_TOKEN" ] || [ -z "$MEMORY_REPO" ]; then
+            echo "⚠️  MEMORY_TOKEN or MEMORY_REPO secret is not set — skipping sync."
+            echo "   Add them in: GitHub repo → Settings → Secrets and variables → Actions → Repository secrets"
+            exit 0
+          fi
+          echo "✅  Secrets present. MEMORY_REPO=$MEMORY_REPO"
 
       - name: Resolve changed memory paths
         id: paths
@@ -64,8 +76,5 @@ jobs:
           echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
 
       - name: Sync to nexus-memory
-        if: steps.paths.outputs.paths != ''
-        env:
-          MEMORY_TOKEN: ${{ secrets.MEMORY_TOKEN }}
-          MEMORY_REPO: ${{ secrets.MEMORY_REPO }}
+        if: steps.paths.outputs.paths != '' && env.MEMORY_TOKEN != '' && env.MEMORY_REPO != ''
         run: node scripts/populate-memory.mjs --only "${{ steps.paths.outputs.paths }}"
