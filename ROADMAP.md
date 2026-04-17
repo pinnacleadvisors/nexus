@@ -85,7 +85,7 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] **GitHub** — https://github.com/settings/developers → New OAuth App
   - Redirect URI: `https://<your-vercel-domain>/api/oauth/github/callback`
   - Add `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` to Doppler
-- [ ] **Slack** — https://api.slack.com/apps → Create New App → From scratch
+- [✅] **Slack** — https://api.slack.com/apps → Create New App → From scratch
   - Redirect URI: `https://<your-vercel-domain>/api/oauth/slack/callback`
   - Add `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` to Doppler
 - [ ] **Notion** — https://www.notion.so/my-integrations → New integration
