@@ -167,10 +167,10 @@ Every step is **automated as much as possible**, with **human approval gates** a
 
 ### Immediate (This Month)
 
-- [ ] **Wire Tavily into researcher agent** — `lib/swarm/agents/registry.ts` researcher gains live web search
-- [ ] **Consultant Agent dashboard** — `/tools/consultant` page for standalone recommendations
-- [ ] **n8n webhook receiver** — `POST /api/webhooks/n8n` listening; updates Board on workflow execution
-- [ ] **Gap analysis display** — Show user which steps are n8n-native vs manual fallback
+- [x] **Wire Tavily into researcher agent** — `lib/swarm/agents/registry.ts` researcher system prompt updated with multi-hop search instructions; runtime injection via `/api/agent` already live
+- [x] **Consultant Agent dashboard** — `/tools/consultant` standalone page with opportunity cards, Tavily source count badge, Board card confirmation, streaming output; added to sidebar
+- [x] **n8n webhook receiver** — `POST /api/webhooks/n8n` implemented with HMAC verification, card updates, error handling
+- [x] **Gap analysis display** — `GapAnalysisCard` in `/tools/n8n` shows n8n-native vs OpenClaw steps with dispatch button
 
 ### Short Term (Next 2 Months)
 
