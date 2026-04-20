@@ -224,6 +224,64 @@ export interface ClawSession {
 // ── Agent Capabilities ────────────────────────────────────────────────────────
 export type { AgentCapability, CapabilityInput } from '@/lib/agent-capabilities'
 
+// ── Idea (capture → analyse → execute) ───────────────────────────────────────
+export type IdeaMode = 'remodel' | 'description'
+
+export interface IdeaStep {
+  title: string
+  /** true = fully automatable; false = requires manual action */
+  automatable: boolean
+  /** 'build' during initial setup; 'maintain' once launched */
+  phase: 'build' | 'maintain'
+  /** Tool(s) recommended to complete this step */
+  tools?: string[]
+}
+
+export interface IdeaTool {
+  name: string
+  purpose: string
+  url?: string
+}
+
+export interface IdeaCard {
+  id: string
+  createdAt: string
+  mode: IdeaMode
+  /** Present on 'remodel' cards */
+  inspirationUrl?: string
+  /** Optional twist the user supplied in Remodel mode */
+  twist?: string
+  /** Plain-English description (from form or summarised in remodel mode) */
+  description: string
+  howItMakesMoney: string
+  approxMonthlyRevenueUsd: number
+  approxSetupCostUsd: number
+  approxMonthlyCostUsd: number
+  /** 0–100 */
+  automationPercent: number
+  steps: IdeaStep[]
+  tools: IdeaTool[]
+  /** User's stated setup budget (from form), may be undefined */
+  setupBudgetUsd?: number
+  /** Agent's judgement on whether the idea is likely profitable */
+  profitableVerdict: 'likely' | 'unlikely' | 'uncertain'
+  profitableReasoning: string
+}
+
+export interface SavedAutomation {
+  id: string
+  ideaId?: string
+  name: string
+  createdAt: string
+  /** Raw n8n workflow JSON (string so we can re-download verbatim) */
+  workflowJson: string
+  /** Setup checklist returned from the generator */
+  checklist: string[]
+  explanation: string
+  /** If n8n API import failed and we only have JSON */
+  importFailed?: boolean
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
 
