@@ -4,16 +4,22 @@
  * Takes either a description-mode or remodel-mode submission and returns a
  * structured IdeaCard (profitability, automation %, steps, tools, costs).
  *
+ * Remodel mode is grounded in live data:
+ *   1. Firecrawl scrapes the inspiration URL and up to 3 same-domain links.
+ *   2. Tavily searches the niche for revenue benchmarks + automation examples.
+ * The scraped + searched context is injected into the system prompt so the
+ * agent reasons from real text instead of guessing from the URL string.
+ *
  * Body:
  *   {
  *     mode: 'description' | 'remodel'
- *     description?:   string   — description mode
- *     inspirationUrl?: string  — remodel mode
- *     twist?:          string  — remodel mode (optional)
+ *     description?:   string
+ *     inspirationUrl?: string
+ *     twist?:          string
  *     setupBudgetUsd?: number
  *   }
  *
- * Response: IdeaCard (without id/createdAt — client assigns those)
+ * Response: { card: IdeaCard (minus id/createdAt), sources: {url,title}[] }
  */
 
 import { NextRequest } from 'next/server'
@@ -21,24 +27,26 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
+import { scrapeWithConnected, formatScrapesForContext } from '@/lib/tools/firecrawl'
+import { searchWeb, formatResultsAsContext } from '@/lib/tools/tavily'
 import type { IdeaCard, IdeaMode } from '@/lib/types'
 
-export const maxDuration = 60
+export const maxDuration = 90
 export const runtime = 'nodejs'
 
 const SYSTEM_PROMPT = `You are a business-idea analyst for the Nexus platform.
-Given either (a) a fresh idea description, or (b) an inspiration link the user wants to remodel, you return a STRICT JSON object with this shape:
+Given either (a) a fresh idea description, or (b) an inspiration link (with scraped page contents + niche web-search results), you return a STRICT JSON object with this shape:
 
 {
-  "description": string,                          // short plain-English summary of the idea
-  "howItMakesMoney": string,                      // e.g. "Affiliate links", "TikTok Shop commissions", "Subscriptions"
+  "description": string,
+  "howItMakesMoney": string,
   "approxMonthlyRevenueUsd": number,
   "approxSetupCostUsd": number,
   "approxMonthlyCostUsd": number,
-  "automationPercent": number,                    // 0-100
+  "automationPercent": number,
   "profitableVerdict": "likely" | "unlikely" | "uncertain",
   "profitableReasoning": string,
-  "steps": [                                      // steps to build AND maintain
+  "steps": [
     { "title": string, "automatable": boolean, "phase": "build" | "maintain", "tools": [string] }
   ],
   "tools": [
@@ -49,8 +57,8 @@ Given either (a) a fresh idea description, or (b) an inspiration link the user w
 Rules:
 - Prioritise tools that allow rapid execution but are high-quality, battle-tested, and well-reviewed.
 - If the user gives a setup budget, keep total "approxSetupCostUsd" at or below that number.
-- For remodel mode: use the inspiration URL and any stated twist; estimate revenue using niche statistical averages.
-- Include both BUILD-phase and MAINTAIN-phase steps.
+- For remodel mode: ground every estimate (revenue, automation %, verdict) in the scraped page text and web-search benchmarks supplied below. If the sources contradict a guess, trust the sources.
+- Include both BUILD-phase and MAINTAIN-phase steps. Flag ANYTHING that requires a human action (account creation, API key generation, payment setup, social media authentication) as automatable=false.
 - Output ONLY the JSON — no markdown, no prose.`
 
 export async function POST(req: NextRequest) {
@@ -77,6 +85,36 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 503 })
   }
 
+  // ── Gather research for remodel mode ───────────────────────────────────────
+  const sources: Array<{ url: string; title: string }> = []
+  let researchContext = ''
+
+  if (body.mode === 'remodel' && body.inspirationUrl) {
+    const [scrapeResult, searchResults] = await Promise.all([
+      scrapeWithConnected(body.inspirationUrl, { maxConnected: 3, totalCharBudget: 15_000 }),
+      searchWeb(`${body.inspirationUrl} niche revenue monetisation how they make money`, {
+        maxResults: 5,
+        maxTokens: 3000,
+      }),
+    ])
+
+    const { root, connected } = scrapeResult
+    if (!root.failed) sources.push({ url: root.url, title: root.title })
+    for (const c of connected) sources.push({ url: c.url, title: c.title })
+    for (const s of searchResults) sources.push({ url: s.url, title: s.title })
+
+    const scrapedText  = formatScrapesForContext(root, connected)
+    const searchedText = formatResultsAsContext(searchResults)
+
+    researchContext = [
+      scrapedText,
+      searchedText,
+      root.failed
+        ? `(Firecrawl scrape failed: ${root.error}. Rely on the search results and URL alone.)`
+        : '',
+    ].filter(Boolean).join('\n\n')
+  }
+
   const userPrompt = body.mode === 'description'
     ? [
         `Mode: idea-from-description`,
@@ -88,13 +126,16 @@ export async function POST(req: NextRequest) {
         `Inspiration link: ${body.inspirationUrl!.trim()}`,
         body.twist?.trim() ? `Twist: ${body.twist.trim()}` : '',
         body.setupBudgetUsd ? `Setup budget: $${body.setupBudgetUsd}` : '',
+        '',
+        '--- RESEARCH CONTEXT ---',
+        researchContext || '(No live research available. Reason from the URL and domain knowledge.)',
       ].filter(Boolean).join('\n')
 
   audit(req, {
     action: 'idea.analyse',
     resource: 'idea',
     resourceId: body.mode,
-    metadata: { mode: body.mode },
+    metadata: { mode: body.mode, sourceCount: sources.length },
   })
 
   const { text } = await generateText({
@@ -124,5 +165,5 @@ export async function POST(req: NextRequest) {
     ...parsed,
   }
 
-  return Response.json({ card })
+  return Response.json({ card, sources })
 }

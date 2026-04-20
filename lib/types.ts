@@ -273,12 +273,18 @@ export interface SavedAutomation {
   ideaId?: string
   name: string
   createdAt: string
+  /** 'build' = one-shot project stand-up; 'maintain' = recurring run-and-profit */
+  workflowType: 'build' | 'maintain'
   /** Raw n8n workflow JSON (string so we can re-download verbatim) */
   workflowJson: string
   /** Setup checklist returned from the generator */
   checklist: string[]
   explanation: string
-  /** If n8n API import failed and we only have JSON */
+  /** n8n workflow id when the API import succeeded */
+  importedId?: string
+  /** Reason the live import failed (undefined when it succeeded) */
+  importError?: string
+  /** @deprecated kept for backward compatibility with older cards */
   importFailed?: boolean
 }
 

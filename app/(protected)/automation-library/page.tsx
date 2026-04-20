@@ -92,22 +92,42 @@ export default function AutomationLibraryPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold truncate" style={{ color: '#e8e8f0' }}>
-                      {auto.name}
-                    </h3>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {auto.workflowType && (
+                        <span
+                          className="text-xs uppercase tracking-wide px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: auto.workflowType === 'build' ? '#1e2a3a' : '#2a1e3a',
+                            color: auto.workflowType === 'build' ? '#7ab8ff' : '#c084fc',
+                          }}
+                        >
+                          {auto.workflowType}
+                        </span>
+                      )}
+                      <h3 className="font-semibold truncate" style={{ color: '#e8e8f0' }}>
+                        {auto.name}
+                      </h3>
+                    </div>
                     <p className="text-xs mt-0.5" style={{ color: '#9090b0' }}>
                       {new Date(auto.createdAt).toLocaleString()}
                     </p>
                     {auto.explanation && (
                       <p className="text-sm mt-2" style={{ color: '#c0c0d0' }}>{auto.explanation}</p>
                     )}
-                    {auto.importFailed && (
+                    {auto.importedId && (
+                      <p className="mt-2 text-xs" style={{ color: '#4ade80' }}>
+                        Imported to n8n — workflow id {auto.importedId}.
+                      </p>
+                    )}
+                    {(auto.importError || auto.importFailed) && (
                       <div
                         className="mt-2 p-2 rounded flex items-start gap-2 text-xs"
                         style={{ backgroundColor: '#2a2116', color: '#ffba5c' }}
                       >
                         <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                        n8n import URL unavailable. Download the JSON below and paste it into n8n manually.
+                        {auto.importError
+                          ? `n8n API import failed: ${auto.importError}. Download the JSON below and paste it into n8n manually.`
+                          : 'n8n import URL unavailable. Download the JSON below and paste it into n8n manually.'}
                       </div>
                     )}
                   </div>

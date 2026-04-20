@@ -79,6 +79,7 @@
 | `N8N_API_KEY` | 13 | n8n API key |
 | `N8N_WEBHOOK_SECRET` | 13 | n8n webhook HMAC verification |
 | `TAVILY_API_KEY` | 17c | Live web search (1k free/mo) |
+| `FIRECRAWL_API_KEY` | idea | URL scraper for Remodel-mode idea analyse (500 free/mo) — https://firecrawl.dev |
 | `DEERFLOW_BASE_URL` | 17 | DeerFlow sidecar URL (not started) |
 | `DEERFLOW_API_KEY` | 17 | DeerFlow auth |
 | `DEERFLOW_ENABLED` | 17 | Gates DeerFlow routing in swarm |

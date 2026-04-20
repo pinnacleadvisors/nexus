@@ -20,6 +20,29 @@ function saveAutomation(auto: SavedAutomation) {
   }
 }
 
+function toSaved(card: IdeaCardType, data: {
+  workflow: { name?: string } & Record<string, unknown>
+  workflowType: 'build' | 'maintain'
+  checklist: string[]
+  explanation: string
+  importedId?: string
+  importError?: string
+}): SavedAutomation {
+  const tag = data.workflowType === 'build' ? 'Build' : 'Maintain & Profit'
+  return {
+    id: crypto.randomUUID(),
+    ideaId: card.id,
+    name: data.workflow.name ?? `${tag}: ${card.description.slice(0, 40)}`,
+    createdAt: new Date().toISOString(),
+    workflowType: data.workflowType,
+    workflowJson: JSON.stringify(data.workflow, null, 2),
+    checklist: data.checklist ?? [],
+    explanation: data.explanation ?? '',
+    importedId: data.importedId,
+    importError: data.importError,
+  }
+}
+
 interface Props {
   card: IdeaCardType
   onDelete: (id: string) => void
@@ -216,63 +239,86 @@ function verdictFg(v: IdeaCardType['profitableVerdict']) {
   return '#9090b0'
 }
 
+interface GenerateResponse {
+  workflow: { name?: string } & Record<string, unknown>
+  workflowType: 'build' | 'maintain'
+  checklist: string[]
+  explanation: string
+  importedId?: string
+  importError?: string
+}
+
+async function generateWorkflow(
+  card: IdeaCardType,
+  executeInput: string,
+  workflowType: 'build' | 'maintain',
+): Promise<GenerateResponse> {
+  const steps = card.steps.filter(s => s.phase === workflowType)
+  const description = workflowType === 'build'
+    ? `Build the project from scratch for this idea: ${card.description}`
+    : `Maintain and generate profit from the launched project for this idea: ${card.description}`
+
+  const context = [
+    `Mode: ${card.mode}`,
+    card.inspirationUrl ? `Inspiration: ${card.inspirationUrl}` : '',
+    card.twist ? `Twist: ${card.twist}` : '',
+    `How it makes money: ${card.howItMakesMoney}`,
+    `Automation target: ${card.automationPercent}%`,
+    `Tools: ${card.tools.map(t => `${t.name} (${t.purpose})`).join('; ')}`,
+    `${workflowType === 'build' ? 'Build' : 'Maintain'} steps from the idea card:`,
+    steps.map(s => `- ${s.title} (${s.automatable ? 'automatable' : 'MANUAL — needs owner action'})`).join('\n'),
+    executeInput.trim() ? `\nExtra instructions from owner: ${executeInput.trim()}` : '',
+  ].filter(Boolean).join('\n')
+
+  const res = await fetch('/api/n8n/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      description,
+      businessContext: context,
+      workflowType,
+    }),
+  })
+
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}))
+    throw new Error(j.error ?? `Request failed (${res.status})`)
+  }
+
+  return res.json() as Promise<GenerateResponse>
+}
+
 function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => void }) {
   const [executeInput, setExecuteInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [progress, setProgress] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<SavedAutomation | null>(null)
+  const [done, setDone] = useState<{ build: SavedAutomation; maintain: SavedAutomation } | null>(null)
 
   async function run() {
     setSubmitting(true)
     setError(null)
 
-    const context = [
-      `Mode: ${card.mode}`,
-      card.inspirationUrl ? `Inspiration: ${card.inspirationUrl}` : '',
-      card.twist ? `Twist: ${card.twist}` : '',
-      `How it makes money: ${card.howItMakesMoney}`,
-      `Automation target: ${card.automationPercent}%`,
-      `Tools: ${card.tools.map(t => t.name).join(', ')}`,
-      `Steps:\n${card.steps.map(s => `- [${s.phase}] ${s.title} (${s.automatable ? 'auto' : 'manual'})`).join('\n')}`,
-      executeInput.trim() ? `\nExtra instructions from owner: ${executeInput.trim()}` : '',
-    ].filter(Boolean).join('\n')
+    try {
+      setProgress('Generating BUILD workflow…')
+      const build = await generateWorkflow(card, executeInput, 'build')
 
-    const res = await fetch('/api/n8n/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: `Build project workflow for idea: ${card.description}`,
-        businessContext: context,
-      }),
-    })
+      setProgress('Generating MAINTAIN & PROFIT workflow…')
+      const maintain = await generateWorkflow(card, executeInput, 'maintain')
 
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}))
-      setError(j.error ?? `Request failed (${res.status})`)
+      const buildAuto: SavedAutomation = toSaved(card, build)
+      const maintainAuto: SavedAutomation = toSaved(card, maintain)
+
+      saveAutomation(buildAuto)
+      saveAutomation(maintainAuto)
+
+      setDone({ build: buildAuto, maintain: maintainAuto })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
       setSubmitting(false)
-      return
+      setProgress(null)
     }
-
-    const data = await res.json() as {
-      workflow: unknown
-      checklist: string[]
-      explanation: string
-      importUrl?: string
-    }
-
-    const auto: SavedAutomation = {
-      id: crypto.randomUUID(),
-      ideaId: card.id,
-      name: (data.workflow as { name?: string })?.name ?? `Workflow for ${card.description.slice(0, 40)}`,
-      createdAt: new Date().toISOString(),
-      workflowJson: JSON.stringify(data.workflow, null, 2),
-      checklist: data.checklist ?? [],
-      explanation: data.explanation ?? '',
-      importFailed: !data.importUrl,
-    }
-    saveAutomation(auto)
-    setDone(auto)
-    setSubmitting(false)
   }
 
   return (
@@ -287,12 +333,12 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
         style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
       >
         <h3 className="text-lg font-semibold mb-1" style={{ color: '#e8e8f0' }}>
-          {done ? 'Workflow saved' : 'Execute idea'}
+          {done ? 'Workflows saved' : 'Execute idea'}
         </h3>
         <p className="text-sm mb-4" style={{ color: '#9090b0' }}>
           {done
-            ? 'View and download the n8n workflow JSON from the Automation Library.'
-            : 'Add any extra detail on what you want the workflow to look like. Claude will generate an n8n workflow that builds the project, using manual-trigger nodes for steps you need to do yourself.'}
+            ? 'Both workflows are in the Automation Library. If n8n API import failed, copy the JSON into n8n manually.'
+            : 'Claude will generate two n8n workflows — a BUILD one to stand the project up and a MAINTAIN & PROFIT one to run it afterwards. Mastermind node (Opus) orchestrates; managed-agent nodes handle specialist work; Review nodes pause at every milestone; Manual nodes prompt you for side-effects.'}
         </p>
 
         {!done && (
@@ -305,6 +351,16 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
               className="w-full px-3 py-2 rounded-lg text-sm outline-none"
               style={{ backgroundColor: '#050508', color: '#e8e8f0', border: '1px solid #24243e' }}
             />
+
+            {progress && (
+              <div
+                className="mt-3 p-2.5 rounded-lg flex items-center gap-2 text-xs"
+                style={{ backgroundColor: '#12121e', color: '#c0c0d0' }}
+              >
+                <Loader2 size={12} className="animate-spin shrink-0" />
+                {progress}
+              </div>
+            )}
 
             {error && (
               <div
@@ -331,7 +387,7 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
                 style={{ backgroundColor: '#6c63ff', color: '#fff' }}
               >
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                {submitting ? 'Generating…' : 'Generate workflow'}
+                {submitting ? 'Generating…' : 'Generate workflows'}
               </button>
             </div>
           </>
@@ -339,9 +395,35 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
 
         {done && (
           <div className="space-y-3">
-            <div className="p-3 rounded-lg text-sm" style={{ backgroundColor: '#050508', color: '#9090b0' }}>
-              {done.explanation}
-            </div>
+            {([done.build, done.maintain] as const).map(auto => (
+              <div key={auto.id} className="p-3 rounded-lg" style={{ backgroundColor: '#050508', border: '1px solid #24243e' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className="text-xs uppercase tracking-wide px-1.5 py-0.5 rounded"
+                    style={{
+                      backgroundColor: auto.workflowType === 'build' ? '#1e2a3a' : '#2a1e3a',
+                      color: auto.workflowType === 'build' ? '#7ab8ff' : '#c084fc',
+                    }}
+                  >
+                    {auto.workflowType}
+                  </span>
+                  <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
+                    {auto.name}
+                  </span>
+                </div>
+                <p className="text-xs" style={{ color: '#9090b0' }}>{auto.explanation}</p>
+                {auto.importError && (
+                  <p className="mt-1 text-xs" style={{ color: '#ffba5c' }}>
+                    n8n API import failed — copy the JSON manually from the library.
+                  </p>
+                )}
+                {auto.importedId && (
+                  <p className="mt-1 text-xs" style={{ color: '#4ade80' }}>
+                    Imported to n8n (id: {auto.importedId}).
+                  </p>
+                )}
+              </div>
+            ))}
             <div className="flex items-center gap-2 justify-end">
               <button
                 onClick={onClose}
