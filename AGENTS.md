@@ -123,57 +123,29 @@ lib/
 └── utils.ts              # cn() helper
 ```
 
-## nexus-memory — Structured Knowledge Base
+## Platform Memory — Local Knowledge Base
 
-The private repo `pinnacleadvisors/nexus-memory` stores all platform knowledge as Markdown files. It uses a **Graphify-style** structure: chunked by concern, precomputed relationships, dense summaries — designed so an agent can get full context in 1–2 reads instead of scanning whole documents.
-
-### Structure
+Platform knowledge lives in `memory/` inside this repo — chunked by concern, dense summaries, no API calls needed.
 
 ```
-nexus-memory/
-├── meta/
-│   ├── INDEX.md          ← START HERE — topic→file map, all 12 files listed
-│   └── GRAPH.md          ← precomputed relationship edges between files
+memory/
+├── INDEX.md          ← START HERE — topic→file map
+├── GRAPH.md          ← file dependency edges
 ├── platform/
-│   ├── STACK.md          ← ALL dev rules (Next.js 16, Tailwind 4, Clerk v7, AI SDK 6, icons)
-│   ├── ARCHITECTURE.md   ← file structure, API patterns, DB access, migration guide
-│   ├── SECRETS.md        ← every env var, by phase, with where to get it
-│   └── OVERVIEW.md       ← what Nexus is, all pages, design principles
-├── roadmap/
-│   ├── SUMMARY.md        ← one-liner per phase (1–22) with ✅/⬜ status
-│   └── PENDING.md        ← all not-started items grouped by phase
-└── docs/
-    ├── agents-guide.md   ← full AGENTS.md
-    ├── readme.md         ← full README.md
-    ├── roadmap-full.md   ← full ROADMAP.md
-    └── claude-md.md      ← full CLAUDE.md
+│   ├── STACK.md      ← ALL dev rules (Next.js 16, Tailwind 4, Clerk, AI SDK 6, icons)
+│   ├── ARCHITECTURE.md ← file structure, API patterns, DB access
+│   ├── SECRETS.md    ← every env var by phase
+│   └── OVERVIEW.md   ← what Nexus is, all pages, design principles
+└── roadmap/
+    ├── SUMMARY.md    ← one-liner per phase (1–22) with ✅/⬜ status (~300 tokens)
+    └── PENDING.md    ← all ⬜ not-started items grouped by phase
 ```
 
-### How Claude Code Can Use It
+**Query flow:** Read `memory/INDEX.md` first → read only the 1–2 files it points to. Saves 10× tokens vs scanning source docs.
 
-**Yes — Claude Code can query nexus-memory** via the MCP memory API or directly via HTTP:
+**Keeping it current:** After a feature ships, edit `memory/roadmap/SUMMARY.md` and `PENDING.md` directly — no scripts or API calls needed.
 
-```
-GET  /api/memory?path=platform/STACK.md        → stack rules
-GET  /api/memory?path=roadmap/SUMMARY.md       → all phase statuses
-GET  /api/memory?path=roadmap/PENDING.md       → what needs building
-GET  /api/memory/search?q=video+pipeline       → find relevant pages
-GET  /api/memory/list?folder=platform          → list all platform docs
-```
-
-**Recommended query flow (token-efficient):**
-1. Read `meta/INDEX.md` (small) — find which 1–2 files contain what you need
-2. Read only those files — get complete, dense context on that concern
-3. Use `meta/GRAPH.md` to discover related files if needed
-
-This mirrors Graphify's **single-call context retrieval** — instead of reading the entire ROADMAP.md (5000 tokens), read `roadmap/SUMMARY.md` (400 tokens) and get all the status you need.
-
-### Repopulating
-
-Run on your MacBook when MD files change:
-```bash
-npm run populate-memory     # uses Doppler for MEMORY_TOKEN + MEMORY_REPO
-```
+> Note: `pinnacleadvisors/nexus-memory` (the GitHub repo) is the **runtime agent memory** for storing business outputs (research, content, financials). It is separate from this local platform documentation. See `lib/memory/github.ts` and Phase 20 in `ROADMAP.md`.
 
 ## Claude Code Managed Agents
 
