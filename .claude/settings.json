@@ -1,4 +1,11 @@
 {
+  "mode": "agent",
+  "tools": {
+    "bash": true,
+    "read": true,
+    "write": true,
+    "edit": true
+  },
   "permissions": {
     "allow": [
       "Bash(doppler *)",
@@ -6,8 +13,7 @@
       "Bash(brew install doppler)",
       "Read",
       "Write",
-      "Edit",
-      "Bash"
+      "Edit"
     ]
   },
   "hooks": {
