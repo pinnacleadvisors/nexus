@@ -9,5 +9,18 @@
       "Edit",
       "Bash"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f graphify-out/GRAPH_REPORT.md ] && echo 'graphify: knowledge graph exists — read graphify-out/GRAPH_REPORT.md for god nodes and module communities before searching raw files.' || true"
+          }
+        ]
+      }
+    ]
   }
 }
