@@ -2,6 +2,68 @@
 
 ---
 
+# Long-Horizon Task Protocol
+
+Long-running or multi-session tasks on this brownfield codebase follow a strict 3-phase workflow. **Never jump straight to implementation.**
+
+## Phase 1 — Explore
+
+Map the surface area before touching any code:
+- Read entry points, interfaces, and all callers for the targeted code
+- Identify hidden global state, environment assumptions, and implicit contracts
+- Check for existing tests covering the area
+- Record findings in `task_plan.md` (create it if it doesn't exist)
+
+## Phase 2 — Plan
+
+Write or update `task_plan.md` before writing any implementation code:
+- State the goal and hard constraints
+- List every file that will change and why
+- Flag risks: breaking changes, invisible contracts, missing test coverage
+- Break work into small, independently-committable steps
+- **User must review the plan before Phase 3 begins**
+
+## Phase 3 — Implement
+
+- Work one step at a time; commit after each verifiable unit
+- Write failing tests before implementing a fix (TDD)
+- Run `npx tsc --noEmit` after every significant change
+- Never implement beyond what the plan specifies — open a follow-up task instead
+
+## Context Compaction (long or multi-day sessions)
+
+When a session grows long, before it degrades:
+1. Update `task_plan.md` with a `## Progress` section (see template below)
+2. Commit: `git commit -m "chore: update task_plan progress"`
+3. Start a fresh session — open `task_plan.md` to restore context instantly
+
+```
+## Progress (as of YYYY-MM-DD)
+### Completed
+- [x] step — key decision / why
+
+### Remaining
+- [ ] next step
+
+### Blockers / Open Questions
+- item
+```
+
+## Architectural Decision Records (ADRs)
+
+When a non-obvious design decision is made, write an ADR:
+- Location: `docs/adr/NNN-short-title.md` (use `docs/adr/TEMPLATE.md`)
+- Commit: `docs(adr): NNN short title`
+- Add a one-liner to `docs/adr/INDEX.md`
+
+ADRs prevent re-litigating decisions across sessions and document the "why" behind legacy patterns.
+
+## Dead Code
+
+Note dead code with a comment (`// TODO: dead — safe to remove YYYY-MM-DD`) but don't clean it up in the same PR as a feature change. Address in a dedicated cleanup commit to keep diffs reviewable.
+
+---
+
 # nexus-memory Integration
 
 ## Knowledge Base Structure
