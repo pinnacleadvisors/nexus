@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "default",
     "allow": [
       "Bash(doppler *)",
       "Bash(npm install -g doppler)",
