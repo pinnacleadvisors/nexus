@@ -1,11 +1,4 @@
 {
-  "mode": "agent",
-  "tools": {
-    "bash": true,
-    "read": true,
-    "write": true,
-    "edit": true
-  },
   "permissions": {
     "allow": [
       "Bash(doppler *)",
