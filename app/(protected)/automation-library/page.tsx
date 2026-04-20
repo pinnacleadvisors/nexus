@@ -7,7 +7,7 @@ import type { SavedAutomation } from '@/lib/types'
 
 const AUTOMATIONS_KEY = 'nexus:automations'
 
-function loadAutomations(): SavedAutomation[] {
+function loadLocal(): SavedAutomation[] {
   try {
     const raw = localStorage.getItem(AUTOMATIONS_KEY)
     return raw ? (JSON.parse(raw) as SavedAutomation[]) : []
@@ -16,23 +16,52 @@ function loadAutomations(): SavedAutomation[] {
   }
 }
 
+function saveLocal(list: SavedAutomation[]) {
+  try {
+    localStorage.setItem(AUTOMATIONS_KEY, JSON.stringify(list))
+  } catch {
+    // ignore
+  }
+}
+
 export default function AutomationLibraryPage() {
   const [items, setItems] = useState<SavedAutomation[]>([])
   const [hydrated, setHydrated] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [usingServer, setUsingServer] = useState(false)
 
   useEffect(() => {
-    setItems(loadAutomations())
-    setHydrated(true)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/automations')
+        if (res.ok) {
+          const { automations } = (await res.json()) as { automations: SavedAutomation[] }
+          if (!cancelled && Array.isArray(automations) && automations.length > 0) {
+            setItems(automations)
+            setUsingServer(true)
+            setHydrated(true)
+            return
+          }
+        }
+      } catch {
+        // fall through
+      }
+      if (!cancelled) {
+        setItems(loadLocal())
+        setHydrated(true)
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
-  function remove(id: string) {
+  async function remove(id: string) {
     const next = items.filter(i => i.id !== id)
     setItems(next)
-    try {
-      localStorage.setItem(AUTOMATIONS_KEY, JSON.stringify(next))
-    } catch {
-      // ignore
+    if (usingServer) {
+      await fetch(`/api/automations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
+    } else {
+      saveLocal(next)
     }
     if (openId === id) setOpenId(null)
   }

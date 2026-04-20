@@ -25,10 +25,13 @@
 import { NextRequest } from 'next/server'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { scrapeWithConnected, formatScrapesForContext } from '@/lib/tools/firecrawl'
 import { searchWeb, formatResultsAsContext } from '@/lib/tools/tavily'
+import { createServerClient } from '@/lib/supabase'
+import { ideaCardToRow, rowToIdeaCard, type IdeaRow } from '@/lib/idea-db'
 import type { IdeaCard, IdeaMode } from '@/lib/types'
 
 export const maxDuration = 90
@@ -157,7 +160,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Failed to parse agent JSON', raw: text }, { status: 502 })
   }
 
-  const card: Omit<IdeaCard, 'id' | 'createdAt'> = {
+  const draft: Omit<IdeaCard, 'id' | 'createdAt'> = {
     mode: body.mode,
     inspirationUrl: body.mode === 'remodel' ? body.inspirationUrl : undefined,
     twist: body.mode === 'remodel' ? body.twist : undefined,
@@ -165,5 +168,22 @@ export async function POST(req: NextRequest) {
     ...parsed,
   }
 
-  return Response.json({ card, sources })
+  // Persist for the signed-in user when Supabase is configured. Pages fall
+  // back to localStorage when persistence isn't available.
+  const { userId } = await auth()
+  const supabase = createServerClient()
+  if (userId && supabase) {
+    const { data, error } = await supabase
+      .from('ideas')
+      .insert(ideaCardToRow({ ...draft, sources }, userId) as never)
+      .select()
+      .single()
+
+    if (!error && data) {
+      return Response.json({ card: rowToIdeaCard(data as unknown as IdeaRow), sources })
+    }
+    if (error) console.error('[idea/analyse] persist failed:', error.message)
+  }
+
+  return Response.json({ card: draft, sources })
 }

@@ -8,7 +8,7 @@ import IdeaCard from '@/components/idea/IdeaCard'
 
 const IDEAS_KEY = 'nexus:ideas'
 
-function loadIdeas(): IdeaCardType[] {
+function loadLocal(): IdeaCardType[] {
   try {
     const raw = localStorage.getItem(IDEAS_KEY)
     return raw ? (JSON.parse(raw) as IdeaCardType[]) : []
@@ -17,22 +17,51 @@ function loadIdeas(): IdeaCardType[] {
   }
 }
 
+function saveLocal(list: IdeaCardType[]) {
+  try {
+    localStorage.setItem(IDEAS_KEY, JSON.stringify(list))
+  } catch {
+    // ignore
+  }
+}
+
 export default function IdeaLibraryPage() {
   const [ideas, setIdeas] = useState<IdeaCardType[]>([])
   const [hydrated, setHydrated] = useState(false)
+  const [usingServer, setUsingServer] = useState(false)
 
   useEffect(() => {
-    setIdeas(loadIdeas())
-    setHydrated(true)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/ideas')
+        if (res.ok) {
+          const { ideas: serverIdeas } = (await res.json()) as { ideas: IdeaCardType[] }
+          if (!cancelled && Array.isArray(serverIdeas) && serverIdeas.length > 0) {
+            setIdeas(serverIdeas)
+            setUsingServer(true)
+            setHydrated(true)
+            return
+          }
+        }
+      } catch {
+        // fall through to localStorage
+      }
+      if (!cancelled) {
+        setIdeas(loadLocal())
+        setHydrated(true)
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
-  function deleteIdea(id: string) {
+  async function deleteIdea(id: string) {
     const next = ideas.filter(i => i.id !== id)
     setIdeas(next)
-    try {
-      localStorage.setItem(IDEAS_KEY, JSON.stringify(next))
-    } catch {
-      // ignore
+    if (usingServer) {
+      await fetch(`/api/ideas?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
+    } else {
+      saveLocal(next)
     }
   }
 

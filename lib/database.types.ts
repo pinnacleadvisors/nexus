@@ -491,6 +491,80 @@ export type Database = {
         }
         Relationships: []
       }
+      ideas: {
+        Row: {
+          id:                     string
+          user_id:                string
+          mode:                   'remodel' | 'description'
+          description:            string
+          inspiration_url:        string | null
+          twist:                  string | null
+          setup_budget_usd:       number | null
+          how_it_makes_money:     string
+          approx_monthly_revenue: number
+          approx_setup_cost:      number
+          approx_monthly_cost:    number
+          automation_percent:     number
+          profitable_verdict:     'likely' | 'unlikely' | 'uncertain'
+          profitable_reasoning:   string
+          steps:                  Json
+          tools:                  Json
+          sources:                Json
+          created_at:             string
+        }
+        Insert: {
+          id?:                     string
+          user_id:                 string
+          mode:                    'remodel' | 'description'
+          description:             string
+          inspiration_url?:        string | null
+          twist?:                  string | null
+          setup_budget_usd?:       number | null
+          how_it_makes_money?:     string
+          approx_monthly_revenue?: number
+          approx_setup_cost?:      number
+          approx_monthly_cost?:    number
+          automation_percent?:     number
+          profitable_verdict?:     'likely' | 'unlikely' | 'uncertain'
+          profitable_reasoning?:   string
+          steps?:                  Json
+          tools?:                  Json
+          sources?:                Json
+          created_at?:             string
+        }
+        Update: Partial<Database['public']['Tables']['ideas']['Insert']>
+        Relationships: []
+      }
+      automations: {
+        Row: {
+          id:            string
+          user_id:       string
+          idea_id:       string | null
+          name:          string
+          workflow_type: 'build' | 'maintain'
+          workflow_json: Json
+          checklist:     Json
+          explanation:   string
+          imported_id:   string | null
+          import_error:  string | null
+          created_at:    string
+        }
+        Insert: {
+          id?:            string
+          user_id:        string
+          idea_id?:       string | null
+          name:           string
+          workflow_type:  'build' | 'maintain'
+          workflow_json:  Json
+          checklist?:     Json
+          explanation?:   string
+          imported_id?:   string | null
+          import_error?:  string | null
+          created_at?:    string
+        }
+        Update: Partial<Database['public']['Tables']['automations']['Insert']>
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -63,13 +63,13 @@ export default function IdeaPage() {
       return
     }
 
-    const { card } = await res.json() as { card: Omit<IdeaCard, 'id' | 'createdAt'> }
-    const full: IdeaCard = {
-      ...card,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-    }
-    saveIdea(full)
+    const { card } = await res.json() as { card: IdeaCard | Omit<IdeaCard, 'id' | 'createdAt'> }
+    const hasId = (c: IdeaCard | Omit<IdeaCard, 'id' | 'createdAt'>): c is IdeaCard =>
+      'id' in c && typeof c.id === 'string'
+    const full: IdeaCard = hasId(card)
+      ? card
+      : { ...card, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+    if (!hasId(card)) saveIdea(full)
     router.push('/idea-library')
   }
 

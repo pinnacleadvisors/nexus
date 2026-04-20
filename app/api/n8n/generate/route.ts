@@ -42,6 +42,7 @@
 import { NextRequest } from 'next/server'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
@@ -49,7 +50,9 @@ import { getTemplate } from '@/lib/n8n/templates'
 import { getBaseUrl, isConfigured as isN8nConfigured, createWorkflow } from '@/lib/n8n/client'
 import { analyzeWorkflow } from '@/lib/n8n/gap-detector'
 import { AGENT_CAPABILITIES } from '@/lib/agent-capabilities'
+import { automationToRow, rowToAutomation, type AutomationRow } from '@/lib/idea-db'
 import type { N8nWorkflow } from '@/lib/n8n/types'
+import type { SavedAutomation } from '@/lib/types'
 
 export const maxDuration = 90
 export const runtime = 'nodejs'
@@ -143,6 +146,7 @@ export async function POST(req: NextRequest) {
     businessContext?: string
     templateId?:     string
     projectId?:      string
+    ideaId?:         string
     workflowType?:   'build' | 'maintain'
     availableCapabilities?: string[]
   }
@@ -241,6 +245,32 @@ export async function POST(req: NextRequest) {
       ? `${n8nBase}/workflow/new?workflow=${encodeURIComponent(JSON.stringify(workflow))}`
       : undefined
 
+  // Persist automation for the signed-in user when Supabase is configured.
+  let savedAutomation: SavedAutomation | undefined
+  const { userId } = await auth()
+  if (userId && db) {
+    const draft: Omit<SavedAutomation, 'id' | 'createdAt'> = {
+      ideaId:       body.ideaId,
+      name:         workflow.name ?? `${workflowType === 'build' ? 'Build' : 'Maintain & Profit'}: ${body.description.slice(0, 40)}`,
+      workflowType,
+      workflowJson: JSON.stringify(workflow, null, 2),
+      checklist,
+      explanation,
+      importedId,
+      importError,
+    }
+    const { data, error } = await db
+      .from('automations')
+      .insert(automationToRow(draft, userId) as never)
+      .select()
+      .single()
+    if (!error && data) {
+      savedAutomation = rowToAutomation(data as unknown as AutomationRow)
+    } else if (error) {
+      console.error('[n8n/generate] persist failed:', error.message)
+    }
+  }
+
   return Response.json({
     workflow,
     workflowType,
@@ -250,5 +280,6 @@ export async function POST(req: NextRequest) {
     importedId,
     importError,
     gapAnalysis,
+    automation: savedAutomation,
   })
 }

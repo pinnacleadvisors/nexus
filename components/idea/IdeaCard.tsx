@@ -246,6 +246,7 @@ interface GenerateResponse {
   explanation: string
   importedId?: string
   importError?: string
+  automation?: SavedAutomation
 }
 
 async function generateWorkflow(
@@ -277,6 +278,7 @@ async function generateWorkflow(
       description,
       businessContext: context,
       workflowType,
+      ideaId: card.id,
     }),
   })
 
@@ -306,11 +308,13 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
       setProgress('Generating MAINTAIN & PROFIT workflow…')
       const maintain = await generateWorkflow(card, executeInput, 'maintain')
 
-      const buildAuto: SavedAutomation = toSaved(card, build)
-      const maintainAuto: SavedAutomation = toSaved(card, maintain)
+      // Prefer server-persisted row (has DB id + createdAt); fall back to
+      // localStorage when Supabase is unconfigured.
+      const buildAuto = build.automation ?? toSaved(card, build)
+      const maintainAuto = maintain.automation ?? toSaved(card, maintain)
 
-      saveAutomation(buildAuto)
-      saveAutomation(maintainAuto)
+      if (!build.automation) saveAutomation(buildAuto)
+      if (!maintain.automation) saveAutomation(maintainAuto)
 
       setDone({ build: buildAuto, maintain: maintainAuto })
     } catch (err) {
