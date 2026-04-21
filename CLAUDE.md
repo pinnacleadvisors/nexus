@@ -108,20 +108,76 @@ Note dead code with a comment (`// TODO: dead — safe to remove YYYY-MM-DD`) bu
 
 # Knowledge Graph
 
-`graphify-out/GRAPH_REPORT.md` is the persistent codebase knowledge graph. It maps which files are "god nodes" (high connectivity), what module communities exist, and which files are unexpectedly coupled.
+We use **two** knowledge graphs, each for a different purpose:
+
+| Graph | What it captures | Built by |
+|-------|------------------|----------|
+| `graphify-out/GRAPH_REPORT.md` | File-level import/call structure of the **codebase** (god nodes, modules, coupling) | `/graphify` (external plugin — install from `safishamsi/graphify` if not present) |
+| `memory/molecular/` + `memory/molecular/.graph.json` | **Domain knowledge** — atomic facts, entities, Maps of Content | `/molecularmemory_local` (built-in, `.claude/skills/molecularmemory_local/`) |
+
+Both are optional. `/molecularmemory_local` is the preferred default because it lives in-repo, needs zero tokens, and is the replacement path for `/graphify` when that plugin is unavailable.
 
 **Query order** — always follow this to minimise token spend:
-1. Read `graphify-out/GRAPH_REPORT.md` → get structural orientation
-2. Read only the specific files the graph points to
-3. Fall back to Grep/Glob only for areas the graph doesn't cover
+1. Read `memory/INDEX.md` → platform docs map
+2. Read `memory/molecular/INDEX.md` (if present) → domain knowledge map
+3. Read `graphify-out/GRAPH_REPORT.md` (if present) → codebase structure
+4. Read only the specific files the graphs point to
+5. Fall back to Grep/Glob only for areas the graphs don't cover
 
-**Build / refresh the graph:**
+**Build / refresh the codebase graph:**
 ```bash
-/graphify .         # full scan of the current directory
-/graphify app/      # scan only a subtree
+/graphify .         # full scan — requires safishamsi/graphify plugin installed
 ```
 
-Run `/graphify .` at the start of any new multi-file task. The hook in `.claude/settings.json` will remind you when a graph exists before every Glob/Glob search.
+**Build / refresh the domain graph:**
+```bash
+node .claude/skills/molecularmemory_local/cli.mjs init     # first time
+node .claude/skills/molecularmemory_local/cli.mjs graph    # rebuild adjacency
+node .claude/skills/molecularmemory_local/cli.mjs reindex  # refresh INDEX.md
+```
+
+The hook in `.claude/settings.json` reminds Claude when either graph exists before Glob/Grep searches.
+
+---
+
+# Skill Routing — when to invoke which `/skill`
+
+Claude Code has many skills available. The decision of which (if any) to invoke after a prompt follows this rubric. The `UserPromptSubmit` hook at `.claude/hooks/skill-router.sh` echoes hints automatically — these rules are the authoritative version.
+
+| If the prompt asks to… | Use |
+|---|---|
+| Read a specific public URL or page | `/firecrawl_local scrape <url>` |
+| Discover URLs on a site | `/firecrawl_local map <url>` |
+| Walk a small section of a site (≤ 20 pages) | `/firecrawl_local crawl <url> --limit=N` |
+| Search the open web by topic | Tavily (`lib/tools/tavily.ts`) or built-in **WebSearch** — `/firecrawl_local` cannot do search |
+| Remember a durable fact across sessions | `/molecularmemory_local atom` + `entity` |
+| Extract atomic facts from an article/paper/transcript | **scrape with /firecrawl_local → `/molecularmemory_local atom` per fact** |
+| Build a Map of Content for a topic | `/molecularmemory_local moc` |
+| Query existing domain knowledge | `/molecularmemory_local query <text>` |
+| Navigate a multi-file refactor | Read `graphify-out/GRAPH_REPORT.md` if fresh, else start an MOC in `/molecularmemory_local` for the affected module |
+| Red-Green-Refactor TDD flow | `/superpowers` TDD skill (if installed via `obra/superpowers-marketplace`) |
+| Systematic 4-phase debugging | `/superpowers` debugging skill |
+| Personalised pattern capture | `/claude-evolve` (if installed via `hknc/claude-evolve`) |
+| Review pending code changes | `/review` (built-in) |
+| Security audit of a diff | `/security-review` (built-in) |
+| Scaffold CLAUDE.md | `/init` (built-in) |
+| Tighten permission prompts | `/fewer-permission-prompts` (built-in) |
+| Remove cruft from recent changes | `/simplify` (built-in) |
+| Set up recurring tasks | `/loop` (built-in) |
+
+## Decision logic (what to do after every user prompt)
+
+1. **Read the hint block** if the `skill-router` hook injected one — that's the cheapest signal.
+2. **Only invoke a skill when the match is genuine.** False-positive keyword matches are worse than no suggestion. Prefer the hook's "ignore if not applicable" advice.
+3. **Never invoke a skill that isn't in the session's available-skills list.** Those listed in the session-start system-reminder are the only callable ones; anything else is documentation-only until installed.
+4. **Chain skills when the prompt spans domains** — e.g. "research X and save key facts" = `/firecrawl_local scrape` → Claude extracts atoms → `/molecularmemory_local atom` (loop) → `graph` → `reindex`.
+5. **If no skill fits, fall back to the 4-step task protocol** (North Star → Explore → Plan → Implement) above.
+
+## If a skill is referenced but not available
+
+- `/graphify` → install from `https://github.com/safishamsi/graphify`, or substitute `/molecularmemory_local` for module-level knowledge.
+- `/superpowers`, `/claude-evolve` → both are declared in `.claude/settings.json` under `extraKnownMarketplaces`. If not listed in the session's skills, restart the Claude Code session so the marketplaces are fetched and plugins enabled.
+- `/firecrawl` (hosted) → requires `FIRECRAWL_API_KEY` in Doppler; the local substitute `/firecrawl_local` handles scrape/map/crawl without a key.
 
 ---
 
