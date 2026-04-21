@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import Link from 'next/link'
 import {
   FlaskConical, PenLine, Code2, SearchCode, Share2,
   HeadphonesIcon, Mail, Palette, BarChart3, Scale,
-  Play, X, ChevronRight, Copy, Check, Loader2,
+  Play, X, ChevronRight, Copy, Check, Loader2, Sparkles,
 } from 'lucide-react'
 import { AGENT_CAPABILITIES, CAPABILITY_CATEGORIES, type AgentCapability } from '@/lib/agent-capabilities'
 
@@ -386,13 +387,23 @@ export default function AgentsPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6" style={{ backgroundColor: '#050508' }}>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold mb-1" style={{ color: '#e8e8f0' }}>
-          Agent Capabilities
-        </h1>
-        <p className="text-sm" style={{ color: '#55556a' }}>
-          10 specialised AI agents — each produces a full deliverable document, saves to your knowledge base, and creates a Review card on the board.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold mb-1" style={{ color: '#e8e8f0' }}>
+            Agent Capabilities
+          </h1>
+          <p className="text-sm" style={{ color: '#55556a' }}>
+            10 specialised AI agents — each produces a full deliverable document, saves to your knowledge base, and creates a Review card on the board.
+          </p>
+        </div>
+        <Link
+          href="/tools/agents/managed"
+          className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
+          style={{ backgroundColor: '#12121e', color: '#9090b0', border: '1px solid #24243e' }}
+        >
+          <Sparkles size={12} style={{ color: '#6c63ff' }} />
+          Managed Agents
+        </Link>
       </div>
 
       {/* Category filter */}
