@@ -93,6 +93,14 @@
 | `MEMORY_TOKEN` | 20 | GitHub PAT (repo scope) for runtime agent memory |
 | `MEMORY_REPO` | 20 | e.g. `pinnacleadvisors/nexus-memory` |
 
+## Agent Library (managed agents)
+
+Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
+
+| Var | Phase | Purpose |
+|-----|-------|---------|
+| `FIRECRAWL_API_KEY` | agents | Hosted Firecrawl API used by the `firecrawl` managed agent. If unset, the agent falls back to `/firecrawl_local`. |
+
 ## AI Priority in `/api/chat`
 
 OpenClaw (Claude Pro via `OPENCLAW_GATEWAY_URL`) → `ANTHROPIC_API_KEY` → error message

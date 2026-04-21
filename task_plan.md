@@ -1,78 +1,120 @@
-Goal: Restructure Nexus navigation + idea flow so users can capture an idea (remodel or from-description), review agent-generated analysis, and execute it into an n8n workflow.
+# Agent Generation System
+
+Goal: Stand up an end-to-end "generate, persist, remember, and self-improve" agent subsystem for Nexus.
 Success criteria:
-- Sidebar matches the new spec exactly: Idea, Idea Library, Automation Library, Dashboard, Manage Platform, Subfunctions dropdown (Board, Org Chart, Graph, Swarm, Consultant, Content), Reusable Library dropdown (Agents, Skills, Tools, Reusable code functions).
-- `/forge` is renamed to `/idea`; `/build` is renamed to `/manage-platform`; old URLs redirect.
-- `/idea` presents two mode options (Remodel idea / Idea from description) each with its own form.
-- Submitting a form triggers an agent call that returns profitability, automation steps, approx revenue/cost, and an idea card saved into the Idea Library.
-- Idea card shows fields per spec; "Execute" opens execute-input prompt and POSTs to `/api/n8n/generate`.
-- Reusable Library entries point to existing tools/library for agents/skills/code + existing /tools page; tools directory unchanged.
+- When the user says "create an agent that does X" in Claude Code, Claude follows a documented protocol that emits a `.claude/agents/<slug>.md`, registers it in Supabase, and seeds molecular memory.
+- Four new Claude managed agents exist and are discoverable: `firecrawl`, `supermemory`, `workflow-optimizer`, `agent-generator`.
+- A Supabase migration adds `agent_library`, `workflow_feedback`, `workflow_changelog` tables with RLS.
+- Board review modal exposes a feedback textarea that writes to `/api/workflow-feedback`, which hands off to the workflow-optimizer agent and records the change in `workflow_changelog`.
+- Molecular memory has entity + atom notes for every new agent so they are reusable across projects.
 - `npx tsc --noEmit` passes.
+
 Hard constraints:
-- Do not break existing Forge chat/session flow; move its page under `/idea` rather than deleting ForgeSession.
-- Follow Next.js 16 + Tailwind 4 + Client/Server boundary rules from AGENTS.md.
-- Icons limited to lucide-react exports (no `Github`, no `Trello`).
-- All shared types go in `lib/types.ts`.
+- Follow all Nexus stack rules in `AGENTS.md` / `memory/platform/STACK.md` (Next.js 16 App Router, `'use client'` boundary, Tailwind 4, types go in `lib/types.ts`, etc).
+- No secrets committed. Any new env var lives only in Doppler and is documented in `memory/platform/SECRETS.md`.
+- Branch: `claude/agent-generation-system-JA9xQ`.
+- Claude managed agents must stay portable — the markdown file is the source of truth, any Claude-specific frontmatter is additive and falls back cleanly when consumed by another runtime.
 
-## Phase 1 — Explore (DONE)
-- Sidebar = components/layout/Sidebar.tsx (flat list, no dropdowns yet).
-- Forge page = app/(protected)/forge/page.tsx (ProjectSelectorBar + ForgeSession; localStorage-backed).
-- Build page = app/(protected)/build/page.tsx ("Dev Console" — Phase 19a).
-- n8n generate endpoint exists: /api/n8n/generate (POST {description, businessContext, templateId?, projectId?}).
-- Library types + page exist: app/(protected)/tools/library/ — has tabs for code/agent/prompt/skill.
+## Phase 1 — Explore (findings)
 
-## Phase 2 — Plan (atomic tasks)
+- `.claude/agents/` currently has `nexus-architect`, `nexus-memory`, `nexus-tester`. Format = YAML frontmatter + body.
+- `.claude/skills/molecularmemory_local/cli.mjs` provides `atom`, `entity`, `moc`, `graph`, `reindex`, `query` commands.
+- `memory/molecular/` exists and is empty (just INDEX.md) — safe to seed.
+- `lib/supabase.ts` exposes `supabase` + `createServerClient` with graceful null fallback.
+- Existing migrations run through `010_ideas_and_automations.sql`. Next file = `011`.
+- Existing RLS pattern = `user_id = request.jwt.claims->>'sub'`.
+- `components/board/ReviewModal.tsx` is a client component with an existing revision textarea. Hook new `FeedbackBox` in beside the revision flow without regressing reject/approve.
+- `lib/agent-capabilities.ts` already defines 10 runtime capabilities — the new `agent_library` table is for *managed agents* (Claude Code subagents), not a replacement.
 
-### Task 1 — Add Idea-related types to lib/types.ts
-- File: lib/types.ts
-- Change: add IdeaMode, IdeaStep, IdeaCard interfaces (revenue, cost, automation %, tools list).
-- Verify: tsc compiles.
-- Parallel: no
+## Phase 2 — Plan
 
-### Task 2 — Create /idea route that wraps existing Forge UI
-- Files: app/(protected)/idea/page.tsx (new), app/(protected)/idea/_mode/*.tsx (new mode-picker + forms).
-- Change: /idea shows the mode picker + forms; on submit calls a new `/api/idea/analyse` endpoint, then saves idea card into localStorage and routes to /idea-library. The old Forge chat is still reachable via query param (?chat=1).
-- Verify: navigate to /idea, pick a mode, submit form, see loading → redirect to library.
-- Parallel: no
+### Task 1 — Agent generation protocol doc
+- File: `docs/agents/GENERATION_PROTOCOL.md` (new)
+- Change: describe trigger phrase, output artifacts (markdown + Supabase row + molecular entity + molecular atom), transferability rules.
+- Verify: doc renders in plain markdown, cross-linked from `AGENTS.md`.
+- Parallel: no (other tasks link to it).
 
-### Task 3 — Create /api/idea/analyse endpoint
-- File: app/api/idea/analyse/route.ts (new)
-- Change: accepts {mode, description?, inspirationUrl?, twist?, setupBudget?} → uses anthropic('claude-sonnet-4-6') to return IdeaCard fields.
-- Verify: POST from form produces card JSON.
-- Parallel: yes
+### Task 2 — Claude managed agent: firecrawl
+- File: `.claude/agents/firecrawl.md` (new)
+- Change: wrap `lib/tools/firecrawl` + Firecrawl MCP guidance so subagent can scrape/map/crawl/search.
+- Verify: frontmatter parses, agent name unique, tools listed.
+- Parallel: yes.
 
-### Task 4 — Idea Library page + IdeaCard component
-- Files: app/(protected)/idea-library/page.tsx (new), components/idea/IdeaCard.tsx (new).
-- Change: reads ideas from localStorage, renders cards per spec. Execute button opens a prompt modal → POST /api/n8n/generate with description + execute-input.
-- Verify: cards persist and execute opens a modal.
-- Parallel: yes
+### Task 3 — Claude managed agent: supermemory
+- File: `.claude/agents/supermemory.md` (new)
+- Change: agent wraps `/molecularmemory_local` CLI + writes runbook records to `memory/molecular/atoms/`.
+- Verify: describes when other agents should hand off to it.
+- Parallel: yes.
 
-### Task 5 — Automation Library page
-- File: app/(protected)/automation-library/page.tsx (new)
-- Change: lists generated n8n workflows stored in localStorage (key `nexus:automations`).
-- Verify: after execute, saved workflow appears on this page with download JSON button.
-- Parallel: yes
+### Task 4 — Claude managed agent: workflow-optimizer
+- File: `.claude/agents/workflow-optimizer.md` (new)
+- Change: consumes feedback text, proposes workflow diffs, logs to `workflow_changelog`.
+- Verify: lists inputs, outputs, acceptance criteria.
+- Parallel: yes.
 
-### Task 6 — Rename /build → /manage-platform
-- File: app/(protected)/manage-platform/page.tsx (new, re-exports build/page.tsx content); app/(protected)/build/page.tsx → redirect.
-- Change: move page content; keep old path functional via `redirect('/manage-platform')`.
-- Parallel: no
+### Task 5 — Claude managed agent: agent-generator
+- File: `.claude/agents/agent-generator.md` (new)
+- Change: meta-agent that emits steps 1–4 of the generation protocol (markdown → DB → memory).
+- Verify: references the protocol doc.
+- Parallel: yes.
 
-### Task 7 — Update Sidebar
-- File: components/layout/Sidebar.tsx
-- Change: replace flat array with nested structure. Add expandable group support (Subfunctions, Reusable Library).
-- Verify: all links resolve to existing routes; active state still works.
-- Parallel: no
+### Task 6 — Supabase migration 011
+- File: `supabase/migrations/011_agent_library_and_feedback.sql` (new)
+- Change: add `agent_library`, `workflow_feedback`, `workflow_changelog` tables + RLS.
+- Verify: follows idempotent `create table if not exists` + `do $$` policy pattern.
+- Parallel: yes.
 
-### Task 8 — Reusable Library: add /tools/code alias
-- Files: app/(protected)/tools/code/page.tsx (new — re-exports library/page.tsx filtered to code).
-- Change: sidebar link for "Reusable code functions" targets /tools/code.
-- Parallel: yes
+### Task 7 — Types
+- File: `lib/types.ts`
+- Change: add `AgentDefinition`, `WorkflowFeedback`, `WorkflowChange`.
+- Verify: `npx tsc --noEmit`.
+- Parallel: no (used by Tasks 8–11).
 
-### Task 9 — Old /forge redirect
-- File: app/(protected)/forge/page.tsx replaced with redirect('/idea').
+### Task 8 — Agent registry helper
+- File: `lib/agent-registry.ts` (new)
+- Change: pure functions to read local markdown agents, parse frontmatter, diff against Supabase.
+- Verify: compiles.
+- Parallel: depends on Task 7.
 
-### Task 10 — Tests + commit
-- `npx tsc --noEmit`; fix any type errors; commit; push.
+### Task 9 — API route: /api/agents
+- File: `app/api/agents/route.ts` (new)
+- Change: GET list + POST register (upserts an AgentDefinition into `agent_library`).
+- Verify: auth guard + returns JSON.
+- Parallel: depends on Task 7 + 8.
 
-## Phase 3 — Implement (in order)
-Tasks 1 → 2/3/4/5 (parallel-safe within their file boundaries) → 6 → 7 → 8 → 9 → 10.
+### Task 10 — API route: /api/workflow-feedback
+- File: `app/api/workflow-feedback/route.ts` (new)
+- Change: POST accepts `{ cardId, feedback, agentId? }`, inserts into `workflow_feedback`, returns `{ok:true, changeId}`.
+- Verify: auth + rate-limited.
+- Parallel: depends on Task 7.
+
+### Task 11 — FeedbackBox component
+- File: `components/board/FeedbackBox.tsx` (new)
+- Change: `'use client'` textarea + submit; posts to `/api/workflow-feedback`.
+- Verify: no TypeScript errors, uses design tokens.
+- Parallel: depends on Task 7.
+
+### Task 12 — Wire FeedbackBox into ReviewModal
+- File: `components/board/ReviewModal.tsx`
+- Change: below "Reject" button add a "Quality feedback" disclosure that renders `<FeedbackBox/>`. Does not replace reject flow.
+- Verify: manual path-through in dev.
+- Parallel: depends on Task 11.
+
+### Task 13 — Seed molecular memory
+- File: `memory/molecular/entities/*.md`, `memory/molecular/atoms/*.md`, `memory/molecular/mocs/agent-library.md`
+- Change: run `cli.mjs entity` + `atom` + `moc` for the 4 new agents so they're discoverable cross-project.
+- Verify: `cli.mjs graph` reports nodes > 0, orphans small.
+- Parallel: no (needs other files in place).
+
+### Task 14 — Update SECRETS + AGENTS docs
+- File: `memory/platform/SECRETS.md`, `AGENTS.md`
+- Change: add `FIRECRAWL_API_KEY` note under new agents; add "Agent Generation Protocol" link.
+- Verify: diff renders.
+- Parallel: yes.
+
+### Task 15 — Commit + push
+- Verify: `npx tsc --noEmit` clean, then commit to `claude/agent-generation-system-JA9xQ` and push with `-u`.
+
+## Phase 3 — Implement
+
+Task order: 1 → (2,3,4,5,6,14 parallel groups where possible) → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 15.

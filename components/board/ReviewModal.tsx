@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import type { KanbanCard } from '@/lib/types'
-import { XCircle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
+import { XCircle, CheckCircle2, ExternalLink, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import FeedbackBox from './FeedbackBox'
 
 interface Props {
   card: KanbanCard
@@ -15,6 +16,7 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
   const [showRevision,    setShowRevision]    = useState(false)
   const [revision,        setRevision]        = useState('')
   const [approveState,    setApproveState]    = useState<'idle' | 'dispatching' | 'ok' | 'err'>('idle')
+  const [showFeedback,    setShowFeedback]    = useState(false)
 
   function handleApprove() {
     setApproveState('dispatching')
@@ -190,6 +192,27 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
                 {approveState === 'dispatching' ? 'Approving…' : 'Approve'}
               </button>
             </>
+          )}
+        </div>
+
+        {/* Feedback disclosure — routes to the workflow-optimizer agent */}
+        <div style={{ borderTop: '1px solid #24243e' }}>
+          <button
+            onClick={() => setShowFeedback(v => !v)}
+            className="flex w-full items-center justify-between px-5 py-3 text-xs font-semibold"
+            style={{ color: '#9090b0' }}
+            onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0')}
+            onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = '#9090b0')}
+          >
+            <span>Not what you expected? Tell the optimizer.</span>
+            {showFeedback ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {showFeedback && (
+            <FeedbackBox
+              cardId={card.id}
+              agentSlug={card.assignee}
+              artifactUrl={card.assetUrl}
+            />
           )}
         </div>
       </div>

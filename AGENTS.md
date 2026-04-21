@@ -156,8 +156,24 @@ Specialist subagents in `.claude/agents/` — Claude Code auto-discovers and del
 | **Nexus Memory** | `.claude/agents/nexus-memory.md` | Looking up platform context, reading/writing nexus-memory |
 | **Nexus Architect** | `.claude/agents/nexus-architect.md` | Designing new pages/APIs, enforcing stack rules |
 | **Nexus Tester** | `.claude/agents/nexus-tester.md` | Pre-commit TypeScript checks, validating component boundaries |
+| **Agent Generator** | `.claude/agents/agent-generator.md` | User says "create an agent that…"; emits spec + DB row + memory records |
+| **Firecrawl** | `.claude/agents/firecrawl.md` | Any agent needs web scrape / crawl / search |
+| **Supermemory** | `.claude/agents/supermemory.md` | Every agent calls this after a run to record changes + promote facts |
+| **Workflow Optimizer** | `.claude/agents/workflow-optimizer.md` | Review-node feedback triggers a minimal diff to the producing agent |
 
 These agents are spawned automatically by Claude Code when tasks match their description. They share the Doppler-injected environment and have access to the tools listed in their frontmatter.
+
+### Agent generation protocol
+
+When the user says "create an agent that…" (or any paraphrase), follow `docs/agents/GENERATION_PROTOCOL.md`:
+
+1. Delegate to the `agent-generator` managed agent.
+2. It emits a `.claude/agents/<slug>.md` spec, upserts an `agent_library` row via `POST /api/agents`, seeds molecular memory with an entity + atoms + MOC linkage, and updates `memory/platform/SECRETS.md` if new env vars are introduced.
+3. Runs the transferability checklist so the agent is reusable outside Claude.
+
+### Review-node feedback loop
+
+The Board review modal (`components/board/ReviewModal.tsx`) has a "Quality feedback" disclosure that POSTs to `/api/workflow-feedback`. The `workflow-optimizer` agent reads `open` rows, proposes a minimal diff against the producing agent's spec, and logs the change to `workflow_changelog` after the edit lands.
 
 ### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors

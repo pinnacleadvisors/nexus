@@ -288,6 +288,52 @@ export interface SavedAutomation {
   importFailed?: boolean
 }
 
+// ── Agent Library (Claude managed agents) ────────────────────────────────────
+export interface AgentDefinition {
+  id?: string
+  slug: string
+  name: string
+  description: string
+  /** Tool names from the portable catalog (Read, Edit, Grep, Glob, Bash, WebFetch, WebSearch, Write) */
+  tools: string[]
+  /** Model hint — 'opus' | 'sonnet' | 'haiku' or a concrete model id */
+  model: string
+  /** When true, the spec avoids Claude-only primitives */
+  transferable: boolean
+  /** Required env var names (never values) */
+  envVars: string[]
+  /** Body of the markdown spec file */
+  systemPrompt: string
+  /** Relative path to `.claude/agents/<slug>.md` for round-tripping */
+  sourcePath?: string
+  version?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface WorkflowFeedback {
+  id: string
+  cardId?: string
+  agentSlug?: string
+  feedback: string
+  status: 'open' | 'triaged' | 'applied' | 'rejected'
+  artifactUrl?: string
+  createdAt: string
+  resolvedAt?: string
+}
+
+export interface WorkflowChange {
+  id: string
+  agentSlug?: string
+  feedbackId?: string
+  targetPath: string
+  beforeSpec?: string
+  afterSpec?: string
+  rationale?: string
+  appliedBy: string
+  createdAt: string
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 export type OAuthProviderName = 'google' | 'github' | 'slack' | 'notion'
 
