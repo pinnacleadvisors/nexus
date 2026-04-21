@@ -72,8 +72,9 @@ const NAV: NavItem[] = [
     label: 'Reusable Library',
     icon: Library,
     children: [
-      { type: 'link', href: '/tools/agents',     label: 'Agents',                   icon: Bot },
-      { type: 'link', href: '/tools/library',    label: 'Skills',                   icon: Zap },
+      { type: 'link', href: '/tools/agents',         label: 'Agents',                   icon: Bot },
+      { type: 'link', href: '/tools/agents/managed', label: 'Managed Agents',           icon: Sparkles },
+      { type: 'link', href: '/tools/library',        label: 'Skills',                   icon: Zap },
       { type: 'link', href: '/tools',            label: 'Tools',                    icon: Wrench },
       { type: 'link', href: '/tools/code',       label: 'Reusable code functions',  icon: Code2 },
     ],
@@ -83,6 +84,8 @@ const NAV: NavItem[] = [
 function isActive(pathname: string, href: string) {
   if (href === '/idea') return pathname === '/idea'
   if (href === '/dashboard') return pathname === '/dashboard'
+  // Exact match so /tools/agents doesn't also light up for /tools/agents/managed
+  if (href === '/tools/agents') return pathname === '/tools/agents'
   return pathname === href || pathname.startsWith(href + '/')
 }
 
