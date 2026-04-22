@@ -185,14 +185,20 @@ export default function GraphPage() {
   const fetchGraph = useCallback(async (rebuild = false) => {
     setLoading(true)
     setError('')
+    const ctrl  = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 20_000)
     try {
-      const res  = await fetch(`/api/graph${rebuild ? '?rebuild=1' : ''}`)
+      const res  = await fetch(`/api/graph${rebuild ? '?rebuild=1' : ''}`, { signal: ctrl.signal })
       if (!res.ok) throw new Error(`Server error ${res.status}`)
       const data = await res.json() as GraphData
       setGraph(data)
     } catch (err) {
-      setError((err as Error).message)
+      const msg = (err as Error).name === 'AbortError'
+        ? 'Graph request timed out after 20s. Check the /api/graph endpoint.'
+        : (err as Error).message
+      setError(msg)
     } finally {
+      clearTimeout(timer)
       setLoading(false)
     }
   }, [])

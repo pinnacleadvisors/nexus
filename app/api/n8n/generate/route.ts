@@ -136,6 +136,134 @@ function parseGeneratedOutput(text: string): ParsedOutput {
   return { workflow, checklist, explanation: exPart }
 }
 
+// ── Scaffold fallback ─────────────────────────────────────────────────────────
+// When Claude is unreachable, times out, or returns output we can't parse,
+// return a minimal editable n8n workflow so the user can copy / paste / refine
+// manually instead of staring at a 500.
+function buildFallbackWorkflow(
+  description: string,
+  workflowType: 'build' | 'maintain',
+): { workflow: N8nWorkflow; checklist: string[]; explanation: string } {
+  const isBuild = workflowType === 'build'
+  const name = isBuild
+    ? `Build scaffold — ${description.slice(0, 48)}`
+    : `Maintain & profit scaffold — ${description.slice(0, 48)}`
+
+  const workflow: N8nWorkflow = {
+    name,
+    active: false,
+    settings: { executionOrder: 'v1', saveManualExecutions: true },
+    tags: ['nexus', 'scaffold', workflowType],
+    nodes: [
+      {
+        id: 'trigger',
+        name: isBuild ? 'Manual Start' : 'Weekly Schedule',
+        type: isBuild ? 'n8n-nodes-base.manualTrigger' : 'n8n-nodes-base.scheduleTrigger',
+        typeVersion: 1,
+        position: [240, 300],
+        parameters: isBuild
+          ? {}
+          : { rule: { interval: [{ field: 'weeks', triggerAtDayOfWeek: 1, triggerAtHour: 9 }] } },
+      },
+      {
+        id: 'mastermind',
+        name: 'Mastermind',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4,
+        position: [480, 300],
+        parameters: {
+          method: 'POST',
+          url: '={{$vars.NEXUS_BASE_URL}}/api/chat',
+          sendHeaders: true,
+          headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
+          sendBody: true,
+          bodyContentType: 'json',
+          jsonBody: JSON.stringify({
+            model: 'claude-opus-4-6',
+            messages: [
+              {
+                role: 'user',
+                content: `Plan the ${workflowType} workflow for: ${description}`,
+              },
+            ],
+          }),
+        },
+      },
+      {
+        id: 'agent',
+        name: isBuild ? 'Agent: research' : 'Agent: content',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4,
+        position: [720, 300],
+        parameters: {
+          method: 'POST',
+          url: '={{$vars.NEXUS_BASE_URL}}/api/agent',
+          sendHeaders: true,
+          headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
+          sendBody: true,
+          bodyContentType: 'json',
+          jsonBody: JSON.stringify({
+            capabilityId: isBuild ? 'research' : 'content',
+            inputs: { description },
+          }),
+        },
+      },
+      {
+        id: 'review',
+        name: 'Review: before publish',
+        type: 'n8n-nodes-base.manualTrigger',
+        typeVersion: 1,
+        position: [960, 300],
+        parameters: {
+          notes: isBuild
+            ? 'Verify the generated artefacts meet quality before proceeding with launch.'
+            : 'Verify the cycle output before publishing / spending.',
+        },
+      },
+      {
+        id: 'manual',
+        name: 'Manual: owner side-effects',
+        type: 'n8n-nodes-base.manualTrigger',
+        typeVersion: 1,
+        position: [1200, 300],
+        parameters: {
+          notes: 'Complete any side-effects the workflow cannot automate (OAuth, payments, domain purchase).',
+        },
+      },
+    ],
+    connections: {
+      [isBuild ? 'Manual Start' : 'Weekly Schedule']: {
+        main: [[{ node: 'Mastermind', type: 'main', index: 0 }]],
+      },
+      Mastermind: {
+        main: [[{ node: isBuild ? 'Agent: research' : 'Agent: content', type: 'main', index: 0 }]],
+      },
+      [isBuild ? 'Agent: research' : 'Agent: content']: {
+        main: [[{ node: 'Review: before publish', type: 'main', index: 0 }]],
+      },
+      'Review: before publish': {
+        main: [[{ node: 'Manual: owner side-effects', type: 'main', index: 0 }]],
+      },
+    },
+  }
+
+  const checklist = [
+    'Set NEXUS_BASE_URL in n8n Variables to your deployed Nexus URL',
+    'Confirm /api/chat and /api/agent are reachable from your n8n instance',
+    'Edit the Mastermind jsonBody to spell out the tasks for this idea',
+    'Swap the placeholder Agent node capability (research / content) for the right one',
+    'Add concrete Review notes describing the pass/fail criteria',
+    'Fill in Manual node notes for any side-effects the owner must do',
+    'Save and activate the workflow once you have tested it end-to-end',
+  ]
+
+  const explanation = isBuild
+    ? 'Fallback scaffold: manual trigger → mastermind → one managed agent → review → manual. Edit each node to match the idea before running.'
+    : 'Fallback scaffold: weekly schedule → mastermind → one content agent → review → manual. Tune the cadence and agent capability before activating.'
+
+  return { workflow, checklist, explanation }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const rl = await rateLimit(req, { limit: 5, window: '1 m', prefix: 'n8n-gen' })
@@ -155,12 +283,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'description is required' }, { status: 400 })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return Response.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 503 })
-  }
-
   const workflowType = body.workflowType ?? 'build'
+  const apiKey       = process.env.ANTHROPIC_API_KEY
   const capabilityIds = (body.availableCapabilities?.length
     ? body.availableCapabilities
     : AGENT_CAPABILITIES.map(c => c.id))
@@ -189,22 +313,55 @@ export async function POST(req: NextRequest) {
     metadata:   { description: body.description.slice(0, 100), workflowType },
   })
 
-  const { text } = await generateText({
-    model:           anthropic('claude-sonnet-4-6'),
-    system:          buildSystemPrompt(workflowType, capabilityIds),
-    messages:        [{ role: 'user', content: userPrompt }],
-    maxOutputTokens: 4000,
-  })
+  // Generate with Claude. If the API key is missing, the call throws, or the
+  // response can't be parsed into a valid workflow, fall back to a hand-written
+  // scaffold so the user always gets paste-ready JSON instead of a 500.
+  let workflow:    N8nWorkflow | null = null
+  let checklist:   string[] = []
+  let explanation  = ''
+  let fallbackUsed = false
+  let fallbackReason: string | undefined
+  let aiRawOutput: string | undefined
 
-  const { workflow, checklist, explanation } = parseGeneratedOutput(text)
-  const gapAnalysis = workflow ? analyzeWorkflow(workflow) : null
+  if (!apiKey) {
+    fallbackUsed   = true
+    fallbackReason = 'ANTHROPIC_API_KEY not configured'
+  } else {
+    try {
+      const { text } = await generateText({
+        model:           anthropic('claude-sonnet-4-6'),
+        system:          buildSystemPrompt(workflowType, capabilityIds),
+        messages:        [{ role: 'user', content: userPrompt }],
+        maxOutputTokens: 4000,
+      })
+      aiRawOutput = text
+      const parsed = parseGeneratedOutput(text)
+      if (parsed.workflow) {
+        workflow    = parsed.workflow
+        checklist   = parsed.checklist
+        explanation = parsed.explanation
+      } else {
+        fallbackUsed   = true
+        fallbackReason = 'Failed to parse workflow JSON from AI response'
+      }
+    } catch (err) {
+      fallbackUsed   = true
+      fallbackReason = err instanceof Error ? err.message : 'AI generation failed'
+      console.error('[n8n/generate] AI call failed:', err)
+    }
+  }
 
   if (!workflow) {
-    return Response.json(
-      { error: 'Failed to parse workflow JSON from AI response', raw: text },
-      { status: 500 },
-    )
+    const scaffold = buildFallbackWorkflow(body.description, workflowType)
+    workflow    = scaffold.workflow
+    checklist   = scaffold.checklist
+    explanation = [
+      scaffold.explanation,
+      fallbackReason ? `\nFallback reason: ${fallbackReason}` : '',
+    ].filter(Boolean).join('')
   }
+
+  const gapAnalysis = analyzeWorkflow(workflow)
 
   // ── Attempt live n8n write; if it fails, caller will show JSON to paste ──
   let importedId: string | undefined
@@ -281,5 +438,8 @@ export async function POST(req: NextRequest) {
     importError,
     gapAnalysis,
     automation: savedAutomation,
+    fallbackUsed,
+    fallbackReason,
+    aiRaw: fallbackUsed ? aiRawOutput : undefined,
   })
 }

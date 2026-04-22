@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useMemo, useState, useCallback } from 'react'
+import { Component, useRef, useMemo, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Text, Line } from '@react-three/drei'
+import { OrbitControls, Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import type { GraphData, GraphNode, GraphEdge } from '@/lib/graph/types'
 import { NODE_COLORS, EDGE_COLORS } from '@/lib/graph/types'
@@ -56,19 +57,33 @@ function NodeMesh({
         />
       </mesh>
 
-      {/* Label — only when not dimmed */}
+      {/* Label — DOM overlay projected into the scene (no worker, no font
+          fetch — avoids troika text-worker init failures that previously
+          crashed the canvas on mount). */}
       {!dimmed && (
-        <Text
-          position={[0, baseSize + 0.6, 0]}
-          fontSize={0.9}
-          color={selected ? '#ffffff' : '#9090b0'}
-          anchorX="center"
-          anchorY="bottom"
-          maxWidth={12}
-          overflowWrap="break-word"
+        <Html
+          position={[0, baseSize + 0.8, 0]}
+          center
+          distanceFactor={18}
+          zIndexRange={[10, 0]}
+          style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
-          {node.label}
-        </Text>
+          <span
+            style={{
+              display:      'inline-block',
+              whiteSpace:   'nowrap',
+              fontSize:     '10px',
+              fontWeight:   500,
+              padding:      '1px 6px',
+              borderRadius: '4px',
+              color:        selected ? '#ffffff' : '#9090b0',
+              background:   selected ? 'rgba(108,99,255,0.85)' : 'rgba(13,13,20,0.6)',
+              border:       '1px solid rgba(90,90,120,0.25)',
+            }}
+          >
+            {node.label}
+          </span>
+        </Html>
       )}
     </group>
   )
@@ -226,6 +241,44 @@ function Scene({
   )
 }
 
+// ── Error boundary ────────────────────────────────────────────────────────────
+// A troika / WebGL init failure inside useFrame can otherwise throw every
+// animation frame, which previously showed up to users as "knowledge graph
+// stuck in loading". Catching keeps the page usable and reports the cause.
+
+interface BoundaryState { error: Error | null }
+
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, BoundaryState> {
+  state: BoundaryState = { error: null }
+  static getDerivedStateFromError(error: Error): BoundaryState { return { error } }
+  componentDidCatch(error: Error) {
+    console.error('[GraphScene] canvas crashed:', error)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          className="w-full h-full flex items-center justify-center px-6 text-center"
+          style={{ backgroundColor: '#050508' }}
+        >
+          <div className="max-w-md space-y-2">
+            <p className="text-sm font-semibold" style={{ color: '#f87171' }}>
+              3D graph failed to render
+            </p>
+            <p className="text-xs" style={{ color: '#55556a' }}>
+              {this.state.error.message || 'Unknown WebGL / worker error.'}
+            </p>
+            <p className="text-[11px]" style={{ color: '#3d3d60' }}>
+              The underlying data is fine — open <code>/api/graph</code> for the JSON.
+            </p>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 // ── Public component ──────────────────────────────────────────────────────────
 
 export interface GraphSceneProps {
@@ -238,12 +291,14 @@ export interface GraphSceneProps {
 
 export default function GraphScene(props: GraphSceneProps) {
   return (
-    <Canvas
-      camera={{ position: [0, 0, 200], fov: 60, near: 0.1, far: 10000 }}
-      style={{ background: '#050508' }}
-      gl={{ antialias: true, alpha: false }}
-    >
-      <Scene {...props} />
-    </Canvas>
+    <CanvasErrorBoundary>
+      <Canvas
+        camera={{ position: [0, 0, 200], fov: 60, near: 0.1, far: 10000 }}
+        style={{ background: '#050508' }}
+        gl={{ antialias: true, alpha: false }}
+      >
+        <Scene {...props} />
+      </Canvas>
+    </CanvasErrorBoundary>
   )
 }
