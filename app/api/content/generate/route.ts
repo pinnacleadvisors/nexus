@@ -12,7 +12,9 @@
 import { NextRequest } from 'next/server'
 import { generateText, streamText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { audit } from '@/lib/audit'
 import {
   buildScoringPrompt,
   buildRevisionPrompt,
@@ -123,7 +125,13 @@ async function scoreContent(content: string): Promise<{
 }
 
 export async function POST(req: NextRequest) {
-  const rl = await rateLimit(req, { limit: 10, window: '1 m', prefix: 'content-gen' })
+  // B2 — auth + per-user rate limit + audit
+  const { userId } = await auth()
+  if (!userId) return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401, headers: { 'Content-Type': 'application/json' },
+  })
+
+  const rl = await rateLimit(req, { limit: 10, window: '1 m', prefix: 'content-gen', identifier: userId })
   if (!rl.success) return rateLimitResponse(rl)
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -146,6 +154,13 @@ export async function POST(req: NextRequest) {
   const maxIterations = body.maxIterations  ?? 3
   const formatId      = body.format         ?? 'linkedin-post'
   const toneId        = body.tone           ?? 'authority'
+
+  audit(req, {
+    action: 'content.generate',
+    resource: 'content',
+    userId,
+    metadata: { formatId, toneId, targetScore, maxIterations },
+  })
 
   let draft      = ''
   let bestScore  = 0

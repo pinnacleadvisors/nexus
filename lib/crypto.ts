@@ -16,11 +16,52 @@ const ALGORITHM = 'aes-256-gcm'
 function getKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY
   if (!hex || hex.length !== 64) {
-    // Fallback: derive a deterministic key from a fixed string (dev only — NOT secure)
-    // In production ENCRYPTION_KEY must be set
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'ENCRYPTION_KEY missing or invalid in production. ' +
+        'Set a 64-hex-character value in Doppler. ' +
+        'Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+      )
+    }
+    console.warn(
+      '[crypto] WARNING: ENCRYPTION_KEY not set — using insecure dev fallback. ' +
+      'This MUST NOT be used in production.'
+    )
     return Buffer.from('nexus_dev_fallback_key_NOT_FOR_PROD_USE_00000000', 'utf8').subarray(0, 32)
   }
   return Buffer.from(hex, 'hex')
+}
+
+/**
+ * Re-encrypt a ciphertext with a new key. Used during key rotation.
+ * Procedure:
+ *   1. Generate a new ENCRYPTION_KEY (64 hex chars)
+ *   2. Set both OLD and NEW keys in env temporarily
+ *   3. For every encrypted row, call rotateKey(row.ciphertext, oldKeyHex, newKeyHex)
+ *   4. Swap ENCRYPTION_KEY to the new value; remove old.
+ */
+export function rotateKey(ciphertext: string, oldKeyHex: string, newKeyHex: string): string | null {
+  if (oldKeyHex.length !== 64 || newKeyHex.length !== 64) return null
+  try {
+    const [ivHex, tagHex, dataHex] = ciphertext.split(':')
+    if (!ivHex || !tagHex || !dataHex) return null
+    const oldKey = Buffer.from(oldKeyHex, 'hex')
+    const iv     = Buffer.from(ivHex,  'hex')
+    const tag    = Buffer.from(tagHex, 'hex')
+    const data   = Buffer.from(dataHex, 'hex')
+    const decipher = createDecipheriv(ALGORITHM, oldKey, iv)
+    decipher.setAuthTag(tag)
+    const plaintext = decipher.update(data).toString('utf8') + decipher.final('utf8')
+
+    const newKey = Buffer.from(newKeyHex, 'hex')
+    const newIv  = randomBytes(12)
+    const cipher = createCipheriv(ALGORITHM, newKey, newIv)
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+    const newTag = cipher.getAuthTag()
+    return `${newIv.toString('hex')}:${newTag.toString('hex')}:${encrypted.toString('hex')}`
+  } catch {
+    return null
+  }
 }
 
 /** Encrypt a plaintext string. Returns "<iv>:<tag>:<ciphertext>" (all hex). */

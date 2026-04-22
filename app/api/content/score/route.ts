@@ -10,7 +10,9 @@
 import { NextRequest } from 'next/server'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { audit } from '@/lib/audit'
 import { buildScoringPrompt, NEURO_PRINCIPLES } from '@/lib/neuro-content'
 import type { ContentScore, PrincipleScore } from '@/lib/neuro-content'
 
@@ -25,8 +27,16 @@ function computeGrade(score: number): ContentScore['grade'] {
 }
 
 export async function POST(req: NextRequest) {
-  const rl = await rateLimit(req, { limit: 20, window: '1 m', prefix: 'content-score' })
+  // B2 — auth + per-user rate limit + audit
+  const { userId } = await auth()
+  if (!userId) return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401, headers: { 'Content-Type': 'application/json' },
+  })
+
+  const rl = await rateLimit(req, { limit: 20, window: '1 m', prefix: 'content-score', identifier: userId })
   if (!rl.success) return rateLimitResponse(rl)
+
+  audit(req, { action: 'content.score', resource: 'content', userId })
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured.' }), {

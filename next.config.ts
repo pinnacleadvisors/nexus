@@ -3,11 +3,17 @@ import type { NextConfig } from 'next'
 /**
  * Content Security Policy — restricts what resources the browser can load.
  * Adjusted for Next.js (requires 'unsafe-inline' for styles and dev HMR).
+ *
+ * Note: 'unsafe-eval' is only included in dev (Next.js HMR / React Refresh).
+ * In production it is stripped — eval()-based code will fail in the browser.
  */
+const IS_PROD = process.env.NODE_ENV === 'production'
+const SCRIPT_DEV_ONLY = IS_PROD ? '' : " 'unsafe-eval'"
+
 const CSP = [
   "default-src 'self'",
   // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts + Cloudflare Turnstile (Clerk bot protection)
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+  `script-src 'self' 'unsafe-inline'${SCRIPT_DEV_ONLY} https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev https://challenges.cloudflare.com`,
   // Styles: self + inline (Tailwind CSS utility classes are inline)
   "style-src 'self' 'unsafe-inline'",
   // Images: self + data URIs + Clerk avatar CDN + common asset CDNs
