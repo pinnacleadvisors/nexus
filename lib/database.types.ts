@@ -148,6 +148,8 @@ export type Database = {
           revision_note: string | null
           milestone_id: string | null
           position: number
+          task_type: 'manual' | 'automated'
+          depends_on: string[]
           created_at: string
           updated_at: string
         }
@@ -163,6 +165,8 @@ export type Database = {
           revision_note?: string | null
           milestone_id?: string | null
           position?: number
+          task_type?: 'manual' | 'automated'
+          depends_on?: string[]
           created_at?: string
         }
         Update: {
@@ -176,6 +180,8 @@ export type Database = {
           revision_note?: string | null
           milestone_id?: string | null
           position?: number
+          task_type?: 'manual' | 'automated'
+          depends_on?: string[]
         }
         Relationships: []
       }

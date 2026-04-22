@@ -1,5 +1,6 @@
 // ── Kanban ────────────────────────────────────────────────────────────────────
 export type ColumnId = 'backlog' | 'in-progress' | 'review' | 'completed'
+export type TaskType = 'manual' | 'automated'
 
 export interface KanbanCard {
   id: string
@@ -15,6 +16,12 @@ export interface KanbanCard {
   projectId?: string
   /** Links card to a Forge milestone; used to dispatch next task on Approve */
   milestoneId?: string
+  /** Whether the task is done by an agent/n8n ('automated') or blocks the owner ('manual') */
+  taskType?: TaskType
+  /** IDs of tasks that must finish before this one can start */
+  dependsOn?: string[]
+  /** Server-computed: number of not-yet-completed automated tasks waiting on this manual task */
+  dependentCount?: number
 }
 
 export interface KanbanColumn {

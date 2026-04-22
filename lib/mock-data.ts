@@ -91,11 +91,23 @@ export const AGENT_ROWS: AgentRow[] = [
 ]
 
 // ── Kanban columns ────────────────────────────────────────────────────────────
+// NOTE: k_m1 / k_m2 are manual owner tasks; automated tasks depend_on them so
+// the board can demo priority sorting without a real Supabase hit.
 export const INITIAL_COLUMNS: KanbanColumn[] = [
   {
     id: 'backlog',
     label: 'Backlog',
     cards: [
+      {
+        id: 'k_m1',
+        title: 'Approve brand voice guidelines',
+        description: 'Owner review required before any content workflows can run.',
+        columnId: 'backlog',
+        assignee: 'You',
+        priority: 'high',
+        taskType: 'manual',
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 60).toISOString(),
+      },
       {
         id: 'k1',
         title: 'Competitor analysis report',
@@ -103,6 +115,7 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'backlog',
         assignee: 'MarketAnalyst-Gamma',
         priority: 'medium',
+        taskType: 'automated',
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
       },
       {
@@ -112,6 +125,8 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'backlog',
         assignee: 'ContentWriter-Beta',
         priority: 'low',
+        taskType: 'automated',
+        dependsOn: ['k_m1'],
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
       },
     ],
@@ -121,12 +136,24 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
     label: 'In Progress',
     cards: [
       {
+        id: 'k_m2',
+        title: 'Provide Stripe API keys',
+        description: 'Paste live + test keys into the Tools page so billing agents can go live.',
+        columnId: 'in-progress',
+        assignee: 'You',
+        priority: 'high',
+        taskType: 'manual',
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 10).toISOString(),
+      },
+      {
         id: 'k3',
         title: 'Landing page copy & SEO',
         description: 'Write all landing page sections optimised for target keywords.',
         columnId: 'in-progress',
         assignee: 'SEO-Epsilon',
         priority: 'high',
+        taskType: 'automated',
+        dependsOn: ['k_m1'],
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
       },
       {
@@ -136,6 +163,7 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'in-progress',
         assignee: 'DevOps-Delta',
         priority: 'high',
+        taskType: 'automated',
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
       },
       {
@@ -145,7 +173,20 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'in-progress',
         assignee: 'SalesOutreach-Zeta',
         priority: 'medium',
+        taskType: 'automated',
+        dependsOn: ['k_m1'],
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      },
+      {
+        id: 'k_billing',
+        title: 'Enable Stripe revenue sync',
+        description: 'Wire Stripe webhook → Supabase → dashboard KPIs.',
+        columnId: 'in-progress',
+        assignee: 'DevOps-Delta',
+        priority: 'medium',
+        taskType: 'automated',
+        dependsOn: ['k_m2'],
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
       },
     ],
   },
@@ -160,6 +201,7 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'review',
         assignee: 'ResearchBot-Alpha',
         priority: 'high',
+        taskType: 'automated',
         assetUrl: 'https://www.w3.org/WAI/WCAG21/Techniques/pdf/pdf-sample.pdf',
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
       },
@@ -170,6 +212,7 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'review',
         assignee: 'ContentWriter-Beta',
         priority: 'medium',
+        taskType: 'automated',
         assetUrl: 'https://docs.google.com/spreadsheets/d/example',
         createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
       },
@@ -186,6 +229,7 @@ export const INITIAL_COLUMNS: KanbanColumn[] = [
         columnId: 'completed',
         assignee: 'ResearchBot-Alpha',
         priority: 'high',
+        taskType: 'automated',
         assetUrl: 'https://miro.com/app/board/example',
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
       },
