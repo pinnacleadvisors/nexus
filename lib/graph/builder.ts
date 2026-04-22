@@ -11,6 +11,7 @@ import Graph from 'graphology'
 import louvain from 'graphology-communities-louvain'
 import { createServerClient } from '@/lib/supabase'
 import type { GraphData, GraphNode, GraphEdge, NodeType, EdgeRelation } from './types'
+import { buildMemoryGraph } from './memory-builder'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ function iso(daysAgo = 0): string {
 
 interface Vec3 { x: number; y: number; z: number }
 
-function runForceLayout(
+export function runForceLayout(
   nodes: Array<{ id: string; position3d: Vec3 }>,
   edges: Array<{ source: string; target: string }>,
   iterations = 80,
@@ -87,7 +88,7 @@ function runForceLayout(
 
 // ── Louvain cluster assignment ────────────────────────────────────────────────
 
-function assignClusters(
+export function assignClusters(
   nodes: GraphNode[],
   edges: GraphEdge[],
 ): void {
@@ -107,7 +108,7 @@ function assignClusters(
 
 // ── PageRank (simple power iteration) ────────────────────────────────────────
 
-function assignPageRank(nodes: GraphNode[], edges: GraphEdge[]): void {
+export function assignPageRank(nodes: GraphNode[], edges: GraphEdge[]): void {
   const N    = nodes.length
   if (N === 0) return
   const d    = 0.85
@@ -314,6 +315,20 @@ const CACHE_TTL = 60_000   // 60 s
 
 export async function buildGraph(forceRebuild = false): Promise<GraphData> {
   if (_cache && !forceRebuild && Date.now() - _cacheAt < CACHE_TTL) return _cache
+
+  // Primary source: the repo-local `/memory` folder (Maps of Content, entities,
+  // atomic notes, platform docs). Fall back to Supabase / mock only when memory
+  // is unreadable or empty.
+  try {
+    const mem = await buildMemoryGraph()
+    if (mem && mem.nodes.length > 0) {
+      _cache   = mem
+      _cacheAt = Date.now()
+      return _cache
+    }
+  } catch (err) {
+    console.error('[graph/builder] memory graph failed, falling back:', err)
+  }
 
   const db = createServerClient()
   if (!db) {
