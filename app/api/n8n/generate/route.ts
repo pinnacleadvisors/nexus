@@ -51,7 +51,7 @@ import { getBaseUrl, isConfigured as isN8nConfigured, createWorkflow } from '@/l
 import { analyzeWorkflow } from '@/lib/n8n/gap-detector'
 import { AGENT_CAPABILITIES } from '@/lib/agent-capabilities'
 import { automationToRow, rowToAutomation, type AutomationRow } from '@/lib/idea-db'
-import type { N8nWorkflow } from '@/lib/n8n/types'
+import type { N8nNode, N8nWorkflow } from '@/lib/n8n/types'
 import type { SavedAutomation } from '@/lib/types'
 
 export const maxDuration = 90
@@ -138,128 +138,286 @@ function parseGeneratedOutput(text: string): ParsedOutput {
 
 // ── Scaffold fallback ─────────────────────────────────────────────────────────
 // When Claude is unreachable, times out, or returns output we can't parse,
-// return a minimal editable n8n workflow so the user can copy / paste / refine
+// return an editable n8n workflow so the user can copy / paste / refine
 // manually instead of staring at a 500.
-function buildFallbackWorkflow(
-  description: string,
-  workflowType: 'build' | 'maintain',
-): { workflow: N8nWorkflow; checklist: string[]; explanation: string } {
-  const isBuild = workflowType === 'build'
-  const name = isBuild
-    ? `Build scaffold — ${description.slice(0, 48)}`
-    : `Maintain & profit scaffold — ${description.slice(0, 48)}`
+//
+// When structured idea-card fields (steps, tools, howItMakesMoney) are
+// supplied we build a FULL pipeline from them — one node per step (agent if
+// the step is automatable, manual trigger if it needs the owner), a review
+// node every few steps, and a final publish gate. Without those fields we
+// emit a short generic scaffold as a last resort.
 
-  const workflow: N8nWorkflow = {
-    name,
-    active: false,
-    settings: { executionOrder: 'v1', saveManualExecutions: true },
-    tags: ['nexus', 'scaffold', workflowType],
-    nodes: [
-      {
-        id: 'trigger',
-        name: isBuild ? 'Manual Start' : 'Weekly Schedule',
-        type: isBuild ? 'n8n-nodes-base.manualTrigger' : 'n8n-nodes-base.scheduleTrigger',
-        typeVersion: 1,
-        position: [240, 300],
-        parameters: isBuild
-          ? {}
-          : { rule: { interval: [{ field: 'weeks', triggerAtDayOfWeek: 1, triggerAtHour: 9 }] } },
+interface FallbackIdeaInput {
+  description:     string
+  workflowType:    'build' | 'maintain'
+  steps?:          { title: string; automatable: boolean; phase?: 'build' | 'maintain'; tools?: string[] }[]
+  tools?:          { name: string; purpose?: string }[]
+  howItMakesMoney?: string
+  capabilityIds:   string[]
+}
+
+// Keyword → capabilityId. First match wins. Falls back to 'consultant'.
+const CAPABILITY_KEYWORDS: Array<{ rx: RegExp; id: string }> = [
+  { rx: /research|analy[sz]e|investigat|market|competitor|audit/i,       id: 'research' },
+  { rx: /seo|keyword|rank|backlink|sitemap/i,                             id: 'seo' },
+  { rx: /social|linkedin|twitter|x\.com|facebook|instagram|tiktok|post/i, id: 'social' },
+  { rx: /email|outreach|cold (email|dm)|newsletter|sequence/i,            id: 'email-outreach' },
+  { rx: /neuro|hook|viral|persuas/i,                                      id: 'neuro-content' },
+  { rx: /brand|design|logo|mockup|figma|image/i,                          id: 'design' },
+  { rx: /video|reel|short|tiktok clip|trailer|brief/i,                    id: 'video-brief' },
+  { rx: /support|ticket|customer|faq|helpdesk/i,                          id: 'customer-service' },
+  { rx: /invoice|billing|finance|bookkeep|tax|accounting|stripe/i,        id: 'financial' },
+  { rx: /legal|terms|privacy|contract|compliance|gdpr/i,                  id: 'legal' },
+  { rx: /code|deploy|build the site|scaffold|repo|vercel|github/i,        id: 'code' },
+  { rx: /content|write|article|blog|copy|newsletter|caption/i,            id: 'content' },
+  { rx: /plan|strategy|roadmap|consult|advise/i,                          id: 'consultant' },
+]
+
+function pickCapability(step: { title: string; tools?: string[] }, allowed: string[]): string {
+  const haystack = `${step.title} ${(step.tools ?? []).join(' ')}`
+  for (const { rx, id } of CAPABILITY_KEYWORDS) {
+    if (rx.test(haystack) && allowed.includes(id)) return id
+  }
+  return allowed.includes('consultant') ? 'consultant' : (allowed[0] ?? 'research')
+}
+
+function toolsForStep(
+  stepTools: string[] | undefined,
+  cardTools: { name: string; purpose?: string }[] | undefined,
+): { name: string; purpose?: string }[] {
+  if (!stepTools || stepTools.length === 0) return []
+  const map = new Map((cardTools ?? []).map(t => [t.name.toLowerCase(), t]))
+  return stepTools.map(name => map.get(name.toLowerCase()) ?? { name })
+}
+
+function dedupName(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) { taken.add(base); return base }
+  for (let i = 2; i < 999; i++) {
+    const candidate = `${base} ${i}`
+    if (!taken.has(candidate)) { taken.add(candidate); return candidate }
+  }
+  taken.add(base); return base
+}
+
+function buildFallbackWorkflow(
+  input: FallbackIdeaInput,
+): { workflow: N8nWorkflow; checklist: string[]; explanation: string } {
+  const { description, workflowType, steps, tools, howItMakesMoney, capabilityIds } = input
+  const isBuild       = workflowType === 'build'
+  const phaseSteps    = (steps ?? []).filter(s => !s.phase || s.phase === workflowType)
+  const hasStructured = phaseSteps.length > 0
+
+  const workflowName = isBuild
+    ? `Build — ${description.slice(0, 56)}`
+    : `Maintain & profit — ${description.slice(0, 56)}`
+
+  const nodes: N8nNode[] = []
+  const connections: N8nWorkflow['connections'] = {}
+  const takenNames = new Set<string>()
+  const XSTEP  = 260
+  const BASE_X = 240
+  const ROW_Y  = 320
+  let col = 0
+
+  function makeHttpAgentNode(name: string, capabilityId: string, stepTitle: string, stepToolNames: string[]): N8nNode {
+    return {
+      id:          `agent_${col}`,
+      name,
+      type:        'n8n-nodes-base.httpRequest',
+      typeVersion: 4,
+      position:    [BASE_X + col * XSTEP, ROW_Y],
+      parameters:  {
+        method: 'POST',
+        url:    '={{$vars.NEXUS_BASE_URL}}/api/agent',
+        sendHeaders: true,
+        headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
+        sendBody: true,
+        bodyContentType: 'json',
+        jsonBody: JSON.stringify({
+          capabilityId,
+          inputs: {
+            task:            stepTitle,
+            description,
+            howItMakesMoney: howItMakesMoney ?? undefined,
+            tools:           stepToolNames.length ? stepToolNames : undefined,
+            upstream:        '={{$json}}',
+          },
+        }, null, 2),
       },
-      {
-        id: 'mastermind',
-        name: 'Mastermind',
-        type: 'n8n-nodes-base.httpRequest',
-        typeVersion: 4,
-        position: [480, 300],
-        parameters: {
-          method: 'POST',
-          url: '={{$vars.NEXUS_BASE_URL}}/api/chat',
-          sendHeaders: true,
-          headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
-          sendBody: true,
-          bodyContentType: 'json',
-          jsonBody: JSON.stringify({
-            model: 'claude-opus-4-6',
-            messages: [
-              {
-                role: 'user',
-                content: `Plan the ${workflowType} workflow for: ${description}`,
-              },
-            ],
-          }),
-        },
-      },
-      {
-        id: 'agent',
-        name: isBuild ? 'Agent: research' : 'Agent: content',
-        type: 'n8n-nodes-base.httpRequest',
-        typeVersion: 4,
-        position: [720, 300],
-        parameters: {
-          method: 'POST',
-          url: '={{$vars.NEXUS_BASE_URL}}/api/agent',
-          sendHeaders: true,
-          headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
-          sendBody: true,
-          bodyContentType: 'json',
-          jsonBody: JSON.stringify({
-            capabilityId: isBuild ? 'research' : 'content',
-            inputs: { description },
-          }),
-        },
-      },
-      {
-        id: 'review',
-        name: 'Review: before publish',
-        type: 'n8n-nodes-base.manualTrigger',
-        typeVersion: 1,
-        position: [960, 300],
-        parameters: {
-          notes: isBuild
-            ? 'Verify the generated artefacts meet quality before proceeding with launch.'
-            : 'Verify the cycle output before publishing / spending.',
-        },
-      },
-      {
-        id: 'manual',
-        name: 'Manual: owner side-effects',
-        type: 'n8n-nodes-base.manualTrigger',
-        typeVersion: 1,
-        position: [1200, 300],
-        parameters: {
-          notes: 'Complete any side-effects the workflow cannot automate (OAuth, payments, domain purchase).',
-        },
-      },
-    ],
-    connections: {
-      [isBuild ? 'Manual Start' : 'Weekly Schedule']: {
-        main: [[{ node: 'Mastermind', type: 'main', index: 0 }]],
-      },
-      Mastermind: {
-        main: [[{ node: isBuild ? 'Agent: research' : 'Agent: content', type: 'main', index: 0 }]],
-      },
-      [isBuild ? 'Agent: research' : 'Agent: content']: {
-        main: [[{ node: 'Review: before publish', type: 'main', index: 0 }]],
-      },
-      'Review: before publish': {
-        main: [[{ node: 'Manual: owner side-effects', type: 'main', index: 0 }]],
-      },
-    },
+    }
   }
 
-  const checklist = [
+  function makeManualTriggerNode(name: string, notes: string): N8nNode {
+    return {
+      id:          `manual_${col}`,
+      name,
+      type:        'n8n-nodes-base.manualTrigger',
+      typeVersion: 1,
+      position:    [BASE_X + col * XSTEP, ROW_Y],
+      parameters:  { notes },
+    }
+  }
+
+  function connect(from: string, to: string) {
+    connections[from] ??= { main: [[]] }
+    connections[from].main[0].push({ node: to, type: 'main', index: 0 })
+  }
+
+  // 1. Trigger
+  const triggerName = dedupName(isBuild ? 'Manual Start' : 'Weekly Schedule', takenNames)
+  nodes.push({
+    id:          'trigger',
+    name:        triggerName,
+    type:        isBuild ? 'n8n-nodes-base.manualTrigger' : 'n8n-nodes-base.scheduleTrigger',
+    typeVersion: 1,
+    position:    [BASE_X + col * XSTEP, ROW_Y],
+    parameters:  isBuild
+      ? { notes: `Kick off the build for: ${description}` }
+      : { rule: { interval: [{ field: 'weeks', triggerAtDayOfWeek: 1, triggerAtHour: 9 }] } },
+  })
+  col++
+
+  // 2. Mastermind orchestrator
+  const mastermindName = dedupName('Mastermind', takenNames)
+  nodes.push({
+    id:          'mastermind',
+    name:        mastermindName,
+    type:        'n8n-nodes-base.httpRequest',
+    typeVersion: 4,
+    position:    [BASE_X + col * XSTEP, ROW_Y],
+    parameters:  {
+      method: 'POST',
+      url:    '={{$vars.NEXUS_BASE_URL}}/api/chat',
+      sendHeaders: true,
+      headerParameters: { parameters: [{ name: 'Content-Type', value: 'application/json' }] },
+      sendBody: true,
+      bodyContentType: 'json',
+      jsonBody: JSON.stringify({
+        model: 'claude-opus-4-6',
+        messages: [{
+          role: 'user',
+          content: [
+            `You are the mastermind for this ${workflowType} workflow.`,
+            `Idea: ${description}`,
+            howItMakesMoney ? `Money model: ${howItMakesMoney}` : '',
+            (tools?.length ? `Tools: ${tools.map(t => t.name).join(', ')}` : ''),
+            (hasStructured ? `Steps: ${phaseSteps.map(s => s.title).join(' → ')}` : ''),
+            'Decide which downstream tasks to trigger and return concise instructions per step.',
+          ].filter(Boolean).join('\n'),
+        }],
+      }, null, 2),
+    },
+  })
+  connect(triggerName, mastermindName)
+  col++
+
+  let previousNode = mastermindName
+
+  // 3. One node per phase step (or a default pair when we lack structured data)
+  const workSteps = hasStructured
+    ? phaseSteps
+    : [
+        { title: isBuild ? 'Research & planning'    : 'Scan performance & audience',  automatable: true  },
+        { title: isBuild ? 'Generate launch assets' : 'Produce this cycle\'s content', automatable: true  },
+        { title: isBuild ? 'Owner side-effects'     : 'Owner approval',                automatable: false },
+      ]
+
+  workSteps.forEach((step, idx) => {
+    const safeTitle = step.title.slice(0, 60)
+    let nodeName: string
+    if (step.automatable) {
+      const stepToolNames = (step.tools ?? []).map(String)
+      const capabilityId  = pickCapability(step, capabilityIds)
+      nodeName = dedupName(`Agent: ${capabilityId} — ${safeTitle}`, takenNames)
+      nodes.push(makeHttpAgentNode(nodeName, capabilityId, step.title, stepToolNames))
+    } else {
+      const stepToolList = toolsForStep(step.tools, tools)
+      const toolsSuffix = stepToolList.length
+        ? `\nSuggested tools: ${stepToolList.map(t => t.name).join(', ')}`
+        : ''
+      nodeName = dedupName(`Manual: ${safeTitle}`, takenNames)
+      nodes.push(makeManualTriggerNode(nodeName, `Owner action required: ${step.title}${toolsSuffix}`))
+    }
+    connect(previousNode, nodeName)
+    previousNode = nodeName
+    col++
+
+    // Review checkpoint after every third step (but not straight after the last — we add a final gate below)
+    const isLastStep = idx === workSteps.length - 1
+    if (!isLastStep && (idx + 1) % 3 === 0) {
+      const reviewName = dedupName(`Review: checkpoint after "${safeTitle}"`, takenNames)
+      nodes.push(makeManualTriggerNode(
+        reviewName,
+        `Confirm the previous step produced the expected result before moving on.\n\nAcceptance criteria to verify:\n- Output exists and is usable downstream\n- No rate-limit / auth failures\n- Quality bar met`,
+      ))
+      connect(previousNode, reviewName)
+      previousNode = reviewName
+      col++
+    }
+  })
+
+  // 4. Final publish / spend gate — always end with a review before exit
+  const finalReviewName = dedupName(
+    isBuild ? 'Review: launch readiness' : 'Review: before publish / spend',
+    takenNames,
+  )
+  nodes.push(makeManualTriggerNode(
+    finalReviewName,
+    isBuild
+      ? `Confirm the build meets the launch bar before going live.\nMoney model: ${howItMakesMoney ?? '(check idea card)'}`
+      : `Confirm the cycle output is safe to publish / spend on.\nMoney model: ${howItMakesMoney ?? '(check idea card)'}`,
+  ))
+  connect(previousNode, finalReviewName)
+  previousNode = finalReviewName
+  col++
+
+  // 5. Owner side-effects bucket (OAuth, payments, DNS, etc.)
+  const manualSideEffectsName = dedupName('Manual: owner side-effects', takenNames)
+  nodes.push(makeManualTriggerNode(
+    manualSideEffectsName,
+    [
+      'Handle any side-effects the workflow cannot automate:',
+      '- OAuth authorisations (social, email, CRM)',
+      '- Payment method setup (Stripe, PayPal)',
+      '- Domain / DNS purchases',
+      '- Legal / compliance steps',
+      tools?.length ? `\nKey tools for this idea: ${tools.map(t => t.name).join(', ')}` : '',
+    ].filter(Boolean).join('\n'),
+  ))
+  connect(previousNode, manualSideEffectsName)
+
+  const workflow: N8nWorkflow = {
+    name:     workflowName,
+    active:   false,
+    settings: { executionOrder: 'v1', saveManualExecutions: true },
+    tags:     ['nexus', 'scaffold', workflowType],
+    nodes,
+    connections,
+  }
+
+  const checklist: string[] = [
     'Set NEXUS_BASE_URL in n8n Variables to your deployed Nexus URL',
     'Confirm /api/chat and /api/agent are reachable from your n8n instance',
-    'Edit the Mastermind jsonBody to spell out the tasks for this idea',
-    'Swap the placeholder Agent node capability (research / content) for the right one',
-    'Add concrete Review notes describing the pass/fail criteria',
-    'Fill in Manual node notes for any side-effects the owner must do',
-    'Save and activate the workflow once you have tested it end-to-end',
+    'Review each Mastermind / Agent node body — the idea-card context is pre-filled',
+    'Tune Review node acceptance criteria to match your quality bar',
+    'Complete the "Manual:" nodes once before activating — they block the flow',
+    isBuild
+      ? 'When all manual steps are done, set the workflow active and run it once end-to-end'
+      : 'Set the Weekly Schedule cadence (day / hour) and activate the workflow',
   ]
+  if (tools?.length) {
+    checklist.push(`Connect credentials for: ${tools.map(t => t.name).join(', ')}`)
+  }
 
-  const explanation = isBuild
-    ? 'Fallback scaffold: manual trigger → mastermind → one managed agent → review → manual. Edit each node to match the idea before running.'
-    : 'Fallback scaffold: weekly schedule → mastermind → one content agent → review → manual. Tune the cadence and agent capability before activating.'
+  const agentStepCount  = workSteps.filter(s => s.automatable).length
+  const manualStepCount = workSteps.filter(s => !s.automatable).length
+  const explanation = [
+    hasStructured
+      ? `Scaffold built from the idea card: ${agentStepCount} agent step(s), ${manualStepCount} manual step(s), review checkpoints between them, final ${isBuild ? 'launch' : 'publish'} gate.`
+      : `Generic scaffold: trigger → mastermind → two agents → owner side-effects → final review. Edit the bodies to match the idea.`,
+    howItMakesMoney ? `Money model: ${howItMakesMoney}.` : '',
+    'Each node is editable — this workflow is designed as a working starting point, not a finished product.',
+  ].filter(Boolean).join(' ')
 
   return { workflow, checklist, explanation }
 }
@@ -277,6 +435,11 @@ export async function POST(req: NextRequest) {
     ideaId?:         string
     workflowType?:   'build' | 'maintain'
     availableCapabilities?: string[]
+    // Optional structured idea-card fields. When present, the fallback
+    // scaffold produces a richer node-per-step workflow. Absent = generic.
+    steps?:          { title: string; automatable: boolean; phase?: 'build' | 'maintain'; tools?: string[] }[]
+    tools?:          { name: string; purpose?: string }[]
+    howItMakesMoney?: string
   }
 
   if (!body.description?.trim()) {
@@ -352,7 +515,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!workflow) {
-    const scaffold = buildFallbackWorkflow(body.description, workflowType)
+    const scaffold = buildFallbackWorkflow({
+      description:     body.description,
+      workflowType,
+      steps:           body.steps,
+      tools:           body.tools,
+      howItMakesMoney: body.howItMakesMoney,
+      capabilityIds,
+    })
     workflow    = scaffold.workflow
     checklist   = scaffold.checklist
     explanation = [

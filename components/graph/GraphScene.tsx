@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, useRef, useMemo, useCallback } from 'react'
+import { Component, useRef, useMemo, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html, Line } from '@react-three/drei'
@@ -22,9 +22,10 @@ function NodeMesh({
   onClick:  (n: GraphNode) => void
 }) {
   const meshRef     = useRef<THREE.Mesh>(null)
+  const [hovered, setHovered] = useState(false)
   const color       = NODE_COLORS[node.type] ?? '#6b7280'
   const baseSize    = 0.8 + node.pageRank * 1.6 + Math.min(node.connections, 8) * 0.15
-  const emissiveInt = selected ? 1.2 : dimmed ? 0.05 : 0.4
+  const emissiveInt = selected ? 1.2 : hovered ? 0.9 : dimmed ? 0.05 : 0.4
 
   useFrame((_, delta) => {
     if (!meshRef.current) return
@@ -39,11 +40,31 @@ function NodeMesh({
     meshRef.current.rotation.y += delta * 0.3
   })
 
+  // Larger / brighter label when the node is hovered or selected.
+  const labelFontSize   = hovered || selected ? '12px' : '10px'
+  const labelFontWeight = hovered || selected ? 600 : 500
+  const labelColor      = selected ? '#ffffff' : hovered ? '#ffffff' : '#9090b0'
+  const labelBackground = selected
+    ? 'rgba(108,99,255,0.85)'
+    : hovered
+      ? 'rgba(30,30,50,0.95)'
+      : 'rgba(13,13,20,0.6)'
+  const labelBorder = hovered || selected ? `1px solid ${color}` : '1px solid rgba(90,90,120,0.25)'
+
   return (
     <group position={[node.position3d.x, node.position3d.y, node.position3d.z]}>
       <mesh
         ref={meshRef}
         onClick={e => { e.stopPropagation(); onClick(node) }}
+        onPointerOver={e => {
+          e.stopPropagation()
+          setHovered(true)
+          document.body.style.cursor = 'pointer'
+        }}
+        onPointerOut={() => {
+          setHovered(false)
+          document.body.style.cursor = 'auto'
+        }}
       >
         <sphereGeometry args={[baseSize, 16, 16]} />
         <meshStandardMaterial
@@ -59,26 +80,29 @@ function NodeMesh({
 
       {/* Label — DOM overlay projected into the scene (no worker, no font
           fetch — avoids troika text-worker init failures that previously
-          crashed the canvas on mount). */}
-      {!dimmed && (
+          crashed the canvas on mount). Hovered label enlarges to 12px so
+          the user can read what the node is without clicking. */}
+      {(!dimmed || hovered) && (
         <Html
           position={[0, baseSize + 0.8, 0]}
           center
           distanceFactor={18}
-          zIndexRange={[10, 0]}
+          zIndexRange={[hovered || selected ? 100 : 10, 0]}
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
           <span
             style={{
               display:      'inline-block',
               whiteSpace:   'nowrap',
-              fontSize:     '10px',
-              fontWeight:   500,
-              padding:      '1px 6px',
+              fontSize:     labelFontSize,
+              fontWeight:   labelFontWeight,
+              padding:      hovered || selected ? '2px 8px' : '1px 6px',
               borderRadius: '4px',
-              color:        selected ? '#ffffff' : '#9090b0',
-              background:   selected ? 'rgba(108,99,255,0.85)' : 'rgba(13,13,20,0.6)',
-              border:       '1px solid rgba(90,90,120,0.25)',
+              color:        labelColor,
+              background:   labelBackground,
+              border:       labelBorder,
+              transition:   'font-size 120ms ease, background 120ms ease, padding 120ms ease',
+              boxShadow:    hovered || selected ? '0 2px 10px rgba(0,0,0,0.4)' : 'none',
             }}
           >
             {node.label}
