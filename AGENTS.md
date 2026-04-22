@@ -89,6 +89,7 @@ Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.
 - Phase 17 env vars: `TAVILY_API_KEY` (live web search — add first, works without DeerFlow), `DEERFLOW_BASE_URL` + `DEERFLOW_API_KEY` + `DEERFLOW_ENABLED` (DeerFlow 2.0 sidecar)
 - Phase 18 env vars: `KLING_API_KEY` (cinematic video), `RUNWAY_API_KEY` (stylised video), `ELEVENLABS_API_KEY` (voiceover), `HEYGEN_API_KEY` (UGC/avatar), `DID_API_KEY` (talking-head fallback), `MUAPI_AI_KEY` (scene images), `SUNO_API_KEY` or `UDIO_API_KEY` (background music)
 - Phase 20 env vars: `MEMORY_TOKEN` (PAT with repo scope), `MEMORY_REPO` (e.g. `pinnacleadvisors/nexus-memory`)
+- n8n Strategist env vars: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (set to `1` by `/api/claude-session/dispatch` when a step opts into swarm mode — required for Claude Code Agent Teams to spawn sub-agents)
 - AI priority in `/api/chat`: OpenClaw (Claude Pro subscription) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 
@@ -160,8 +161,19 @@ Specialist subagents in `.claude/agents/` — Claude Code auto-discovers and del
 | **Firecrawl** | `.claude/agents/firecrawl.md` | Any agent needs web scrape / crawl / search |
 | **Supermemory** | `.claude/agents/supermemory.md` | Every agent calls this after a run to record changes + promote facts |
 | **Workflow Optimizer** | `.claude/agents/workflow-optimizer.md` | Review-node feedback triggers a minimal diff to the producing agent |
+| **n8n Strategist** | `.claude/agents/n8n-strategist.md` | Designing an n8n workflow for an idea card (build or maintain). Classifies each step — managed agent? swarm? asset-gated review? — and emits importable JSON. |
 
 These agents are spawned automatically by Claude Code when tasks match their description. They share the Doppler-injected environment and have access to the tools listed in their frontmatter.
+
+### n8n workflow generation
+
+`POST /api/n8n/generate` uses the **n8n Strategist** rules. Per step it decides:
+
+- **Managed agent vs plain capability** — specialist verbs ("design", "write", "research", "refactor") → session-dispatch node (`/api/claude-session/dispatch`). Simple data-shaping / provider calls stay on `/api/agent` or direct provider nodes.
+- **Swarm mode** — when a step clearly decomposes into ≥3 independent sub-tasks ("build the full site", "launch a product across landing+video+ad+email") the dispatch carries `swarm: true`; `/api/claude-session/dispatch` then injects `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` into the session env so the lead agent can spawn a team with a shared task list.
+- **Review nodes** — placed ONLY after asset-producing steps (website, image, video, app, ad, landing page, email, blog/content, product listing) plus a final launch/publish gate. The old "every 3 steps" cadence is gone.
+
+`/api/claude-session/dispatch` auto-creates the `.claude/agents/<slug>.md` spec when `autoCreateAgent: true` (the default from the Strategist) and upserts it into `agent_library` so the agent survives across sessions.
 
 ### Agent generation protocol
 

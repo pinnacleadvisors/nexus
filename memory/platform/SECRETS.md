@@ -100,6 +100,7 @@ Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
 | Var | Phase | Purpose |
 |-----|-------|---------|
 | `FIRECRAWL_API_KEY` | agents | Hosted Firecrawl API used by the `firecrawl` managed agent. If unset, the agent falls back to `/firecrawl_local`. |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | agents | Set to `1` to enable Claude Code Agent Teams (swarm). `/api/claude-session/dispatch` injects this into dispatched sessions whenever the n8n node carried `swarm: true`. Unset for normal single-agent runs. |
 
 ## AI Priority in `/api/chat`
 

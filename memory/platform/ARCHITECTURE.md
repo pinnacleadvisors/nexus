@@ -28,6 +28,7 @@ app/
 │   ├── board/            # Kanban CRUD
 │   ├── build/            # Plan + dispatch (Phase 19)
 │   ├── claw/             # OpenClaw proxy
+│   ├── claude-session/   # Dispatch endpoint (auto-creates managed agent + forwards to OpenClaw with swarm env)
 │   ├── content/          # Score + generate + variants (Tribe v2)
 │   ├── dashboard/        # KPI + chart data
 │   ├── gdrive/           # Google Drive upload
