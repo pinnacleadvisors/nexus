@@ -279,6 +279,16 @@ async function generateWorkflow(
       businessContext: context,
       workflowType,
       ideaId: card.id,
+      // Structured idea-card fields — consumed by the server-side fallback
+      // so a paste-ready workflow can be built even if the AI call fails.
+      howItMakesMoney: card.howItMakesMoney,
+      tools:           card.tools.map(t => ({ name: t.name, purpose: t.purpose })),
+      steps:           card.steps.map(s => ({
+        title:       s.title,
+        automatable: s.automatable,
+        phase:       s.phase,
+        tools:       s.tools,
+      })),
     }),
   })
 
