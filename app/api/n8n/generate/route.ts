@@ -50,6 +50,13 @@ import { getTemplate } from '@/lib/n8n/templates'
 import { getBaseUrl, isConfigured as isN8nConfigured, createWorkflow } from '@/lib/n8n/client'
 import { analyzeWorkflow } from '@/lib/n8n/gap-detector'
 import { AGENT_CAPABILITIES } from '@/lib/agent-capabilities'
+import {
+  detectAsset,
+  needsManagedAgent,
+  needsSwarm,
+  suggestAgentSlug,
+} from '@/lib/n8n/asset-detector'
+import { buildSessionDispatchNode } from '@/lib/n8n/managed-agent-builder'
 import { automationToRow, rowToAutomation, type AutomationRow } from '@/lib/idea-db'
 import type { N8nNode, N8nWorkflow } from '@/lib/n8n/types'
 import type { SavedAutomation } from '@/lib/types'
@@ -79,17 +86,24 @@ Node palette you MUST use:
       bodyContentType: "json",
       jsonBody: "={\\"model\\":\\"claude-opus-4-6\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"<task prompt referencing $json fields>\\"}]}"
     }
-- Claude managed-agent node — use n8n-nodes-base.httpRequest pointing at {{$vars.NEXUS_BASE_URL}}/api/agent with body { "capabilityId": "<ONE OF: CAPABILITY_IDS>", "inputs": { ... } }. Each managed-agent node MUST be named "Agent: <capabilityId>" so the owner can recognise it.
-- Evaluation / review node at each significant milestone — use n8n-nodes-base.manualTrigger (typeVersion 1) named "Review: <milestone>" with parameters.notes explaining what to verify.
-- Manual-action node for side-effects the owner must do themselves (create API key, set up account, authenticate social, fund Stripe) — use n8n-nodes-base.manualTrigger named "Manual: <what the owner must do>" with parameters.notes spelling out the steps.
+- Session-dispatch node (PREFERRED for complex steps that need specialist judgement) — n8n-nodes-base.httpRequest pointing at {{$vars.NEXUS_BASE_URL}}/api/claude-session/dispatch with body
+    { "agentSlug": "<slug>", "capabilityId": "<one of CAPABILITY_IDS>", "swarm": <true|false>, "autoCreateAgent": true, "asset": "<website|image|video|app|ad|landing|email|content|listing|null>", "inputs": { "task": "...", "description": "...", "howItMakesMoney": "...", "tools": [...], "upstream": "={{$json}}" } }
+  The dispatch endpoint auto-creates the agent markdown spec if missing, applies env settings (including CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 when swarm is true), and forwards to OpenClaw. Name these nodes "Agent: <slug> — <short step title>".
+- Plain agent-capability node (for simpler automatable steps) — n8n-nodes-base.httpRequest pointing at {{$vars.NEXUS_BASE_URL}}/api/agent with body { "capabilityId": "<one of CAPABILITY_IDS>", "inputs": { ... } }. Name "Capability: <id> — <short step title>".
+- Review node — n8n-nodes-base.manualTrigger named "Review: <asset>" ONLY after a step that produces a reviewable asset: website, image, video, app, ad, landing page, email, content (blog/article), listing. Do NOT place review nodes every N steps. Always include a final "Review: launch readiness" (build) or "Review: before publish / spend" (maintain) gate before the last node.
+- Manual-action node for side-effects the owner must do themselves (create API key, set up account, authenticate social, fund Stripe) — n8n-nodes-base.manualTrigger named "Manual: <what the owner must do>" with parameters.notes spelling out the steps.
 - Other nodes allowed: n8n-nodes-base.scheduleTrigger (typeVersion 1), n8n-nodes-base.webhook, n8n-nodes-base.set, n8n-nodes-base.code, n8n-nodes-base.wait, n8n-nodes-base.notion, n8n-nodes-base.slack, n8n-nodes-base.gmail, n8n-nodes-base.stripe.
+
+When to set swarm=true on a dispatch node:
+- Step clearly decomposes into ≥3 independent sub-tasks (e.g. "build the full marketing site", "launch the product across landing+video+ad+email", "produce this week's multi-asset cycle").
+- NEVER enable swarm for a single blog post, single image, or single API call.
 
 Hard rules:
 - Reference env vars as ={{$vars.VAR_NAME}}. Common ones: NEXUS_BASE_URL, NEXUS_API_KEY, ANTHROPIC_API_KEY, NOTION_TOKEN.
 - Every side-effect the owner must do MUST be its own "Manual: ..." node with clear notes.
-- Every workflow MUST include at least one "Review: ..." evaluation node before the final step.
-- The mastermind runs first after the trigger and delegates to managed-agent nodes via downstream connections.
-- Keep workflows focused — 8–14 nodes is ideal. Do not exceed 16 nodes.`
+- Review nodes ONLY appear after asset-producing steps (website, image, video, app, ad, landing, email, content, listing) OR as the final launch/publish gate. Do not space them on a fixed cadence.
+- The mastermind runs first after the trigger and delegates to downstream nodes.
+- Keep workflows focused — 10–16 nodes is ideal. Do not exceed 18 nodes.`
 
 function buildSystemPrompt(workflowType: 'build' | 'maintain', capabilityIds: string[]): string {
   const intro = workflowType === 'build'
@@ -247,6 +261,33 @@ function buildFallbackWorkflow(
     }
   }
 
+  function makeDispatchNode(
+    name:         string,
+    capabilityId: string,
+    agentSlug:    string,
+    stepTitle:    string,
+    stepToolNames: string[],
+    swarm:        boolean,
+    asset:        ReturnType<typeof detectAsset>,
+  ): N8nNode {
+    return buildSessionDispatchNode({
+      id:          `dispatch_${col}`,
+      name,
+      position:    [BASE_X + col * XSTEP, ROW_Y],
+      agentSlug,
+      capabilityId,
+      swarm,
+      autoCreateAgent: true,
+      asset:       asset ? asset.kind : null,
+      inputs: {
+        task:            stepTitle,
+        description,
+        howItMakesMoney: howItMakesMoney ?? undefined,
+        tools:           stepToolNames.length ? stepToolNames : undefined,
+      },
+    })
+  }
+
   function makeManualTriggerNode(name: string, notes: string): N8nNode {
     return {
       id:          `manual_${col}`,
@@ -322,14 +363,41 @@ function buildFallbackWorkflow(
         { title: isBuild ? 'Owner side-effects'     : 'Owner approval',                automatable: false },
       ]
 
-  workSteps.forEach((step, idx) => {
+  let swarmStepCount    = 0
+  let dispatchStepCount = 0
+  let assetReviewCount  = 0
+
+  workSteps.forEach((step) => {
     const safeTitle = step.title.slice(0, 60)
+    const stepToolNames = (step.tools ?? []).map(String)
+    const asset = detectAsset(step.title)
     let nodeName: string
+
     if (step.automatable) {
-      const stepToolNames = (step.tools ?? []).map(String)
-      const capabilityId  = pickCapability(step, capabilityIds)
-      nodeName = dedupName(`Agent: ${capabilityId} — ${safeTitle}`, takenNames)
-      nodes.push(makeHttpAgentNode(nodeName, capabilityId, step.title, stepToolNames))
+      const capabilityId = pickCapability(step, capabilityIds)
+      const stepForClass = { title: step.title, automatable: step.automatable, tools: stepToolNames }
+
+      if (needsManagedAgent(stepForClass)) {
+        // Step is complex enough to warrant a Claude managed agent.
+        const swarm     = needsSwarm(stepForClass)
+        const agentSlug = suggestAgentSlug(capabilityId, asset?.kind ?? null)
+        nodeName = dedupName(`Agent: ${agentSlug} — ${safeTitle}`, takenNames)
+        nodes.push(makeDispatchNode(
+          nodeName,
+          capabilityId,
+          agentSlug,
+          step.title,
+          stepToolNames,
+          swarm,
+          asset,
+        ))
+        dispatchStepCount++
+        if (swarm) swarmStepCount++
+      } else {
+        // Simple automatable step — plain /api/agent call.
+        nodeName = dedupName(`Capability: ${capabilityId} — ${safeTitle}`, takenNames)
+        nodes.push(makeHttpAgentNode(nodeName, capabilityId, step.title, stepToolNames))
+      }
     } else {
       const stepToolList = toolsForStep(step.tools, tools)
       const toolsSuffix = stepToolList.length
@@ -342,17 +410,16 @@ function buildFallbackWorkflow(
     previousNode = nodeName
     col++
 
-    // Review checkpoint after every third step (but not straight after the last — we add a final gate below)
-    const isLastStep = idx === workSteps.length - 1
-    if (!isLastStep && (idx + 1) % 3 === 0) {
-      const reviewName = dedupName(`Review: checkpoint after "${safeTitle}"`, takenNames)
-      nodes.push(makeManualTriggerNode(
-        reviewName,
-        `Confirm the previous step produced the expected result before moving on.\n\nAcceptance criteria to verify:\n- Output exists and is usable downstream\n- No rate-limit / auth failures\n- Quality bar met`,
-      ))
+    // Asset-gated review: only emit a Review node when the step produced a
+    // reviewable asset (website, image, video, app, ad, landing, email, content,
+    // listing). No fixed-cadence checkpoints.
+    if (asset) {
+      const reviewName = dedupName(asset.reviewTitle, takenNames)
+      nodes.push(makeManualTriggerNode(reviewName, asset.reviewNotes))
       connect(previousNode, reviewName)
       previousNode = reviewName
       col++
+      assetReviewCount++
     }
   })
 
@@ -397,14 +464,24 @@ function buildFallbackWorkflow(
 
   const checklist: string[] = [
     'Set NEXUS_BASE_URL in n8n Variables to your deployed Nexus URL',
-    'Confirm /api/chat and /api/agent are reachable from your n8n instance',
-    'Review each Mastermind / Agent node body — the idea-card context is pre-filled',
-    'Tune Review node acceptance criteria to match your quality bar',
+    'Confirm /api/chat, /api/agent and /api/claude-session/dispatch are reachable from your n8n instance',
+    'Review each Mastermind / Agent / Dispatch node body — the idea-card context is pre-filled',
+    'Asset reviews ("Review: website", "Review: image", …) fire only after asset-producing steps — adjust the notes if your quality bar differs',
     'Complete the "Manual:" nodes once before activating — they block the flow',
     isBuild
       ? 'When all manual steps are done, set the workflow active and run it once end-to-end'
       : 'Set the Weekly Schedule cadence (day / hour) and activate the workflow',
   ]
+  if (swarmStepCount > 0) {
+    checklist.push(
+      `${swarmStepCount} step(s) run in swarm mode — /api/claude-session/dispatch sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 automatically; ensure your Claude Code / OpenClaw environment supports Agent Teams`,
+    )
+  }
+  if (dispatchStepCount > 0) {
+    checklist.push(
+      `${dispatchStepCount} managed-agent step(s) dispatch via /api/claude-session/dispatch — the endpoint auto-creates missing .claude/agents/<slug>.md specs on first run`,
+    )
+  }
   if (tools?.length) {
     checklist.push(`Connect credentials for: ${tools.map(t => t.name).join(', ')}`)
   }
@@ -413,7 +490,7 @@ function buildFallbackWorkflow(
   const manualStepCount = workSteps.filter(s => !s.automatable).length
   const explanation = [
     hasStructured
-      ? `Scaffold built from the idea card: ${agentStepCount} agent step(s), ${manualStepCount} manual step(s), review checkpoints between them, final ${isBuild ? 'launch' : 'publish'} gate.`
+      ? `Scaffold built from the idea card: ${agentStepCount} agent step(s) (${dispatchStepCount} via Claude managed agents, ${swarmStepCount} with swarm/Agent Teams enabled), ${manualStepCount} manual step(s), ${assetReviewCount} asset-gated review node(s), final ${isBuild ? 'launch' : 'publish'} gate.`
       : `Generic scaffold: trigger → mastermind → two agents → owner side-effects → final review. Edit the bodies to match the idea.`,
     howItMakesMoney ? `Money model: ${howItMakesMoney}.` : '',
     'Each node is editable — this workflow is designed as a working starting point, not a finished product.',
