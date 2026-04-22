@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Nexus pre-commit hook — runs secret-scan before every commit.
+#
+# Install once:  ./scripts/install-git-hooks.sh
+set -e
+
+ROOT=$(git rev-parse --show-toplevel)
+
+if [ -x "$ROOT/scripts/scan-secrets.sh" ]; then
+  "$ROOT/scripts/scan-secrets.sh"
+fi

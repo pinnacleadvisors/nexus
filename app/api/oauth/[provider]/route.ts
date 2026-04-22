@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/oauth-providers'
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ provider: string }> },
 ) {
+  // B12 — per-IP rate limit. OAuth init is public so it cannot key on userId.
+  // 30/min per IP is generous for legit users; enough to blunt provider enumeration.
+  const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'oauth:init' })
+  if (!rl.success) return rateLimitResponse(rl)
+
   const { provider: providerId } = await context.params
   const provider = getProvider(providerId)
 

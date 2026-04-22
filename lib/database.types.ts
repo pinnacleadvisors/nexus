@@ -213,6 +213,7 @@ export type Database = {
       token_events: {
         Row: {
           id: string
+          user_id: string | null
           agent_id: string | null
           model: string
           input_tokens: number
@@ -222,6 +223,7 @@ export type Database = {
         }
         Insert: {
           id?: string
+          user_id?: string | null
           agent_id?: string | null
           model: string
           input_tokens: number
@@ -230,6 +232,7 @@ export type Database = {
           created_at?: string
         }
         Update: {
+          user_id?: string | null
           agent_id?: string | null
           model?: string
           input_tokens?: number

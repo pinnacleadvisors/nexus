@@ -12,6 +12,7 @@ import { auth } from '@clerk/nextjs/server'
 import { searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
+import { assertUnderCostCap } from '@/lib/cost-guard'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -248,6 +249,15 @@ export async function POST(req: NextRequest) {
   const rlDay = await rateLimit(req, { limit: 500, window: '1 d', prefix: 'chat:day', identifier: userId })
   if (!rlDay.success) return rateLimitResponse(rlDay)
 
+  // B9 — daily cost cap. Block new LLM calls once the user has hit USER_DAILY_USD_LIMIT
+  const cap = await assertUnderCostCap(userId)
+  if (!cap.ok) {
+    return NextResponse.json(
+      { error: 'daily cost cap exceeded', spentUsd: cap.spentUsd, capUsd: cap.capUsd },
+      { status: 402 },
+    )
+  }
+
   const body = await req.json() as {
     messages:       UIMessage[]
     advisorModel?:  string
@@ -327,6 +337,7 @@ export async function POST(req: NextRequest) {
               if (!db) return
 
               await db.from('token_events').insert({
+                user_id:       userId,
                 model:         advisorModel,
                 input_tokens:  usage.inputTokens  ?? 0,
                 output_tokens: usage.outputTokens ?? 0,
