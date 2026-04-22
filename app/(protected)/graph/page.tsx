@@ -48,9 +48,10 @@ function applyLayout(nodes: GraphNode[], mode: LayoutMode): GraphNode[] {
 
     if (mode === 'hierarchical') {
       // Layer by node type priority
-      const layers: Record<NodeType, number> = {
+      const layers: Partial<Record<NodeType, number>> = {
         business: 0, project: 1, milestone: 2, agent: 3,
         workflow: 2, tool: 4, repository: 3, asset: 5, prompt: 4, skill: 5,
+        memory_moc: 0, memory_entity: 2, memory_atom: 4, memory_doc: 3,
       }
       const layer = layers[n.type] ?? 3
       y = (layer - 2.5) * 35
@@ -58,9 +59,10 @@ function applyLayout(nodes: GraphNode[], mode: LayoutMode): GraphNode[] {
       z = Math.floor(i / 8) * 20 - 40
     } else if (mode === 'radial') {
       // Radial rings by type
-      const rings: Record<NodeType, number> = {
+      const rings: Partial<Record<NodeType, number>> = {
         business: 0, project: 40, milestone: 70, agent: 55,
         workflow: 85, tool: 100, repository: 60, asset: 95, prompt: 80, skill: 110,
+        memory_moc: 0, memory_entity: 50, memory_atom: 100, memory_doc: 75,
       }
       const r     = rings[n.type] ?? 80
       const angle = (i / nodes.length) * Math.PI * 2

@@ -16,6 +16,11 @@ export type NodeType =
   | 'asset'
   | 'prompt'
   | 'skill'
+  // Memory-folder node types (Maps of Content, entities, atomic notes, plain docs)
+  | 'memory_moc'
+  | 'memory_entity'
+  | 'memory_atom'
+  | 'memory_doc'
 
 export type EdgeRelation =
   | 'uses'
@@ -28,6 +33,8 @@ export type EdgeRelation =
   | 'tagged_with'
   | 'runs_on'
   | 'extends'
+  | 'links_to'
+  | 'references'
 
 // ── Core graph data ───────────────────────────────────────────────────────────
 
@@ -91,6 +98,10 @@ export const NODE_COLORS: Record<NodeType, string> = {
   asset:      '#ec4899',   // pink
   prompt:     '#38bdf8',   // sky blue
   skill:      '#fbbf24',   // amber
+  memory_moc:    '#f59e0b', // gold — hubs
+  memory_entity: '#a855f7', // purple — concepts / people / things
+  memory_atom:   '#14b8a6', // teal — atomic facts
+  memory_doc:    '#64748b', // slate — plain markdown docs
 }
 
 export const NODE_TYPE_LABELS: Record<NodeType, string> = {
@@ -104,6 +115,10 @@ export const NODE_TYPE_LABELS: Record<NodeType, string> = {
   asset:      'Asset',
   prompt:     'Prompt',
   skill:      'Skill',
+  memory_moc:    'Map of Content',
+  memory_entity: 'Entity',
+  memory_atom:   'Atomic note',
+  memory_doc:    'Memory doc',
 }
 
 export const EDGE_COLORS: Record<EdgeRelation, string> = {
@@ -117,4 +132,6 @@ export const EDGE_COLORS: Record<EdgeRelation, string> = {
   tagged_with: '#6b7280',
   runs_on:    '#38bdf8',
   extends:    '#ec4899',
+  links_to:   '#6c63ff',
+  references: '#94a3b8',
 }
