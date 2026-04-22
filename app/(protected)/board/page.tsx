@@ -14,12 +14,14 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import type { KanbanCard as KanbanCardType, ColumnId, ForgeProject } from '@/lib/types'
+import type { KanbanCard as KanbanCardType, ColumnId, ForgeProject, TaskType } from '@/lib/types'
 import { supabase } from '@/lib/supabase'
 import KanbanColumn from '@/components/board/KanbanColumn'
 import KanbanCard from '@/components/board/KanbanCard'
 import ReviewModal from '@/components/board/ReviewModal'
-import { RefreshCw, ChevronDown, Circle } from 'lucide-react'
+import { RefreshCw, ChevronDown, Circle, Bot, User as UserIcon, Layers } from 'lucide-react'
+
+type TaskTypeFilter = 'all' | TaskType
 
 const COLUMN_ORDER: ColumnId[] = ['backlog', 'in-progress', 'review', 'completed']
 const COLUMN_LABELS: Record<ColumnId, string> = {
@@ -83,11 +85,16 @@ export default function BoardPage() {
   const [activeProjectId,  setActiveProjectId]  = useState<string>('all')
   const [showProjectMenu,  setShowProjectMenu]  = useState(false)
 
+  // ── Task-type filter (automated / manual / all) ──────────────────────────
+  const [typeFilter,       setTypeFilter]       = useState<TaskTypeFilter>('all')
+
   // ── Data loading ──────────────────────────────────────────────────────────
-  const loadCards = useCallback(async (projectId?: string) => {
-    const url = projectId && projectId !== 'all'
-      ? `/api/board?project_id=${projectId}`
-      : '/api/board'
+  const loadCards = useCallback(async (projectId?: string, type?: TaskTypeFilter) => {
+    const params = new URLSearchParams()
+    if (projectId && projectId !== 'all') params.set('project_id', projectId)
+    if (type && type !== 'all')           params.set('type', type)
+    const qs = params.toString()
+    const url = qs ? `/api/board?${qs}` : '/api/board'
 
     const res = await fetch(url)
     const data = (await res.json()) as { cards: KanbanCardType[]; source: string }
@@ -101,12 +108,12 @@ export default function BoardPage() {
     loadCards()
   }, [loadCards])
 
-  // Re-fetch when project filter changes
+  // Re-fetch when project or type filter changes
   useEffect(() => {
     if (source === 'loading') return
-    loadCards(activeProjectId)
+    loadCards(activeProjectId, typeFilter)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId])
+  }, [activeProjectId, typeFilter])
 
   // ── Supabase Realtime ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -118,47 +125,54 @@ export default function BoardPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks' },
         payload => {
+          type TaskRow = {
+            id: string; column_id: string; project_id?: string; title: string
+            description: string; assignee?: string; priority: string
+            asset_url?: string; revision_note?: string; milestone_id?: string
+            created_at: string; task_type?: string; depends_on?: string[]
+          }
+          const matchesFilters = (row: TaskRow): boolean => {
+            if (activeProjectId !== 'all' && row.project_id !== activeProjectId) return false
+            if (typeFilter !== 'all' && (row.task_type ?? 'automated') !== typeFilter) return false
+            return true
+          }
+          const rowToCard = (row: TaskRow): KanbanCardType => ({
+            id:          row.id,
+            columnId:    row.column_id as ColumnId,
+            projectId:   row.project_id,
+            title:       row.title,
+            description: row.description,
+            assignee:    row.assignee,
+            priority:    row.priority as KanbanCardType['priority'],
+            assetUrl:    row.asset_url,
+            revisionNote: row.revision_note,
+            milestoneId: row.milestone_id,
+            createdAt:   row.created_at,
+            taskType:    (row.task_type as TaskType | undefined) ?? 'automated',
+            dependsOn:   row.depends_on ?? [],
+          })
+
           if (payload.eventType === 'INSERT') {
-            const row = payload.new as { id: string; column_id: string; project_id?: string; title: string; description: string; assignee?: string; priority: string; asset_url?: string; revision_note?: string; milestone_id?: string; created_at: string }
-            // Only insert if matches current filter
-            if (activeProjectId !== 'all' && row.project_id !== activeProjectId) return
-            const card: KanbanCardType = {
-              id:          row.id,
-              columnId:    row.column_id as ColumnId,
-              projectId:   row.project_id,
-              title:       row.title,
-              description: row.description,
-              assignee:    row.assignee,
-              priority:    row.priority as KanbanCardType['priority'],
-              assetUrl:    row.asset_url,
-              revisionNote: row.revision_note,
-              milestoneId: row.milestone_id,
-              createdAt:   row.created_at,
-            }
+            const row = payload.new as TaskRow
+            if (!matchesFilters(row)) return
+            const card = rowToCard(row)
             setColumns(prev => ({
               ...prev,
               [card.columnId]: [...prev[card.columnId], card],
             }))
           } else if (payload.eventType === 'UPDATE') {
-            const row = payload.new as { id: string; column_id: string; project_id?: string; title: string; description: string; assignee?: string; priority: string; asset_url?: string; revision_note?: string; milestone_id?: string; created_at: string }
+            const row = payload.new as TaskRow
             setColumns(prev => {
               const newCols = { ...prev }
-              // Remove from old column
+              // Remove from old column everywhere
               for (const col of COLUMN_ORDER) {
                 newCols[col] = newCols[col].filter(c => c.id !== row.id)
               }
-              // Add to new column
-              const colId = row.column_id as ColumnId
-              newCols[colId] = [
-                ...newCols[colId],
-                {
-                  id: row.id, columnId: colId, projectId: row.project_id,
-                  title: row.title, description: row.description,
-                  assignee: row.assignee, priority: row.priority as KanbanCardType['priority'],
-                  assetUrl: row.asset_url, revisionNote: row.revision_note,
-                  milestoneId: row.milestone_id, createdAt: row.created_at,
-                },
-              ]
+              // Only re-insert if it still matches the active filters
+              if (matchesFilters(row)) {
+                const card = rowToCard(row)
+                newCols[card.columnId] = [...newCols[card.columnId], card]
+              }
               return newCols
             })
           } else if (payload.eventType === 'DELETE') {
@@ -179,7 +193,7 @@ export default function BoardPage() {
 
     return () => { supabase!.removeChannel(channel) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId])
+  }, [activeProjectId, typeFilter])
 
   // ── DnD sensors ───────────────────────────────────────────────────────────
   const sensors = useSensors(
@@ -340,6 +354,35 @@ export default function BoardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Task-type filter (All / Automated / Manual) */}
+          <div
+            className="flex items-center rounded-lg overflow-hidden"
+            style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
+          >
+            {([
+              { id: 'all',       label: 'All',       Icon: Layers  },
+              { id: 'automated', label: 'Automated', Icon: Bot     },
+              { id: 'manual',    label: 'Manual',    Icon: UserIcon },
+            ] as Array<{ id: TaskTypeFilter; label: string; Icon: typeof Bot }>).map(({ id, label, Icon }) => {
+              const active = typeFilter === id
+              return (
+                <button
+                  key={id}
+                  onClick={() => setTypeFilter(id)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs transition-colors"
+                  style={{
+                    backgroundColor: active ? '#1a1a2e' : 'transparent',
+                    color:           active ? '#e8e8f0' : '#9090b0',
+                  }}
+                  title={`Show ${label.toLowerCase()} tasks`}
+                >
+                  <Icon size={12} />
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Project filter */}
           {projects.length > 0 && (
             <div className="relative">
@@ -384,7 +427,7 @@ export default function BoardPage() {
 
           {/* Refresh */}
           <button
-            onClick={() => loadCards(activeProjectId)}
+            onClick={() => loadCards(activeProjectId, typeFilter)}
             className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
             style={{ backgroundColor: '#12121e', color: '#55556a', border: '1px solid #24243e' }}
             onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0')}

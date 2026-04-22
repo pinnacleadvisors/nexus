@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { KanbanCard as KanbanCardType } from '@/lib/types'
-import { User, ExternalLink, FileText, GitBranch, Table2, Layout } from 'lucide-react'
+import { User, ExternalLink, FileText, GitBranch, Table2, Layout, Bot, Hand, Zap } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 const PRIORITY_COLOR: Record<KanbanCardType['priority'], string> = {
@@ -130,16 +130,50 @@ export default function KanbanCard({ card, overlay, onClick }: Props) {
         cursor:     onClick ? 'pointer' : 'grab',
       }}
     >
-      {/* Priority dot + title */}
+      {/* Priority dot + title + type badge */}
       <div className="flex items-start gap-2 mb-2">
         <span
           className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
           style={{ backgroundColor: PRIORITY_COLOR[card.priority] }}
         />
-        <p className="text-sm font-medium leading-snug" style={{ color: '#e8e8f0' }}>
+        <p className="text-sm font-medium leading-snug flex-1" style={{ color: '#e8e8f0' }}>
           {card.title}
         </p>
+        {card.taskType === 'manual' ? (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs shrink-0"
+            style={{ backgroundColor: '#2e1a0d', color: '#f59e0b', border: '1px solid #f59e0b33' }}
+            title="Manual task — requires the owner"
+          >
+            <Hand size={10} />
+            Manual
+          </span>
+        ) : (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs shrink-0"
+            style={{ backgroundColor: '#0d1f2e', color: '#6c63ff', border: '1px solid #6c63ff33' }}
+            title="Automated task — handled by agent or n8n"
+          >
+            <Bot size={10} />
+            Auto
+          </span>
+        )}
       </div>
+
+      {/* Manual-task dependent count (how many automated tasks are blocked) */}
+      {card.taskType === 'manual' && (card.dependentCount ?? 0) > 0 && (
+        <div
+          className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg text-xs"
+          style={{ backgroundColor: '#0d1f2e', border: '1px solid #6c63ff33', color: '#6c63ff' }}
+          title={`${card.dependentCount} automated task${card.dependentCount === 1 ? '' : 's'} depend on this`}
+        >
+          <Zap size={10} />
+          <span className="font-semibold">Unblocks {card.dependentCount}</span>
+          <span style={{ color: '#55556a' }}>
+            automated task{card.dependentCount === 1 ? '' : 's'}
+          </span>
+        </div>
+      )}
 
       <p className="text-xs mb-3 line-clamp-2" style={{ color: '#9090b0' }}>
         {card.description}
