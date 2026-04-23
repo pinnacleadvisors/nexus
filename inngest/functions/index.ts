@@ -179,6 +179,7 @@ export const onAgentStatusChanged = inngest.createFunction(
 
 // ── Export all functions for the serve handler ─────────────────────────────────
 import { weeklyResearchLoop as _weeklyResearchLoop } from './research-loop'
+import { metricOptimiserHourly as _metricOptimiserHourly } from './metric-optimiser'
 
 export const functions = [
   onMilestoneCompleted,
@@ -186,4 +187,5 @@ export const functions = [
   dailyCostCheck,
   onAgentStatusChanged,
   _weeklyResearchLoop,
+  _metricOptimiserHourly,
 ]

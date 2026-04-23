@@ -29,6 +29,10 @@ export interface BuildSessionDispatchNodeOptions {
   swarm:        boolean
   autoCreateAgent?: boolean
   asset?:       AssetKind | null
+  /** A5 — attach the persistent Run id so each dispatch records run_events. */
+  runId?:       string
+  /** A6 — optional phase to advance the Run to on dispatch success. */
+  advanceTo?:   string
   inputs: {
     task:            string
     description?:    string
@@ -39,7 +43,7 @@ export interface BuildSessionDispatchNodeOptions {
 }
 
 export function buildSessionDispatchNode(opts: BuildSessionDispatchNodeOptions): N8nNode {
-  const body = {
+  const body: Record<string, unknown> = {
     agentSlug:       opts.agentSlug,
     capabilityId:    opts.capabilityId,
     swarm:           opts.swarm,
@@ -50,6 +54,8 @@ export function buildSessionDispatchNode(opts: BuildSessionDispatchNodeOptions):
       upstream: '={{$json}}',
     },
   }
+  if (opts.runId)     body.runId     = opts.runId
+  if (opts.advanceTo) body.advanceTo = opts.advanceTo
 
   return {
     id:          opts.id,

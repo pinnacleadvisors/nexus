@@ -253,6 +253,7 @@ async function generateWorkflow(
   card: IdeaCardType,
   executeInput: string,
   workflowType: 'build' | 'maintain',
+  runId?: string,
 ): Promise<GenerateResponse> {
   const steps = card.steps.filter(s => s.phase === workflowType)
   const description = workflowType === 'build'
@@ -279,6 +280,9 @@ async function generateWorkflow(
       businessContext: context,
       workflowType,
       ideaId: card.id,
+      // A5 — thread the Run id so every dispatch node in the generated
+      // workflow can carry it and every run_event is attributed.
+      runId,
       // Structured idea-card fields — consumed by the server-side fallback
       // so a paste-ready workflow can be built even if the AI call fails.
       howItMakesMoney: card.howItMakesMoney,
@@ -312,11 +316,31 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
     setError(null)
 
     try {
+      // A5 — persistent Run. Start (or resume) one for this idea so every
+      // workflow dispatch downstream can thread `runId` through to the Run
+      // event log. Non-blocking: if /api/runs is unavailable we still build
+      // the workflows, just without the run linkage.
+      setProgress('Starting Run…')
+      let runId: string | undefined
+      try {
+        const runRes = await fetch('/api/runs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: card.id }),
+        })
+        if (runRes.ok) {
+          const { run } = await runRes.json() as { run?: { id: string } }
+          runId = run?.id
+        }
+      } catch {
+        // Swallow — run creation is best-effort during the transition window
+      }
+
       setProgress('Generating BUILD workflow…')
-      const build = await generateWorkflow(card, executeInput, 'build')
+      const build = await generateWorkflow(card, executeInput, 'build', runId)
 
       setProgress('Generating MAINTAIN & PROFIT workflow…')
-      const maintain = await generateWorkflow(card, executeInput, 'maintain')
+      const maintain = await generateWorkflow(card, executeInput, 'maintain', runId)
 
       // Prefer server-persisted row (has DB id + createdAt); fall back to
       // localStorage when Supabase is unconfigured.

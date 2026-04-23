@@ -168,6 +168,8 @@ interface FallbackIdeaInput {
   tools?:          { name: string; purpose?: string }[]
   howItMakesMoney?: string
   capabilityIds:   string[]
+  /** A5 — threaded into every dispatch-node body so run_events attribute correctly. */
+  runId?:          string
 }
 
 // Keyword → capabilityId. First match wins. Falls back to 'consultant'.
@@ -216,7 +218,7 @@ function dedupName(base: string, taken: Set<string>): string {
 function buildFallbackWorkflow(
   input: FallbackIdeaInput,
 ): { workflow: N8nWorkflow; checklist: string[]; explanation: string } {
-  const { description, workflowType, steps, tools, howItMakesMoney, capabilityIds } = input
+  const { description, workflowType, steps, tools, howItMakesMoney, capabilityIds, runId } = input
   const isBuild       = workflowType === 'build'
   const phaseSteps    = (steps ?? []).filter(s => !s.phase || s.phase === workflowType)
   const hasStructured = phaseSteps.length > 0
@@ -279,6 +281,7 @@ function buildFallbackWorkflow(
       swarm,
       autoCreateAgent: true,
       asset:       asset ? asset.kind : null,
+      runId,
       inputs: {
         task:            stepTitle,
         description,
@@ -517,6 +520,8 @@ export async function POST(req: NextRequest) {
     steps?:          { title: string; automatable: boolean; phase?: 'build' | 'maintain'; tools?: string[] }[]
     tools?:          { name: string; purpose?: string }[]
     howItMakesMoney?: string
+    /** A5 — persistent Run id. Threaded into every managed-agent dispatch node so run_events carry correct attribution. */
+    runId?:          string
   }
 
   if (!body.description?.trim()) {
@@ -599,6 +604,7 @@ export async function POST(req: NextRequest) {
       tools:           body.tools,
       howItMakesMoney: body.howItMakesMoney,
       capabilityIds,
+      runId:           body.runId,
     })
     workflow    = scaffold.workflow
     checklist   = scaffold.checklist
@@ -606,6 +612,27 @@ export async function POST(req: NextRequest) {
       scaffold.explanation,
       fallbackReason ? `\nFallback reason: ${fallbackReason}` : '',
     ].filter(Boolean).join('')
+  }
+
+  // A5 — belt-and-braces: walk every node in the final workflow and inject
+  // `runId` into any /api/claude-session/dispatch body. The fallback builder
+  // already does this, but AI-generated workflows might not — this ensures
+  // every dispatch emits run_events regardless of generation path.
+  if (body.runId && workflow?.nodes) {
+    for (const node of workflow.nodes) {
+      const params = node.parameters as Record<string, unknown> | undefined
+      const url = params?.url
+      if (typeof url !== 'string' || !url.includes('/api/claude-session/dispatch')) continue
+      const rawBody = params?.jsonBody
+      if (typeof rawBody !== 'string') continue
+      try {
+        const parsed = JSON.parse(rawBody) as Record<string, unknown>
+        if (!parsed.runId) parsed.runId = body.runId
+        ;(params as Record<string, unknown>).jsonBody = JSON.stringify(parsed, null, 2)
+      } catch {
+        // Non-JSON body — leave as-is; the runId-less dispatch will still work.
+      }
+    }
   }
 
   const gapAnalysis = analyzeWorkflow(workflow)
