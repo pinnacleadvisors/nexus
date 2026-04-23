@@ -4,19 +4,45 @@ import { useState } from 'react'
 import type { KanbanCard } from '@/lib/types'
 import { XCircle, CheckCircle2, ExternalLink, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import FeedbackBox from './FeedbackBox'
+import DiffViewer from './DiffViewer'
 
 interface Props {
   card: KanbanCard
   onClose: () => void
   onApprove: (card: KanbanCard, onResult: (ok: boolean) => void) => void
   onReject:  (card: KanbanCard, revision: string) => void
+  /** Optional — when the card was produced by a Run, the diff viewer updates run_events. */
+  runId?: string
 }
 
-export default function ReviewModal({ card, onClose, onApprove, onReject }: Props) {
+/**
+ * Detects GitHub branch / PR URLs so we can swap the iframe preview for the
+ * diff viewer. Matches:
+ *   - https://github.com/<o>/<r>/tree/<branch>
+ *   - https://github.com/<o>/<r>/pull/<n>
+ *   - git+https://github.com/<o>/<r>#<branch>
+ */
+function isGithubBranchUrl(url?: string): boolean {
+  if (!url) return false
+  try {
+    const clean = url.startsWith('git+') ? url.slice(4) : url
+    const u = new URL(clean)
+    if (!u.hostname.endsWith('github.com')) return false
+    if (/\/(tree|pull)\//.test(u.pathname)) return true
+    if (u.hash && u.pathname.split('/').filter(Boolean).length === 2) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+export default function ReviewModal({ card, onClose, onApprove, onReject, runId }: Props) {
   const [showRevision,    setShowRevision]    = useState(false)
   const [revision,        setRevision]        = useState('')
   const [approveState,    setApproveState]    = useState<'idle' | 'dispatching' | 'ok' | 'err'>('idle')
   const [showFeedback,    setShowFeedback]    = useState(false)
+
+  const isDiff = isGithubBranchUrl(card.assetUrl)
 
   function handleApprove() {
     setApproveState('dispatching')
@@ -64,27 +90,48 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
           </button>
         </div>
 
-        {/* Asset preview */}
-        <div
-          className="mx-5 mt-5 rounded-xl overflow-hidden"
-          style={{ height: 260, backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
-        >
-          {card.assetUrl ? (
-            <iframe
-              src={card.assetUrl}
-              className="w-full h-full"
-              title="Asset preview"
-              sandbox="allow-same-origin allow-scripts"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="text-sm" style={{ color: '#55556a' }}>No preview available</span>
+        {/* Asset preview: diff viewer for GitHub branches, iframe for everything else */}
+        {isDiff && card.assetUrl ? (
+          <DiffViewer
+            url={card.assetUrl}
+            runId={runId}
+            onApproved={() => {
+              // Delegate to the parent so the card moves + any downstream
+              // dispatch fires. DiffViewer already performed the git merge.
+              onApprove(card, () => {})
+              onClose()
+            }}
+            onRejected={() => {
+              // Same shape as the "submit for regeneration" path but without
+              // a revision note — the rejection reason lives in run_events.
+              onReject(card, 'Diff rejected from Board')
+              onClose()
+            }}
+          />
+        ) : (
+          <>
+            <div
+              className="mx-5 mt-5 rounded-xl overflow-hidden"
+              style={{ height: 260, backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
+            >
+              {card.assetUrl ? (
+                <iframe
+                  src={card.assetUrl}
+                  className="w-full h-full"
+                  title="Asset preview"
+                  sandbox="allow-same-origin allow-scripts"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="text-sm" style={{ color: '#55556a' }}>No preview available</span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
-        {/* Asset link */}
-        {card.assetUrl && (
+        {/* Asset link — hidden in diff mode because the DiffViewer links to each file directly */}
+        {!isDiff && card.assetUrl && (
           <div className="px-5 mt-2">
             <a
               href={card.assetUrl}
@@ -100,29 +147,31 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
         )}
 
         {/* Description */}
-        <p className="px-5 mt-3 text-sm" style={{ color: '#9090b0' }}>{card.description}</p>
+        {!isDiff && (
+          <p className="px-5 mt-3 text-sm" style={{ color: '#9090b0' }}>{card.description}</p>
+        )}
 
-        {/* Dispatch status */}
-        {approveState === 'dispatching' && (
+        {/* Dispatch status — suppressed in diff mode (the diff viewer has its own feedback) */}
+        {!isDiff && approveState === 'dispatching' && (
           <div className="mx-5 mt-3 flex items-center gap-2 text-xs" style={{ color: '#6c63ff' }}>
             <Loader2 size={12} className="animate-spin" />
             Dispatching next task to OpenClaw…
           </div>
         )}
-        {approveState === 'ok' && (
+        {!isDiff && approveState === 'ok' && (
           <div className="mx-5 mt-3 flex items-center gap-2 text-xs" style={{ color: '#22c55e' }}>
             <CheckCircle2 size={12} />
             Approved &amp; next task dispatched to OpenClaw
           </div>
         )}
-        {approveState === 'err' && (
+        {!isDiff && approveState === 'err' && (
           <div className="mx-5 mt-3 text-xs" style={{ color: '#f59e0b' }}>
             Approved locally. OpenClaw dispatch failed — check connection at /tools/claw
           </div>
         )}
 
         {/* Revision input */}
-        {showRevision && (
+        {!isDiff && showRevision && (
           <div className="px-5 mt-4">
             <textarea
               value={revision}
@@ -138,7 +187,8 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
           </div>
         )}
 
-        {/* Actions */}
+        {/* Actions — hidden in diff mode; DiffViewer owns the approve/reject buttons */}
+        {!isDiff && (
         <div className="flex items-center justify-end gap-3 px-5 py-4">
           {showRevision ? (
             <>
@@ -194,6 +244,7 @@ export default function ReviewModal({ card, onClose, onApprove, onReject }: Prop
             </>
           )}
         </div>
+        )}
 
         {/* Feedback disclosure — routes to the workflow-optimizer agent */}
         <div style={{ borderTop: '1px solid #24243e' }}>
