@@ -94,6 +94,27 @@
 | `MEMORY_TOKEN` | 20 | GitHub PAT (repo scope) for runtime agent memory |
 | `MEMORY_REPO` | 20 | e.g. `pinnacleadvisors/nexus-memory` |
 
+## Publish Pipeline (A10 / A11)
+
+Credentials are stored in the encrypted `user_secrets` table (migration 014) per
+user. No env vars are required at the platform level — the owner stores their
+own OAuth credentials once via the UI.
+
+| Kind | Required fields | Purpose |
+|------|-----------------|---------|
+| `youtube`   | `clientId`, `clientSecret`, `refreshToken` | YouTube Shorts publish + measure. Obtain the refresh token once via the standard Google OAuth consent flow with scope `https://www.googleapis.com/auth/youtube.upload`. |
+| `tiktok`    | `accessToken` | Stubbed — pending TikTok for Developers app review. |
+| `instagram` | `accessToken`, `igUserId` | Stubbed — pending Business/Creator account + content_publish permission. |
+
+### How to get the YouTube refresh token (once, offline)
+
+1. Google Cloud Console → create OAuth client ID (web application).
+2. Add `https://developers.google.com/oauthplayground` as an authorised redirect URI.
+3. Open https://developers.google.com/oauthplayground, click the gear icon, tick "Use your own OAuth credentials" and paste your client ID + secret.
+4. In the scope list, add `https://www.googleapis.com/auth/youtube.upload` and authorise.
+5. Exchange authorization code for tokens. Copy the `refresh_token` out.
+6. POST `{ clientId, clientSecret, refreshToken }` to the platform's user-secrets endpoint (or insert manually via the tools/claw UI once extended).
+
 ## Agent Library (managed agents)
 
 Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
