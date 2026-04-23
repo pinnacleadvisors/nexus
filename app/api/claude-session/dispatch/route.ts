@@ -51,6 +51,8 @@ import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { getCapability } from '@/lib/agent-capabilities'
 import { buildSessionEnv } from '@/lib/n8n/managed-agent-builder'
+import { advancePhase as advanceRunPhase, appendEvent as appendRunEvent, getRun } from '@/lib/runs/controller'
+import { RUN_PHASE_ORDER, type RunPhase } from '@/lib/types'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 45
@@ -63,6 +65,10 @@ interface DispatchBody {
   swarm?:           boolean
   autoCreateAgent?: boolean
   asset?: string | null
+  /** A6 — link this dispatch to a persistent Run so its events feed the loop. */
+  runId?:     string
+  /** A6 — when set, success advances the run to this phase (otherwise the n8n workflow stays in control). */
+  advanceTo?: RunPhase
   inputs?: {
     task?:             string
     description?:      string
@@ -72,6 +78,8 @@ interface DispatchBody {
     [extra: string]:   unknown
   }
 }
+
+const VALID_PHASES = new Set<RunPhase>(RUN_PHASE_ORDER)
 
 // ── Agent spec helpers ───────────────────────────────────────────────────────
 
@@ -311,6 +319,24 @@ export async function POST(req: NextRequest) {
   const autoCreate = body.autoCreateAgent !== false
   const asset = body.asset && typeof body.asset === 'string' ? body.asset : null
 
+  // A6 — if a runId was passed, verify ownership (RLS already enforces this
+  // when reading via the anon client, but dispatch uses the service role path).
+  const runId = body.runId && typeof body.runId === 'string' ? body.runId : null
+  if (runId) {
+    const run = await getRun(runId)
+    if (!run || run.userId !== userId) {
+      return NextResponse.json({ error: 'runId not found' }, { status: 404 })
+    }
+    await appendRunEvent(runId, 'dispatch.started', {
+      agentSlug: body.agentSlug,
+      capabilityId,
+      swarm,
+      asset,
+    })
+  }
+
+  const advanceTo = body.advanceTo && VALID_PHASES.has(body.advanceTo) ? body.advanceTo : null
+
   // 1. Ensure agent spec
   let created = false
   let specPath = path.join(AGENTS_DIR, `${body.agentSlug}.md`)
@@ -371,6 +397,13 @@ export async function POST(req: NextRequest) {
   })
 
   if (!dispatch) {
+    if (runId) {
+      await appendRunEvent(runId, 'dispatch.completed', {
+        agentSlug: body.agentSlug,
+        status: 'pending',
+        note: 'OpenClaw not configured',
+      })
+    }
     // OpenClaw not configured — return 202 so the n8n run is not blocked.
     return NextResponse.json(
       {
@@ -387,6 +420,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!dispatch.ok) {
+    if (runId) {
+      await appendRunEvent(runId, 'dispatch.completed', {
+        agentSlug: body.agentSlug,
+        sessionId: dispatch.sessionId,
+        status: 'failed',
+        httpStatus: dispatch.status,
+      })
+    }
     return NextResponse.json(
       {
         ok:         false,
@@ -401,6 +442,17 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  if (runId) {
+    await appendRunEvent(runId, 'dispatch.completed', {
+      agentSlug: body.agentSlug,
+      sessionId: dispatch.sessionId,
+      status: 'ok',
+    })
+    if (advanceTo) {
+      await advanceRunPhase(runId, advanceTo, { reason: 'dispatch.success', agentSlug: body.agentSlug })
+    }
+  }
+
   return NextResponse.json({
     ok:          true,
     sessionId:   dispatch.sessionId,
@@ -408,5 +460,6 @@ export async function POST(req: NextRequest) {
     swarm,
     envApplied:  env,
     created,
+    ...(runId ? { runId, advancedTo: advanceTo ?? undefined } : {}),
   })
 }

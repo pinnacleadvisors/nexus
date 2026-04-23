@@ -102,7 +102,7 @@ export interface SwarmRun {
 export type SwarmEventType =
   | 'status'       | 'plan'         | 'phase_start'  | 'phase_end'
   | 'task_start'   | 'task_end'     | 'task_chunk'   | 'consensus'
-  | 'drift'        | 'error'        | 'complete'
+  | 'drift'        | 'error'        | 'complete'     | 'graph_retrieved'
 
 export interface SwarmEvent {
   type:    SwarmEventType

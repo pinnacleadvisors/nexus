@@ -359,3 +359,72 @@ export interface OAuthConnection {
   provider: OAuthProviderName
   connectedAt: string
 }
+
+// ── Runs (persistent idea → execution → optimisation state machine) ─────────
+export type RunPhase =
+  | 'ideate'
+  | 'spec'
+  | 'decompose'
+  | 'build'
+  | 'review'
+  | 'launch'
+  | 'measure'
+  | 'optimise'
+  | 'done'
+
+export type RunStatus = 'pending' | 'active' | 'blocked' | 'failed' | 'done'
+
+/** Ordered list used for default forward transitions */
+export const RUN_PHASE_ORDER: RunPhase[] = [
+  'ideate', 'spec', 'decompose', 'build', 'review', 'launch', 'measure', 'optimise', 'done',
+]
+
+export interface RunMetrics {
+  /** Click-through rate, 0–1, post-launch */
+  ctr?: number
+  /** Conversion rate, 0–1 */
+  conversion?: number
+  /** Total token cost in USD, aggregated from token_events rows tagged with run_id */
+  tokenCostUsd?: number
+  /** How many Board reviews of this run's artefacts were rejected */
+  reviewRejects?: number
+  /** p50 latency across all dispatches in the run, milliseconds */
+  latencyP50Ms?: number
+  /** Published external IDs keyed by platform ('youtube', 'tiktok', 'instagram') */
+  externalIds?: Record<string, string>
+}
+
+export interface Run {
+  id: string
+  userId: string
+  ideaId?: string
+  projectId?: string
+  phase: RunPhase
+  status: RunStatus
+  cursor: Record<string, unknown>
+  metrics: RunMetrics
+  createdAt: string
+  updatedAt: string
+}
+
+export type RunEventKind =
+  | 'phase.advance'
+  | 'phase.block'
+  | 'phase.fail'
+  | 'dispatch.started'
+  | 'dispatch.completed'
+  | 'graph.retrieved'
+  | 'metric.sample'
+  | 'review.approved'
+  | 'review.rejected'
+  | 'publish.posted'
+  | 'optimise.proposed'
+  | 'optimise.applied'
+
+export interface RunEvent {
+  id: string
+  runId: string
+  kind: RunEventKind
+  payload: Record<string, unknown>
+  createdAt: string
+}
