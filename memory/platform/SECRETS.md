@@ -39,14 +39,15 @@
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `CLAW_DAILY_DISPATCH_CAP` | 100 | Max OpenClaw dispatches/day |
-| `COST_ALERT_PER_RUN_USD` | 0.50 | Alert threshold per AI run |
+| `COST_ALERT_PER_RUN_USD` | 0.50 | Soft alert threshold per AI run (Slack/email) |
+| `USER_DAILY_USD_LIMIT`    | 25   | Hard per-user daily AI-spend cap. `/api/chat` and `/api/content/generate` return HTTP 402 once hit. See `lib/cost-guard.ts`. |
 
 ## Security (Phase 9)
 
 | Var | Purpose |
 |-----|---------|
-| `ENCRYPTION_KEY` | AES-256-GCM key for OAuth token encryption (generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
-| `UPSTASH_REDIS_REST_URL` | Rate limiter (in-memory fallback if unset) |
+| `ENCRYPTION_KEY` | AES-256-GCM key for user-secret / OAuth token encryption (generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Required in production — `lib/crypto.ts` throws on import if missing. **Rotation:** see `rotateKey()` in `lib/crypto.ts` — set old + new keys simultaneously, re-encrypt every row, then drop the old. |
+| `UPSTASH_REDIS_REST_URL` | Rate limiter (in-memory fallback if unset — do NOT rely on fallback in production, cross-lambda counters won't work) |
 | `UPSTASH_REDIS_REST_TOKEN` | Rate limiter |
 
 ## Storage (Phase 7)

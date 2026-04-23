@@ -18,6 +18,8 @@ import { detectFastPathOp, tryFastPath } from './WasmFastPath'
 import { updateRouter } from './Router'
 import { AGENT_REGISTRY } from './agents/registry'
 import { searchWebMulti, formatResultsAsContext } from '@/lib/tools/tavily'
+import { retrieveGraphContext } from './GraphRetriever'
+import { findSimilarPlans, formatPlanAsFewShot } from './PlanBank'
 
 // Roles that benefit from live web research
 const RESEARCH_ROLES = new Set<AgentRole>(['researcher', 'analyst', 'strategist'])
@@ -47,8 +49,42 @@ export async function strategicDecompose(
   context: string,
   emit:    EventEmitter,
   swarmId: string,
+  opts:    { userId?: string } = {},
 ): Promise<SwarmPlan> {
   emit(evt(swarmId, 'status', { message: 'StrategicQueen: decomposing goal into phases…' }))
+
+  // A7 — graph-keyed context retrieval. When the knowledge graph has relevant
+  // atoms/entities/MOCs we prepend a compact preamble instead of relying solely
+  // on the caller-supplied context blob. Cold starts fall back cleanly because
+  // `hit=false` returns an empty text.
+  const graph = await retrieveGraphContext(goal, 'strategist').catch(() => null)
+  if (graph?.hit) {
+    emit(evt(swarmId, 'graph_retrieved', {
+      source:   'strategicDecompose',
+      nodeIds:  graph.nodeIds,
+      tokens:   graph.tokens,
+    }))
+  }
+  const mergedContext = graph?.hit
+    ? `${graph.text}\n\n---\n\n${context || ''}`.trim()
+    : context
+
+  // A8 — ReasoningBank feedforward. When we have a similar prior plan, show the
+  // shortest one as a few-shot example so the Queen biases toward reuse rather
+  // than redesigning from scratch. `opts.userId` is required for RLS scoping;
+  // anonymous callers (legacy code paths) simply skip this step.
+  let fewShotBlock = ''
+  if (opts.userId) {
+    const similar = await findSimilarPlans(opts.userId, goal, 3).catch(() => [])
+    if (similar.length > 0) {
+      // Pick the shortest plan so we stay within token budget
+      const shortest = [...similar].sort((a, b) => a.taskCount - b.taskCount)[0]
+      fewShotBlock = '\n\n' + formatPlanAsFewShot(shortest)
+      emit(evt(swarmId, 'status', {
+        message: `StrategicQueen: referencing prior plan (${shortest.taskCount} tasks, outcome ${shortest.outcomeScore.toFixed(2)})`,
+      }))
+    }
+  }
 
   const agentRoles = AGENT_REGISTRY.map(a => `${a.role} (${a.name}): ${a.description}`).join('\n')
 
@@ -58,7 +94,7 @@ export async function strategicDecompose(
 ${goal}
 
 ## Context
-${context || 'No additional context provided.'}
+${mergedContext || 'No additional context provided.'}
 
 ## Available Specialist Agents
 ${agentRoles}
@@ -70,6 +106,8 @@ ${agentRoles}
 - Tasks within the same phase can run in parallel
 - Be specific and actionable — vague tasks produce poor results
 - The final phase should synthesise outputs into a coherent deliverable
+
+${fewShotBlock}
 
 Respond with ONLY valid JSON (no markdown fences, no explanations outside JSON):
 {
@@ -267,6 +305,10 @@ export async function runSwarm(params: {
   driftThreshold?: number
   checkpointEvery?:number
   emit:            EventEmitter
+  /** A8 — archive the decomposed plan to PlanBank on success for future reuse. */
+  userId?:         string
+  /** A6 — link run_events when a persistent Run drove this swarm. */
+  runId?:          string
 }): Promise<SwarmRunResult> {
   const {
     swarmId, goal, context, consensusType,
@@ -274,6 +316,8 @@ export async function runSwarm(params: {
     driftThreshold  = 0.4,
     checkpointEvery = 5,
     emit,
+    userId,
+    runId,
   } = params
 
   const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -289,7 +333,7 @@ export async function runSwarm(params: {
   const priorResults: Array<{ phase: number; title: string; result: string }> = []
 
   // ── 1. Strategic decomposition ──────────────────────────────────────────────
-  const plan = await strategicDecompose(goal, context, emit, swarmId)
+  const plan = await strategicDecompose(goal, context, emit, swarmId, { userId })
 
   // ── 2. Execute each phase ───────────────────────────────────────────────────
   for (const phaseSpec of plan.phases) {
@@ -388,6 +432,30 @@ export async function runSwarm(params: {
     prompt:           `## Original Goal\n${goal}\n\n## Phase Outputs\n${synthPrompt}`,
     maxOutputTokens:  4000,
   })
+
+  // A8 — archive the plan + outcome so future swarms on similar goals get
+  // the shortest matching plan injected as a few-shot example.
+  if (userId) {
+    const approvedTasks = allTasks.filter(t => t.status === 'approved').length
+    const totalTasks    = allTasks.length || 1
+    const outcomeScore  = approvedTasks / totalTasks
+    // Fire-and-forget — swarm completion should not wait on analytics writes.
+    void (async () => {
+      try {
+        const { storePlan } = await import('./PlanBank')
+        await storePlan({
+          userId,
+          runId,
+          goal,
+          plan,
+          outcomeScore,
+          tokenCostUsd: totalCostUsd,
+        })
+      } catch (err) {
+        console.warn('[runSwarm] storePlan failed:', err)
+      }
+    })()
+  }
 
   return { phases: phaseObjs, tasks: allTasks, totalTokens, totalCostUsd, synthesis }
 }

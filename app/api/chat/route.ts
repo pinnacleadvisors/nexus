@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -8,7 +8,11 @@ import {
   type SystemModelMessage,
   type LanguageModelUsage,
 } from 'ai'
+import { auth } from '@clerk/nextjs/server'
 import { searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { audit } from '@/lib/audit'
+import { assertUnderCostCap } from '@/lib/cost-guard'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -236,6 +240,24 @@ async function buildMemoryContext(messages: UIMessage[]): Promise<string> {
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // B1 — auth + per-user rate limit (20/min + 500/day) + audit
+  const { userId } = await auth()
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const rlMin = await rateLimit(req, { limit: 20,  window: '1 m', prefix: 'chat:min', identifier: userId })
+  if (!rlMin.success) return rateLimitResponse(rlMin)
+  const rlDay = await rateLimit(req, { limit: 500, window: '1 d', prefix: 'chat:day', identifier: userId })
+  if (!rlDay.success) return rateLimitResponse(rlDay)
+
+  // B9 — daily cost cap. Block new LLM calls once the user has hit USER_DAILY_USD_LIMIT
+  const cap = await assertUnderCostCap(userId)
+  if (!cap.ok) {
+    return NextResponse.json(
+      { error: 'daily cost cap exceeded', spentUsd: cap.spentUsd, capUsd: cap.capUsd },
+      { status: 402 },
+    )
+  }
+
   const body = await req.json() as {
     messages:       UIMessage[]
     advisorModel?:  string
@@ -245,6 +267,13 @@ export async function POST(req: NextRequest) {
   const messages      = body.messages
   const advisorModel  = body.advisorModel  ?? 'claude-opus-4-6'
   const executorModel = body.executorModel ?? 'claude-sonnet-4-6'
+
+  audit(req, {
+    action: 'chat.stream',
+    resource: 'chat',
+    userId,
+    metadata: { advisorModel, executorModel, messageCount: messages?.length ?? 0 },
+  })
 
   // RAG: search nexus-memory for context relevant to this conversation
   const memoryContext = await buildMemoryContext(messages)
@@ -308,6 +337,7 @@ export async function POST(req: NextRequest) {
               if (!db) return
 
               await db.from('token_events').insert({
+                user_id:       userId,
                 model:         advisorModel,
                 input_tokens:  usage.inputTokens  ?? 0,
                 output_tokens: usage.outputTokens ?? 0,

@@ -62,12 +62,13 @@ function getIdentifier(req: NextRequest): string {
 // ── Main rate limit function ──────────────────────────────────────────────────
 export async function rateLimit(
   req: NextRequest,
-  options: { limit?: number; window?: string; prefix?: string } = {},
+  options: { limit?: number; window?: string; prefix?: string; identifier?: string } = {},
 ): Promise<RateLimitResult> {
-  const { limit = 30, window = '1 m', prefix = 'rl' } = options
+  const { limit = 30, window = '1 m', prefix = 'rl', identifier } = options
   const windowMs = parseWindowMs(window)
-  const ip = getIdentifier(req)
-  const key = `${prefix}:${ip}`
+  // Prefer caller-supplied identifier (e.g. userId) over IP for authenticated routes
+  const id = identifier ?? getIdentifier(req)
+  const key = `${prefix}:${id}`
 
   // Upstash Redis path
   const redisUrl   = process.env.UPSTASH_REDIS_REST_URL
