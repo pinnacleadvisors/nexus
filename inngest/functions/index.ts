@@ -181,6 +181,7 @@ export const onAgentStatusChanged = inngest.createFunction(
 import { weeklyResearchLoop as _weeklyResearchLoop } from './research-loop'
 import { metricOptimiserHourly as _metricOptimiserHourly } from './metric-optimiser'
 import { ingestMetricsHourly as _ingestMetricsHourly } from './ingest-metrics'
+import { regressionSweepDaily as _regressionSweepDaily } from './regression-detector'
 
 export const functions = [
   onMilestoneCompleted,
@@ -190,4 +191,5 @@ export const functions = [
   _weeklyResearchLoop,
   _metricOptimiserHourly,
   _ingestMetricsHourly,
+  _regressionSweepDaily,
 ]
