@@ -13,6 +13,8 @@ import { searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/gi
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
+import { buildGraph, scoreNodeRelevance } from '@/lib/graph/builder'
+import type { GraphNode } from '@/lib/graph/types'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -208,6 +210,50 @@ async function callOpenClaw(
   }
 }
 
+// ── C7: Graph-aware cache short-circuit ───────────────────────────────────────
+// When the latest user message maps to a single strong molecular-memory atom
+// (score above threshold AND ≥2× the next-best), return the atom body as a
+// cached response with a `cached:true` flag so the UI can surface a "refresh?"
+// button. Skips on anything shorter than 8 chars (greetings etc.) to avoid
+// false positives.
+const GRAPH_CACHE_MIN_QUERY_LEN = 8
+const GRAPH_CACHE_MIN_SCORE     = 8    // scoreNodeRelevance threshold
+const GRAPH_CACHE_DOMINANCE     = 2    // winner.score / runner-up.score ≥ this
+const GRAPH_CACHE_TYPES         = new Set<GraphNode['type']>(['memory_atom', 'memory_moc', 'memory_entity'])
+
+interface GraphCacheHit {
+  answer:   string
+  nodeId:   string
+  nodeType: string
+  score:    number
+}
+
+async function tryGraphCache(query: string): Promise<GraphCacheHit | null> {
+  if (query.trim().length < GRAPH_CACHE_MIN_QUERY_LEN) return null
+  const graph = await buildGraph().catch(() => null)
+  if (!graph || graph.nodes.length === 0) return null
+
+  const scored = graph.nodes
+    .filter(n => GRAPH_CACHE_TYPES.has(n.type))
+    .map(n => ({ node: n, score: scoreNodeRelevance(n, query) }))
+    .sort((a, b) => b.score - a.score)
+
+  if (scored.length === 0) return null
+  const [best, next] = scored
+  if (best.score < GRAPH_CACHE_MIN_SCORE) return null
+  if (next && next.score > 0 && best.score / next.score < GRAPH_CACHE_DOMINANCE) return null
+
+  const md = (best.node.metadata ?? {}) as Record<string, unknown>
+  const answer =
+    (typeof md.body === 'string'    && md.body) ||
+    (typeof md.excerpt === 'string' && md.excerpt) ||
+    (typeof md.blurb === 'string'   && md.blurb) ||
+    (typeof md.description === 'string' && md.description) ||
+    null
+  if (!answer || answer.length < 40) return null
+  return { answer, nodeId: best.node.id, nodeType: best.node.type, score: best.score }
+}
+
 // ── Memory RAG context injection ──────────────────────────────────────────────
 // Search nexus-memory for context relevant to the latest user message and inject
 // matching excerpts into the system prompt to avoid repeating prior research.
@@ -274,6 +320,34 @@ export async function POST(req: NextRequest) {
     userId,
     metadata: { advisorModel, executorModel, messageCount: messages?.length ?? 0 },
   })
+
+  // C7 — graph-aware cache short-circuit. If the latest user message resolves
+  // to exactly one dominant molecular atom / MOC / entity we return the atom
+  // body as a cached response tagged with `cached:true` + nodeId so the UI
+  // can render a "refresh?" affordance. The only tokens spent are the graph
+  // build (cached in-memory) — the Claude call is skipped entirely.
+  const lastUserMessage = [...(messages ?? [])].reverse().find(m => m.role === 'user')
+  const lastUserText    = lastUserMessage ? getMessageText(lastUserMessage) : ''
+  const cacheHit = lastUserText ? await tryGraphCache(lastUserText).catch(() => null) : null
+  if (cacheHit) {
+    audit(req, {
+      action:   'chat.graph_cache_hit',
+      resource: 'chat',
+      userId,
+      metadata: { nodeId: cacheHit.nodeId, nodeType: cacheHit.nodeType, score: cacheHit.score },
+    })
+    const marker = `\n\n<graph-cache nodeId="${cacheHit.nodeId}" type="${cacheHit.nodeType}" />`
+    const stream = createUIMessageStream({
+      execute: writer => {
+        writer.writer.write({
+          type:  'text-delta',
+          id:    'text-0',
+          delta: cacheHit.answer + marker,
+        })
+      },
+    })
+    return createUIMessageStreamResponse({ stream })
+  }
 
   // RAG: search nexus-memory for context relevant to this conversation
   const memoryContext = await buildMemoryContext(messages)

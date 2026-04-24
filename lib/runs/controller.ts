@@ -167,6 +167,28 @@ export async function advancePhase(
   if (error || !data) return null
 
   await appendEvent(runId, 'phase.advance', { from: current.phase, to, ...payload })
+
+  // C4 — fire-and-forget library promotion on successful run completion.
+  // Gate is inside `promoteRunToLibrary` so callers never need to remember it.
+  if (to === 'done') {
+    void (async () => {
+      try {
+        const { promoteRunToLibrary } = await import('@/lib/library/promoter')
+        const promotion = await promoteRunToLibrary(rowToRun(data))
+        if (promotion.promoted) {
+          await appendEvent(runId, 'optimise.applied', {
+            source: 'library-promoter',
+            ...promotion,
+          })
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('[runs/controller] library promotion failed:', err)
+        }
+      }
+    })()
+  }
+
   return rowToRun(data)
 }
 
