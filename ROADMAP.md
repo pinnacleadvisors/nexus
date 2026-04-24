@@ -113,9 +113,9 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 
 ### 📊 Sentry (Error Tracking)
 
-- [ ] Run `npm install @sentry/nextjs`
-- [ ] Run `npx @sentry/wizard@latest -i nextjs` (generates config files)
-- [ ] Add `SENTRY_DSN` to Doppler — Sentry project → Settings → Client Keys
+- [✅] Run `npm install @sentry/nextjs`
+- [✅] Run `npx @sentry/wizard@latest -i nextjs` (generates config files)
+- [✅] Add `SENTRY_DSN` to Doppler — Sentry project → Settings → Client Keys
 
 ---
 
