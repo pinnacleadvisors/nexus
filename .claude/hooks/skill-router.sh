@@ -49,7 +49,7 @@ if matches 'knowledge graph|map of content|moc|connect .* notes|how .* relate'; 
 fi
 
 if matches 'refactor .* (across|multiple|many) files|rename .* across|multi-file|god node|call graph|where is .* used|who calls'; then
-  hints+=('- Prompt spans multiple files → if graphify-out/GRAPH_REPORT.md is stale or missing, either run /graphify (if installed) or start a /molecularmemory_local MOC for the affected module to anchor the work.')
+  hints+=('- Prompt spans multiple files → start a /molecularmemory_local MOC for the affected module (node .claude/skills/molecularmemory_local/cli.mjs moc "<module>") and accumulate atoms as you explore. This anchors a multi-file refactor without rescanning.')
 fi
 
 if matches 'write (a )?test|tdd|red[ -]green[ -]refactor|failing test first'; then

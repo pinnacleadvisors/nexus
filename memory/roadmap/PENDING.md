@@ -15,8 +15,8 @@
 
 ## Phase 5 — OpenClaw Integration
 
-- OAuth token storage → migrate from cookies to encrypted DB column
-- Security audit on OAuth proxy and token handling
+- ~~OAuth token storage → migrate from cookies to encrypted DB column~~ ✅ B10 (2026-04-24)
+- ~~Security audit on OAuth proxy and token handling~~ ✅ B1–B10 pass
 
 ## Phase 12 — Tribe v2
 
@@ -47,7 +47,7 @@
 
 ## Phase 19 — Nexus Builds Nexus
 
-- Diff viewer — Board Review card shows git diff; approve (merge) or reject (close branch) from UI
+- ~~Diff viewer — Board Review card shows git diff; approve (merge) or reject (close branch) from UI~~ ✅ A12 (`components/board/DiffViewer.tsx`)
 - Error paste mode — paste TS/Next.js error → agent diagnoses via graph → proposes fix → dispatches
 - CI status badge — show Vercel deploy status on Board card; auto-create fix task on deploy failure
 
@@ -70,3 +70,19 @@ Priority order:
 - Implement `lib/graph/leiden.ts` (~200 lines TypeScript) to replace Louvain in `lib/graph/builder.ts` → `assignClusters()`
 - Benefits: well-connected communities (no disconnected nodes), deterministic output, higher modularity
 - No new packages needed (pure TS port of Leiden)
+
+## Self-Optimising Ecosystem (SOE) — remaining
+
+Tracked in `task_plan.md`. Cross-references to `memory/roadmap/SUMMARY.md`.
+
+### Pillar A — loop closure
+- **A5** — Forge "Build this" button must `POST /api/runs { ideaId }` then route to `/board?runId=...`. If a run already exists for the idea, resume. Currently the button does not create a run row.
+
+### Pillar B — security hardening
+- **B8** — Introduce `lib/withGuards.ts` that composes `assertOrigin` + `auth()` + `ratelimit()` + optional `costCap`; migrate the 10 most-called mutating routes. Start behind a feature flag.
+- **B11** — Wire `scripts/scan-secrets.sh` into a `.husky/pre-commit` hook (install husky, drop-in hook file). Without the hook the script is documentation, not enforcement.
+- **B12** — Audit every public surface (sign-in, OAuth callback, webhooks) for distinct rate-limit buckets so a single abuser can't DOS auth. Document the strategy in `lib/ratelimit.ts`.
+
+### Pillar A — post-A5 follow-ups
+- Final launch/publish human-gated step in the forge→board flow (tie into A10 providers)
+- Fill in TikTok + Instagram providers once app review clears (stubs in `lib/publish/`)

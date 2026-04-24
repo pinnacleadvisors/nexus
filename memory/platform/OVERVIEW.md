@@ -29,7 +29,7 @@ Nexus is an all-in-one business automation platform. AI agents (Claude, OpenClaw
 
 ## Design Principles
 
-- **Token efficiency first** — sliding window summarisation, prompt caching, library reuse before generation, graphify navigation
+- **Token efficiency first** — sliding window summarisation, prompt caching, library reuse before generation, molecular-memory MOC navigation (`/molecularmemory_local`)
 - **Approval-gated autonomy** — agents propose, human approves at Board; no auto-merge to main
 - **Fallback-safe** — every data source tries live (Supabase/GitHub) first, falls back to mock when unconfigured
 - **Single binary of truth** — `ROADMAP.md` tracks all feature status; memory files are dense summaries, never duplicates

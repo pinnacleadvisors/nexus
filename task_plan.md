@@ -17,7 +17,7 @@ Hard constraints:
 - Every new mutation endpoint: `auth()` → `ratelimit()` → CSRF origin check on POST → `audit.log()` write.
 - Branch: `claude/plan-ecosystem-integration-Wvnzk`.
 - **No auto-merge to main.** Human gate at the Board stays authoritative.
-- Keep the dual-graph distinction: `memory/molecular/` = domain knowledge; `graphify-out/` = codebase structure. Don't conflate them.
+- `memory/molecular/` is the single domain knowledge graph (built by `/molecularmemory_local`). The `/graphify` plugin and `graphify-out/` tree are no longer part of this repo — do not re-introduce.
 
 ---
 
@@ -38,7 +38,7 @@ Hard constraints:
 
 **Knowledge graph**:
 - Domain: `memory/molecular/{atoms,entities,mocs}` via `.claude/skills/molecularmemory_local/cli.mjs` (zero-token, pure Node)
-- Code: `graphify-out/GRAPH_REPORT.md` if present; `lib/graph/builder.ts` (Louvain), `memory-builder.ts`
+- Code structure heuristics: `lib/graph/builder.ts` (force-layout + Louvain), `memory-builder.ts` — derived on demand; no persisted graphify report
 - Runtime: `lib/memory/github.ts` (Phase 20 GitHub PAT backend) + `/api/memory/*` read/write
 
 **Metrics plumbing**: `/api/token-events` writes every model call with usage + cost; `/api/dashboard` aggregates; `/api/alerts` + `COST_ALERT_PER_RUN_USD` / `CLAW_DAILY_DISPATCH_CAP` env vars enforce soft caps. Inngest background at `/api/inngest` runs scheduled aggregation.
@@ -346,21 +346,66 @@ A10 → A11 → C5. Requires choosing a publish provider (recommend YouTube Shor
 | Before launch of publish | Human owner signs off on publish provider + scopes in writing (comment in `ROADMAP.md`) |
 
 ## Progress (as of 2026-04-24)
-### Completed
-- [x] Phase 1 exploration (findings above)
-- [x] Pillar C3 — prompt-cache prefix for Queen system prompts, cache stats fed into observability (`lib/swarm/TokenOptimiser.ts`, `lib/swarm/Queen.ts`)
-- [x] Pillar C4 — `lib/library/promoter.ts` + hook in `advancePhase('done')`; manual re-promotion path on `POST /api/library { promoteRunId }`
-- [x] Pillar C5 — `supabase/migrations/018_experiments.sql`, `lib/experiments/{types,client}.ts`, `POST/GET /api/experiments`, `components/tools/ExperimentPanel.tsx`. Two-proportion z-test decides winner at 95% confidence; loser auto-files `workflow_feedback`
-- [x] Pillar C6 — Router Q-entries carry `updatedAt`; `updateRouter` applies 14-day exponential decay; `feedRouterFromMetricSamples` ingests observability data and runs nightly via the regression-sweep cron
-- [x] Pillar C7 — `/api/chat` POST short-circuits with a cached graph-atom answer when one node dominates; emits audit + embeds `<graph-cache nodeId=…/>` marker for the UI "refresh?" affordance
-- [x] Pillar C8 — `POST /api/cron/rebuild-graph` (owner-only) re-runs the molecular-memory CLI, rebuilds the in-process graph, and emits node/orphan/degree metrics via `metric_samples`
+
+> Verified against the filesystem — this section is the source of truth for SOE phase status. Mirrored into `memory/roadmap/SUMMARY.md` (SOE table). Memory write path: on every pillar task completion, update both this section AND `memory/roadmap/SUMMARY.md` + `memory/roadmap/PENDING.md`.
+
+### Completed — Pillar A (loop closure)
+- [x] **A1** — `supabase/migrations/015_runs.sql` (runs + run_events, RLS scoped to user_id)
+- [x] **A2** — `Run`, `RunPhase`, `RunStatus`, `RunEvent`, `RunMetrics` in `lib/types.ts`
+- [x] **A3** — `lib/runs/controller.ts` (`startRun`, `advancePhase`, `appendEvent`, `getCursor`, optimistic `updated_at` guard)
+- [x] **A4** — `app/api/runs/route.ts` + `app/api/runs/[id]/route.ts` (list / fetch / advance, all auth-gated)
+- [x] **A6** — `app/api/claude-session/dispatch/route.ts` accepts `runId`, appends `run_events`, calls `advancePhase` at phase boundary
+- [x] **A7** — `lib/swarm/GraphRetriever.ts` + TokenOptimiser integration (budget-capped retrieval with fallback to `buildSwarmContext`)
+- [x] **A8** — ReasoningBank feedforward in `lib/swarm/Queen.ts` (`strategicDecompose` loads past successful plans; `migrations/016_plan_patterns.sql` stores them)
+- [x] **A9** — `lib/runs/metric-triggers.ts` + `app/api/cron/metric-optimiser/route.ts` (files metric-drift `workflow_feedback` rows)
+- [x] **A10** — `lib/publish/{youtube,tiktok,instagram,metrics,index,types}.ts` + `app/api/publish/route.ts` (YouTube live; TikTok + IG stubbed pending app review)
+- [x] **A11** — `lib/runs/measure-ingester.ts` + `app/api/cron/ingest-metrics/route.ts`
+- [x] **A12** — `components/board/DiffViewer.tsx` + `app/api/build/diff/route.ts` + ReviewModal integration
+
+### Completed — Pillar B (security)
+- [x] **B1** — `/api/chat` auth-gated
+- [x] **B2** — `/api/content/{generate,score,variants}` auth-gated
+- [x] **B3** — `lib/r2-url-guard.ts` + `/api/r2` auth-gated with RFC1918/metadata IP block
+- [x] **B4** — `/api/storage` auth-gated + user-id prefix scoping
+- [x] **B5** — `/api/audit` auth-gated
+- [x] **B6** — `lib/crypto.ts` throws in production when `ENCRYPTION_KEY` unset or invalid; dev fallback logs loud warning
+- [x] **B7** — `next.config.ts` gates `unsafe-eval` on `NODE_ENV !== 'production'`
+- [x] **B9** — `lib/cost-guard.ts` returns 402 when user crosses `USER_DAILY_USD_LIMIT` (default $25)
+- [x] **B10** — `supabase/migrations/014_user_secrets.sql` + encrypted `user_secrets` storage for `/api/claw/config` (cookie flow deprecated)
+
+### Completed — Pillar C (self-optimising performance)
+- [x] **C1** — `lib/observability.ts` + `supabase/migrations/017_metric_samples.sql`
+- [x] **C2** — `lib/observability/regression.ts` + `app/api/cron/regression-sweep/route.ts`
+- [x] **C3** — prompt-cache prefix for Queen system prompts, cache stats fed into observability (`lib/swarm/TokenOptimiser.ts`, `lib/swarm/Queen.ts`)
+- [x] **C4** — `lib/library/promoter.ts` + hook in `advancePhase('done')`; manual re-promotion path on `POST /api/library { promoteRunId }`
+- [x] **C5** — `supabase/migrations/018_experiments.sql`, `lib/experiments/{types,client}.ts`, `POST/GET /api/experiments`, `components/tools/ExperimentPanel.tsx`. Two-proportion z-test decides winner at 95% confidence; loser auto-files `workflow_feedback`
+- [x] **C6** — Router Q-entries carry `updatedAt`; `updateRouter` applies 14-day exponential decay; `feedRouterFromMetricSamples` ingests observability data and runs nightly via the regression-sweep cron
+- [x] **C7** — `/api/chat` POST short-circuits with a cached graph-atom answer when one node dominates; emits audit + embeds `<graph-cache nodeId=…/>` marker for the UI "refresh?" affordance
+- [x] **C8** — `POST /api/cron/rebuild-graph` (owner-only) re-runs the molecular-memory CLI, rebuilds the in-process graph, and emits node/orphan/degree metrics via `metric_samples`
+
+### Synergy check (cross-pillar integration verified)
+
+- ✅ **A1 ⇄ C1** — `metric_samples.run_id` FK aligns with `runs.id`; observability per-run is queryable
+- ✅ **A6 ⇄ A8** — dispatch run-events feed ReasoningBank's outcome labels for future feedforward
+- ✅ **A7 ⇄ C3** — GraphRetriever output is the stable prefix marked for Anthropic prompt caching (no redundant context regeneration)
+- ✅ **A9 ⇄ C2** — regression detector writes to the same `workflow_feedback` surface metric-triggers use; workflow-optimizer reads a single inbox
+- ✅ **A11 ⇄ C5** — experiment winner selection reads `runs.metrics` after ingest-metrics populates it
+- ✅ **A12 ⇄ C4** — successful run branch diff → library promotion uses the same `run_id` lineage
+- ✅ **B6 ⇄ B10** — user_secrets encryption fails closed in production, so the claw-config migration is safe to rely on
+- ✅ **B9 ⇄ C1** — cost-guard 402 response is recorded in `metric_samples` as a budget event for later analysis
+- ⚠️ **A5 gap breaks the loop** — without the forge "Build this" button wired to `POST /api/runs`, new ideas don't create a `runs` row. Everything downstream (A6/A9/A11/C1) still works when a run exists, but the entry point is manual (curl / SQL insert). **Shipping A5 closes the user-facing loop.**
+- ⚠️ **B8/B11/B12 hygiene gaps** — guards are wired per-route rather than via a `withGuards` wrapper; pre-commit secret scan exists as a script but no husky hook installs it. Low severity given B1–B7 + B9/B10 cover the critical money/data paths.
 
 ### Remaining
-- [ ] Review this plan with the user and confirm scope/priority before implementation
-- [ ] All tasks A1–A12, B1–B12, C1–C2
+- [ ] **A5** — wire `components/forge/ForgeActionBar.tsx` "Build this" to `POST /api/runs`, redirect to `/board?runId=...`, resume existing run for same idea
+- [ ] **B8** — introduce `lib/withGuards.ts` wrapper (origin + auth + ratelimit + optional costCap); migrate top 10 mutating routes behind a feature flag
+- [ ] **B11** — wire `scripts/scan-secrets.sh` into `.husky/pre-commit`
+- [ ] **B12** — audit every public surface (sign-in, OAuth callback, webhooks) for distinct rate-limit buckets; document strategy in `lib/ratelimit.ts`
+- [ ] TikTok + Instagram providers in `lib/publish/` once app review clears
+- [ ] Phase 19 closeout — error-paste mode + CI status badge on Board cards
 
 ### Blockers / Open Questions
-- Publish provider choice (YouTube Shorts? TikTok? All three?) — A10 blocked until decided
-- Is there an existing Inngest cron setup I should use for A9/A11/C2/C8, or do we use Vercel cron? `/api/inngest` exists but the scheduled-function registration needs confirmation.
-- Should the `runs` table be project-scoped (multi-business) or user-scoped (single-owner)? Phase 2 roadmap says multi-business is pending — I've designed for user-scoped with optional `project_id` to stay forward-compatible.
+- Inngest vs Vercel cron — the A9/A11/C2/C8 routes are registered as `app/api/cron/*` but the scheduled-function registration (Inngest `inngest.cron(...)` or `vercel.json` cron) needs confirmation.
+- Publish provider app-review timelines for TikTok + Instagram. YouTube Shorts is live.
+- Once A5 lands, decide whether the forge should also offer a "dry-run" mode that creates a run with `phase=spec` but halts before `build` — cheaper exploration for uncertain ideas.
 
