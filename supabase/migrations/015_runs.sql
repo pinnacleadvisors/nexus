@@ -63,7 +63,3 @@ CREATE POLICY "run_events_via_run" ON run_events
     WHERE r.id = run_events.run_id
       AND r.user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub')
   ));
-
-INSERT INTO schema_migrations (id, name)
-VALUES (15, '015_runs')
-ON CONFLICT (id) DO NOTHING;

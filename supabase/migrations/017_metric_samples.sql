@@ -34,7 +34,3 @@ CREATE POLICY "metric_samples_own" ON metric_samples
   FOR ALL
   USING (user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub'))
   WITH CHECK (user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub'));
-
-INSERT INTO schema_migrations (id, name)
-VALUES (17, '017_metric_samples')
-ON CONFLICT (id) DO NOTHING;

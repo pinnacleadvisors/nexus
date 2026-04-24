@@ -24,7 +24,3 @@ ALTER TABLE user_secrets ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "user_secrets_service_only" ON user_secrets;
 CREATE POLICY "user_secrets_service_only" ON user_secrets
   FOR ALL USING (false) WITH CHECK (false);
-
-INSERT INTO schema_migrations (id, name)
-VALUES (14, '014_user_secrets')
-ON CONFLICT (id) DO NOTHING;
