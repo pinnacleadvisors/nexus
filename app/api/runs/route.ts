@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardRequest } from '@/lib/guard'
 import { listRuns, startRun } from '@/lib/runs/controller'
 import { audit } from '@/lib/audit'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import type { RunPhase } from '@/lib/types'
 
 export const runtime = 'nodejs'
@@ -43,7 +44,14 @@ export async function POST(req: NextRequest) {
     cursor:    body.cursor,
   })
   if (!run) {
-    return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
+    // Supabase unconfigured → run is ephemeral (workflow generation still works,
+    // it just won't be persisted). Return 200 with null so clients can detect
+    // degraded mode without triggering a console error on 503.
+    return NextResponse.json({
+      run: null,
+      ephemeral: true,
+      reason: isSupabaseConfigured() ? 'insert_failed' : 'supabase_unconfigured',
+    })
   }
 
   audit(req, {
