@@ -11,8 +11,3 @@ ALTER TABLE token_events
 CREATE INDEX IF NOT EXISTS token_events_user_id_created_at
   ON token_events (user_id, created_at DESC)
   WHERE user_id IS NOT NULL;
-
--- Record migration (follows the pattern from 001_initial_schema.sql)
-INSERT INTO schema_migrations (id, name)
-VALUES (13, '013_token_events_user_id')
-ON CONFLICT (id) DO NOTHING;

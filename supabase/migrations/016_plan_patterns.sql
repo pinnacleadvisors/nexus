@@ -7,6 +7,10 @@
 --              Written at the end of a successful run (via controller.advancePhase
 --              to 'done') so only shipped plans influence future ones.
 
+-- Enable trigram extension for similarity search. Safe to run repeatedly.
+-- Must come before the gin_trgm_ops index below.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE IF NOT EXISTS plan_patterns (
   id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id         UUID        REFERENCES runs(id) ON DELETE SET NULL,
@@ -27,9 +31,6 @@ CREATE INDEX IF NOT EXISTS plan_patterns_user_created
 CREATE INDEX IF NOT EXISTS plan_patterns_goal_keywords_trgm
   ON plan_patterns USING GIN (goal_keywords gin_trgm_ops);
 
--- Enable trigram extension for similarity search. Safe to run repeatedly.
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
 ALTER TABLE plan_patterns ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "plan_patterns_own" ON plan_patterns;
@@ -37,7 +38,3 @@ CREATE POLICY "plan_patterns_own" ON plan_patterns
   FOR ALL
   USING (user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub'))
   WITH CHECK (user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub'));
-
-INSERT INTO schema_migrations (id, name)
-VALUES (16, '016_plan_patterns')
-ON CONFLICT (id) DO NOTHING;
