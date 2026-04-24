@@ -345,13 +345,19 @@ A10 → A11 → C5. Requires choosing a publish provider (recommend YouTube Shor
 | After C-pack commit | Dashboard shows p50 token reduction vs baseline? |
 | Before launch of publish | Human owner signs off on publish provider + scopes in writing (comment in `ROADMAP.md`) |
 
-## Progress (as of 2026-04-22)
+## Progress (as of 2026-04-24)
 ### Completed
 - [x] Phase 1 exploration (findings above)
+- [x] Pillar C3 — prompt-cache prefix for Queen system prompts, cache stats fed into observability (`lib/swarm/TokenOptimiser.ts`, `lib/swarm/Queen.ts`)
+- [x] Pillar C4 — `lib/library/promoter.ts` + hook in `advancePhase('done')`; manual re-promotion path on `POST /api/library { promoteRunId }`
+- [x] Pillar C5 — `supabase/migrations/018_experiments.sql`, `lib/experiments/{types,client}.ts`, `POST/GET /api/experiments`, `components/tools/ExperimentPanel.tsx`. Two-proportion z-test decides winner at 95% confidence; loser auto-files `workflow_feedback`
+- [x] Pillar C6 — Router Q-entries carry `updatedAt`; `updateRouter` applies 14-day exponential decay; `feedRouterFromMetricSamples` ingests observability data and runs nightly via the regression-sweep cron
+- [x] Pillar C7 — `/api/chat` POST short-circuits with a cached graph-atom answer when one node dominates; emits audit + embeds `<graph-cache nodeId=…/>` marker for the UI "refresh?" affordance
+- [x] Pillar C8 — `POST /api/cron/rebuild-graph` (owner-only) re-runs the molecular-memory CLI, rebuilds the in-process graph, and emits node/orphan/degree metrics via `metric_samples`
 
 ### Remaining
 - [ ] Review this plan with the user and confirm scope/priority before implementation
-- [ ] All tasks A1–A12, B1–B12, C1–C8
+- [ ] All tasks A1–A12, B1–B12, C1–C2
 
 ### Blockers / Open Questions
 - Publish provider choice (YouTube Shorts? TikTok? All three?) — A10 blocked until decided

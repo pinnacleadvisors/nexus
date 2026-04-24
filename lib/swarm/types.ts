@@ -140,6 +140,8 @@ export interface RouterAction {
 export interface QEntry {
   qValue:     number
   visitCount: number
+  /** C6 — last update timestamp (ms since epoch) for exponential decay. */
+  updatedAt?: number
 }
 
 // ── Swarm config (dispatch body) ──────────────────────────────────────────────

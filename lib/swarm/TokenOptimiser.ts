@@ -8,7 +8,13 @@
  * 3. Hard truncation with summary marker if still too large
  *
  * Target: keep context under `targetTokens` (approximated as chars/4).
+ *
+ * C3 — also exports helpers for Anthropic prompt caching so callers can mark
+ * stable prefixes (system prompt + graph preamble) for `cacheControl:ephemeral`
+ * and so we can derive cache-read/cache-write ratios from the returned usage.
  */
+
+import type { SystemModelMessage, LanguageModelUsage } from 'ai'
 
 // ── Char-based token approximation ───────────────────────────────────────────
 export function approxTokens(text: string): number {
@@ -103,4 +109,61 @@ export function buildSwarmContext(
   const raw = parts.join('\n\n---\n\n')
   const { text } = optimiseContext(raw, targetTokens)
   return text
+}
+
+// ── C3: Prompt-cache helpers ──────────────────────────────────────────────────
+// Anthropic only caches segments ≥ 1024 tokens, so trying to cache a short
+// prompt is a waste of cache-write cost.
+const MIN_CACHE_TOKENS = 1024
+
+/**
+ * Build a system message whose content is marked for Anthropic prompt caching.
+ * The returned shape plugs directly into `generateText({ messages })`.
+ *
+ * When the text is shorter than Anthropic's minimum cacheable window we return
+ * a plain system message (no cacheControl) — caching a small prefix costs more
+ * in cache-write tokens than it saves.
+ */
+export function buildCachedSystem(text: string): SystemModelMessage {
+  const msg: SystemModelMessage = { role: 'system', content: text }
+  if (approxTokens(text) >= MIN_CACHE_TOKENS) {
+    msg.providerOptions = { anthropic: { cacheControl: { type: 'ephemeral' } } }
+  }
+  return msg
+}
+
+export interface CacheStats {
+  cacheReadTokens:  number
+  cacheWriteTokens: number
+  noCacheInputTokens: number
+  totalInputTokens: number
+  /** cacheReadTokens / totalInputTokens — 0 when no input tokens were billed. */
+  hitRatio: number
+}
+
+/**
+ * Extract cache-read / cache-write ratios from a usage object. Works both with
+ * the new `inputTokenDetails` shape and the legacy top-level fields some
+ * providers still surface.
+ */
+export function computeCacheStats(usage: LanguageModelUsage | undefined): CacheStats {
+  const details = usage?.inputTokenDetails as
+    | { cacheReadTokens?: number; cacheWriteTokens?: number; noCacheTokens?: number }
+    | undefined
+  const cacheRead  = details?.cacheReadTokens
+    ?? (usage as { cacheReadTokens?: number } | undefined)?.cacheReadTokens
+    ?? 0
+  const cacheWrite = details?.cacheWriteTokens
+    ?? (usage as { cacheWriteTokens?: number } | undefined)?.cacheWriteTokens
+    ?? 0
+  const inputTotal = usage?.inputTokens ?? (details?.noCacheTokens ?? 0) + cacheRead + cacheWrite
+  const noCache    = details?.noCacheTokens ?? Math.max(0, inputTotal - cacheRead - cacheWrite)
+  const hitRatio   = inputTotal > 0 ? cacheRead / inputTotal : 0
+  return {
+    cacheReadTokens:    cacheRead,
+    cacheWriteTokens:   cacheWrite,
+    noCacheInputTokens: noCache,
+    totalInputTokens:   inputTotal,
+    hitRatio,
+  }
 }

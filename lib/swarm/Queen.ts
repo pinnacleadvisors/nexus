@@ -12,7 +12,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import type { AgentRole, ConsensusType, EventEmitter, SwarmEvent, SwarmPhase, SwarmTask } from './types'
 import { routeTask, inferComplexity } from './Router'
-import { buildSwarmContext, optimiseContext } from './TokenOptimiser'
+import { buildSwarmContext, optimiseContext, buildCachedSystem, computeCacheStats } from './TokenOptimiser'
 import { runConsensus } from './Consensus'
 import { detectFastPathOp, tryFastPath } from './WasmFastPath'
 import { updateRouter } from './Router'
@@ -90,13 +90,9 @@ export async function strategicDecompose(
 
   const agentRoles = AGENT_REGISTRY.map(a => `${a.role} (${a.name}): ${a.description}`).join('\n')
 
-  const prompt = `You are a StrategicQueen AI orchestrator. Decompose the following goal into a multi-phase execution plan for a swarm of specialist AI agents.
-
-## Goal
-${goal}
-
-## Context
-${mergedContext || 'No additional context provided.'}
+  // C3 — stable system block gets cache-tagged so repeat decompositions only
+  // pay cache-read rates on the registry + instructions (~75% cheaper).
+  const systemText = `You are a StrategicQueen AI orchestrator. Decompose the following goal into a multi-phase execution plan for a swarm of specialist AI agents.
 
 ## Available Specialist Agents
 ${agentRoles}
@@ -108,8 +104,6 @@ ${agentRoles}
 - Tasks within the same phase can run in parallel
 - Be specific and actionable — vague tasks produce poor results
 - The final phase should synthesise outputs into a coherent deliverable
-
-${fewShotBlock}
 
 Respond with ONLY valid JSON (no markdown fences, no explanations outside JSON):
 {
@@ -130,11 +124,28 @@ Respond with ONLY valid JSON (no markdown fences, no explanations outside JSON):
   ]
 }`
 
-  const { text } = await generateText({
+  const userPrompt = `## Goal
+${goal}
+
+## Context
+${mergedContext || 'No additional context provided.'}
+${fewShotBlock}`
+
+  const { text, usage } = await generateText({
     model:            anthropic(STRATEGIC_MODEL),
-    prompt:           optimiseContext(prompt, 6000).text,
+    messages: [
+      buildCachedSystem(systemText),
+      { role: 'user', content: optimiseContext(userPrompt, 6000).text },
+    ],
     maxOutputTokens:  2000,
   })
+
+  const cache = computeCacheStats(usage)
+  if (cache.cacheReadTokens > 0 || cache.cacheWriteTokens > 0) {
+    emit(evt(swarmId, 'status', {
+      message: `StrategicQueen cache: read=${cache.cacheReadTokens} write=${cache.cacheWriteTokens} ratio=${(cache.hitRatio * 100).toFixed(1)}%`,
+    }))
+  }
 
   try {
     const plan = JSON.parse(text.replace(/```json\n?|```\n?/g, '').trim()) as SwarmPlan
@@ -219,10 +230,15 @@ async function executeTask(
     `## Your Task\n**${task.title}**\n\n${task.description}`,
   ].join('')
 
+  // C3 — cache the per-role system prompt. Same role → same bytes across every
+  // task, so Anthropic prompt caching turns the system prefix into a cheap
+  // cache-read after the first call.
   const { text, usage } = await generateText({
     model:           anthropic(task.model),
-    system:          systemPrompt,
-    prompt:          optimiseContext(taskPrompt, 8000).text,
+    messages: [
+      buildCachedSystem(systemPrompt),
+      { role: 'user', content: optimiseContext(taskPrompt, 8000).text },
+    ],
     maxOutputTokens: agentDef?.maxTokens ?? 3000,
     temperature:     agentDef?.temperature ?? 0.4,
   })
@@ -243,10 +259,10 @@ async function executeTask(
   if (obs?.userId) {
     const inTok    = usage?.inputTokens  ?? 0
     const outTok   = usage?.outputTokens ?? 0
-    const cacheRead  = (usage as { cacheReadTokens?: number } | undefined)?.cacheReadTokens ?? 0
-    const cacheWrite = (usage as { cacheWriteTokens?: number } | undefined)?.cacheWriteTokens ?? 0
-    const totalIn    = Math.max(inTok, cacheRead + cacheWrite)
-    const cacheHitRatio = totalIn > 0 ? cacheRead / totalIn : 0
+    // C3 — pull cache stats from the canonical inputTokenDetails shape so
+    // cache_hit_ratio reflects the new cacheable system prefix.
+    const cache = computeCacheStats(usage)
+    const cacheHitRatio = cache.hitRatio
     recordSamples([
       { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'input_tokens',    value: inTok },
       { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'output_tokens',   value: outTok },

@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardRequest } from '@/lib/guard'
 import { runRegressionSweep } from '@/lib/observability/regression'
+import { feedRouterFromMetricSamples } from '@/lib/swarm/Router'
 
 export const runtime = 'nodejs'
 
@@ -36,5 +37,8 @@ export async function POST(req: NextRequest) {
   const targetUserId = body.userId && typeof body.userId === 'string' ? body.userId : g.userId
 
   const result = await runRegressionSweep(targetUserId)
-  return NextResponse.json({ ok: true, targetUserId, ...result })
+  // C6 — pipe the same metric samples into the router bandit so Q-values
+  // track reality even when no swarm has run recently.
+  const routerFeed = await feedRouterFromMetricSamples(targetUserId, 24)
+  return NextResponse.json({ ok: true, targetUserId, ...result, router: routerFeed })
 }

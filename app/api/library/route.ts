@@ -1,13 +1,17 @@
 /**
  * app/api/library/route.ts
  * GET  /api/library?type=code&q=supabase&tags=auth,typescript&limit=20&offset=0
- * POST /api/library   { type, ...payload }
+ * POST /api/library   { type, ...payload }                — create a library entry
+ * POST /api/library   { promoteRunId: '<uuid>' }          — C4: re-run promotion
+ *                                                          for a completed run
  */
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { listEntries, createEntry } from '@/lib/library/client'
 import type { LibraryType } from '@/lib/library/types'
+import { getRun } from '@/lib/runs/controller'
+import { promoteRunToLibrary } from '@/lib/library/promoter'
 
 const VALID_TYPES: LibraryType[] = ['code', 'agent', 'prompt', 'skill']
 
@@ -41,6 +45,18 @@ export async function POST(req: Request) {
     body = await req.json() as Record<string, unknown>
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  // C4 — manual re-promotion from a completed run. Rare path used by the
+  // dashboard when the auto-promotion missed (e.g. run completed before the
+  // promoter shipped). RLS + explicit userId check guards cross-user abuse.
+  if (typeof body.promoteRunId === 'string') {
+    const run = await getRun(body.promoteRunId)
+    if (!run || run.userId !== userId) {
+      return NextResponse.json({ error: 'run not found' }, { status: 404 })
+    }
+    const result = await promoteRunToLibrary(run)
+    return NextResponse.json({ ok: true, ...result })
   }
 
   const type = body.type as LibraryType
