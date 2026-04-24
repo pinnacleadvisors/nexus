@@ -766,11 +766,15 @@ export default function N8nPage() {
     try {
       const res = await fetch('/api/n8n/workflows')
       const payload = (await res.json().catch(() => ({}))) as {
-        workflows?: N8nWorkflowStatus[]
-        error?:     string
-        baseUrl?:   string
+        workflows?:  N8nWorkflowStatus[]
+        error?:      string
+        baseUrl?:    string
+        configured?: boolean
       }
-      if (!res.ok) {
+      // The route now returns 200 with an error field when n8n is unreachable
+      // or misconfigured, so the browser console stays clean. Check both the
+      // HTTP status and the payload.error field.
+      if (!res.ok || payload.error) {
         throw new Error(payload.error ?? `Status ${res.status}`)
       }
       if (payload.baseUrl && typeof window !== 'undefined') {

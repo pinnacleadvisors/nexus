@@ -37,20 +37,32 @@ export async function POST(req: NextRequest) {
     cursor?: Record<string, unknown>
   }
 
-  const run = await startRun({
-    userId:    g.userId,
-    ideaId:    body.ideaId,
-    projectId: body.projectId,
-    cursor:    body.cursor,
-  })
+  // startRun returns null when Supabase is unconfigured; we also guard against
+  // thrown errors (network blip, RLS denial, missing table) so a transient DB
+  // failure degrades to ephemeral mode instead of surfacing a 503 in the
+  // browser console — the caller already treats a null run as best-effort.
+  let run: Awaited<ReturnType<typeof startRun>> = null
+  let errorReason: string | undefined
+  try {
+    run = await startRun({
+      userId:    g.userId,
+      ideaId:    body.ideaId,
+      projectId: body.projectId,
+      cursor:    body.cursor,
+    })
+  } catch (err) {
+    errorReason = err instanceof Error ? err.message : 'unknown_error'
+    console.error('[api/runs] startRun threw:', err)
+  }
+
   if (!run) {
-    // Supabase unconfigured → run is ephemeral (workflow generation still works,
-    // it just won't be persisted). Return 200 with null so clients can detect
-    // degraded mode without triggering a console error on 503.
     return NextResponse.json({
       run: null,
       ephemeral: true,
-      reason: isSupabaseConfigured() ? 'insert_failed' : 'supabase_unconfigured',
+      reason: errorReason
+        ? 'start_failed'
+        : isSupabaseConfigured() ? 'insert_failed' : 'supabase_unconfigured',
+      ...(errorReason ? { error: errorReason } : {}),
     })
   }
 
