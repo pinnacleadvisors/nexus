@@ -6,6 +6,7 @@ import KpiGrid from '@/components/dashboard/KpiGrid'
 import AgentTable from '@/components/dashboard/AgentTable'
 import DateRangeFilter from '@/components/dashboard/DateRangeFilter'
 import AlertsPanel from '@/components/dashboard/AlertsPanel'
+import WorstOffendersWidget from '@/components/dashboard/WorstOffendersWidget'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -170,6 +171,9 @@ export default function DashboardPage() {
 
       {/* ── Agent table ─────────────────────────────────────────────────── */}
       <AgentTable agents={data.agents} />
+
+      {/* ── Worst offenders (C1 observability) ──────────────────────────── */}
+      <WorstOffendersWidget windowHours={range === '7d' ? 168 : range === '30d' ? 720 : 720} />
 
       {/* ── Alerts panel (toggle) ───────────────────────────────────────── */}
       {showAlerts && <AlertsPanel />}

@@ -20,6 +20,8 @@ import { AGENT_REGISTRY } from './agents/registry'
 import { searchWebMulti, formatResultsAsContext } from '@/lib/tools/tavily'
 import { retrieveGraphContext } from './GraphRetriever'
 import { findSimilarPlans, formatPlanAsFewShot } from './PlanBank'
+import { recordSamples } from '@/lib/observability'
+import { estimateCostUsd } from './types'
 
 // Roles that benefit from live web research
 const RESEARCH_ROLES = new Set<AgentRole>(['researcher', 'analyst', 'strategist'])
@@ -181,6 +183,8 @@ async function executeTask(
   taskId:        string,
   consensusType: ConsensusType,
   emit:          EventEmitter,
+  /** C1 — attribution for metric_samples. When omitted, samples are skipped. */
+  obs?:          { userId: string; runId?: string },
 ): Promise<{ result: string; tokensUsed: number; approved: boolean; votes: SwarmTask['votes'] }> {
   emit(evt(swarmId, 'task_start', { taskId, title: task.title, role: task.role, model: task.model }))
 
@@ -233,6 +237,25 @@ async function executeTask(
     task.role,
     consensusType,
   )
+
+  // C1 — per-task observability. Fire-and-forget. `obs.userId` is the gate so
+  // legacy callers that never passed attribution don't suddenly spam the table.
+  if (obs?.userId) {
+    const inTok    = usage?.inputTokens  ?? 0
+    const outTok   = usage?.outputTokens ?? 0
+    const cacheRead  = (usage as { cacheReadTokens?: number } | undefined)?.cacheReadTokens ?? 0
+    const cacheWrite = (usage as { cacheWriteTokens?: number } | undefined)?.cacheWriteTokens ?? 0
+    const totalIn    = Math.max(inTok, cacheRead + cacheWrite)
+    const cacheHitRatio = totalIn > 0 ? cacheRead / totalIn : 0
+    recordSamples([
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'input_tokens',    value: inTok },
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'output_tokens',   value: outTok },
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'latency_ms',      value: durationMs },
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'cache_hit_ratio', value: cacheHitRatio },
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'cost_usd',        value: estimateCostUsd(task.model, inTok, outTok) },
+      { userId: obs.userId, runId: obs.runId, agentSlug: task.role, kind: 'review_outcome',  value: consensus.approved ? 1 : 0 },
+    ])
+  }
 
   // 5. Update router with outcome
   await updateRouter(
@@ -360,7 +383,7 @@ export async function runSwarm(params: {
         const taskId = `${swarmId}-p${phaseSpec.phase}-t${idx}`
         phaseTaskIds.push(taskId)
 
-        const r = await executeTask(task, swarmCtx, swarmId, taskId, consensusType, emit)
+        const r = await executeTask(task, swarmCtx, swarmId, taskId, consensusType, emit, userId ? { userId, runId } : undefined)
 
         const costs = MODEL_COSTS[task.model] ?? MODEL_COSTS['claude-sonnet-4-6']
         const costUsd = (r.tokensUsed / 2 / 1_000_000) * costs.input +
