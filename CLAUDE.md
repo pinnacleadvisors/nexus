@@ -2,6 +2,37 @@
 
 ---
 
+# Memory Architecture — the 3-layer system
+
+`memory/` is Nexus's canonical context base. Every session loads Layer 1 automatically, queries Layer 2 on-demand, and promotes Layer 3 scratch into Layer 2 before a session ends. Inspired by Felixcraft.ai / Nat Eliason's OpenClaw framework — layers separated by volatility.
+
+| Layer | Name | Volatility | Purpose | Primary paths |
+|-------|------|------------|---------|---------------|
+| **1** | Project Brief (stable) | Rarely changes | Persistent rules, stack decisions, product definition, ADRs | `memory/platform/*.md`, `CLAUDE.md`, `AGENTS.md`, `docs/adr/` |
+| **2** | Project State (living) | Evolves across sessions | Roadmap status, active long-horizon plan, per-run state, domain knowledge graph | `memory/roadmap/*.md`, `task_plan.md`, `memory/runs/`, `memory/molecular/` |
+| **3** | Session Memory (volatile) | Current chat only | Scratch decisions, open questions, in-flight context | Chat context — promoted via `/molecularmemory_local` or a `task_plan.md` Progress update |
+
+**Read order for any task:**
+1. `memory/INDEX.md` (~500 tokens) — topic map across all three layers
+2. Any specific Layer-1 file (`platform/STACK.md`, etc.) the task hits
+3. Layer-2 files as needed: `task_plan.md` for long-horizon work, `roadmap/SUMMARY.md` for feature status, `molecular/INDEX.md` for domain knowledge
+4. Fall back to Grep/Glob only when the memory files don't cover the area
+
+**Promotion protocol (COPY → VERIFY → DELETE):** a Layer-3 fact becomes durable by being written to Layer 2 (atom, entity, Progress entry, ADR), then re-read to confirm the write, then dropped from scratch. Never let a durable decision live only in chat context — the next session will start blind.
+
+**Write rules (keep memory current):**
+- Feature status changed → edit `memory/roadmap/SUMMARY.md` + `memory/roadmap/PENDING.md`
+- New dev rule / stack constraint → edit `memory/platform/STACK.md`
+- New route / component / lib file → edit `memory/platform/ARCHITECTURE.md`
+- New env var → edit `memory/platform/SECRETS.md`
+- Durable domain fact → `node .claude/skills/molecularmemory_local/cli.mjs atom "<title>" --fact="..." --source=<ref>`
+- Non-obvious design choice → write an ADR (`docs/adr/NNN-title.md`) + index it
+- Long-horizon task progress → edit `task_plan.md` `## Progress`
+
+Write dense summaries — never duplicate full source docs.
+
+---
+
 # Long-Horizon Task Protocol
 
 Long-running or multi-session tasks on this brownfield codebase follow a strict 4-step workflow. **Never jump straight to implementation.**
@@ -19,13 +50,13 @@ Every later decision checks back against these. If implementation drifts from th
 ## Phase 1 — Explore
 
 Map the surface area before touching any code:
-- **Check the knowledge graph first**: if `graphify-out/GRAPH_REPORT.md` exists, read it — it maps god nodes, module communities, and dependency clusters so you navigate by structure instead of grepping every file
+- **Check the domain knowledge graph first**: read `memory/molecular/INDEX.md` and follow `[[wikilinks]]` from the relevant MOC — this anchors the work without rescanning files
 - Read entry points, interfaces, and all callers for the targeted code
 - Identify hidden global state, environment assumptions, and implicit contracts
 - Check for existing tests covering the area
 - Record findings in `task_plan.md`
 
-> If the graph is stale or missing, run `/graphify .` to rebuild it before searching.
+> If `memory/molecular/` is empty or sparse for the area you're touching, seed it: run `node .claude/skills/molecularmemory_local/cli.mjs moc "<module-name>"` and start linking atoms as you explore.
 
 ## Phase 2 — Plan
 
@@ -76,8 +107,9 @@ When `task_plan.md` contains tasks marked `Parallel: yes`, dispatch them togethe
 
 When a session grows long, before it degrades:
 1. Update `task_plan.md` with a `## Progress` section (see template below)
-2. Commit: `git commit -m "chore: update task_plan progress"`
-3. Start a fresh session — open `task_plan.md` to restore context instantly
+2. Promote durable facts discovered during the session into Layer 2 (`/molecularmemory_local atom`, ADR, memory edit)
+3. Commit: `git commit -m "chore: update task_plan progress"`
+4. Start a fresh session — open `task_plan.md` + `memory/INDEX.md` to restore context instantly
 
 ```
 ## Progress (as of YYYY-MM-DD)
@@ -98,7 +130,7 @@ When a non-obvious design decision is made, write an ADR:
 - Commit: `docs(adr): NNN short title`
 - Add a one-liner to `docs/adr/INDEX.md`
 
-ADRs prevent re-litigating decisions across sessions and document the "why" behind legacy patterns.
+ADRs prevent re-litigating decisions across sessions and document the "why" behind legacy patterns. They are Layer-1 memory.
 
 ## Dead Code
 
@@ -106,37 +138,42 @@ Note dead code with a comment (`// TODO: dead — safe to remove YYYY-MM-DD`) bu
 
 ---
 
-# Knowledge Graph
+# Knowledge Graph — `/molecularmemory_local`
 
-We use **two** knowledge graphs, each for a different purpose:
+The single domain knowledge graph lives at `memory/molecular/` and is built by the **`/molecularmemory_local`** skill (`.claude/skills/molecularmemory_local/cli.mjs`). It is zero-token, pure-Node, and in-repo — no external plugin required.
 
-| Graph | What it captures | Built by |
-|-------|------------------|----------|
-| `graphify-out/GRAPH_REPORT.md` | File-level import/call structure of the **codebase** (god nodes, modules, coupling) | `/graphify` (external plugin — install from `safishamsi/graphify` if not present) |
-| `memory/molecular/` + `memory/molecular/.graph.json` | **Domain knowledge** — atomic facts, entities, Maps of Content | `/molecularmemory_local` (built-in, `.claude/skills/molecularmemory_local/`) |
+Structure:
 
-Both are optional. `/molecularmemory_local` is the preferred default because it lives in-repo, needs zero tokens, and is the replacement path for `/graphify` when that plugin is unavailable.
+```
+memory/molecular/
+├── INDEX.md            ← generated homepage — all MOCs, counts, last-updated
+├── atoms/<slug>.md     ← atomic notes (one fact each)
+├── entities/<slug>.md  ← people, companies, concepts, projects
+├── mocs/<slug>.md      ← Maps of Content (topic hubs)
+└── .graph.json         ← cached adjacency list (regenerated by `graph` cmd)
+```
 
 **Query order** — always follow this to minimise token spend:
-1. Read `memory/INDEX.md` → platform docs map
-2. Read `memory/molecular/INDEX.md` (if present) → domain knowledge map
-3. Read `graphify-out/GRAPH_REPORT.md` (if present) → codebase structure
-4. Read only the specific files the graphs point to
-5. Fall back to Grep/Glob only for areas the graphs don't cover
+1. `memory/INDEX.md` → platform docs map (3-layer architecture)
+2. `memory/molecular/INDEX.md` → MOC list → pick the topic hub
+3. Follow `[[wikilinks]]` from the MOC to atoms + entities
+4. Read only the specific files the graph points to
+5. Fall back to Grep/Glob only for areas the graph doesn't cover yet
 
-**Build / refresh the codebase graph:**
+**Build / refresh the graph:**
 ```bash
-/graphify .         # full scan — requires safishamsi/graphify plugin installed
+node .claude/skills/molecularmemory_local/cli.mjs init      # first time only
+node .claude/skills/molecularmemory_local/cli.mjs atom "<title>" --fact="..." --source=<url>
+node .claude/skills/molecularmemory_local/cli.mjs entity <person|company|concept|project> "<name>"
+node .claude/skills/molecularmemory_local/cli.mjs moc "<topic>" --atoms=a,b --entities=x,y
+node .claude/skills/molecularmemory_local/cli.mjs graph     # rebuild adjacency
+node .claude/skills/molecularmemory_local/cli.mjs reindex   # refresh INDEX.md
+node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
 ```
 
-**Build / refresh the domain graph:**
-```bash
-node .claude/skills/molecularmemory_local/cli.mjs init     # first time
-node .claude/skills/molecularmemory_local/cli.mjs graph    # rebuild adjacency
-node .claude/skills/molecularmemory_local/cli.mjs reindex  # refresh INDEX.md
-```
+Nightly the `POST /api/cron/rebuild-graph` endpoint re-runs `graph` + `reindex` and logs node/orphan/degree metrics to `metric_samples` (C8).
 
-The hook in `.claude/settings.json` reminds Claude when either graph exists before Glob/Grep searches.
+The PreToolUse hook in `.claude/settings.json` reminds Claude to check `memory/molecular/INDEX.md` before raw Glob/Grep searches.
 
 ---
 
@@ -154,7 +191,7 @@ Claude Code has many skills available. The decision of which (if any) to invoke 
 | Extract atomic facts from an article/paper/transcript | **scrape with /firecrawl_local → `/molecularmemory_local atom` per fact** |
 | Build a Map of Content for a topic | `/molecularmemory_local moc` |
 | Query existing domain knowledge | `/molecularmemory_local query <text>` |
-| Navigate a multi-file refactor | Read `graphify-out/GRAPH_REPORT.md` if fresh, else start an MOC in `/molecularmemory_local` for the affected module |
+| Navigate a multi-file refactor | Start a `/molecularmemory_local moc` for the affected module; atoms accumulate as you explore |
 | Red-Green-Refactor TDD flow | `/superpowers` TDD skill (if installed via `obra/superpowers-marketplace`) |
 | Systematic 4-phase debugging | `/superpowers` debugging skill |
 | Personalised pattern capture | `/claude-evolve` (if installed via `hknc/claude-evolve`) |
@@ -175,41 +212,24 @@ Claude Code has many skills available. The decision of which (if any) to invoke 
 
 ## If a skill is referenced but not available
 
-- `/graphify` → install from `https://github.com/safishamsi/graphify`, or substitute `/molecularmemory_local` for module-level knowledge.
 - `/superpowers`, `/claude-evolve` → both are declared in `.claude/settings.json` under `extraKnownMarketplaces`. If not listed in the session's skills, restart the Claude Code session so the marketplaces are fetched and plugins enabled.
 - `/firecrawl` (hosted) → requires `FIRECRAWL_API_KEY` in Doppler; the local substitute `/firecrawl_local` handles scrape/map/crawl without a key.
 
 ---
 
-# Platform Memory
+# Platform Memory — quick reference
 
-Platform knowledge lives in `memory/` — local to this repo, plain file reads, no API calls needed.
+Layer 1 (stable) + Layer 2 (living) files by path:
 
-## Query order (saves 10× tokens vs scanning source docs)
-
-1. Read `memory/INDEX.md` (~300 tokens) — find which 1–2 files you need
-2. Read only those files
-3. Use `memory/GRAPH.md` to discover related files if needed
-
-## Files
-
-| What you need | Path |
-|---------------|------|
-| Topic map (start here) | `memory/INDEX.md` |
-| Stack & dev rules | `memory/platform/STACK.md` |
-| File structure, API patterns | `memory/platform/ARCHITECTURE.md` |
-| All env vars by phase | `memory/platform/SECRETS.md` |
-| What Nexus is, all pages | `memory/platform/OVERVIEW.md` |
-| Phase 1–22 status | `memory/roadmap/SUMMARY.md` |
-| Not-started items | `memory/roadmap/PENDING.md` |
-
-## Keeping memory current
-
-After completing a feature, update the relevant file with a plain Edit — no scripts, no API calls:
-
-- Feature status changed → edit `memory/roadmap/SUMMARY.md` + `memory/roadmap/PENDING.md`
-- New dev rule discovered → edit `memory/platform/STACK.md`
-- Architecture changed → edit `memory/platform/ARCHITECTURE.md`
-- New env var added → edit `memory/platform/SECRETS.md`
-
-Always write dense summaries — never duplicate full source docs.
+| What you need | Path | Layer |
+|---------------|------|-------|
+| Topic map (start here) | `memory/INDEX.md` | 1 |
+| Stack & dev rules | `memory/platform/STACK.md` | 1 |
+| File structure, API patterns | `memory/platform/ARCHITECTURE.md` | 1 |
+| All env vars by phase | `memory/platform/SECRETS.md` | 1 |
+| What Nexus is, all pages | `memory/platform/OVERVIEW.md` | 1 |
+| Architectural decisions | `docs/adr/INDEX.md` | 1 |
+| Phase 1–22 status + SOE table | `memory/roadmap/SUMMARY.md` | 2 |
+| Not-started items | `memory/roadmap/PENDING.md` | 2 |
+| Current long-horizon plan | `task_plan.md` | 2 |
+| Domain knowledge graph | `memory/molecular/INDEX.md` | 2 |

@@ -1,6 +1,6 @@
 ---
 name: molecularmemory_local
-description: Build and query a dense, Obsidian-style knowledge graph of the codebase and its domain — atomic notes (one fact per file), entity notes (people/companies/concepts), and Maps of Content (MOCs) connected via [[wikilinks]]. Use whenever the user asks Claude to (a) remember a decision across sessions, (b) extract atomic facts from a long document/article/transcript, (c) build a knowledge map for a topic, (d) find how existing notes connect, or (e) replace the missing /graphify knowledge graph. Favors topic-notes over tags; every important person/company/concept gets its own file. Claude edits markdown files directly — no API calls.
+description: Build and query a dense, Obsidian-style knowledge graph of the codebase and its domain — atomic notes (one fact per file), entity notes (people/companies/concepts), and Maps of Content (MOCs) connected via [[wikilinks]]. The canonical Layer-2 domain memory for Nexus (see CLAUDE.md 3-layer architecture). Use whenever the user asks Claude to (a) remember a decision across sessions, (b) extract atomic facts from a long document/article/transcript, (c) build a knowledge map for a topic, or (d) find how existing notes connect. Favors topic-notes over tags; every important person/company/concept gets its own file. Claude edits markdown files directly — no API calls.
 ---
 
 # /molecularmemory_local — Dense, linked, tag-free memory
