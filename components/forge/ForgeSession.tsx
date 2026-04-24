@@ -403,6 +403,7 @@ export default function ForgeSession({ projectId, projectName }: Props) {
           milestones={milestones}
           projectName={projectName}
           projectId={projectId}
+          ideaId={projectId}
           onExportPdf={() => exportBusinessPlanPdf(projectName, milestones, agentCount)}
         />
       </div>

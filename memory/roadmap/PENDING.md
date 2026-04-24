@@ -76,7 +76,7 @@ Priority order:
 Tracked in `task_plan.md`. Cross-references to `memory/roadmap/SUMMARY.md`.
 
 ### Pillar A — loop closure
-- **A5** — Forge "Build this" button must `POST /api/runs { ideaId }` then route to `/board?runId=...`. If a run already exists for the idea, resume. Currently the button does not create a run row.
+- ~~**A5** — Forge "Build this" button must `POST /api/runs { ideaId }` then route to `/board?runId=...`. Resume existing run for same idea.~~ ✅ 2026-04-24 — `ForgeActionBar` now renders a green "Build this" button; `/board` reads the `runId` query param and shows a phase/status banner. Idempotent resume is enforced server-side by `startRun()`.
 
 ### Pillar B — security hardening
 - **B8** — Introduce `lib/withGuards.ts` that composes `assertOrigin` + `auth()` + `ratelimit()` + optional `costCap`; migrate the 10 most-called mutating routes. Start behind a feature flag.

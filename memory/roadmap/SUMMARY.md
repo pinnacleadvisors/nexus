@@ -41,7 +41,7 @@ Plan in `task_plan.md`. Three pillars, each independently valuable:
 | A2 | Run / RunEvent / RunPhase types | ✅ | `lib/types.ts` |
 | A3 | Run controller library | ✅ | `lib/runs/controller.ts` |
 | A4 | `/api/runs` routes | ✅ | `app/api/runs/route.ts` + `[id]/` |
-| A5 | Forge "Build this" → run creation | ⬜ | ForgeActionBar not yet wired to `POST /api/runs` |
+| A5 | Forge "Build this" → run creation | ✅ | `components/forge/ForgeActionBar.tsx` + `components/forge/ForgeSession.tsx` → `POST /api/runs` → `/board?runId=...`; board renders active-run banner from `/api/runs/[id]` |
 | A6 | Run-aware session dispatch | ✅ | `app/api/claude-session/dispatch/route.ts` (runId + appendEvent + advancePhase) |
 | A7 | Graph-keyed context retrieval | ✅ | `lib/swarm/GraphRetriever.ts` + `lib/swarm/TokenOptimiser.ts` |
 | A8 | ReasoningBank feedforward | ✅ | `lib/swarm/Queen.ts` (strategicDecompose) + migration 016 `plan_patterns` |
