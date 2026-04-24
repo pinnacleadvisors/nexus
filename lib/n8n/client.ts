@@ -10,11 +10,26 @@ import type {
   N8nExecutionResult,
 } from './types'
 
+/**
+ * Normalise a user-supplied N8N_BASE_URL:
+ *   - auto-prefix `https://` if no protocol is present (so a bare hostname like
+ *     `srv1610898.hstgr.cloud` works)
+ *   - strip trailing slash so `${baseUrl}/api/v1/...` composes cleanly
+ *   - also strip a trailing `/api` or `/api/v1` the user may have pasted
+ */
+function normaliseBaseUrl(raw: string): string {
+  let url = raw.trim()
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`
+  url = url.replace(/\/+$/, '')
+  url = url.replace(/\/api\/v1$/i, '').replace(/\/api$/i, '')
+  return url
+}
+
 function getConfig(): { baseUrl: string; apiKey: string } | null {
   const baseUrl = process.env.N8N_BASE_URL
   const apiKey  = process.env.N8N_API_KEY
   if (!baseUrl || !apiKey) return null
-  return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey }
+  return { baseUrl: normaliseBaseUrl(baseUrl), apiKey }
 }
 
 async function n8nFetch<T>(
@@ -24,18 +39,28 @@ async function n8nFetch<T>(
   const cfg = getConfig()
   if (!cfg) throw new Error('N8N_BASE_URL and N8N_API_KEY must be configured in Doppler')
 
-  const res = await fetch(`${cfg.baseUrl}/api/v1${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-N8N-API-KEY': cfg.apiKey,
-      ...options.headers,
-    },
-  })
+  const url = `${cfg.baseUrl}/api/v1${path}`
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-N8N-API-KEY': cfg.apiKey,
+        ...options.headers,
+      },
+    })
+  } catch (err) {
+    // Network-level failure (DNS, TLS, invalid URL, unreachable host). Surface
+    // the target URL so the operator can tell from the error whether
+    // N8N_BASE_URL is wrong (e.g. missing port, wrong protocol, typo).
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(`n8n unreachable at ${cfg.baseUrl} — ${reason}`)
+  }
 
   if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`n8n API error ${res.status}: ${body}`)
+    const body = await res.text().catch(() => '')
+    throw new Error(`n8n API error ${res.status} at ${url}${body ? `: ${body.slice(0, 300)}` : ''}`)
   }
 
   return res.json() as Promise<T>
@@ -100,5 +125,6 @@ export function isConfigured(): boolean {
 }
 
 export function getBaseUrl(): string | undefined {
-  return process.env.N8N_BASE_URL
+  const raw = process.env.N8N_BASE_URL
+  return raw ? normaliseBaseUrl(raw) : undefined
 }

@@ -6,6 +6,7 @@ import {
   Bot,
   Brain,
   BookMarked,
+  BookOpen,
   Cpu,
   Sparkles,
   Network,
@@ -18,12 +19,20 @@ import {
   CreditCard,
   Mail,
   MessageSquare,
+  Workflow,
+  Lightbulb,
+  PenLine,
+  Users,
+  FileText,
+  Code2,
+  Wrench,
 } from 'lucide-react'
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Bot,
   Brain,
   BookMarked,
+  BookOpen,
   Cpu,
   Sparkles,
   Network,
@@ -36,6 +45,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
   CreditCard,
   Mail,
   MessageSquare,
+  Workflow,
+  Lightbulb,
+  PenLine,
+  Users,
+  FileText,
+  Code2,
+  Wrench,
 }
 
 const STATUS_STYLE: Record<Tool['status'], { label: string; color: string; bg: string; border: string }> = {

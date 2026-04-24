@@ -765,9 +765,20 @@ export default function N8nPage() {
     setLiveError('')
     try {
       const res = await fetch('/api/n8n/workflows')
-      if (!res.ok) throw new Error(`Status ${res.status}`)
-      const data = await res.json() as { workflows: N8nWorkflowStatus[] }
-      setLiveWorkflows(data.workflows ?? [])
+      const payload = (await res.json().catch(() => ({}))) as {
+        workflows?: N8nWorkflowStatus[]
+        error?:     string
+        baseUrl?:   string
+      }
+      if (!res.ok) {
+        throw new Error(payload.error ?? `Status ${res.status}`)
+      }
+      if (payload.baseUrl && typeof window !== 'undefined') {
+        // Cache the normalised base URL so the "Open n8n" button in the import
+        // toast points at the right host without making the user set it manually.
+        localStorage.setItem('n8n_base_url', payload.baseUrl)
+      }
+      setLiveWorkflows(payload.workflows ?? [])
     } catch (err) {
       setLiveError((err as Error).message)
     } finally {
@@ -836,7 +847,7 @@ export default function N8nPage() {
           >
             <AlertCircle size={13} />
             <span>
-              {liveError.includes('404') || liveError.includes('503')
+              {liveError.includes('not configured')
                 ? 'n8n not connected — set N8N_BASE_URL and N8N_API_KEY in Doppler, then reload.'
                 : `n8n error: ${liveError}`}
             </span>

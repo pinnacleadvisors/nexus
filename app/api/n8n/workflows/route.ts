@@ -4,7 +4,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { listWorkflows, isConfigured } from '@/lib/n8n/client'
+import { getBaseUrl, isConfigured, listWorkflows } from '@/lib/n8n/client'
 
 export const runtime = 'nodejs'
 
@@ -18,9 +18,9 @@ export async function GET() {
 
   try {
     const workflows = await listWorkflows()
-    return NextResponse.json({ workflows, total: workflows.length })
+    return NextResponse.json({ workflows, total: workflows.length, baseUrl: getBaseUrl() })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 502 })
+    return NextResponse.json({ error: message, baseUrl: getBaseUrl() }, { status: 502 })
   }
 }
