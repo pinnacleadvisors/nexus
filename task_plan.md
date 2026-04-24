@@ -354,6 +354,7 @@ A10 → A11 → C5. Requires choosing a publish provider (recommend YouTube Shor
 - [x] **A2** — `Run`, `RunPhase`, `RunStatus`, `RunEvent`, `RunMetrics` in `lib/types.ts`
 - [x] **A3** — `lib/runs/controller.ts` (`startRun`, `advancePhase`, `appendEvent`, `getCursor`, optimistic `updated_at` guard)
 - [x] **A4** — `app/api/runs/route.ts` + `app/api/runs/[id]/route.ts` (list / fetch / advance, all auth-gated)
+- [x] **A5** — `components/forge/ForgeActionBar.tsx` "Build this" button → `POST /api/runs` → `router.push('/board?runId=...')`; `components/forge/ForgeSession.tsx` threads `ideaId`; `/board` reads the query param and renders an active-run banner populated from `/api/runs/[id]`. Idempotent resume is handled by `startRun()` server-side.
 - [x] **A6** — `app/api/claude-session/dispatch/route.ts` accepts `runId`, appends `run_events`, calls `advancePhase` at phase boundary
 - [x] **A7** — `lib/swarm/GraphRetriever.ts` + TokenOptimiser integration (budget-capped retrieval with fallback to `buildSwarmContext`)
 - [x] **A8** — ReasoningBank feedforward in `lib/swarm/Queen.ts` (`strategicDecompose` loads past successful plans; `migrations/016_plan_patterns.sql` stores them)
@@ -393,11 +394,10 @@ A10 → A11 → C5. Requires choosing a publish provider (recommend YouTube Shor
 - ✅ **A12 ⇄ C4** — successful run branch diff → library promotion uses the same `run_id` lineage
 - ✅ **B6 ⇄ B10** — user_secrets encryption fails closed in production, so the claw-config migration is safe to rely on
 - ✅ **B9 ⇄ C1** — cost-guard 402 response is recorded in `metric_samples` as a budget event for later analysis
-- ⚠️ **A5 gap breaks the loop** — without the forge "Build this" button wired to `POST /api/runs`, new ideas don't create a `runs` row. Everything downstream (A6/A9/A11/C1) still works when a run exists, but the entry point is manual (curl / SQL insert). **Shipping A5 closes the user-facing loop.**
+- ✅ **A5 → A6 → downstream** — the forge entrypoint now creates (or resumes) a Run, and the existing A6/A9/A11/C1 plumbing continues from there. Loop is user-facing.
 - ⚠️ **B8/B11/B12 hygiene gaps** — guards are wired per-route rather than via a `withGuards` wrapper; pre-commit secret scan exists as a script but no husky hook installs it. Low severity given B1–B7 + B9/B10 cover the critical money/data paths.
 
 ### Remaining
-- [ ] **A5** — wire `components/forge/ForgeActionBar.tsx` "Build this" to `POST /api/runs`, redirect to `/board?runId=...`, resume existing run for same idea
 - [ ] **B8** — introduce `lib/withGuards.ts` wrapper (origin + auth + ratelimit + optional costCap); migrate top 10 mutating routes behind a feature flag
 - [ ] **B11** — wire `scripts/scan-secrets.sh` into `.husky/pre-commit`
 - [ ] **B12** — audit every public surface (sign-in, OAuth callback, webhooks) for distinct rate-limit buckets; document strategy in `lib/ratelimit.ts`

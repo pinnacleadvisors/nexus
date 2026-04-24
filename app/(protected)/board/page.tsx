@@ -14,7 +14,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import type { KanbanCard as KanbanCardType, ColumnId, ForgeProject, TaskType } from '@/lib/types'
+import type { KanbanCard as KanbanCardType, ColumnId, ForgeProject, TaskType, Run } from '@/lib/types'
 import { supabase } from '@/lib/supabase'
 import KanbanColumn from '@/components/board/KanbanColumn'
 import KanbanCard from '@/components/board/KanbanCard'
@@ -87,6 +87,43 @@ export default function BoardPage() {
 
   // ── Task-type filter (automated / manual / all) ──────────────────────────
   const [typeFilter,       setTypeFilter]       = useState<TaskTypeFilter>('all')
+
+  // ── Active Run banner (A5 — forge "Build this" → /board?runId=...) ───────
+  const [activeRun,    setActiveRun]    = useState<Run | null>(null)
+  const [runBannerErr, setRunBannerErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const runId = new URLSearchParams(window.location.search).get('runId')
+    if (!runId) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json() as { run: Run }
+          setActiveRun(data.run)
+        } else {
+          setRunBannerErr(`Couldn't load run (HTTP ${res.status})`)
+        }
+      } catch (err) {
+        if (!cancelled) setRunBannerErr(err instanceof Error ? err.message : 'Network error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  function dismissRunBanner() {
+    setActiveRun(null)
+    setRunBannerErr(null)
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('runId')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadCards = useCallback(async (projectId?: string, type?: TaskTypeFilter) => {
@@ -438,6 +475,44 @@ export default function BoardPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Active Run banner (from forge "Build this") ─────────────────── */}
+      {(activeRun || runBannerErr) && (
+        <div
+          className="shrink-0 flex items-center justify-between gap-4 px-6 py-2.5"
+          style={{
+            borderBottom: '1px solid #24243e',
+            backgroundColor: runBannerErr ? 'rgba(239,68,68,0.08)' : 'rgba(108,99,255,0.1)',
+          }}
+        >
+          {activeRun && (
+            <div className="flex items-center gap-3 text-xs" style={{ color: '#e8e8f0' }}>
+              <span
+                className="px-1.5 py-0.5 rounded font-semibold"
+                style={{ backgroundColor: '#6c63ff', color: '#fff' }}
+              >
+                Run
+              </span>
+              <span style={{ color: '#9090b0' }}>
+                <code style={{ color: '#e8e8f0' }}>{activeRun.id.slice(0, 8)}</code>
+                {' · '}phase <code style={{ color: '#22c55e' }}>{activeRun.phase}</code>
+                {' · '}status <code style={{ color: '#e8e8f0' }}>{activeRun.status}</code>
+                {activeRun.ideaId ? <>{' · '}idea <code>{activeRun.ideaId.slice(0, 8)}</code></> : null}
+              </span>
+            </div>
+          )}
+          {runBannerErr && (
+            <div className="text-xs" style={{ color: '#ef4444' }}>{runBannerErr}</div>
+          )}
+          <button
+            onClick={dismissRunBanner}
+            className="text-xs px-2 py-1 rounded transition-colors"
+            style={{ color: '#9090b0', backgroundColor: 'transparent', border: '1px solid #24243e', cursor: 'pointer' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Board ───────────────────────────────────────────────────────── */}
       <DndContext

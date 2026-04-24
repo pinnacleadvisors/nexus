@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Zap, Minus, Plus, DollarSign, Loader2, CheckCircle2, AlertCircle, FileDown, GitBranch } from 'lucide-react'
-import type { Milestone } from '@/lib/types'
+import type { Milestone, Run } from '@/lib/types'
 
 type DispatchStatus = 'idle' | 'loading' | 'success' | 'error'
+type BuildStatus    = 'idle' | 'loading' | 'success' | 'error'
 
 // Per-phase dispatch result shown in tooltip
 interface PhaseResult { phase: number; ok: boolean }
@@ -18,6 +20,8 @@ interface Props {
   milestones?: Milestone[]
   projectName?: string
   projectId?: string
+  /** Optional upstream idea reference (e.g. from /idea). Falls back to projectId. */
+  ideaId?: string
   onExportPdf?: () => void
 }
 
@@ -30,12 +34,16 @@ export default function ForgeActionBar({
   milestones = [],
   projectName = 'Nexus Project',
   projectId,
+  ideaId,
   onExportPdf,
 }: Props) {
+  const router = useRouter()
   const estimatedCost = agentCount * 500
   const [dispatchStatus,  setDispatchStatus]  = useState<DispatchStatus>('idle')
   const [phaseResults,    setPhaseResults]    = useState<PhaseResult[]>([])
   const [multiAgent,      setMultiAgent]      = useState(false) // toggle single vs multi
+  const [buildStatus,     setBuildStatus]     = useState<BuildStatus>('idle')
+  const [buildError,      setBuildError]      = useState<string | null>(null)
 
   // Group milestones by phase
   function groupByPhase(ms: Milestone[]) {
@@ -107,6 +115,44 @@ export default function ForgeActionBar({
     } catch {
       setDispatchStatus('error')
       setTimeout(() => { setDispatchStatus('idle'); setPhaseResults([]) }, 5000)
+    }
+  }
+
+  async function handleBuild() {
+    setBuildStatus('loading')
+    setBuildError(null)
+
+    try {
+      const res = await fetch('/api/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          ideaId:    ideaId ?? projectId,
+          projectId: projectId,
+        }),
+      })
+
+      if (res.status === 401) {
+        window.location.href = '/'
+        return
+      }
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        setBuildError(body.error ?? `HTTP ${res.status}`)
+        setBuildStatus('error')
+        setTimeout(() => { setBuildStatus('idle'); setBuildError(null) }, 5000)
+        return
+      }
+
+      const data = await res.json() as { run: Run }
+      setBuildStatus('success')
+      router.push(`/board?runId=${encodeURIComponent(data.run.id)}`)
+    } catch (err) {
+      setBuildError(err instanceof Error ? err.message : 'Network error')
+      setBuildStatus('error')
+      setTimeout(() => { setBuildStatus('idle'); setBuildError(null) }, 5000)
     }
   }
 
@@ -236,6 +282,37 @@ export default function ForgeActionBar({
             {multiAgent ? 'Multi' : 'Single'}
           </button>
         )}
+
+        {/* Build this — create/resume a Run and navigate to the board */}
+        <button
+          onClick={handleBuild}
+          disabled={!milestonesReady || buildStatus === 'loading'}
+          title={
+            buildError
+              ? buildError
+              : buildStatus === 'loading'
+                ? 'Creating run…'
+                : 'Create a Run for this idea and jump to the Board'
+          }
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+          style={
+            milestonesReady && buildStatus !== 'loading'
+              ? { backgroundColor: '#1a1a2e', color: '#22c55e', border: '1px solid #22c55e33', cursor: 'pointer' }
+              : { backgroundColor: '#1a1a2e', color: '#55556a', border: '1px solid #24243e', cursor: milestonesReady ? 'default' : 'not-allowed' }
+          }
+        >
+          {buildStatus === 'loading'
+            ? <Loader2 size={13} className="animate-spin" />
+            : buildStatus === 'success'
+              ? <CheckCircle2 size={13} />
+              : buildStatus === 'error'
+                ? <AlertCircle size={13} />
+                : null}
+          {buildStatus === 'loading' ? 'Building…'
+            : buildStatus === 'success' ? 'Building!'
+              : buildStatus === 'error' ? 'Build failed'
+                : 'Build this'}
+        </button>
 
         {/* Dispatch to OpenClaw */}
         <div className="relative">
