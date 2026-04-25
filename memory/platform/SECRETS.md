@@ -127,8 +127,8 @@ brokers OAuth-authenticated Doppler reads; sandbox calls it via
 | `COMPOSIO_DOPPLER_CONNECTED_ACCOUNT_ID` | server | Connected-account ID returned after Composio OAuth flow to Doppler |
 | `COMPOSIO_BASE_URL` | server | Optional Composio base URL (default `https://backend.composio.dev`) |
 | `COMPOSIO_DOPPLER_GET_ACTION` | server | Optional action name (default `DOPPLER_GET_SECRET`) |
-| `DOPPLER_PROJECT` | server | Doppler project the broker reads from |
-| `DOPPLER_CONFIG` | server | Doppler config (e.g. `prd`, `dev`) |
+| `DOPPLER_PROJECT_` | server | Doppler project the broker reads from. **Trailing `_` is required** — Doppler reserves the unsuffixed `DOPPLER_PROJECT` name. |
+| `DOPPLER_CONFIG_` | server | Doppler config (e.g. `prd`, `dev`). Same `_` suffix rule. |
 | `COMPOSIO_BROKER_ALLOWED_SECRETS` | server | Comma-separated allowlist of secret names the broker may return |
 | `CLAUDE_SESSION_BROKER_TOKEN` | both | Shared bearer secret. Server validates; sandbox presents in `Authorization: Bearer …` |
 | `NEXUS_BROKER_URL` | sandbox | e.g. `https://nexus-xxx.vercel.app` |

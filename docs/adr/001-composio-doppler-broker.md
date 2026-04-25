@@ -40,10 +40,13 @@ Components:
   `export NAME='value'` lines on stdout. No-ops cleanly when broker config
   is unset so local sessions are unaffected.
 
-A future option-2 layer (a `doppler-broker` managed agent for **mid-session**
-secret fetches) sits on top of this same broker route — it does not replace
-it. If we add it, the managed agent becomes the only caller authorised to
-request a wider allowlist.
+A second layer (`.claude/agents/doppler-broker.md`) handles **mid-session**
+secret-gated actions on top of the same broker route. The parent agent
+invokes it via `Task(subagent_type="doppler-broker")` with a `secret` name
++ a `command` to run; the broker fetches the secret, exports it to its own
+shell, runs the command, and returns the output with the secret value
+scrubbed. The parent never sees the value. The bearer token lives only in
+the doppler-broker agent's tool scope.
 
 ## Consequences
 
@@ -58,15 +61,17 @@ request a wider allowlist.
 - The bearer token is the bootstrap secret — if it leaks, an attacker can
   pull every secret on the allowlist. Mitigations: short-lived sandboxes,
   tight allowlist, rate limit, periodic rotation.
-- Mid-session secret fetches are not supported by this MVP. Sandboxes get
-  what they asked for at start; new needs require a new session or the
-  future `doppler-broker` managed agent.
+- The doppler-broker agent must scrub secret values out of any returned
+  output. The agent spec enforces this; if the parent passes
+  `scrub:false`, that's an explicit acknowledgement of leakage.
 - Composio is now a hard dependency for the cloud workflow. If Composio
   is down, sandboxes start without secrets and the agent fails fast (the
   hook logs to stderr but does not block the session).
 
 ## Revisit when
 
-- We add option 2 (`doppler-broker` managed agent) for mid-session fetches.
 - We move off Composio (e.g. self-hosted OAuth proxy).
 - We need per-user-attributed secret access (multi-tenant Nexus).
+- The bearer token model becomes inadequate (e.g. we want short-lived,
+  user-scoped JWTs minted by `/api/claude-session/dispatch` instead of a
+  shared static token).

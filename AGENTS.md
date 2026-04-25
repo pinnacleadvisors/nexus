@@ -162,6 +162,7 @@ Specialist subagents in `.claude/agents/` — Claude Code auto-discovers and del
 | **Supermemory** | `.claude/agents/supermemory.md` | Every agent calls this after a run to record changes + promote facts |
 | **Workflow Optimizer** | `.claude/agents/workflow-optimizer.md` | Review-node feedback triggers a minimal diff to the producing agent |
 | **n8n Strategist** | `.claude/agents/n8n-strategist.md` | Designing an n8n workflow for an idea card (build or maintain). Classifies each step — managed agent? swarm? asset-gated review? — and emits importable JSON. |
+| **Doppler Broker** | `.claude/agents/doppler-broker.md` | Mid-session secret-gated action. Parent supplies a `secret` name + `command`; broker fetches via `/api/composio/doppler`, runs the command with the secret in env, returns scrubbed output. The secret value never enters the parent's context. See ADR 001. |
 
 These agents are spawned automatically by Claude Code when tasks match their description. They share the Doppler-injected environment and have access to the tools listed in their frontmatter.
 

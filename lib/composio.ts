@@ -11,8 +11,10 @@
  * Required env vars:
  *   COMPOSIO_API_KEY                       — Composio API key
  *   COMPOSIO_DOPPLER_CONNECTED_ACCOUNT_ID  — the connected Doppler account
- *   DOPPLER_PROJECT                        — Doppler project to read from
- *   DOPPLER_CONFIG                         — Doppler config (e.g. `prd`, `dev`)
+ *   DOPPLER_PROJECT_                       — Doppler project to read from
+ *                                            (trailing _ required — Doppler
+ *                                             reserves the unsuffixed names)
+ *   DOPPLER_CONFIG_                        — Doppler config (e.g. `prd`, `dev`)
  *
  * Optional:
  *   COMPOSIO_BASE_URL                       — default https://backend.composio.dev
@@ -69,11 +71,13 @@ async function executeAction({ action, connectedAccountId, arguments: args }: Ex
  */
 export async function fetchDopplerSecrets(names: string[]): Promise<Record<string, string>> {
   const connectedAccountId = process.env.COMPOSIO_DOPPLER_CONNECTED_ACCOUNT_ID
-  const project = process.env.DOPPLER_PROJECT
-  const config = process.env.DOPPLER_CONFIG
+  // Trailing _ is required: Doppler reserves DOPPLER_PROJECT / DOPPLER_CONFIG
+  // as built-in metadata and rejects them as user-defined secret names.
+  const project = process.env.DOPPLER_PROJECT_
+  const config  = process.env.DOPPLER_CONFIG_
   if (!connectedAccountId) throw new ComposioError('COMPOSIO_DOPPLER_CONNECTED_ACCOUNT_ID not configured', 500)
-  if (!project)            throw new ComposioError('DOPPLER_PROJECT not configured', 500)
-  if (!config)             throw new ComposioError('DOPPLER_CONFIG not configured', 500)
+  if (!project)            throw new ComposioError('DOPPLER_PROJECT_ not configured', 500)
+  if (!config)             throw new ComposioError('DOPPLER_CONFIG_ not configured', 500)
 
   const action = process.env.COMPOSIO_DOPPLER_GET_ACTION ?? DEFAULT_GET_ACTION
   const out: Record<string, string> = {}
