@@ -2,4 +2,4 @@
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
-| — | *(none yet — add rows as ADRs are created)* | — | — |
+| [001](001-composio-doppler-broker.md) | Composio→Doppler secrets broker for Claude Code web | Accepted | 2026-04-25 |
