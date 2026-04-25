@@ -115,6 +115,25 @@ own OAuth credentials once via the UI.
 5. Exchange authorization code for tokens. Copy the `refresh_token` out.
 6. POST `{ clientId, clientSecret, refreshToken }` to the platform's user-secrets endpoint (or insert manually via the tools/claw UI once extended).
 
+## Composio→Doppler broker (ADR 001)
+
+For Claude Code web cloud sessions. Server-side route `/api/composio/doppler`
+brokers OAuth-authenticated Doppler reads; sandbox calls it via
+`.claude/hooks/session-start-secrets.sh` with a bearer token.
+
+| Var | Side | Purpose |
+|-----|------|---------|
+| `COMPOSIO_API_KEY` | server | Composio account API key |
+| `COMPOSIO_DOPPLER_CONNECTED_ACCOUNT_ID` | server | Connected-account ID returned after Composio OAuth flow to Doppler |
+| `COMPOSIO_BASE_URL` | server | Optional Composio base URL (default `https://backend.composio.dev`) |
+| `COMPOSIO_DOPPLER_GET_ACTION` | server | Optional action name (default `DOPPLER_GET_SECRET`) |
+| `DOPPLER_PROJECT` | server | Doppler project the broker reads from |
+| `DOPPLER_CONFIG` | server | Doppler config (e.g. `prd`, `dev`) |
+| `COMPOSIO_BROKER_ALLOWED_SECRETS` | server | Comma-separated allowlist of secret names the broker may return |
+| `CLAUDE_SESSION_BROKER_TOKEN` | both | Shared bearer secret. Server validates; sandbox presents in `Authorization: Bearer …` |
+| `NEXUS_BROKER_URL` | sandbox | e.g. `https://nexus-xxx.vercel.app` |
+| `NEXUS_BROKER_SECRETS` | sandbox | Optional comma-separated subset to request (defaults defined in the hook script) |
+
 ## Agent Library (managed agents)
 
 Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
