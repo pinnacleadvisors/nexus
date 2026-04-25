@@ -40,12 +40,14 @@ DEFAULT_SECRETS="ANTHROPIC_API_KEY,OPENAI_API_KEY,TAVILY_API_KEY,FIRECRAWL_API_K
 SECRETS="${NEXUS_BROKER_SECRETS:-$DEFAULT_SECRETS}"
 
 # Build JSON array from comma-separated list using python3 (always present in
-# Claude Code sandboxes; jq is not guaranteed).
-NAMES_JSON="$(SECRETS="$SECRETS" python3 -c '
+# Claude Code sandboxes; jq is not guaranteed). Heredoc keeps the python
+# source literal so single/double quotes don't get mangled by bash.
+NAMES_JSON="$(SECRETS="$SECRETS" python3 <<'PYEOF'
 import json, os
 names = [n.strip() for n in os.environ["SECRETS"].split(",") if n.strip()]
 print(json.dumps(names))
-')"
+PYEOF
+)"
 
 if [ -z "$NAMES_JSON" ] || [ "$NAMES_JSON" = "[]" ]; then
   emit_err "no secrets requested — skipping"
@@ -72,27 +74,29 @@ if [ "$HTTP_CODE" != "200" ]; then
   exit 0
 fi
 
-# Parse JSON and emit shell exports. Values single-quoted; embedded ' becomes '\''
-printf '%s' "$BODY" | python3 -c '
-import json, sys
+# Parse JSON and emit shell exports. Heredoc keeps python source literal.
+# Body is passed via env (not stdin) because the heredoc itself takes stdin.
+# Python single-quote shell escaping: ' becomes '\''
+BODY="$BODY" python3 <<'PYEOF'
+import json, os, sys
 try:
-    data = json.load(sys.stdin)
+    data = json.loads(os.environ.get("BODY", ""))
 except Exception as e:
     sys.stderr.write(f"[session-start-secrets] invalid JSON from broker: {e}\n")
     sys.exit(0)
 
-secrets = data.get("secrets") or {}
-missing = data.get("missing") or []
+secrets  = data.get("secrets")  or {}
+missing  = data.get("missing")  or []
 rejected = data.get("rejected") or []
 
 for name, value in secrets.items():
     if not isinstance(name, str) or not isinstance(value, str):
         continue
-    escaped = value.replace("'\''", "'\''\\'\'''\''")
-    print(f"export {name}='\''{escaped}'\''")
+    escaped = value.replace("'", "'\\''")
+    print(f"export {name}='{escaped}'")
 
 if missing:
-    sys.stderr.write(f"[session-start-secrets] missing from Doppler: {','.join(missing)}\n")
+    sys.stderr.write("[session-start-secrets] missing from Doppler: " + ",".join(missing) + "\n")
 if rejected:
-    sys.stderr.write(f"[session-start-secrets] rejected by allowlist: {','.join(rejected)}\n")
-'
+    sys.stderr.write("[session-start-secrets] rejected by allowlist: " + ",".join(rejected) + "\n")
+PYEOF
