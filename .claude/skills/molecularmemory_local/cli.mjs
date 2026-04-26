@@ -6,9 +6,16 @@ import { existsSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 const ROOT = resolve(process.cwd(), 'memory/molecular')
-const DIRS = { atoms: join(ROOT, 'atoms'), entities: join(ROOT, 'entities'), mocs: join(ROOT, 'mocs') }
+const DIRS = {
+  atoms: join(ROOT, 'atoms'),
+  entities: join(ROOT, 'entities'),
+  mocs: join(ROOT, 'mocs'),
+  sources: join(ROOT, 'sources'),
+  synthesis: join(ROOT, 'synthesis'),
+}
 const INDEX = join(ROOT, 'INDEX.md')
 const GRAPH = join(ROOT, '.graph.json')
+const LOG = join(ROOT, 'log.md')
 
 const [, , cmd, ...rest] = process.argv
 const { positional, flags } = parseArgs(rest)
@@ -19,6 +26,11 @@ try {
     case 'atom':      await createAtom(positional[0], flags); break
     case 'entity':    await createEntity(positional[0], positional[1], flags); break
     case 'moc':       await createMoc(positional[0], flags); break
+    case 'source':    await createSource(positional[0], flags); break
+    case 'synthesis': await createSynthesis(positional[0], flags); break
+    case 'ingest':    await ingest(positional[0], flags); break
+    case 'log':       await appendLog(positional[0], positional.slice(1).join(' '), flags); break
+    case 'lint':      await lint(flags); break
     case 'link':      await linkNotes(positional[0], positional[1]); break
     case 'graph':     await buildGraph(flags); break
     case 'query':     await query(positional.join(' ')); break
@@ -35,6 +47,9 @@ async function initVault() {
   for (const d of Object.values(DIRS)) await mkdir(d, { recursive: true })
   if (!existsSync(INDEX)) {
     await writeFile(INDEX, seedIndex(), 'utf8')
+  }
+  if (!existsSync(LOG)) {
+    await writeFile(LOG, seedLog(), 'utf8')
   }
   ok({ initialized: ROOT })
 }
@@ -111,12 +126,163 @@ async function linkNotes(a, b) {
   ok({ linked: [a, b] })
 }
 
+async function createSource(title, flags) {
+  if (!title || !flags.url) fail('usage: source <title> --url=<url> [--summary="..."] [--body=<path>] [--moc=slug] [--links=a,b]')
+  await ensureDirs()
+  const slug = slugify(title)
+  const path = join(DIRS.sources, `${slug}.md`)
+  if (existsSync(path)) fail(`source already exists: ${slug}. Pick a new title or edit the file directly.`, { slug })
+  let body = flags.summary || ''
+  if (flags.body) {
+    if (!existsSync(flags.body)) fail(`--body file not found: ${flags.body}`)
+    body = await readFile(flags.body, 'utf8')
+  }
+  const links = splitList(flags.links)
+  const moc = flags.moc ? slugify(flags.moc) : null
+  const note = buildSource({ title, slug, url: flags.url, body, links, moc })
+  await writeFile(path, note, 'utf8')
+  if (moc) await linkSourceToMoc(moc, slug)
+  await appendLog('ingest', title, { ref: `sources/${slug}.md`, url: flags.url })
+  await reindex()
+  ok({ created: relative(process.cwd(), path), slug, type: 'source', moc })
+}
+
+async function createSynthesis(title, flags) {
+  if (!title || !flags.body) fail('usage: synthesis <title> --body=<path> [--question="..."] [--links=a,b] [--moc=slug]')
+  await ensureDirs()
+  const slug = slugify(title)
+  const path = join(DIRS.synthesis, `${slug}.md`)
+  if (existsSync(path)) fail(`synthesis already exists: ${slug}. Pick a new title or edit the file directly.`, { slug })
+  if (!existsSync(flags.body)) fail(`--body file not found: ${flags.body}`)
+  const body = await readFile(flags.body, 'utf8')
+  const links = splitList(flags.links)
+  const moc = flags.moc ? slugify(flags.moc) : null
+  const note = buildSynthesis({ title, slug, question: flags.question || '', body, links, moc })
+  await writeFile(path, note, 'utf8')
+  if (moc) await linkSynthesisToMoc(moc, slug)
+  await appendLog('synthesis', title, { ref: `synthesis/${slug}.md` })
+  await reindex()
+  ok({ created: relative(process.cwd(), path), slug, type: 'synthesis', moc })
+}
+
+async function ingest(target, flags) {
+  if (!target) fail('usage: ingest <url|path> --title="..." [--summary="..."] [--body=<path>] [--moc=slug] [--links=a,b]')
+  if (!flags.title) fail('ingest requires --title="..." (Claude reads the source first, then names the page)')
+  const isUrl = /^https?:\/\//i.test(target)
+  const flagsForSource = { ...flags, url: isUrl ? target : `file://${resolve(target)}` }
+  if (!flagsForSource.body && !flagsForSource.summary) {
+    fail('ingest requires either --summary="..." or --body=<path-to-markdown-from-firecrawl_local>. Run firecrawl_local scrape first, then pass the resulting file as --body.')
+  }
+  await createSource(flags.title, flagsForSource)
+}
+
+async function appendLog(op, title, flags = {}) {
+  if (!op || !title) fail('usage: log <op> "<title>" [--ref=path] [--url=...]')
+  await ensureDirs()
+  if (!existsSync(LOG)) await writeFile(LOG, seedLog(), 'utf8')
+  const date = today()
+  const refs = []
+  if (flags.ref) refs.push(`[\`${flags.ref}\`](${flags.ref})`)
+  if (flags.url) refs.push(`<${flags.url}>`)
+  const suffix = refs.length ? ` — ${refs.join(' · ')}` : ''
+  const line = `## [${date}] ${op} | ${title}${suffix}\n`
+  const raw = await readFile(LOG, 'utf8')
+  const next = raw.endsWith('\n') ? raw + line : raw + '\n' + line
+  await writeFile(LOG, next, 'utf8')
+  ok({ logged: relative(process.cwd(), LOG), op, title, date })
+}
+
+async function lint(flags) {
+  await ensureDirs()
+  if (!existsSync(GRAPH)) await buildGraph({})
+  const graph = JSON.parse(await readFile(GRAPH, 'utf8'))
+  const slugs = new Set(graph.nodes.map((n) => n.slug))
+  const incoming = new Map()
+  for (const e of graph.edges) {
+    incoming.set(e.to, (incoming.get(e.to) || 0) + 1)
+  }
+  const dangling = graph.edges.filter((e) => !slugs.has(e.to))
+  const orphanAtoms = []
+  const sourcelessAtoms = []
+  const staleAtoms = []
+  const emptyEntities = []
+  const oneYearMs = 365 * 24 * 60 * 60 * 1000
+  const staleThresholdMs = Number(flags['stale-days'] || 90) * 24 * 60 * 60 * 1000
+  const now = Date.now()
+  for (const n of graph.nodes) {
+    const raw = await readFile(n.path, 'utf8')
+    const fm = raw.match(/^---\n([\s\S]*?)\n---/)
+    const created = fm && fm[1].match(/\ncreated:\s*([0-9-]+)/)?.[1]
+    const hasSource = /\nsources:\s*\n  - /.test(raw) || /\nsources:\s*\[/.test(raw)
+    if (n.kind === 'atom') {
+      if ((incoming.get(n.slug) || 0) === 0) orphanAtoms.push(n.slug)
+      if (!hasSource) sourcelessAtoms.push(n.slug)
+      if (created) {
+        const age = now - new Date(created).getTime()
+        if (age > staleThresholdMs && age < 10 * oneYearMs) staleAtoms.push({ slug: n.slug, created })
+      }
+    }
+    if (n.kind === 'entity') {
+      const linkedAtoms = graph.edges.filter((e) => e.to === n.slug && graph.nodes.find((x) => x.slug === e.from)?.kind === 'atom')
+      if (linkedAtoms.length === 0) emptyEntities.push(n.slug)
+    }
+  }
+  const report = {
+    generated: new Date().toISOString(),
+    counts: { nodes: graph.nodes.length, edges: graph.edges.length },
+    issues: {
+      danglingWikilinks: dangling.map((e) => ({ from: e.from, to: e.to })),
+      orphanAtoms,
+      sourcelessAtoms,
+      staleAtoms,
+      emptyEntities,
+    },
+  }
+  const total = dangling.length + orphanAtoms.length + sourcelessAtoms.length + staleAtoms.length + emptyEntities.length
+  if (flags.write) {
+    await appendLog('lint', `${total} issues`, { ref: 'log.md' })
+  }
+  ok({ total, ...report })
+}
+
+async function linkSourceToMoc(mocSlug, sourceSlug) {
+  const mocPath = join(DIRS.mocs, `${mocSlug}.md`)
+  if (!existsSync(mocPath)) return
+  const raw = await readFile(mocPath, 'utf8')
+  const tag = `[[sources/${sourceSlug}]]`
+  if (raw.includes(tag)) return
+  const sectionRe = /\n## Sources\n([\s\S]*?)(?=\n## |\n*$)/
+  let next
+  if (sectionRe.test(raw)) {
+    next = raw.replace(sectionRe, (m, body) => `\n## Sources\n${body.trimEnd()}\n- ${tag}\n`)
+  } else {
+    next = (raw.endsWith('\n') ? raw : raw + '\n') + `\n## Sources\n- ${tag}\n`
+  }
+  await writeFile(mocPath, next, 'utf8')
+}
+
+async function linkSynthesisToMoc(mocSlug, synthSlug) {
+  const mocPath = join(DIRS.mocs, `${mocSlug}.md`)
+  if (!existsSync(mocPath)) return
+  const raw = await readFile(mocPath, 'utf8')
+  const tag = `[[synthesis/${synthSlug}]]`
+  if (raw.includes(tag)) return
+  const sectionRe = /\n## Synthesis\n([\s\S]*?)(?=\n## |\n*$)/
+  let next
+  if (sectionRe.test(raw)) {
+    next = raw.replace(sectionRe, (m, body) => `\n## Synthesis\n${body.trimEnd()}\n- ${tag}\n`)
+  } else {
+    next = (raw.endsWith('\n') ? raw : raw + '\n') + `\n## Synthesis\n- ${tag}\n`
+  }
+  await writeFile(mocPath, next, 'utf8')
+}
+
 async function buildGraph(flags) {
   await ensureDirs()
   const nodes = []
   const edges = []
   const slugToKind = new Map()
-  const singular = { atoms: 'atom', entities: 'entity', mocs: 'moc' }
+  const singular = { atoms: 'atom', entities: 'entity', mocs: 'moc', sources: 'source', synthesis: 'synthesis' }
   for (const [kind, dir] of Object.entries(DIRS)) {
     for (const f of await lsMd(dir)) {
       const p = join(dir, f)
@@ -131,7 +297,7 @@ async function buildGraph(flags) {
   for (const n of nodes) {
     const raw = await readFile(n.path, 'utf8')
     for (const m of raw.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g)) {
-      const target = slugify(m[1].trim().replace(/^(atoms|entities|mocs)\//, ''))
+      const target = slugify(m[1].trim().replace(/^(atoms|entities|mocs|sources|synthesis)\//, ''))
       if (target === n.slug) continue
       const key = `${n.slug}→${target}`
       if (edgeSet.has(key)) continue
@@ -195,7 +361,7 @@ async function reindex() {
   const md = [
     '# Molecular Memory — Index',
     '',
-    '> Topic hubs, entities, and atomic facts. Start at a MOC, follow [[wikilinks]] from there.',
+    '> Topic hubs, entities, atomic facts, ingested sources, and synthesis. Start at a MOC, follow [[wikilinks]] from there.',
     '> Generated by `.claude/skills/molecularmemory_local/cli.mjs reindex` — do not edit by hand.',
     '',
     `_Last updated: ${today()}_`,
@@ -209,6 +375,16 @@ async function reindex() {
     `## Atomic notes (${groups.atoms.length})`,
     ...groups.atoms.slice(0, 200).map((n) => `- [[atoms/${n.slug}|${n.title}]]`),
     groups.atoms.length > 200 ? `\n…and ${groups.atoms.length - 200} more.` : '',
+    '',
+    `## Sources (${groups.sources.length})`,
+    ...groups.sources.slice(0, 100).map((n) => `- [[sources/${n.slug}|${n.title}]]`),
+    groups.sources.length > 100 ? `\n…and ${groups.sources.length - 100} more.` : '',
+    '',
+    `## Synthesis (${groups.synthesis.length})`,
+    ...groups.synthesis.slice(0, 100).map((n) => `- [[synthesis/${n.slug}|${n.title}]]`),
+    '',
+    '## Activity log',
+    `See [\`log.md\`](log.md) — append-only chronological record of ingest/synthesis/lint events.`,
     '',
   ].join('\n')
   await writeFile(INDEX, md, 'utf8')
@@ -346,6 +522,66 @@ function mergeEntity(existing, { description, aliases }) {
     }
   }
   return out
+}
+
+function buildSource({ title, slug, url, body, links, moc }) {
+  const fm = [
+    '---',
+    'type: source',
+    `title: ${JSON.stringify(title)}`,
+    `id: ${slug}`,
+    `created: ${today()}`,
+    `url: ${JSON.stringify(url)}`,
+  ]
+  if (moc) fm.push(`moc: ${JSON.stringify(moc)}`)
+  if (links.length) {
+    fm.push('links:')
+    for (const l of links) fm.push(`  - "[[${l}]]"`)
+  }
+  fm.push('---', '')
+  const out = fm.concat([`# ${title}`, '', `> Ingested ${today()} from <${url}>`, ''])
+  if (body) {
+    out.push('## Summary', '', body.trim(), '')
+  }
+  if (links.length) {
+    out.push('## Related', ...links.map((l) => `- [[${l}]]`), '')
+  }
+  out.push('## Atoms extracted', '_Add wikilinks to extracted atoms here as you create them (e.g. one bullet per fact)._ ', '')
+  return out.join('\n')
+}
+
+function buildSynthesis({ title, slug, question, body, links, moc }) {
+  const fm = [
+    '---',
+    'type: synthesis',
+    `title: ${JSON.stringify(title)}`,
+    `id: ${slug}`,
+    `created: ${today()}`,
+  ]
+  if (question) fm.push(`question: ${JSON.stringify(question)}`)
+  if (moc) fm.push(`moc: ${JSON.stringify(moc)}`)
+  if (links.length) {
+    fm.push('links:')
+    for (const l of links) fm.push(`  - "[[${l}]]"`)
+  }
+  fm.push('---', '')
+  const out = fm.concat([`# ${title}`, ''])
+  if (question) out.push(`> Question: ${question}`, '')
+  if (body) out.push(body.trim(), '')
+  if (links.length) out.push('## Related', ...links.map((l) => `- [[${l}]]`), '')
+  return out.join('\n')
+}
+
+function seedLog() {
+  return [
+    '# Molecular Memory — Activity Log',
+    '',
+    '> Append-only chronological record. New entries are added by `cli.mjs ingest`, `synthesis`, `lint --write`, or `log` directly.',
+    '> Format: `## [YYYY-MM-DD] <op> | <title>` — parseable with `grep "^## \\["`.',
+    '',
+    `_Initialized: ${today()}_`,
+    '',
+  ].join('\n')
 }
 
 function seedIndex() {

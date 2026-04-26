@@ -17,7 +17,11 @@ roadmap/SUMMARY.md → ../task_plan.md      (SOE phase tracks in task_plan)
 molecular/INDEX.md → molecular/mocs/      (start at a MOC)
 molecular/mocs/    → molecular/atoms/     (MOC fans out to atoms)
 molecular/mocs/    → molecular/entities/  (MOC references entity notes)
+molecular/mocs/    → molecular/sources/   (MOC's "## Sources" lists ingested docs)
+molecular/mocs/    → molecular/synthesis/ (MOC's "## Synthesis" lists filed Q&A)
 molecular/atoms/   → molecular/entities/  (atoms cite entities via [[wikilinks]])
+molecular/atoms/   → molecular/sources/   (atom's source: points to a sources/ page)
+molecular/log.md   ←  cli.mjs ingest/synthesis/lint (append-only)
 ```
 
 ## High-value starting points by task type

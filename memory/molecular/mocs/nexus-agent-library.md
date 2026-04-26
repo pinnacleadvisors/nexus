@@ -21,3 +21,6 @@ Map of all Claude managed agents that form the Nexus agent-generation + optimiza
 - [[entities/supermemory-agent]]
 - [[entities/workflow-optimizer-agent]]
 - [[entities/agent-generator-agent]]
+
+## Sources
+- [[sources/karpathy-llm-wiki-pattern]]

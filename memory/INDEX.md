@@ -33,7 +33,8 @@
 | All ⬜ not-started items grouped by phase | `roadmap/PENDING.md` | Finding what to build next |
 | Self-Optimising Ecosystem plan + progress (Pillars A/B/C) | `../task_plan.md` | Resuming long-horizon work |
 | Per-run snapshots (mirrored from Supabase `runs` table) | `runs/<run-id>.md` | Resuming a specific idea→launch chain |
-| Domain knowledge graph — atoms, entities, MOCs | `molecular/INDEX.md` | Answering "what do we know about X?" |
+| Domain knowledge graph — atoms, entities, MOCs, sources, synthesis | `molecular/INDEX.md` | Answering "what do we know about X?" |
+| Activity log (ingest / synthesis / lint events, append-only) | `molecular/log.md` | Auditing what was added when |
 
 ## Layer 3 — Session memory (volatile)
 
@@ -41,6 +42,9 @@ Held in chat context. Before a session ends, promote durable facts:
 
 - **Atomic fact** → `node .claude/skills/molecularmemory_local/cli.mjs atom "<title>" --fact="..." --source=<ref>`
 - **Entity (person/company/concept)** → `cli.mjs entity <type> "<name>"`
+- **Ingested article / PDF / transcript** → scrape with `/firecrawl_local` → `cli.mjs ingest <url> --title="..." --body=<path> --moc=<topic>` (creates a `sources/` page + log entry, then extract atoms)
+- **Notable Q&A or cross-source essay** → `cli.mjs synthesis "<title>" --body=<path> --question="..." --moc=<topic>`
+- **Knowledge-graph health check** → `cli.mjs lint --write` (orphans, dangling links, sourceless atoms)
 - **Multi-step task progress** → edit `task_plan.md` `## Progress` section
 - **Architectural decision** → write an ADR (`docs/adr/NNN-title.md`)
 - **Roadmap status change** → edit `roadmap/SUMMARY.md` + `roadmap/PENDING.md`

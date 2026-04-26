@@ -44,6 +44,10 @@ if matches 'extract (facts|atoms|atomic|key points|main ideas)|break .* into .*n
   hints+=('- Prompt asks to extract facts → use **/molecularmemory_local**: run `init`, then for each distinct fact call `atom "<title>" --fact="..." --source=<url>`. Create entity notes for every person/company/concept mentioned.')
 fi
 
+if matches 'ingest|summarize .* (article|paper|gist|transcript|pdf|video|talk)|file .* in .*memory|add .* to .*wiki|knowledge.*base'; then
+  hints+=('- Prompt asks to ingest a source → Karpathy ingest pattern: `/firecrawl_local scrape <url> --output=/tmp/<slug>.md`, then `node .claude/skills/molecularmemory_local/cli.mjs ingest <url> --title="..." --body=/tmp/<slug>.md --moc=<topic>`. Then extract atoms with `cli.mjs atom` and back-link them in the source page. Finish with `cli.mjs lint --write`.')
+fi
+
 if matches 'knowledge graph|map of content|moc|connect .* notes|how .* relate'; then
   hints+=('- Prompt is about knowledge structure → **/molecularmemory_local moc** or `graph` to build a Map of Content. Query existing graph first: `cli.mjs query "<topic>"`.')
 fi
