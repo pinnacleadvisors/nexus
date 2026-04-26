@@ -7,6 +7,9 @@ sources:
   - file://.claude/agents/firecrawl.md
 links:
   - "[[firecrawl-agent]]"
+status: active
+lastAccessed: 2026-04-21
+accessCount: 0
 ---
 
 # Firecrawl agent uses hosted or local fallback

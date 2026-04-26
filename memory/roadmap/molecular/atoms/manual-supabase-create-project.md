@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L26
 links:
   - "[[manual-steps]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — Create Supabase project

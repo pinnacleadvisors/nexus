@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L47
 links:
   - "[[pattern-1-idea-to-automation]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 1 — Step 5: n8n Blueprint Generator drafts workflow templates

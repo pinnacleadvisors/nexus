@@ -53,6 +53,9 @@ import { getCapability } from '@/lib/agent-capabilities'
 import { buildSessionEnv } from '@/lib/n8n/managed-agent-builder'
 import { advancePhase as advanceRunPhase, appendEvent as appendRunEvent, getRun } from '@/lib/runs/controller'
 import { RUN_PHASE_ORDER, type RunPhase } from '@/lib/types'
+import { resolveClawConfig, isBusinessSlug, type BusinessClawConfig } from '@/lib/claw/business-client'
+import { assertUnderCostCap } from '@/lib/cost-guard'
+import { wake } from '@/lib/notify/wake'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 45
@@ -69,6 +72,10 @@ interface DispatchBody {
   runId?:     string
   /** A6 — when set, success advances the run to this phase (otherwise the n8n workflow stays in control). */
   advanceTo?: RunPhase
+  /** D8 — route this dispatch to a specific per-business OpenClaw container. */
+  businessSlug?: string
+  /** E11 — fire a Slack wake notification on completion. */
+  notifyOnDone?: boolean
   inputs?: {
     task?:             string
     description?:      string
@@ -227,10 +234,11 @@ async function dispatchToOpenClaw(opts: {
   agentSlug: string
   message:   string
   env:       Record<string, string>
+  config:    BusinessClawConfig | null
 }): Promise<{ ok: boolean; sessionId: string; status: number; body: unknown } | null> {
-  const baseUrl   = process.env.OPENCLAW_GATEWAY_URL
-  const hookToken = process.env.OPENCLAW_BEARER_TOKEN
-  if (!baseUrl || !hookToken) return null
+  if (!opts.config) return null
+  const baseUrl   = opts.config.gatewayUrl
+  const hookToken = opts.config.bearerToken
 
   const base      = baseUrl.replace(/\/$/, '')
   const sessionId = `nexus-agent-${opts.agentSlug}-${Date.now()}`
@@ -310,6 +318,17 @@ export async function POST(req: NextRequest) {
   if (!body.agentSlug || !slugIsSafe(body.agentSlug)) {
     return NextResponse.json({ error: 'agentSlug must be lowercase, hyphenated, ≤ 60 chars' }, { status: 400 })
   }
+  const businessSlug = body.businessSlug && typeof body.businessSlug === 'string' ? body.businessSlug : null
+  if (businessSlug && !isBusinessSlug(businessSlug)) {
+    return NextResponse.json({ error: 'businessSlug must be lowercase, hyphenated, ≤ 60 chars' }, { status: 400 })
+  }
+  const cap = await assertUnderCostCap(userId, businessSlug)
+  if (!cap.ok) {
+    return NextResponse.json(
+      { error: 'cost_cap_exceeded', spentUsd: cap.spentUsd, capUsd: cap.capUsd, scope: cap.scope },
+      { status: 402 },
+    )
+  }
   const capabilityId = body.capabilityId ?? 'consultant'
   const capability   = getCapability(capabilityId)
   if (!capability) {
@@ -375,12 +394,14 @@ export async function POST(req: NextRequest) {
   // 2. Build env
   const env = buildSessionEnv({ swarm })
 
-  // 3. Dispatch to OpenClaw (if configured)
+  // 3. Dispatch to OpenClaw (if configured) — businessSlug routes to a per-business container.
+  const clawConfig = await resolveClawConfig(userId, businessSlug)
   const message = buildAgentBrief(body, env)
   const dispatch = await dispatchToOpenClaw({
     agentSlug: body.agentSlug,
     message,
     env,
+    config: clawConfig,
   })
 
   audit(req, {
@@ -451,6 +472,15 @@ export async function POST(req: NextRequest) {
     if (advanceTo) {
       await advanceRunPhase(runId, advanceTo, { reason: 'dispatch.success', agentSlug: body.agentSlug })
     }
+  }
+
+  if (body.notifyOnDone) {
+    void wake({
+      userId,
+      runId: runId ?? undefined,
+      title: `${body.agentSlug} completed`,
+      description: body.inputs?.task ?? capability.description.slice(0, 120),
+    })
   }
 
   return NextResponse.json({

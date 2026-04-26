@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L276
 links:
   - "[[phase-05-openclaw-integration]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 5 — Rate limit + cost cap

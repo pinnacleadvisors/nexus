@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-b-pack]]"
   - "[[progress-ecosystem-b2]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B2 — Auth-gate `/api/content/{generate,score,variants}`

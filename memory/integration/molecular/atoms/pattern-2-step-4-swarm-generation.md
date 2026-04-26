@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L67-L69
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Step 4: Swarm generation via Tactical Queen for high complexity

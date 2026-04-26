@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a7]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A7 — Graph-keyed context retrieval for Queen

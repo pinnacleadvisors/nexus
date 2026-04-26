@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L49-L52
 links:
   - "[[pattern-1-idea-to-automation]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 1 — Step 7: Board integration creates Backlog/Review cards

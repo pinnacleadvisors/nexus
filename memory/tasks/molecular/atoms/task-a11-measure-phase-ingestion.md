@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a11]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A11 — Measure phase ingestion

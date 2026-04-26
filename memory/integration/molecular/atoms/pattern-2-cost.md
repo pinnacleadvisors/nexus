@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L82
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Cost: 1–3 API calls per generation; library hits save ~200 tokens

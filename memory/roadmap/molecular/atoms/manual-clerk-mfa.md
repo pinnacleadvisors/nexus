@@ -8,6 +8,9 @@ sources:
 links:
   - "[[manual-steps]]"
   - "[[phase-9-security-hardening]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — Enable Clerk MFA

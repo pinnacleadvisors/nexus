@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L66
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Step 3: Reasoning bank retrieval of past patterns

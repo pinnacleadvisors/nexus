@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-b-pack]]"
   - "[[progress-ecosystem-b5]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B5 — Auth-gate `/api/audit`

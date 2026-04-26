@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a2]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A2 — Types for Run + RunEvent

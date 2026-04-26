@@ -8,6 +8,9 @@ sources:
 links:
   - "[[manual-steps]]"
   - "[[phase-10-agent-capabilities]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — ANTHROPIC_API_KEY

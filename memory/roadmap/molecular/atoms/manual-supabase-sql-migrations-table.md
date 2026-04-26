@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L40
 links:
   - "[[manual-steps]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — SQL migrations applied table (001–008)
