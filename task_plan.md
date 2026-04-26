@@ -522,9 +522,55 @@ Two-stage review after each batch returns:
 - [ ] User approval of scope (open question — confirm before R1)
 - [ ] R1 → R-Header implementation
 
-### Blockers / Open Questions for the user
-1. **Scope confirmation**: stop at ~40 atoms (pending items + key decisions) or atomise *every* ROADMAP bullet (~150+ atoms)?
-2. **Location**: keep MOCs in `memory/molecular/mocs/` (consistent with existing molecular memory) or move under `memory/roadmap/molecular/` as a parallel sub-tree? Default: `memory/molecular/mocs/`.
-3. **ROADMAP.md as source of truth**: keep it (default) or fully replace with molecular notes + delete? I strongly recommend keep — humans still read it.
-4. **Apply same split to other big files** (`INTEGRATION_STRATEGY.md` 17.6k, `README.md` 7.9k)? Default: no, those don't justify the overhead.
+### User answers (2026-04-25)
+1. **Atomise every ROADMAP bullet** (~150 atoms target).
+2. **Location** = `memory/roadmap/molecular/` (separate namespace; existing `memory/molecular/` untouched).
+3. **Keep `ROADMAP.md`** as human source of truth.
+4. **Same treatment** for `INTEGRATION_STRATEGY.md` → `memory/integration/molecular/`, and `task_plan.md` → `memory/tasks/molecular/` (with ongoing protocol: every new task_plan.md entry gets atomised at task completion to track features-implemented over time).
+
+## Refined scope (post-approval)
+
+Three molecular namespaces, atomised by parallel subagents:
+
+| Source | Namespace | Target atoms | Target MOCs |
+|---|---|---|---|
+| `ROADMAP.md` (74.7k bytes, 917 lines, 22 phases) | `memory/roadmap/molecular/` | ~150 (every phase bullet + manual-step + decision block) | 22 phase MOCs + 1 "Manual Steps" MOC + 1 "Tech Stack" MOC = 24 |
+| `INTEGRATION_STRATEGY.md` (17.6k bytes, 439 lines, 5 patterns) | `memory/integration/molecular/` | ~50 (every pattern step + checklist item + dependency edge) | 5 pattern MOCs + 1 "Checklist" MOC + 1 "n8n-vs-OpenClaw" MOC = 7 |
+| `task_plan.md` (current — Self-Optimising Ecosystem + Roadmap-split sub-plan) | `memory/tasks/molecular/` | ~80 (every A/B/C task + every R task + every risk + every progress entry) | 3 plan MOCs (A-pack, B-pack, C-pack) + 1 sub-plan MOC = 4 |
+| **Total** | | **~280 atoms** | **~35 MOCs** |
+
+## Implementation status (live)
+
+- [x] Patch `cli.mjs` to read `MOLECULAR_ROOT` env var (line 8 — fallback to `memory/molecular`).
+- [x] `init` all three namespaces — verified `INDEX.md` + `atoms/` + `entities/` + `mocs/` exist in each.
+- [ ] Subagent A: `ROADMAP.md` → `memory/roadmap/molecular/`
+- [ ] Subagent B: `INTEGRATION_STRATEGY.md` → `memory/integration/molecular/`
+- [ ] Subagent C: `task_plan.md` → `memory/tasks/molecular/`
+- [ ] Run `cli.mjs graph` + `cli.mjs reindex` per namespace.
+- [ ] Update `CLAUDE.md` Long-Horizon Protocol to query molecular memory first; add cross-namespace query guidance.
+- [ ] Update `AGENTS.md` Platform Memory section with three new namespaces.
+- [ ] Add "AI agents query first" breadcrumbs to all three source files.
+- [ ] Add ongoing protocol to `CLAUDE.md`: Phase 3 PDCA gate now includes "atomise newly added task_plan entries" before commit.
+- [ ] Final commit + push.
+
+## Cross-namespace query strategy
+
+When the Long-Horizon Protocol's Explore phase needs roadmap/integration/task context, the agent runs:
+
+```bash
+MOLECULAR_ROOT=memory/roadmap/molecular     node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+MOLECULAR_ROOT=memory/integration/molecular node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+MOLECULAR_ROOT=memory/tasks/molecular       node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+```
+
+Three small JSON results merged in-context, then read only the few atoms they point to. Saves 100k+ tokens vs reading all three source files.
+
+## Ongoing protocol (per user request #4)
+
+When a task_plan.md entry transitions to "Completed", the implementing agent must:
+1. Run `MOLECULAR_ROOT=memory/tasks/molecular cli.mjs atom "<task title>" --fact="<one-sentence outcome>" --source=task_plan.md#L<line> --links=<phase-MOC>,<feature-MOC>` for each completed task.
+2. Run `MOLECULAR_ROOT=memory/tasks/molecular cli.mjs graph && reindex`.
+3. Commit with message `molecular(tasks): <task-id> closeout`.
+
+This is documented as a new PDCA gate in `CLAUDE.md` so the molecular task memory accretes alongside `task_plan.md` instead of going stale.
 
