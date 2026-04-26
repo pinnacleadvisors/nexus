@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L70
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Step 5: Template search across 8 pre-built templates

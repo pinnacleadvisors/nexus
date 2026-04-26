@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L211
 links:
   - "[[phase-02-idea-forge]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 2 — Gantt chart

@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L235
 links:
   - "[[phase-03-dashboard]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 3 — Mobile-optimised layout

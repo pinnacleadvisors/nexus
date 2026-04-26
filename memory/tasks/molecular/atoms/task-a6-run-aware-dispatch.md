@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a6]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A6 — Run-aware session dispatch

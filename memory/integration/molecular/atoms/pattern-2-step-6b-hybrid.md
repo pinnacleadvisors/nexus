@@ -8,6 +8,9 @@ sources:
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
   - "[[pattern-2-step-6-gap-analysis]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Gap result: hybrid splits into n8n + manual Board cards

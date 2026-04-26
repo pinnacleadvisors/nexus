@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a12]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A12 — Self-build (Phase 19 closeout)

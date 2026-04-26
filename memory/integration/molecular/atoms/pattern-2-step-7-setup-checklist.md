@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L75-L79
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Step 7: Setup checklist auto-generated per workflow

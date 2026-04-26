@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-b-pack]]"
   - "[[progress-ecosystem-b7]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B7 — CSP hardening

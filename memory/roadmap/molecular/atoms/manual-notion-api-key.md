@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L60
 links:
   - "[[manual-steps]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — Optional NOTION_API_KEY

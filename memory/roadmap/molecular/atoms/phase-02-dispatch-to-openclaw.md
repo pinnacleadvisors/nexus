@@ -8,6 +8,9 @@ sources:
 links:
   - "[[phase-02-idea-forge]]"
   - "[[phase-05-openclaw-integration]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 2 — Dispatch to OpenClaw

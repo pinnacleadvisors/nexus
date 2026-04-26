@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L271
 links:
   - "[[phase-05-openclaw-integration]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 5 — Claude Code CLI integration

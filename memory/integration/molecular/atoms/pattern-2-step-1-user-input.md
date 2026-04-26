@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L64
 links:
   - "[[pattern-2-workflow-generation-at-scale]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 2 — Step 1: User input via /tools/n8n Generate Workflow panel

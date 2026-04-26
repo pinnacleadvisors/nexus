@@ -8,6 +8,8 @@ sources:
   - task_plan.md#L227
 links:
   - "[[ecosystem-b-pack]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B11 — Secret-scanning pre-commit hook

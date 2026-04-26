@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-b-pack]]"
   - "[[progress-ecosystem-b4]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B4 — Auth-gate `/api/storage`

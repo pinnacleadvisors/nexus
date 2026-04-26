@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L200
 links:
   - "[[phase-01-foundation]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 1 — GitHub source storage

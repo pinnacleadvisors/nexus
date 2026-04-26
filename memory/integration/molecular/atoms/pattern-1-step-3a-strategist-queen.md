@@ -7,6 +7,9 @@ sources:
   - INTEGRATION_STRATEGY.md#L42
 links:
   - "[[pattern-1-idea-to-automation]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Pattern 1 — Step 3a: Strategist Queen decomposes into phases

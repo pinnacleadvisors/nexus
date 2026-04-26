@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-a-pack]]"
   - "[[progress-ecosystem-a5]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # A5 — Wire forge idea → run creation

@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L136
 links:
   - "[[manual-steps]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — Inngest background jobs setup

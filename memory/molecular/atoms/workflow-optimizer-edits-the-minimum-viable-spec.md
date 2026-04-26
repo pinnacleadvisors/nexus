@@ -7,6 +7,9 @@ sources:
   - file://.claude/agents/workflow-optimizer.md
 links:
   - "[[workflow-optimizer-agent]]"
+status: active
+lastAccessed: 2026-04-21
+accessCount: 0
 ---
 
 # Workflow optimizer edits the minimum viable spec

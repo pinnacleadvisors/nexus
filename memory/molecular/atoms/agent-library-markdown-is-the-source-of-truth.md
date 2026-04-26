@@ -10,6 +10,9 @@ links:
   - "[[firecrawl-agent]]"
   - "[[supermemory-agent]]"
   - "[[workflow-optimizer-agent]]"
+status: active
+lastAccessed: 2026-04-21
+accessCount: 0
 ---
 
 # Agent library markdown is the source of truth

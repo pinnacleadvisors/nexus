@@ -9,6 +9,8 @@ sources:
 links:
   - "[[ecosystem-b-pack]]"
   - "[[progress-ecosystem-b3]]"
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # B3 — Auth-gate `/api/r2` + egress allowlist

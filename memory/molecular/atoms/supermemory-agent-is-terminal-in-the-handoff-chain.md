@@ -7,6 +7,9 @@ sources:
   - file://.claude/agents/supermemory.md
 links:
   - "[[supermemory-agent]]"
+status: active
+lastAccessed: 2026-04-21
+accessCount: 0
 ---
 
 # Supermemory agent is terminal in the handoff chain

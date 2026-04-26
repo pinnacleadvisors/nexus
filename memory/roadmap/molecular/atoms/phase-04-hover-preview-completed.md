@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L250
 links:
   - "[[phase-04-kanban-board]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 4 — Hover preview on completed cards

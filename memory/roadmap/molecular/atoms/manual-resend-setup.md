@@ -7,6 +7,9 @@ sources:
   - ROADMAP.md#L108
 links:
   - "[[manual-steps]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Manual — Resend email alerts setup

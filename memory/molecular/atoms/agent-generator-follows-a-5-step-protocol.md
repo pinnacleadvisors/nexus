@@ -7,6 +7,9 @@ sources:
   - file://docs/agents/GENERATION_PROTOCOL.md
 links:
   - "[[agent-generator-agent]]"
+status: active
+lastAccessed: 2026-04-21
+accessCount: 0
 ---
 
 # Agent generator follows a 5-step protocol

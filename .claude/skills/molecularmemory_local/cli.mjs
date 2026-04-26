@@ -35,6 +35,9 @@ try {
     case 'graph':     await buildGraph(flags); break
     case 'query':     await query(positional.join(' ')); break
     case 'reindex':   await reindex(); break
+    case 'touch':     await touchAtom(positional[0]); break
+    case 'supersede': await supersedeAtom(positional[0], positional[1]); break
+    case 'migrate-decay': await migrateAtomDecay(); break
     default:          fail(`unknown command: ${cmd}. See SKILL.md`)
   }
 } catch (e) {
@@ -391,6 +394,69 @@ async function reindex() {
   ok({ indexed: relative(process.cwd(), INDEX), counts: { mocs: groups.mocs.length, entities: groups.entities.length, atoms: groups.atoms.length } })
 }
 
+async function touchAtom(slug) {
+  if (!slug) fail('usage: touch <atom-slug>')
+  const path = join(DIRS.atoms, `${slugify(slug)}.md`)
+  if (!existsSync(path)) fail(`atom not found: ${slug}`)
+  const raw = await readFile(path, 'utf8')
+  const now = new Date().toISOString().slice(0, 10)
+  let next = raw
+  next = upsertFrontmatterField(next, 'lastAccessed', now)
+  const current = (raw.match(/\naccessCount:\s*(\d+)/) || [, '0'])[1]
+  next = upsertFrontmatterField(next, 'accessCount', String(parseInt(current, 10) + 1))
+  if (!/\nstatus:\s*\w+/.test(next)) next = upsertFrontmatterField(next, 'status', 'active')
+  await writeFile(path, next, 'utf8')
+  ok({ touched: relative(process.cwd(), path), slug, lastAccessed: now, accessCount: parseInt(current, 10) + 1 })
+}
+
+async function supersedeAtom(oldSlug, newSlug) {
+  if (!oldSlug || !newSlug) fail('usage: supersede <old-atom-slug> <new-atom-slug>')
+  const oldPath = join(DIRS.atoms, `${slugify(oldSlug)}.md`)
+  const newPath = join(DIRS.atoms, `${slugify(newSlug)}.md`)
+  if (!existsSync(oldPath)) fail(`old atom not found: ${oldSlug}`)
+  if (!existsSync(newPath)) fail(`new atom not found: ${newSlug}`)
+  let raw = await readFile(oldPath, 'utf8')
+  raw = upsertFrontmatterField(raw, 'status', 'superseded')
+  raw = upsertFrontmatterField(raw, 'supersededBy', slugify(newSlug))
+  await writeFile(oldPath, raw, 'utf8')
+  await appendWikilink(newPath, slugify(oldSlug))
+  ok({ superseded: slugify(oldSlug), by: slugify(newSlug) })
+}
+
+async function migrateAtomDecay() {
+  await ensureDirs()
+  const today = new Date().toISOString().slice(0, 10)
+  let migrated = 0
+  for (const f of await lsMd(DIRS.atoms)) {
+    const path = join(DIRS.atoms, f)
+    let raw = await readFile(path, 'utf8')
+    let changed = false
+    if (!/\nstatus:\s*\w+/.test(raw)) { raw = upsertFrontmatterField(raw, 'status', 'active'); changed = true }
+    if (!/\nlastAccessed:/.test(raw)) {
+      const created = (raw.match(/\ncreated:\s*([0-9-]+)/) || [, today])[1]
+      raw = upsertFrontmatterField(raw, 'lastAccessed', created)
+      changed = true
+    }
+    if (!/\naccessCount:/.test(raw)) { raw = upsertFrontmatterField(raw, 'accessCount', '0'); changed = true }
+    if (changed) { await writeFile(path, raw, 'utf8'); migrated++ }
+  }
+  ok({ migrated, scanned: (await lsMd(DIRS.atoms)).length })
+}
+
+function upsertFrontmatterField(raw, key, value) {
+  const fm = raw.match(/^---\n([\s\S]*?)\n---/)
+  if (!fm) return raw
+  const block = fm[1]
+  const re = new RegExp(`(^|\\n)${key}:[^\\n]*`)
+  let nextBlock
+  if (re.test(block)) {
+    nextBlock = block.replace(re, (_, prefix) => `${prefix}${key}: ${value}`)
+  } else {
+    nextBlock = block + `\n${key}: ${value}`
+  }
+  return raw.replace(/^---\n[\s\S]*?\n---/, `---\n${nextBlock}\n---`)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
@@ -473,6 +539,9 @@ function buildNote({ type, subtype, title, slug, created, sources = [], links = 
   if (links.length) {
     fm.push('links:')
     for (const l of links) fm.push(`  - "[[${l}]]"`)
+  }
+  if (type === 'atom') {
+    fm.push(`status: active`, `lastAccessed: ${created}`, `accessCount: 0`)
   }
   fm.push('---', '')
   const body = []

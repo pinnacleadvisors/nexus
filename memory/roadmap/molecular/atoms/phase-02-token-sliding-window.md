@@ -8,6 +8,9 @@ sources:
 links:
   - "[[phase-02-idea-forge]]"
   - "[[phase-08-token-efficiency]]"
+status: active
+lastAccessed: 2026-04-26
+accessCount: 0
 ---
 
 # Phase 2 — Token sliding window
