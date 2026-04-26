@@ -1,0 +1,37 @@
+# Coolify Compose stack for the QMD sidecar.
+# Paste into Coolify → New Resource → Application → Docker Compose.
+#
+# Wire-up:
+#   - Set environment in Coolify's UI (don't bake secrets into the image)
+#   - Mount /data as a Coolify-managed named volume so the GGUF models survive
+#     redeploys
+#   - Behind Cloudflare Tunnel + Access policy for auth (QMD has no built-in)
+
+services:
+  qmd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus-qmd
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8181:8181"
+    environment:
+      MEMORY_REPO:        ${MEMORY_REPO}
+      MEMORY_BRANCH:      ${MEMORY_BRANCH:-main}
+      QMD_BIND:           0.0.0.0
+      QMD_PORT:           "8181"
+      COLLECTION_NAME:    ${COLLECTION_NAME:-molecular}
+      COLLECTION_GLOB:    ${COLLECTION_GLOB:-memory/molecular/**/*.md}
+      QMD_REINDEX_ON_BOOT: ${QMD_REINDEX_ON_BOOT:-1}
+    volumes:
+      - qmd-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8181/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+volumes:
+  qmd-data:

@@ -133,6 +133,22 @@ own OAuth credentials once via the UI.
 5. Exchange authorization code for tokens. Copy the `refresh_token` out.
 6. POST `{ clientId, clientSecret, refreshToken }` to the platform's user-secrets endpoint (or insert manually via the tools/claw UI once extended).
 
+## QMD sidecar (E4 / E5)
+
+Hosted alongside the OpenClaw fleet on Hostinger Coolify. See
+`docker/qmd/README.md` for the deploy runbook. Cloudflare Tunnel + Access
+provides authentication (QMD itself has no auth surface).
+
+| Var | Side | Purpose |
+|-----|------|---------|
+| `QMD_ENABLED` | server | Hard switch for hybrid retrieval. When unset, `lib/molecular/qmd-client.ts` no-ops and `hybridSearch` falls back to graph-only. |
+| `QMD_BASE_URL` | server | Public URL of the QMD MCP HTTP server (e.g. `https://qmd.<your-domain>`). |
+| `QMD_BEARER_TOKEN` | server | Cloudflare Access service token (or any reverse-proxy bearer). Sent as `Authorization: Bearer …`. |
+| `MEMORY_REPO` | qmd container | Full clone URL with PAT, e.g. `https://x-access-token:<pat>@github.com/pinnacleadvisors/nexus.git`. |
+| `MEMORY_BRANCH` | qmd container | Default `main`. |
+| `COLLECTION_GLOB` | qmd container | Default `memory/molecular/**/*.md`. |
+| `QMD_REINDEX_ON_BOOT` | qmd container | Default `1`; set `0` to skip `qmd update` on container restart. |
+
 ## Composio→Doppler broker (ADR 001)
 
 For Claude Code web cloud sessions. Server-side route `/api/composio/doppler`

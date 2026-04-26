@@ -15,6 +15,7 @@
 import { buildGraph, scoreNodeRelevance } from '@/lib/graph/builder'
 import type { GraphNode } from '@/lib/graph/types'
 import { approxTokens } from './TokenOptimiser'
+import { touchAtomsByNodeIds } from '@/lib/molecular/decay'
 
 const MAX_CONTEXT_TOKENS  = 12_000
 const MAX_NODES           = 24
@@ -129,6 +130,15 @@ export async function retrieveGraphContext(
 
   if (nodeIds.length === 0) {
     return { text: '', nodeIds: [], hit: false, tokens: 0 }
+  }
+
+  // Fire-and-forget atom decay bump (Felixcraft hot/warm/cold tiering — E3).
+  // Filter to memory_atom IDs; entities and MOCs are not bumped here.
+  const atomNodeIds = scored
+    .filter(s => s.node.type === 'memory_atom' && nodeIds.includes(s.node.id))
+    .map(s => s.node.id)
+  if (atomNodeIds.length > 0) {
+    void touchAtomsByNodeIds(atomNodeIds).catch(() => undefined)
   }
 
   return { text: lines.join('\n'), nodeIds, hit: true, tokens }
