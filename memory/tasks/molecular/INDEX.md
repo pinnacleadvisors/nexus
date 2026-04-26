@@ -5,11 +5,39 @@
 
 _Last updated: 2026-04-26_
 
-## Maps of Content (0)
+## Maps of Content (4)
+- [[mocs/ecosystem-a-pack|Pillar A — Close the idea → exec → optimise loop]]
+- [[mocs/ecosystem-b-pack|Pillar B — Secure the platform]]
+- [[mocs/ecosystem-c-pack|Pillar C — Self-optimising performance]]
+- [[mocs/roadmap-split-sub-plan|Sub-Plan — Roadmap → Molecular Memory split]]
 
 ## Entities (0)
 
-## Atomic notes (0)
+## Atomic notes (24)
+- [[atoms/task-a1-runs-migration|A1 — Supabase migration: runs state machine]]
+- [[atoms/task-a10-publish-distribute|A10 — Publish/distribute step]]
+- [[atoms/task-a11-measure-phase-ingestion|A11 — Measure phase ingestion]]
+- [[atoms/task-a12-self-build-diff-viewer|A12 — Self-build (Phase 19 closeout)]]
+- [[atoms/task-a2-run-types|A2 — Types for Run + RunEvent]]
+- [[atoms/task-a3-run-controller|A3 — Run controller library]]
+- [[atoms/task-a4-runs-api|A4 — API route: /api/runs]]
+- [[atoms/task-a5-forge-run-creation|A5 — Wire forge idea → run creation]]
+- [[atoms/task-a6-run-aware-dispatch|A6 — Run-aware session dispatch]]
+- [[atoms/task-a7-graph-keyed-context|A7 — Graph-keyed context retrieval for Queen]]
+- [[atoms/task-a8-reasoning-feedforward|A8 — ReasoningBank feedforward]]
+- [[atoms/task-a9-metric-triggered-optimiser|A9 — Metric-triggered optimiser]]
+- [[atoms/task-b1-auth-gate-chat|B1 — Auth-gate /api/chat]]
+- [[atoms/task-b10-openclaw-config-encrypted-db|B10 — OpenClaw config → encrypted DB column]]
+- [[atoms/task-b11-secret-scanning-precommit|B11 — Secret-scanning pre-commit hook]]
+- [[atoms/task-b12-rate-limit-public-audit|B12 — Rate-limit audit on public surfaces]]
+- [[atoms/task-b2-auth-gate-content|B2 — Auth-gate /api/content/{generate,score,variants}]]
+- [[atoms/task-b3-auth-gate-r2-egress-allowlist|B3 — Auth-gate /api/r2 + egress allowlist]]
+- [[atoms/task-b4-auth-gate-storage|B4 — Auth-gate /api/storage]]
+- [[atoms/task-b5-auth-gate-audit|B5 — Auth-gate /api/audit]]
+- [[atoms/task-b6-encryption-key-fail-closed|B6 — Encryption key fail-closed]]
+- [[atoms/task-b7-csp-hardening|B7 — CSP hardening]]
+- [[atoms/task-b8-csrf-origin-wrapper|B8 — CSRF origin check wrapper]]
+- [[atoms/task-b9-per-user-daily-cost-cap|B9 — Per-user daily cost cap]]
 
 
 ## Sources (0)

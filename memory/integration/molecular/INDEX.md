@@ -5,11 +5,42 @@
 
 _Last updated: 2026-04-26_
 
-## Maps of Content (0)
+## Maps of Content (7)
+- [[mocs/integration-checklist|Integration Checklist — Immediate / Short-term / Medium-term]]
+- [[mocs/n8n-vs-openclaw-strategy|n8n vs OpenClaw Strategy]]
+- [[mocs/pattern-1-idea-to-automation|Pattern 1 — Idea → Automation]]
+- [[mocs/pattern-2-workflow-generation-at-scale|Pattern 2 — Workflow Generation at Scale]]
+- [[mocs/pattern-3-content-to-video-pipeline|Pattern 3 — Content → Video Pipeline]]
+- [[mocs/pattern-4-swarm-improving-n8n-decisions|Pattern 4 — Swarm Intelligence Improving n8n Decisions]]
+- [[mocs/pattern-5-research-to-automation|Pattern 5 — Research → Automation]]
 
 ## Entities (0)
 
-## Atomic notes (0)
+## Atomic notes (24)
+- [[atoms/pattern-1-result|Pattern 1 — Result: prioritized buildable automation plan]]
+- [[atoms/pattern-1-step-1-forge-conversation|Pattern 1 — Step 1: Forge consulting chatbot captures business idea]]
+- [[atoms/pattern-1-step-2-context-injection|Pattern 1 — Step 2: Context injection from nexus-memory]]
+- [[atoms/pattern-1-step-3-swarm-orchestration|Pattern 1 — Step 3: Swarm orchestration triggered by complexity]]
+- [[atoms/pattern-1-step-3a-strategist-queen|Pattern 1 — Step 3a: Strategist Queen decomposes into phases]]
+- [[atoms/pattern-1-step-3b-researcher-agent|Pattern 1 — Step 3b: Researcher agent runs Tavily search]]
+- [[atoms/pattern-1-step-3c-analyst-agent|Pattern 1 — Step 3c: Analyst agent does cost-benefit analysis]]
+- [[atoms/pattern-1-step-3d-decomposition-saved|Pattern 1 — Step 3d: Structured decomposition saved to memory]]
+- [[atoms/pattern-1-step-4-consultant-agent|Pattern 1 — Step 4: Consultant Agent generates ranked recommendations]]
+- [[atoms/pattern-1-step-5-n8n-blueprint-generator|Pattern 1 — Step 5: n8n Blueprint Generator drafts workflow templates]]
+- [[atoms/pattern-1-step-6-gap-detection|Pattern 1 — Step 6: Gap Detection flags browser-automation steps]]
+- [[atoms/pattern-1-step-7-board-integration|Pattern 1 — Step 7: Board integration creates Backlog/Review cards]]
+- [[atoms/pattern-2-cost|Pattern 2 — Cost: 1–3 API calls per generation; library hits save ~200 tokens]]
+- [[atoms/pattern-2-step-1-user-input|Pattern 2 — Step 1: User input via /tools/n8n Generate Workflow panel]]
+- [[atoms/pattern-2-step-2-library-check|Pattern 2 — Step 2: Library check for similar workflows]]
+- [[atoms/pattern-2-step-3-reasoning-bank-retrieval|Pattern 2 — Step 3: Reasoning bank retrieval of past patterns]]
+- [[atoms/pattern-2-step-4-swarm-generation|Pattern 2 — Step 4: Swarm generation via Tactical Queen for high complexity]]
+- [[atoms/pattern-2-step-5-template-search|Pattern 2 — Step 5: Template search across 8 pre-built templates]]
+- [[atoms/pattern-2-step-6-gap-analysis|Pattern 2 — Step 6: Gap analysis scans for browser/API requirements]]
+- [[atoms/pattern-2-step-6a-api-native|Pattern 2 — Gap result: API-native means full n8n workflow]]
+- [[atoms/pattern-2-step-6b-hybrid|Pattern 2 — Gap result: hybrid splits into n8n + manual Board cards]]
+- [[atoms/pattern-2-step-6c-browser-heavy|Pattern 2 — Gap result: browser-heavy offered as manual or OpenClaw]]
+- [[atoms/pattern-2-step-7-setup-checklist|Pattern 2 — Step 7: Setup checklist auto-generated per workflow]]
+- [[atoms/pattern-2-step-8-board-card|Pattern 2 — Step 8: Board Backlog card per setup step]]
 
 
 ## Sources (0)
