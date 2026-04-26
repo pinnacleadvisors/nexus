@@ -1,0 +1,40 @@
+# Coolify deploy template — one container per business AI.
+# Usage in Coolify: New Resource -> Docker Compose -> paste this file ->
+# set the BUSINESS_* env vars per business, attach Cloudflare Tunnel hostname.
+#
+# Each business gets:
+#   - its own container (isolated FS, isolated process, isolated bearer)
+#   - a named volume `<biz>-workspace` for SOUL/MEMORY/IDENTITY/AGENTS persistence
+#   - Cloudflare Tunnel ingress at <biz>.claw.<your-domain>
+#   - secrets injected via Coolify env-var UI (never committed)
+
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nexus/openclaw:latest
+    restart: unless-stopped
+    environment:
+      BUSINESS_NAME: "${BUSINESS_NAME}"
+      BUSINESS_ROLE: "${BUSINESS_ROLE}"
+      BUSINESS_VOICE: "${BUSINESS_VOICE:-Intellectually sharp but warm}"
+      BUSINESS_BOUNDARIES: "${BUSINESS_BOUNDARIES:-}"
+      OPERATOR_NAME: "${OPERATOR_NAME:-Owner}"
+      TRUSTED_CHANNEL: "${TRUSTED_CHANNEL:-Slack}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      OPENCLAW_BEARER_TOKEN: "${OPENCLAW_BEARER_TOKEN}"
+      OPENCLAW_PORT: "18789"
+      OPENCLAW_BIND: "loopback"
+    volumes:
+      - workspace:/workspace
+    expose:
+      - "18789"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  workspace:

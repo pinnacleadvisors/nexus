@@ -978,13 +978,25 @@ Pillar F (PDF business):  ←──────────┘ (depends on D and
 - [x] Phase 1 — explore + parity matrix (this entry)
 - [x] Phase 2 — atomic plan written (this entry)
 - [x] PDF ingested at `docs/pdfs/How-to-Hire-an-AI.pdf`; reading harness validated (`pdftotext` + Read tool fallback)
+- [x] **E1** — atom decay frontmatter (`status`, `lastAccessed`, `accessCount`, `supersededBy`) in `cli.mjs`. Added `touch`, `supersede`, `migrate-decay` commands. 138 atoms migrated across 4 namespaces (default/roadmap/integration/tasks).
+- [x] **D6+D7** — `lib/claw/business-client.ts` resolves OpenClaw config per business via `user_secrets` with `kind='business:<slug>'`. Layered fallback to user default → env vars. No new migration needed (existing `user_secrets` table covers it).
+- [x] **D8** — `/api/claude-session/dispatch` accepts `businessSlug` + `notifyOnDone`; routes through `resolveClawConfig`; gates with `assertUnderCostCap`.
+- [x] **D10** — `lib/cost-guard.ts` returns `{ ok, spentUsd, capUsd, scope }` with `scope='business'|'user'`. Per-business cap defaults to $10/day via `USER_BUSINESS_DAILY_USD_LIMIT`. Migration `019_token_events_business_slug.sql` adds the column.
+- [x] **D3+D4+D5** — `docker/openclaw/{Dockerfile,entrypoint.sh,coolify.yaml,README.md}` + `workspace-template/{SOUL,IDENTITY,MEMORY,AGENTS}.md`. envsubst-templated; renders on first boot; non-root `claw` user; loopback bind; tini PID 1.
+- [x] **E6** — `lib/runs/daily-extractor.ts` builds `memory/daily/YYYY-MM-DD.md` from `run_events`/`workflow_changelog`/`workflow_feedback`/active runs. `app/api/cron/daily-extract/route.ts` (owner-only) writes to disk OR returns body when serverless FS is read-only.
+- [x] **E7** — `lib/slack/client.ts` (signature verify + Block Kit + incoming-webhook post). `app/api/slack/notify/route.ts` outbound endpoint.
+- [x] **E8** — `app/api/webhooks/slack/route.ts` handles `/approve <runId>`, `/reject <runId> <reason>`, `/status <runId>`. Slack-user → Clerk-user mapping via `SLACK_USER_<id>` env or first `ALLOWED_USER_IDS`.
+- [x] **E11** — `lib/notify/wake.ts` + dispatch hook fires Slack notification on dispatch completion when `notifyOnDone:true`.
 
 ### Remaining
-- [ ] **Owner approval of scope** — confirm Hostinger as the substrate (vs Fly.io / Railway / Render / Cloudflare Containers); confirm Telegram as the messaging surface (vs Slack); confirm PDF business as the first commercial product.
-- [ ] **Owner-gated prereqs**: Hostinger account + payment, Sentry install + DSN, Telegram bot token, Stripe account in live mode.
-- [ ] D1 → D10
-- [ ] E1 → E11
-- [ ] F1 → F8
+- [ ] **Owner-gated prereqs**: Hostinger KVM 4 + Coolify provisioned (D1, D2); Slack workspace created with incoming-webhook URL + signing secret added to `user_secrets` (`kind='slack'`); GlitchTip deployed for Phase 21c (then E9/E10 Sentry pipeline becomes implementable).
+- [ ] **D1, D2** — Provision Hostinger VPS + Cloudflare Tunnel (infra; cannot be done from this session).
+- [ ] **D9** — Business switcher UI in `/tools/claw` (UI work; defer until at least one business is provisioned so the panel has data to show).
+- [ ] **E2** — Decay-aware MOC reindex grouping (Hot / Warm / Cold tiers) — the data is now there (E1), the reindex just needs to use it.
+- [ ] **E3** — Auto-bump `accessCount` from `GraphRetriever` via a `/api/molecular/touch` route. Worth doing once a Slack-driven approval flow generates real read-traffic.
+- [ ] **E4 / E5** — pgvector embeddings + hybrid retrieval. Heavy install (`transformers.js` ~50 MB) — defer until a real query miss case justifies it.
+- [ ] **E9 / E10** — Sentry / GlitchTip → autonomous fix pipeline. Gated on Phase 21c (GlitchTip deploy) per owner decision.
+- [ ] **F1–F8** — PDF storefront business. Gated on PDF topic decision (open question).
 
 ### Blockers / Open Questions
 1. **Hostinger vs alternatives** — recommendation is Hostinger KVM 4 + Coolify ($8–10/mo) for cost + alignment with Phase 21d, but the owner may prefer Fly.io for separate billing per business. Pick before D1.

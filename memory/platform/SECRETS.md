@@ -31,8 +31,22 @@
 | Var | Purpose |
 |-----|---------|
 | `ANTHROPIC_API_KEY` | Fallback AI (OpenClaw primary) |
-| `OPENCLAW_GATEWAY_URL` | OpenClaw / MyClaw gateway URL |
+| `OPENCLAW_GATEWAY_URL` | OpenClaw / MyClaw gateway URL (single-tenant fallback when no per-business config exists) |
 | `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth |
+
+### Per-business OpenClaw fleet (D6 / D7)
+
+For multi-business deployments (Pillar D in `task_plan.md`), each business AI's
+gateway URL + bearer is stored in `user_secrets` with `kind = 'business:<slug>'`,
+encrypted via `lib/crypto.ts`. Resolution precedence: business → user `openclaw`
+default → env vars above. See `lib/claw/business-client.ts`.
+
+| Field name (within `business:<slug>` kind) | Purpose |
+|---|---|
+| `gatewayUrl`   | Per-business OpenClaw gateway (e.g. `https://felix.claw.example.com`) |
+| `bearerToken`  | Auth bearer for that gateway |
+| `modelAlias`   | Optional override (e.g. `opus`, `sonnet-4-6`) |
+| `anthropicKey` | Optional per-business Anthropic API key (single shared key by default) |
 
 ## Rate Limits / Cost
 
@@ -41,6 +55,7 @@
 | `CLAW_DAILY_DISPATCH_CAP` | 100 | Max OpenClaw dispatches/day |
 | `COST_ALERT_PER_RUN_USD` | 0.50 | Soft alert threshold per AI run (Slack/email) |
 | `USER_DAILY_USD_LIMIT`    | 25   | Hard per-user daily AI-spend cap. `/api/chat` and `/api/content/generate` return HTTP 402 once hit. See `lib/cost-guard.ts`. |
+| `USER_BUSINESS_DAILY_USD_LIMIT` | 10 | Hard per-business daily AI-spend cap (D10). Trips first when a dispatch carries a `businessSlug` and the business is over budget. Falls back to user cap. |
 
 ## Security (Phase 9)
 
@@ -93,6 +108,9 @@
 | `SUNO_API_KEY` / `UDIO_API_KEY` | 18 | AI background music |
 | `MEMORY_TOKEN` | 20 | GitHub PAT (repo scope) for runtime agent memory |
 | `MEMORY_REPO` | 20 | e.g. `pinnacleadvisors/nexus-memory` |
+| `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
+| `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands. Per-user override at `kind='slack' name='signingSecret'`. |
+| `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |
 
 ## Publish Pipeline (A10 / A11)
 
