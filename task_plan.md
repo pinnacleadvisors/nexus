@@ -409,3 +409,168 @@ A10 → A11 → C5. Requires choosing a publish provider (recommend YouTube Shor
 - Publish provider app-review timelines for TikTok + Instagram. YouTube Shorts is live.
 - Once A5 lands, decide whether the forge should also offer a "dry-run" mode that creates a run with `phase=spec` but halts before `build` — cheaper exploration for uncertain ideas.
 
+---
+
+# Sub-Plan — Roadmap → Molecular Memory split
+
+Goal: Replace bulk reads of `ROADMAP.md` (917 lines / ~19k tokens) with token-efficient `molecularmemory_local` queries, so Phase 1 of the Long-Horizon Protocol can pull only the relevant phase context into Messages.
+
+Success criteria:
+- 22 phase MOCs exist under `memory/molecular/mocs/phase-NN-<slug>.md`, each linking that phase's status + pending atoms.
+- ~30–50 atoms exist under `memory/molecular/atoms/` covering pending items and key design decisions (not exhaustive — completed-item history stays in `ROADMAP.md`).
+- `node .claude/skills/molecularmemory_local/cli.mjs query "<phase-keyword>"` returns the right MOC + atoms.
+- `cli.mjs reindex` regenerates `memory/molecular/INDEX.md` listing the new MOCs/atoms.
+- `CLAUDE.md` Long-Horizon Protocol Phase 1 ("Explore") explicitly tells agents: query molecular memory FIRST, then `memory/roadmap/SUMMARY.md`, only fall back to `ROADMAP.md` for human-readable manual-step text.
+- Total Messages cost for "what's pending in Phase 17?" drops from ~19k tokens (read ROADMAP) to <1k (query → MOC → 2 atoms).
+
+Hard constraints:
+- Do **not** delete or shrink `ROADMAP.md` — it stays as the human-readable source of truth and contains manual setup steps used during deploy.
+- Do **not** fragment `task_plan.md` or `INTEGRATION_STRATEGY.md` — those are active working docs, not reference material.
+- Do **not** modify any application code (`app/`, `lib/`, `components/`).
+- Existing `memory/roadmap/SUMMARY.md` and `PENDING.md` stay; molecular layer sits below them as finer-grained retrieval.
+- Follow `molecularmemory_local` SKILL.md exactly: YAML frontmatter, slug = filename, [[wikilinks]] for edges, no tags.
+- Keep this whole sub-plan reversible: every artifact is a new file under `memory/molecular/`; no destructive edits.
+
+## Phase 1 — Explore (done in conversation)
+
+Findings:
+- `ROADMAP.md`: 917 lines, 22 phases + Manual Steps + Tech Stack + Immediate Next Steps headers identified.
+- `molecularmemory_local` CLI: `init | atom | entity | moc | link | graph | query | reindex` (signatures in `.claude/skills/molecularmemory_local/SKILL.md`).
+- Existing molecular memory: 1 MOC (`nexus-agent-library`), 4 entities, 5 atoms — coexists, doesn't conflict.
+- Existing `memory/roadmap/SUMMARY.md` already gives a 22-row phase status table at ~5.5k bytes (vs 74k for ROADMAP). Molecular split is the next granularity level below that.
+
+## Phase 2 — Plan (atomic tasks)
+
+### Task R1 — Confirm molecular dirs
+- File: `memory/molecular/{atoms,entities,mocs}/`
+- Change: run `node .claude/skills/molecularmemory_local/cli.mjs init` (idempotent — dirs already exist).
+- Verify: command returns `{"ok":true}`.
+- Parallel: no (one-shot prep step).
+
+### Tasks R2–R23 — One MOC per phase
+- File: `memory/molecular/mocs/phase-NN-<slug>.md` for N = 1..22
+- Change: `cli.mjs moc "Phase N — <title>" --description="<one-line summary from SUMMARY.md>"`
+- Each MOC's body lists: status (✅/🔧/⬜), one-line scope, `Pending` section (links to atoms — see R24+), `References` section (link back to `ROADMAP.md` line range).
+- Verify: file exists, frontmatter has `type: moc`, body has at least 1 [[wikilink]] (will be filled by R24+).
+- Parallel: yes — all 22 can run together.
+
+### Tasks R24–R5x — Atoms for pending items + key design decisions
+- File: `memory/molecular/atoms/<slug>.md`
+- Source: `memory/roadmap/PENDING.md` (every ⬜ bullet → 1 atom) + design-decision blocks in `ROADMAP.md` (e.g. Phase 19 "GitHub repo as free Notion", Phase 21 "Leiden vs Louvain").
+- Estimated count: ~30 pending atoms + ~10 decision atoms = **~40 atoms total**.
+- Each atom: `cli.mjs atom "<title>" --fact="<one-sentence>" --source=ROADMAP.md#L<line> --links=phase-NN-<slug>`
+- Verify: atom file exists with `type: atom` frontmatter, source URL present, at least one outbound link to its phase MOC.
+- Parallel: yes — all atoms in one batch (40 CLI calls).
+
+### Task R-Graph — Rebuild adjacency
+- File: `memory/molecular/.graph.json`
+- Change: `cli.mjs graph`
+- Verify: prints `{nodes: ~70, edges: ~120, orphans: 0|low, hubs: [...]}`. Zero orphans means every atom links to its phase MOC.
+- Parallel: no (depends on R2–R5x).
+
+### Task R-Reindex — Regenerate molecular INDEX.md
+- File: `memory/molecular/INDEX.md`
+- Change: `cli.mjs reindex`
+- Verify: `grep -c "phase-" memory/molecular/INDEX.md` ≥ 22; INDEX shows MOC count = 23 (existing + 22 new).
+- Parallel: no (after R-Graph).
+
+### Task R-Protocol — Update CLAUDE.md to query molecular memory first
+- File: `CLAUDE.md` — `# Knowledge Graph` section + `Long-Horizon Task Protocol > Phase 1 — Explore`
+- Change: add line:
+  > Before reading `ROADMAP.md`, run `node .claude/skills/molecularmemory_local/cli.mjs query "<phase-or-feature>"` to pull only the relevant MOC + atoms. Read `ROADMAP.md` directly only for manual setup steps or human-readable narrative the molecular notes do not cover.
+- Verify: `grep -n "cli.mjs query" CLAUDE.md` returns ≥ 1 line in the Phase 1 section.
+- Parallel: no (final step).
+
+### Task R-Header — Add agent breadcrumb to ROADMAP.md
+- File: `ROADMAP.md` line 1–3
+- Change: insert a 2-line note above the title: "AI agents: query `memory/molecular/` first via `/molecularmemory_local query <topic>`. This file is the human source of truth and contains manual-step text not always atomised."
+- Verify: line 1 contains "AI agents:".
+- Parallel: no.
+
+## Phase 3 — Implement (gated on user approval)
+
+Order: R1 → batch (R2–R23 parallel) → batch (R24–R5x parallel) → R-Graph → R-Reindex → R-Protocol → R-Header → commit.
+
+Two-stage review after each batch returns:
+1. Spec compliance — every MOC has frontmatter + at least one link; every atom has a `--source` line.
+2. Token-cost smoke test — pick three phases (e.g. 17, 19, 22), run `cli.mjs query` for each, confirm result < 1k tokens vs reading ROADMAP.
+
+## Risk register
+
+| Risk | Mitigation |
+|---|---|
+| 40 atoms = noisy graph; orphan atoms | Every atom call uses `--links=<phase-MOC>` so no orphans by construction; `cli.mjs graph` orphans count must be 0 before R-Reindex. |
+| Drift between ROADMAP.md and molecular notes | Atom `--source=ROADMAP.md#Lxxx` is the audit trail; future ROADMAP edits should re-run a delta script (out of scope here, document as follow-up). |
+| MOC titles collide with existing slugs | Phase MOCs use `phase-NN-<slug>` prefix — deterministic, no collision with existing `nexus-agent-library` MOC. |
+| Maintenance overhead exceeds benefit | Scope limited to pending items + key decisions, not full ROADMAP atomisation. Completed-item history stays in ROADMAP only. |
+| User wants different layout (e.g. `memory/roadmap/` not `memory/molecular/`) | Keep ROADMAP-derived MOCs/atoms separable — easy to `git mv` later if structure changes. |
+
+## Token-cost projection
+
+| Query | Before (read ROADMAP.md) | After (cli.mjs query → MOC → atoms) | Saving |
+|---|---|---|---|
+| "What's pending in Phase 17?" | ~19k tokens | ~600 tokens | 96% |
+| "Tell me about the Leiden vs Louvain decision" | ~19k tokens | ~250 tokens | 99% |
+| "List all not-started items" | ~19k tokens | already covered by `PENDING.md` ~1k | unchanged |
+
+## Progress (sub-plan)
+### Completed
+- [x] Phase 1 exploration (this conversation)
+- [x] Phase 2 atomic plan written (this entry)
+
+### Remaining
+- [ ] User approval of scope (open question — confirm before R1)
+- [ ] R1 → R-Header implementation
+
+### User answers (2026-04-25)
+1. **Atomise every ROADMAP bullet** (~150 atoms target).
+2. **Location** = `memory/roadmap/molecular/` (separate namespace; existing `memory/molecular/` untouched).
+3. **Keep `ROADMAP.md`** as human source of truth.
+4. **Same treatment** for `INTEGRATION_STRATEGY.md` → `memory/integration/molecular/`, and `task_plan.md` → `memory/tasks/molecular/` (with ongoing protocol: every new task_plan.md entry gets atomised at task completion to track features-implemented over time).
+
+## Refined scope (post-approval)
+
+Three molecular namespaces, atomised by parallel subagents:
+
+| Source | Namespace | Target atoms | Target MOCs |
+|---|---|---|---|
+| `ROADMAP.md` (74.7k bytes, 917 lines, 22 phases) | `memory/roadmap/molecular/` | ~150 (every phase bullet + manual-step + decision block) | 22 phase MOCs + 1 "Manual Steps" MOC + 1 "Tech Stack" MOC = 24 |
+| `INTEGRATION_STRATEGY.md` (17.6k bytes, 439 lines, 5 patterns) | `memory/integration/molecular/` | ~50 (every pattern step + checklist item + dependency edge) | 5 pattern MOCs + 1 "Checklist" MOC + 1 "n8n-vs-OpenClaw" MOC = 7 |
+| `task_plan.md` (current — Self-Optimising Ecosystem + Roadmap-split sub-plan) | `memory/tasks/molecular/` | ~80 (every A/B/C task + every R task + every risk + every progress entry) | 3 plan MOCs (A-pack, B-pack, C-pack) + 1 sub-plan MOC = 4 |
+| **Total** | | **~280 atoms** | **~35 MOCs** |
+
+## Implementation status (live)
+
+- [x] Patch `cli.mjs` to read `MOLECULAR_ROOT` env var (line 8 — fallback to `memory/molecular`).
+- [x] `init` all three namespaces — verified `INDEX.md` + `atoms/` + `entities/` + `mocs/` exist in each.
+- [ ] Subagent A: `ROADMAP.md` → `memory/roadmap/molecular/`
+- [ ] Subagent B: `INTEGRATION_STRATEGY.md` → `memory/integration/molecular/`
+- [ ] Subagent C: `task_plan.md` → `memory/tasks/molecular/`
+- [ ] Run `cli.mjs graph` + `cli.mjs reindex` per namespace.
+- [ ] Update `CLAUDE.md` Long-Horizon Protocol to query molecular memory first; add cross-namespace query guidance.
+- [ ] Update `AGENTS.md` Platform Memory section with three new namespaces.
+- [ ] Add "AI agents query first" breadcrumbs to all three source files.
+- [ ] Add ongoing protocol to `CLAUDE.md`: Phase 3 PDCA gate now includes "atomise newly added task_plan entries" before commit.
+- [ ] Final commit + push.
+
+## Cross-namespace query strategy
+
+When the Long-Horizon Protocol's Explore phase needs roadmap/integration/task context, the agent runs:
+
+```bash
+MOLECULAR_ROOT=memory/roadmap/molecular     node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+MOLECULAR_ROOT=memory/integration/molecular node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+MOLECULAR_ROOT=memory/tasks/molecular       node .claude/skills/molecularmemory_local/cli.mjs query "<text>"
+```
+
+Three small JSON results merged in-context, then read only the few atoms they point to. Saves 100k+ tokens vs reading all three source files.
+
+## Ongoing protocol (per user request #4)
+
+When a task_plan.md entry transitions to "Completed", the implementing agent must:
+1. Run `MOLECULAR_ROOT=memory/tasks/molecular cli.mjs atom "<task title>" --fact="<one-sentence outcome>" --source=task_plan.md#L<line> --links=<phase-MOC>,<feature-MOC>` for each completed task.
+2. Run `MOLECULAR_ROOT=memory/tasks/molecular cli.mjs graph && reindex`.
+3. Commit with message `molecular(tasks): <task-id> closeout`.
+
+This is documented as a new PDCA gate in `CLAUDE.md` so the molecular task memory accretes alongside `task_plan.md` instead of going stale.
+

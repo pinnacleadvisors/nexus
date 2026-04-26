@@ -5,7 +5,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
-const ROOT = resolve(process.cwd(), 'memory/molecular')
+const ROOT = resolve(process.cwd(), process.env.MOLECULAR_ROOT || 'memory/molecular')
 const DIRS = {
   atoms: join(ROOT, 'atoms'),
   entities: join(ROOT, 'entities'),
