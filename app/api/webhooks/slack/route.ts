@@ -6,9 +6,10 @@
  * Verifies via X-Slack-Signature (HMAC over `v0:<timestamp>:<rawBody>`).
  *
  * Supported commands:
- *   /approve <runId>            advance run to next phase
- *   /reject  <runId> <reason>   set run status='blocked', append reason
- *   /status  <runId>            return current phase + 5 most recent events
+ *   /approve   <runId>            advance run to next phase
+ *   /reject    <runId> <reason>   set run status='blocked', append reason
+ *   /condition <runId>            return current phase + 5 most recent events
+ *                                 (named `/condition` because Slack reserves `/status`)
  *
  * The Slack user is mapped to a Nexus user by:
  *   1. SLACK_USER_<id> env var pointing to a Clerk user ID, OR
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
     return reply(`❌ run \`${runId.slice(0, 8)}\` blocked${reason ? `: ${reason}` : ''} (phase=${updated?.phase ?? run.phase})`, 'in_channel')
   }
 
-  if (command === '/status') {
+  if (command === '/condition' || command === '/status') {
     const events = await listEvents(runId, 5)
     const tail = events.map(e => `• ${e.createdAt.slice(11, 16)}Z ${e.kind}`).join('\n') || '(no events)'
     return reply(`run \`${runId.slice(0, 8)}\`\nphase=${run.phase} status=${run.status}\nrecent:\n${tail}`)
