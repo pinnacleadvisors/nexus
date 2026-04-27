@@ -989,14 +989,18 @@ Pillar F (PDF business):  ←──────────┘ (depends on D and
 - [x] **E11** — `lib/notify/wake.ts` + dispatch hook fires Slack notification on dispatch completion when `notifyOnDone:true`.
 
 ### Remaining
-- [ ] **Owner-gated prereqs**: Hostinger KVM 4 + Coolify provisioned (D1, D2); Slack workspace created with incoming-webhook URL + signing secret added to `user_secrets` (`kind='slack'`); GlitchTip deployed for Phase 21c (then E9/E10 Sentry pipeline becomes implementable).
-- [ ] **D1, D2** — Provision Hostinger VPS + Cloudflare Tunnel (infra; cannot be done from this session).
+- [ ] **Owner-gated prereqs**: Hostinger KVM 4 + Coolify provisioned (D1, D2); Slack workspace created with incoming-webhook URL + signing secret in Doppler (`NEXUS_SLACK_WEBHOOK_URL`, `NEXUS_SLACK_SIGNING_SECRET`) — `lib/slack/client.ts` falls back to env when `user_secrets` is empty, so single-operator setup is single-tenant Doppler; GlitchTip deployed for Phase 21c (then E9/E10 Sentry pipeline becomes implementable).
+- [ ] **D1, D2** — Provision Hostinger VPS + Cloudflare Tunnel (infra; cannot be done from this session). Recommendation: KVM 4 + self-managed Coolify (matches our custom `docker/openclaw/` + `docker/qmd/`). 1-click Claw templates fight the per-business templating.
 - [ ] **D9** — Business switcher UI in `/tools/claw` (UI work; defer until at least one business is provisioned so the panel has data to show).
-- [ ] **E2** — Decay-aware MOC reindex grouping (Hot / Warm / Cold tiers) — the data is now there (E1), the reindex just needs to use it.
-- [ ] **E3** — Auto-bump `accessCount` from `GraphRetriever` via a `/api/molecular/touch` route. Worth doing once a Slack-driven approval flow generates real read-traffic.
-- [ ] **E4 / E5** — pgvector embeddings + hybrid retrieval. Heavy install (`transformers.js` ~50 MB) — defer until a real query miss case justifies it.
 - [ ] **E9 / E10** — Sentry / GlitchTip → autonomous fix pipeline. Gated on Phase 21c (GlitchTip deploy) per owner decision.
-- [ ] **F1–F8** — PDF storefront business. Gated on PDF topic decision (open question).
+- [ ] **F1–F8** — PDF storefront business. Topic now picked (`teaching others how to use AI to automate parts of their business`); awaiting infra (D1/D2) before the run template can dispatch.
+
+### Recently completed (this session)
+
+- [x] **E2** — `cli.mjs reindex` groups atoms by decay tier (Hot / Warm / Cold / Superseded) in `INDEX.md`. Tier algorithm: Hot = ≤14 days + ≥5 accesses; Warm = ≤60 days; Cold = older or no decay metadata; Superseded comes from `status: superseded|archived`. Counts emitted in JSON output.
+- [x] **E3** — `lib/molecular/decay.ts` shared `touchAtom` / `touchAtomsByNodeIds` helpers. `app/api/molecular/touch/route.ts` (POST, owner-gated, rate-limited). `lib/swarm/GraphRetriever.ts` fires-and-forgets touch on retrieved `memory_atom` IDs.
+- [x] **E4** — `docker/qmd/` — Dockerfile + entrypoint + Coolify Compose + README. Bundles tobi/qmd via npm global, clones the repo at boot, runs `qmd update + embed`, exposes MCP HTTP on 8181. Auth handled by Cloudflare Tunnel + Access. `lib/molecular/qmd-client.ts` is a JSON-RPC `tools/call` client that no-ops when `QMD_ENABLED` is unset.
+- [x] **E5** — `lib/molecular/hybrid.ts` `hybridSearch(query)` runs graph + QMD legs in parallel, fuses with Reciprocal Rank Fusion (k=60), auto-touches matched atoms (delegates to E3). `app/api/molecular/search/route.ts` exposes POST + GET (health). Falls back to graph-only when QMD is unreachable.
 
 ### Blockers / Open Questions
 1. **Hostinger vs alternatives** — recommendation is Hostinger KVM 4 + Coolify ($8–10/mo) for cost + alignment with Phase 21d, but the owner may prefer Fly.io for separate billing per business. Pick before D1.
