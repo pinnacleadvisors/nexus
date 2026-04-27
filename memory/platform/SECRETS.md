@@ -30,9 +30,11 @@
 
 | Var | Purpose |
 |-----|---------|
-| `ANTHROPIC_API_KEY` | Fallback AI (OpenClaw primary) |
-| `OPENCLAW_GATEWAY_URL` | OpenClaw / MyClaw gateway URL (single-tenant fallback when no per-business config exists) |
-| `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth |
+| `CLAUDE_CODE_GATEWAY_URL` | **Primary.** Self-hosted Claude Code instance on Hostinger + Coolify (`services/claude-gateway/`). Drains the user's 20x Max plan instead of API credits. Resolves before OpenClaw in `lib/claw/business-client.ts`. |
+| `CLAUDE_CODE_BEARER_TOKEN` | Shared secret used both as bearer auth and HMAC key (`X-Nexus-Signature`) when Nexus calls the gateway. Must match `CLAUDE_GATEWAY_BEARER` set on the gateway container. |
+| `OPENCLAW_GATEWAY_URL` | Fallback OpenClaw / MyClaw gateway URL (single-tenant fallback when neither business-specific nor Claude Code config exists). |
+| `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth. |
+| `ANTHROPIC_API_KEY` | Final fallback when both gateways are unavailable. |
 
 ### Per-business OpenClaw fleet (D6 / D7)
 
@@ -163,4 +165,20 @@ Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
 
 ## AI Priority in `/api/chat`
 
-OpenClaw (Claude Pro via `OPENCLAW_GATEWAY_URL`) → `ANTHROPIC_API_KEY` → error message
+1. **Self-hosted Claude Code gateway** (`CLAUDE_CODE_GATEWAY_URL` / `lib/claw` `kind='claude-code'`) — plan-billed via the user's 20x Max plan. Health-probed with a 60 s positive / 10 s negative cache so a dead gateway fails over fast.
+2. **OpenClaw** (`OPENCLAW_GATEWAY_URL` or cookie config) — legacy fallback, retained but no longer required for new deployments.
+3. **`ANTHROPIC_API_KEY`** — final API-billed fallback when both gateways are unavailable.
+4. Helpful error message when nothing is configured.
+
+## Claude Code gateway — container-side env (`services/claude-gateway/`)
+
+Set on the Coolify service running the gateway (not on Nexus / Vercel):
+
+| Var | Purpose |
+|-----|---------|
+| `CLAUDE_GATEWAY_BEARER` | Same value as Nexus's `CLAUDE_CODE_BEARER_TOKEN`. Used to validate bearer + HMAC on inbound requests. |
+| `NEXUS_REPO_URL` | Git URL the entrypoint clones into `/repo` so spawned `claude` sessions can read `.claude/agents/` + `.claude/skills/` (e.g. `https://github.com/pinnacleadvisors/nexus.git`). |
+| `CLAUDE_GATEWAY_REPO_REF` | Branch / tag to check out (default `main`). |
+| `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
+| `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 180 000). |
+| `CLAUDE_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `claude-gw.<your-domain>` → this. |

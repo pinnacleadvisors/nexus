@@ -1,0 +1,92 @@
+# Nexus — Claude Code Gateway
+
+Self-hosted Claude Code instance that drains the user's Claude 20x Max plan and
+exposes the same HMAC-signed protocol the existing `dispatchToOpenClaw` already
+speaks. With this deployed, Nexus's primary AI runtime stops paying per-token
+API costs and becomes plan-billed instead. OpenClaw is retained as a fallback
+but no longer required.
+
+## Protocol
+
+The gateway accepts the exact request shape `dispatchToOpenClaw` emits in
+`app/api/claude-session/dispatch/route.ts`:
+
+```
+POST /api/sessions/:sessionId/messages
+Authorization:    Bearer <CLAUDE_GATEWAY_BEARER>
+X-Nexus-Signature: sha256=<hex of HMAC-SHA256(body, bearer)>
+X-Nexus-Timestamp: <ms epoch>
+Content-Type:     application/json
+
+{ "role": "user", "content": "<task brief>", "agent": "<slug>", "env": { ... } }
+```
+
+Response:
+
+```json
+{
+  "ok":        true,
+  "sessionId": "nexus-agent-...",
+  "agent":     "<slug>",
+  "content":   "<final assistant message>",
+  "usage":     { "input_tokens": ..., "output_tokens": ... },
+  "durationMs": 42173
+}
+```
+
+`GET /health` → `{ "ok": true, "loggedIn": true|false, "queueDepth": N }` for
+liveness probes (used by Nexus to fail fast over to OpenClaw / Anthropic API).
+
+## Deploy on Coolify + Cloudflare Tunnel
+
+Single-machine setup:
+
+1. Create a Coolify "Docker Compose" application pointing at this folder
+   (`services/claude-gateway/docker-compose.yaml`).
+2. Set environment variables on the Coolify service:
+   - `CLAUDE_GATEWAY_BEARER` — random 32-byte hex; copy this same value into
+     Nexus's Doppler config as `CLAUDE_CODE_BEARER_TOKEN`.
+   - `NEXUS_REPO_URL` — `https://github.com/pinnacleadvisors/nexus.git`.
+   - `CLAUDE_GATEWAY_REPO_REF` — `main` (or a release tag).
+3. Mount a persistent volume at `/root/.claude` so the OAuth token survives
+   restarts. First boot will warn that no token is present.
+4. Ship a one-time `claude login` into the volume:
+
+   ```bash
+   # On the Hostinger box, after the container is up:
+   docker exec -it claude-gateway claude login
+   # Follow the OAuth flow in your browser.
+   docker exec -it claude-gateway claude --version
+   ```
+
+5. Add a Cloudflare Tunnel ingress mapping `claude-gw.<your-domain>` → the
+   container's port 3000. No port forwarding, no public IP.
+6. Set Doppler `CLAUDE_CODE_GATEWAY_URL=https://claude-gw.<your-domain>` and
+   `CLAUDE_CODE_BEARER_TOKEN=<same as gateway CLAUDE_GATEWAY_BEARER>`. Vercel
+   redeploys automatically.
+7. Verify from Nexus: `curl https://claude-gw.<your-domain>/health` should
+   return `{"ok":true,"loggedIn":true,...}`.
+
+## Concurrency
+
+The gateway is a single-worker FIFO queue (Max plan = one identity). Burst
+requests serialise; a queue depth >8 is rejected with 503 so n8n workflows fail
+fast rather than backing up. Bump `QUEUE_MAX_DEPTH` if you add a second seat.
+
+## Local dev
+
+```bash
+cd services/claude-gateway
+npm install
+NEXUS_REPO_PATH=$(pwd)/../.. CLAUDE_GATEWAY_BEARER=local-dev npm run dev
+```
+
+The CLI must already be logged in (`~/.claude` populated) for spawn calls to
+return real responses; otherwise spawn returns an error and the route returns
+502 to the caller.
+
+## Why this exists
+
+See `task_plan-claude-gateway.md` (North Star + plan). TL;DR: the 20x Max plan
+covers all CLI usage; routing Nexus's primary AI traffic through this gateway
+means we stop spending API credits on the same workloads.

@@ -15,6 +15,9 @@ import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { buildGraph, scoreNodeRelevance } from '@/lib/graph/builder'
 import type { GraphNode } from '@/lib/graph/types'
+import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
+import { callGateway } from '@/lib/claw/gateway-call'
+import { isGatewayHealthy } from '@/lib/claw/health'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -356,7 +359,30 @@ export async function POST(req: NextRequest) {
   // Apply sliding window + build cached system message
   const { system, messages: windowedMessages } = applyMessageWindow(messages, systemText)
 
-  // ── PRIMARY: OpenClaw (Claude Code CLI) ──────────────────────────────────
+  // ── PRIMARY: self-hosted Claude Code gateway (Hostinger + Coolify) ──────
+  // Plan-billed against the user's 20x Max subscription. Health-probe with a
+  // 60 s positive / 10 s negative cache so a dead gateway fails over fast.
+  const claudeCodeCfg = await resolveClaudeCodeConfig(userId)
+  if (claudeCodeCfg && (await isGatewayHealthy(claudeCodeCfg.gatewayUrl))) {
+    const prompt = buildConversationPrompt(windowedMessages, system)
+    const result = await callGateway({
+      gatewayUrl:  claudeCodeCfg.gatewayUrl,
+      bearerToken: claudeCodeCfg.bearerToken,
+      sessionTag:  'forge',
+      message:     prompt,
+    })
+    if (result.ok && result.text) {
+      const stream = createUIMessageStream({
+        execute: writer => {
+          writer.writer.write({ type: 'text-delta', id: 'text-0', delta: result.text })
+        },
+      })
+      return createUIMessageStreamResponse({ stream })
+    }
+    console.warn('[chat] Claude Code gateway failed, falling back to OpenClaw / API key:', result.error ?? `status ${result.status}`)
+  }
+
+  // ── SECONDARY: OpenClaw (Claude Code CLI via MyClaw) ─────────────────────
   const clawCfg = resolveClawConfig(req)
   if (clawCfg) {
     const prompt = buildConversationPrompt(windowedMessages, system)
