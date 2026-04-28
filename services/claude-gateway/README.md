@@ -69,6 +69,19 @@ Single-machine setup:
    redeploys automatically.
 7. Verify from Nexus: `curl https://claude-gw.<your-domain>/health` should
    return `{"ok":true,"loggedIn":true,...}`.
+8. Run the end-to-end smoke test from your laptop — it validates the bearer,
+   probes `/health`, asserts an unsigned POST is rejected, then sends a real
+   signed POST and verifies the spawned `claude` CLI replies:
+
+   ```bash
+   BEARER=<the same hex you set as CLAUDE_GATEWAY_BEARER> \
+   HOST=https://claude-gw.<your-domain> \
+     ./services/claude-gateway/scripts/smoke.sh
+   ```
+
+   Diagnoses common 401 causes (`bad-bearer`, `bad-signature`, `stale-timestamp`)
+   and 502 (`claude` not logged in) with explicit fixes. Portable across Linux
+   and macOS (handles BSD `date`).
 
 ## Concurrency
 
