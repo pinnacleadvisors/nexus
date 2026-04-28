@@ -160,7 +160,35 @@
 - [x] `npx tsc --noEmit` passes at the repo root and inside `services/claude-gateway/`.
 
 ### Remaining
-- [ ] G13 — Commit, push `claude/claude-code-hostinger-n8n-iFIHs`, open draft PR.
+- [x] G13 — Commit, push `claude/claude-code-hostinger-n8n-iFIHs`, open draft PR.
+
+### Shipped — full sequence
+
+| PR | Subject | Status |
+|---|---|---|
+| #47 | feat(gateway): self-hosted Claude Code gateway for Hostinger + Coolify | merged |
+| #50 | fix(gateway): join external coolify network with stable alias | merged |
+| #51 | feat(gateway): add scripts/smoke.sh end-to-end test | merged |
+| #53 | feat(gateway): DEBUG_HMAC env var to diagnose in-transit body mutation | merged |
+| #54 | fix(gateway): smoke.sh portable openssl output parsing (macOS LibreSSL) | merged |
+
+### Live verification (2026-04-28)
+
+- `GET /health` from public URL → `{"ok":true,"loggedIn":true,...}` ✅
+- Unsigned `POST /api/sessions/test/messages` → `401 missing-bearer` ✅
+- Signed `POST /api/sessions/smoke/messages` → `200 OK` with `content: "pong"`, `usage.cache_read_input_tokens: 22164` (prompt caching active) ✅
+- All three smoke checks pass on macOS (LibreSSL) and Linux (OpenSSL 3.x).
+- `/api/chat` priority is Claude Code gateway → OpenClaw → Anthropic API. Doppler vars `CLAUDE_CODE_GATEWAY_URL` + `CLAUDE_CODE_BEARER_TOKEN` set in Production.
+
+### Lessons promoted to molecular memory (`memory/molecular/atoms/`)
+
+- `claude-code-gateway-deployment-pattern` — Hostinger + Coolify v4 + Cloudflare Tunnel architecture
+- `coolify-v4-per-service-network-isolation` — every Compose stack gets a private bridge; explicit attach to the shared `coolify` network is required for cross-stack traffic
+- `coolify-secret-changes-require-redeploy` — secret env var edits do not propagate on container restart; must Redeploy
+- `cloudflare-tunnel-multi-tunnel-orphan-trap` — Public Hostnames must live on the *running* tunnel; orphan tunnels return 1033
+- `macos-libressl-openssl-dgst-output-differs` — `openssl dgst -sha256 -hmac` output format diverges from GNU OpenSSL 3.x; parse with `awk '{print $NF}'`
+- `coolify-image-tag-plus-build-causes-pull-attempt` — declaring both `image:` and `build:` triggers an unauthenticated registry pull before the build; use `pull_policy: build` or drop the tag
+- `claude-gateway-hmac-protocol` — POST `/api/sessions/:id/messages` with bearer + HMAC-SHA256 over body in `X-Nexus-Signature` + millisecond timestamp; matches `dispatchToOpenClaw`
 
 ### Out of scope (follow-ups)
 - Failover signal in `/api/claude-session/dispatch` route (currently still uses the existing 30 s OpenClaw timeout — fine for now, fast-failover is a nice-to-have).
@@ -168,4 +196,4 @@
 - Computer Use, Files API, Batch API integrations — see strategic recommendation in chat history; sequenced after this PR ships.
 
 ### Blockers / Open Questions
-- None blocking the PR. To bring the gateway live: deploy the compose file on Coolify, run `claude login` once into the mounted `/root/.claude` volume, set `CLAUDE_CODE_GATEWAY_URL` + `CLAUDE_CODE_BEARER_TOKEN` in Doppler, and verify with `curl https://claude-gw.<your-domain>/health`.
+- None — gateway is fully live and serving production traffic.
