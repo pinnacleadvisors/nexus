@@ -59,8 +59,11 @@ Single-machine setup:
    docker exec -it claude-gateway claude --version
    ```
 
-5. Add a Cloudflare Tunnel ingress mapping `claude-gw.<your-domain>` → the
-   container's port 3000. No port forwarding, no public IP.
+5. Add a Cloudflare Tunnel ingress mapping `claude-gw.<your-domain>` →
+   `claude-gateway:3000`. The compose attaches the service to the shared
+   external `coolify` network with the alias `claude-gateway`, so the URL is
+   stable across container recreates. (Cloudflare's `cloudflared` container
+   must also be on the `coolify` network — which it is by default in v4.)
 6. Set Doppler `CLAUDE_CODE_GATEWAY_URL=https://claude-gw.<your-domain>` and
    `CLAUDE_CODE_BEARER_TOKEN=<same as gateway CLAUDE_GATEWAY_BEARER>`. Vercel
    redeploys automatically.

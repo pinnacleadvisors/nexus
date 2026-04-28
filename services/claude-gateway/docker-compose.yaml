@@ -3,13 +3,19 @@
 # Mount /root/.claude from a persistent Coolify volume so the OAuth token from
 # `claude login` survives restarts. The Cloudflare Tunnel ingress (configured
 # outside Coolify) maps claude-gw.<your-domain> -> claude-gateway:3000.
+#
+# Networks: in Coolify v4 each Compose service gets its own private network.
+# We additionally attach to the shared external `coolify` network so a
+# cloudflared container running there can resolve us by the alias
+# `claude-gateway` regardless of the auto-suffixed container name. Survives
+# redeploys; no need to manually `docker network connect` after each one.
 
 services:
   claude-gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    image: nexus/claude-gateway:latest
+    pull_policy: build
     restart: unless-stopped
     environment:
       CLAUDE_GATEWAY_PORT:    "3000"
@@ -23,6 +29,11 @@ services:
       - nexus_repo:/repo
     expose:
       - "3000"
+    networks:
+      default: {}
+      coolify:
+        aliases:
+          - claude-gateway
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -32,3 +43,8 @@ services:
 volumes:
   claude_home:
   nexus_repo:
+
+networks:
+  coolify:
+    external: true
+
