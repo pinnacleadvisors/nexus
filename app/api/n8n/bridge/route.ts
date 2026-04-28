@@ -32,11 +32,13 @@
 import { NextRequest } from 'next/server'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { analyzeDescription } from '@/lib/n8n/gap-detector'
 import { getBaseUrl } from '@/lib/n8n/client'
+import { tryGateway } from '@/lib/claw/llm'
 import type { N8nWorkflow } from '@/lib/n8n/types'
 import type { GapAnalysis, WorkflowStep } from '@/lib/n8n/gap-detector'
 
@@ -245,12 +247,28 @@ export async function POST(req: NextRequest) {
       : '',
   ].filter(Boolean).join('\n')
 
-  const { text } = await generateText({
-    model:           anthropic('claude-sonnet-4-6'),
-    system:          SYSTEM_PROMPT,
-    messages:        [{ role: 'user', content: userPrompt }],
-    maxOutputTokens: 3500,
-  })
+  // Try gateway first (plan-billed), fall through to API key.
+  const { userId: clerkUserId } = await auth().catch(() => ({ userId: null }))
+  let text = ''
+  if (clerkUserId) {
+    const gw = await tryGateway({
+      userId:     clerkUserId,
+      system:     SYSTEM_PROMPT,
+      prompt:     userPrompt,
+      sessionTag: 'n8n-bridge',
+      timeoutMs:  55_000,
+    })
+    if (gw.ok) text = gw.text
+  }
+  if (!text) {
+    const result = await generateText({
+      model:           anthropic('claude-sonnet-4-6'),
+      system:          SYSTEM_PROMPT,
+      messages:        [{ role: 'user', content: userPrompt }],
+      maxOutputTokens: 3500,
+    })
+    text = result.text
+  }
 
   const { analysis, n8nWorkflow, openClawTask } = parseBridgeOutput(text)
 

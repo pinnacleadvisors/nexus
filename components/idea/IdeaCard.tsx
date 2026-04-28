@@ -166,7 +166,7 @@ export default function IdeaCard({ card, onDelete }: Props) {
           style={{ backgroundColor: '#6c63ff', color: '#fff' }}
         >
           <Play size={14} />
-          Execute
+          Run
         </button>
         <button
           onClick={() => onDelete(card.id)}

@@ -37,6 +37,35 @@ Response:
 `GET /health` → `{ "ok": true, "loggedIn": true|false, "queueDepth": N }` for
 liveness probes (used by Nexus to fail fast over to OpenClaw / Anthropic API).
 
+### Streaming variant
+
+For chat / agent surfaces that benefit from progressive token output:
+
+```
+POST /api/sessions/:sessionId/stream
+```
+
+Same auth / body shape as `/messages`, but the response is `text/event-stream`
+with three event kinds:
+
+```
+event: open    data: { "sessionId": "..." }
+event: delta   data: { "text": "..." }   ← one per assistant text chunk
+event: result  data: { "ok": true, "content": "...", "usage": {...}, "durationMs": ... }
+event: error   data: { "error": "...", "detail": "..." }
+```
+
+`lib/claw/gateway-call.ts::callGatewayStream` consumes this in the Vercel app.
+
+### Defence-in-depth allowlist
+
+Set `ALLOWED_USER_IDS=user_abc,user_xyz` on the gateway container to require
+each signed POST carry an `X-Nexus-User-Id` header from that allowlist. Bearer
++ HMAC alone are not enough — if the bearer ever leaks, this stops it from
+draining your Max plan from anywhere except sessions belonging to you. The
+Vercel app passes the Clerk userId automatically; cron / smoke tests need to
+be added to the allowlist explicitly.
+
 ## Deploy on Coolify + Cloudflare Tunnel
 
 Single-machine setup:

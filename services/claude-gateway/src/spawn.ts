@@ -9,6 +9,12 @@ export interface RunArgs {
   timeoutMs?: number
   /** Override the binary location for tests; defaults to whatever PATH resolves. */
   binary?:    string
+  /**
+   * Optional streaming callback. Fires once per assistant text delta with the
+   * incremental string. The final RunResult is still returned with the full
+   * concatenated content so non-streaming callers behave unchanged.
+   */
+  onDelta?:   (delta: string) => void
 }
 
 export interface RunResult {
@@ -152,6 +158,9 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
         for (const block of blocks) {
           if (block.type === 'text' && typeof block.text === 'string') {
             lastAssistantText += block.text
+            if (args.onDelta) {
+              try { args.onDelta(block.text) } catch { /* swallow */ }
+            }
           }
         }
       }

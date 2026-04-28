@@ -16,7 +16,7 @@ import { assertUnderCostCap } from '@/lib/cost-guard'
 import { buildGraph, scoreNodeRelevance } from '@/lib/graph/builder'
 import type { GraphNode } from '@/lib/graph/types'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
-import { callGateway } from '@/lib/claw/gateway-call'
+import { callGateway, callGatewayStream } from '@/lib/claw/gateway-call'
 import { isGatewayHealthy } from '@/lib/claw/health'
 
 export const maxDuration = 60
@@ -362,24 +362,55 @@ export async function POST(req: NextRequest) {
   // ── PRIMARY: self-hosted Claude Code gateway (Hostinger + Coolify) ──────
   // Plan-billed against the user's 20x Max subscription. Health-probe with a
   // 60 s positive / 10 s negative cache so a dead gateway fails over fast.
+  // Tries the streaming endpoint first for progressive UX; falls back to the
+  // single-message endpoint when the gateway predates the stream route.
   const claudeCodeCfg = await resolveClaudeCodeConfig(userId)
   if (claudeCodeCfg && (await isGatewayHealthy(claudeCodeCfg.gatewayUrl))) {
     const prompt = buildConversationPrompt(windowedMessages, system)
-    const result = await callGateway({
-      gatewayUrl:  claudeCodeCfg.gatewayUrl,
-      bearerToken: claudeCodeCfg.bearerToken,
-      sessionTag:  'forge',
-      message:     prompt,
+
+    const stream = createUIMessageStream({
+      execute: async writer => {
+        writer.writer.write({ type: 'text-start', id: 'text-0' })
+        const result = await callGatewayStream(
+          {
+            gatewayUrl:  claudeCodeCfg.gatewayUrl,
+            bearerToken: claudeCodeCfg.bearerToken,
+            sessionTag:  'forge',
+            message:     prompt,
+            userId,
+            timeoutMs:   55_000,
+          },
+          {
+            onDelta: text => {
+              writer.writer.write({ type: 'text-delta', id: 'text-0', delta: text })
+            },
+          },
+        )
+        if (!result.ok || !result.text) {
+          // Fall back to whole-message JSON endpoint when stream isn't deployed
+          // yet (404) or returned an error mid-stream.
+          if (result.ok === false && result.status === 404) {
+            const jsonRes = await callGateway({
+              gatewayUrl:  claudeCodeCfg.gatewayUrl,
+              bearerToken: claudeCodeCfg.bearerToken,
+              sessionTag:  'forge',
+              message:     prompt,
+              userId,
+            })
+            if (jsonRes.ok && jsonRes.text) {
+              writer.writer.write({ type: 'text-delta', id: 'text-0', delta: jsonRes.text })
+            }
+          } else {
+            writer.writer.write({
+              type: 'text-delta', id: 'text-0',
+              delta: '\n\n[gateway error — falling back]',
+            })
+          }
+        }
+        writer.writer.write({ type: 'text-end', id: 'text-0' })
+      },
     })
-    if (result.ok && result.text) {
-      const stream = createUIMessageStream({
-        execute: writer => {
-          writer.writer.write({ type: 'text-delta', id: 'text-0', delta: result.text })
-        },
-      })
-      return createUIMessageStreamResponse({ stream })
-    }
-    console.warn('[chat] Claude Code gateway failed, falling back to OpenClaw / API key:', result.error ?? `status ${result.status}`)
+    return createUIMessageStreamResponse({ stream })
   }
 
   // ── SECONDARY: OpenClaw (Claude Code CLI via MyClaw) ─────────────────────

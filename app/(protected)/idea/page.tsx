@@ -1,25 +1,24 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Lightbulb, Link2, FileText, Loader2, ArrowLeft, AlertCircle } from 'lucide-react'
-import type { IdeaCard, IdeaMode } from '@/lib/types'
+import { useEffect, useState } from 'react'
+import { Lightbulb, Link2, FileText, Loader2, ArrowLeft, AlertCircle, BookOpen } from 'lucide-react'
+import IdeaCard from '@/components/idea/IdeaCard'
+import type { IdeaCard as IdeaCardType, IdeaMode } from '@/lib/types'
 
 const IDEAS_KEY = 'nexus:ideas'
 
-function saveIdea(card: IdeaCard) {
+function loadLocal(): IdeaCardType[] {
   try {
     const raw = localStorage.getItem(IDEAS_KEY)
-    const list: IdeaCard[] = raw ? JSON.parse(raw) : []
-    list.unshift(card)
-    localStorage.setItem(IDEAS_KEY, JSON.stringify(list))
-  } catch {
-    // ignore quota
-  }
+    return raw ? JSON.parse(raw) as IdeaCardType[] : []
+  } catch { return [] }
+}
+
+function saveLocal(list: IdeaCardType[]) {
+  try { localStorage.setItem(IDEAS_KEY, JSON.stringify(list)) } catch { /* ignore */ }
 }
 
 export default function IdeaPage() {
-  const router = useRouter()
   const [mode, setMode] = useState<IdeaMode | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +31,40 @@ export default function IdeaPage() {
   const [inspirationUrl, setInspirationUrl] = useState('')
   const [twist, setTwist] = useState('')
   const [remodelBudget, setRemodelBudget] = useState('')
+
+  // Library state — fetched on mount, refreshed after every successful capture
+  const [ideas, setIdeas] = useState<IdeaCardType[]>([])
+  const [hydrated, setHydrated] = useState(false)
+  const [usingServer, setUsingServer] = useState(false)
+
+  async function refreshLibrary() {
+    try {
+      const res = await fetch('/api/ideas')
+      if (res.ok) {
+        const json = await res.json() as { ideas: IdeaCardType[] }
+        if (Array.isArray(json.ideas) && json.ideas.length > 0) {
+          setIdeas(json.ideas)
+          setUsingServer(true)
+          setHydrated(true)
+          return
+        }
+      }
+    } catch { /* fall through */ }
+    setIdeas(loadLocal())
+    setHydrated(true)
+  }
+
+  useEffect(() => { void refreshLibrary() }, [])
+
+  async function deleteIdea(id: string) {
+    const next = ideas.filter(i => i.id !== id)
+    setIdeas(next)
+    if (usingServer) {
+      await fetch(`/api/ideas?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
+    } else {
+      saveLocal(next)
+    }
+  }
 
   async function submit() {
     setSubmitting(true)
@@ -63,86 +96,133 @@ export default function IdeaPage() {
       return
     }
 
-    const { card } = await res.json() as { card: IdeaCard | Omit<IdeaCard, 'id' | 'createdAt'> }
-    const hasId = (c: IdeaCard | Omit<IdeaCard, 'id' | 'createdAt'>): c is IdeaCard =>
+    const { card } = await res.json() as { card: IdeaCardType | Omit<IdeaCardType, 'id' | 'createdAt'> }
+    const hasId = (c: IdeaCardType | Omit<IdeaCardType, 'id' | 'createdAt'>): c is IdeaCardType =>
       'id' in c && typeof c.id === 'string'
-    const full: IdeaCard = hasId(card)
+    const full: IdeaCardType = hasId(card)
       ? card
       : { ...card, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
-    if (!hasId(card)) saveIdea(full)
-    router.push('/idea-library')
+    if (!hasId(card)) {
+      saveLocal([full, ...ideas])
+    }
+
+    // Reset the form, refresh the library (now with the new card), and stay
+    // on this page so the operator sees the captured card right below.
+    setMode(null)
+    setDescription('')
+    setSetupBudget('')
+    setInspirationUrl('')
+    setTwist('')
+    setRemodelBudget('')
+    setSubmitting(false)
+    void refreshLibrary()
   }
 
   return (
     <div className="p-6 min-h-full" style={{ backgroundColor: '#050508' }}>
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6 flex items-center gap-3">
+      <div className="max-w-5xl mx-auto space-y-8">
+        <div className="flex items-center gap-3">
           <Lightbulb size={22} style={{ color: '#6c63ff' }} />
           <div>
             <h1 className="text-xl font-bold" style={{ color: '#e8e8f0' }}>
-              Idea
+              Ideas
             </h1>
             <p className="text-sm mt-0.5" style={{ color: '#9090b0' }}>
-              Capture a new idea. The agent will evaluate profitability, automation potential, and steps needed.
+              Capture above. Hit ▶ Run on any saved card to spin up build &amp; maintain workflows.
             </p>
           </div>
         </div>
 
-        {!mode && <ModePicker onPick={setMode} />}
+        {/* ── Capture form ───────────────────────────────────────────── */}
+        <div className="max-w-3xl">
+          {!mode && <ModePicker onPick={setMode} />}
 
-        {mode && (
-          <div
-            className="p-6 rounded-xl border"
-            style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
-          >
-            <button
-              onClick={() => { setMode(null); setError(null) }}
-              className="flex items-center gap-1.5 mb-4 text-sm"
-              style={{ color: '#9090b0' }}
+          {mode && (
+            <div
+              className="p-6 rounded-xl border"
+              style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
             >
-              <ArrowLeft size={14} />
-              Back
-            </button>
-
-            {mode === 'description' ? (
-              <DescriptionForm
-                description={description}
-                setDescription={setDescription}
-                budget={setupBudget}
-                setBudget={setSetupBudget}
-              />
-            ) : (
-              <RemodelForm
-                url={inspirationUrl}
-                setUrl={setInspirationUrl}
-                twist={twist}
-                setTwist={setTwist}
-                budget={remodelBudget}
-                setBudget={setRemodelBudget}
-              />
-            )}
-
-            {error && (
-              <div
-                className="mt-4 p-3 rounded-lg flex items-start gap-2 text-sm"
-                style={{ backgroundColor: '#2a1116', color: '#ff7a90', borderLeft: '2px solid #ff4d6d' }}
+              <button
+                onClick={() => { setMode(null); setError(null) }}
+                className="flex items-center gap-1.5 mb-4 text-sm"
+                style={{ color: '#9090b0' }}
               >
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                {error}
-              </div>
-            )}
+                <ArrowLeft size={14} />
+                Back
+              </button>
 
-            <button
-              onClick={submit}
-              disabled={submitting || !canSubmit(mode, { description, inspirationUrl })}
-              className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium disabled:opacity-50"
-              style={{ backgroundColor: '#6c63ff', color: '#fff' }}
-            >
-              {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
-              {submitting ? 'Analysing…' : 'Analyse idea'}
-            </button>
+              {mode === 'description' ? (
+                <DescriptionForm
+                  description={description}
+                  setDescription={setDescription}
+                  budget={setupBudget}
+                  setBudget={setSetupBudget}
+                />
+              ) : (
+                <RemodelForm
+                  url={inspirationUrl}
+                  setUrl={setInspirationUrl}
+                  twist={twist}
+                  setTwist={setTwist}
+                  budget={remodelBudget}
+                  setBudget={setRemodelBudget}
+                />
+              )}
+
+              {error && (
+                <div
+                  className="mt-4 p-3 rounded-lg flex items-start gap-2 text-sm"
+                  style={{ backgroundColor: '#2a1116', color: '#ff7a90', borderLeft: '2px solid #ff4d6d' }}
+                >
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={submit}
+                disabled={submitting || !canSubmit(mode, { description, inspirationUrl })}
+                className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium disabled:opacity-50"
+                style={{ backgroundColor: '#6c63ff', color: '#fff' }}
+              >
+                {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
+                {submitting ? 'Analysing…' : 'Analyse idea'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Library ───────────────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <BookOpen size={18} style={{ color: '#6c63ff' }} />
+            <h2 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>
+              Library
+            </h2>
+            {ideas.length > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#1a1a2e', color: '#9090b0' }}>
+                {ideas.length}
+              </span>
+            )}
           </div>
-        )}
+
+          {hydrated && ideas.length === 0 && (
+            <div
+              className="p-6 rounded-xl border text-center"
+              style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
+            >
+              <p className="text-sm" style={{ color: '#9090b0' }}>
+                No saved ideas yet. Capture one above to get started.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {ideas.map(card => (
+              <IdeaCard key={card.id} card={card} onDelete={deleteIdea} />
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   )

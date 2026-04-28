@@ -8,12 +8,11 @@
  */
 
 import { NextRequest } from 'next/server'
-import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { buildScoringPrompt, NEURO_PRINCIPLES } from '@/lib/neuro-content'
+import { callClaude } from '@/lib/claw/llm'
 import type { ContentScore, PrincipleScore } from '@/lib/neuro-content'
 
 export const runtime = 'nodejs'
@@ -38,13 +37,6 @@ export async function POST(req: NextRequest) {
 
   audit(req, { action: 'content.score', resource: 'content', userId })
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured.' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
   const body = await req.json() as { content?: string }
 
   if (!body.content?.trim()) {
@@ -57,12 +49,18 @@ export async function POST(req: NextRequest) {
   const prompt = buildScoringPrompt(body.content)
 
   try {
-    const { text } = await generateText({
-      model:            anthropic('claude-sonnet-4-6'),
+    const llm = await callClaude({
+      userId,
       prompt,
-      maxOutputTokens:  1200,
-      temperature:      0.2,
+      model:           'claude-sonnet-4-6',
+      sessionTag:      'content-score',
+      maxOutputTokens: 1200,
+      temperature:     0.2,
     })
+    if (llm.error || !llm.text) {
+      throw new Error(llm.error ?? 'Claude returned empty text')
+    }
+    const text = llm.text
 
     // Parse JSON response
     let parsed: {

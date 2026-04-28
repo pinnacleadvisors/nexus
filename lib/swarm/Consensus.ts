@@ -12,6 +12,7 @@
 
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { tryGateway } from '@/lib/claw/llm'
 import type { ConsensusType, TaskVote, AgentRole } from './types'
 import { AGENT_REGISTRY } from './agents/registry'
 
@@ -40,13 +41,28 @@ Respond with ONLY valid JSON (no markdown fences):
 }
 
 // ── Single validator vote ─────────────────────────────────────────────────────
-async function getVote(task: string, result: string, validatorRole: AgentRole): Promise<TaskVote> {
+async function getVote(
+  task:          string,
+  result:        string,
+  validatorRole: AgentRole,
+  userId?:       string,
+): Promise<TaskVote> {
   try {
-    const { text } = await generateText({
-      model: anthropic(VALIDATOR_MODEL),
-      prompt:          validatorPrompt(task, result, validatorRole),
-      maxOutputTokens: 200,
-    })
+    const prompt = validatorPrompt(task, result, validatorRole)
+
+    let text = ''
+    if (userId) {
+      const gw = await tryGateway({ userId, prompt, sessionTag: 'consensus', timeoutMs: 30_000 })
+      if (gw.ok) text = gw.text
+    }
+    if (!text) {
+      const result = await generateText({
+        model:           anthropic(VALIDATOR_MODEL),
+        prompt,
+        maxOutputTokens: 200,
+      })
+      text = result.text
+    }
 
     const parsed = JSON.parse(text.replace(/```json\n?|```\n?/g, '').trim()) as {
       approve?: boolean
@@ -113,6 +129,7 @@ export async function runConsensus(
   result:        string,
   producerRole:  AgentRole,
   consensusType: ConsensusType,
+  userId?:       string,
 ): Promise<ConsensusResult> {
   // Gossip: fast-path — accept if result is non-empty
   if (consensusType === 'gossip') {
@@ -135,9 +152,11 @@ export async function runConsensus(
 
   const validators = selectValidators(producerRole, consensusType)
 
-  // Run validators in parallel
+  // Run validators in parallel. Note: when routed through the gateway, the
+  // single-worker FIFO will serialise them — that's intentional, the validator
+  // calls are short (haiku, ~200 tokens) so the latency hit is bounded.
   const votes = await Promise.all(
-    validators.map(v => getVote(task, result, v))
+    validators.map(v => getVote(task, result, v, userId))
   )
 
   const approvals = votes.filter(v => v.approve)

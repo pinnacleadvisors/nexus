@@ -10,6 +10,7 @@
 
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { tryGateway } from '@/lib/claw/llm'
 import type { AgentRole, ConsensusType, EventEmitter, SwarmEvent, SwarmPhase, SwarmTask } from './types'
 import { routeTask, inferComplexity } from './Router'
 import { buildSwarmContext, optimiseContext, buildCachedSystem, computeCacheStats } from './TokenOptimiser'
@@ -131,20 +132,39 @@ ${goal}
 ${mergedContext || 'No additional context provided.'}
 ${fewShotBlock}`
 
-  const { text, usage } = await generateText({
-    model:            anthropic(STRATEGIC_MODEL),
-    messages: [
-      buildCachedSystem(systemText),
-      { role: 'user', content: optimiseContext(userPrompt, 6000).text },
-    ],
-    maxOutputTokens:  2000,
-  })
+  // Plan-billed first (Claude Code gateway). Strategic decomposition is one
+  // call per swarm and benefits the most from Max-plan billing — if it works,
+  // we skip the prompt-cache benefit for this single call. Falls through to
+  // API path on any failure.
+  const optimisedUserPrompt = optimiseContext(userPrompt, 6000).text
+  let text = ''
+  if (opts.userId) {
+    const gw = await tryGateway({
+      userId:     opts.userId,
+      system:     systemText,
+      prompt:     optimisedUserPrompt,
+      sessionTag: 'swarm-strategic',
+      timeoutMs:  55_000,
+    })
+    if (gw.ok) text = gw.text
+  }
 
-  const cache = computeCacheStats(usage)
-  if (cache.cacheReadTokens > 0 || cache.cacheWriteTokens > 0) {
-    emit(evt(swarmId, 'status', {
-      message: `StrategicQueen cache: read=${cache.cacheReadTokens} write=${cache.cacheWriteTokens} ratio=${(cache.hitRatio * 100).toFixed(1)}%`,
-    }))
+  if (!text) {
+    const result = await generateText({
+      model:            anthropic(STRATEGIC_MODEL),
+      messages: [
+        buildCachedSystem(systemText),
+        { role: 'user', content: optimisedUserPrompt },
+      ],
+      maxOutputTokens:  2000,
+    })
+    text = result.text
+    const cache = computeCacheStats(result.usage)
+    if (cache.cacheReadTokens > 0 || cache.cacheWriteTokens > 0) {
+      emit(evt(swarmId, 'status', {
+        message: `StrategicQueen cache: read=${cache.cacheReadTokens} write=${cache.cacheWriteTokens} ratio=${(cache.hitRatio * 100).toFixed(1)}%`,
+      }))
+    }
   }
 
   try {
@@ -246,12 +266,13 @@ async function executeTask(
   const tokensUsed = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
   const durationMs = Date.now() - start
 
-  // 4. Run consensus
+  // 4. Run consensus (gateway-aware when userId is in scope)
   const consensus = await runConsensus(
     `${task.title}: ${task.description}`,
     text,
     task.role,
     consensusType,
+    obs?.userId,
   )
 
   // C1 — per-task observability. Fire-and-forget. `obs.userId` is the gate so
@@ -465,12 +486,30 @@ export async function runSwarm(params: {
   emit(evt(swarmId, 'status', { message: 'StrategicQueen: synthesising results…' }))
 
   const synthPrompt = buildSwarmContext(goal, priorResults, 10_000)
-  const { text: synthesis } = await generateText({
-    model:     anthropic(STRATEGIC_MODEL),
-    system:    `You are synthesising the outputs of a multi-agent swarm into a single, coherent deliverable. Preserve all important information. Structure the output with clear headings.`,
-    prompt:           `## Original Goal\n${goal}\n\n## Phase Outputs\n${synthPrompt}`,
-    maxOutputTokens:  4000,
-  })
+  const synthSystem = `You are synthesising the outputs of a multi-agent swarm into a single, coherent deliverable. Preserve all important information. Structure the output with clear headings.`
+  const synthUser   = `## Original Goal\n${goal}\n\n## Phase Outputs\n${synthPrompt}`
+
+  // Plan-billed first; fall through to Opus on the API.
+  let synthesis = ''
+  if (userId) {
+    const gw = await tryGateway({
+      userId,
+      system:     synthSystem,
+      prompt:     synthUser,
+      sessionTag: 'swarm-synth',
+      timeoutMs:  55_000,
+    })
+    if (gw.ok) synthesis = gw.text
+  }
+  if (!synthesis) {
+    const result = await generateText({
+      model:           anthropic(STRATEGIC_MODEL),
+      system:          synthSystem,
+      prompt:          synthUser,
+      maxOutputTokens: 4000,
+    })
+    synthesis = result.text
+  }
 
   // A8 — archive the plan + outcome so future swarms on similar goals get
   // the shortest matching plan injected as a few-shot example.
