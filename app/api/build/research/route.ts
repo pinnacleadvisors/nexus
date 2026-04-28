@@ -23,6 +23,7 @@ import {
 import { searchWebMulti } from '@/lib/tools/tavily'
 import { anthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
+import { tryGateway } from '@/lib/claw/llm'
 import { exec as execCb } from 'child_process'
 import { promisify } from 'util'
 
@@ -73,19 +74,33 @@ Max 8 items. Only include items directly relevant to this stack.`
 
 async function synthesise(
   results: Array<{ title: string; url: string; content: string }>,
+  userId?: string,
 ): Promise<ResearchSuggestion[]> {
-  if (!process.env.ANTHROPIC_API_KEY || results.length === 0) return []
+  if (results.length === 0) return []
   const context = results
     .map(r => `### ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 700)}`)
     .join('\n\n---\n\n')
+  const userPrompt = `Research results:\n\n${context}\n\nOutput JSON array.`
+
   try {
-    const { text } = await generateText({
-      model:           anthropic('claude-haiku-4-5-20251001'),
-      system:          SYNTHESIS_SYSTEM,
-      prompt:          `Research results:\n\n${context}\n\nOutput JSON array.`,
-      maxOutputTokens: 2000,
-      temperature:     0.1,
-    })
+    let text = ''
+    if (userId) {
+      const gw = await tryGateway({
+        userId, system: SYNTHESIS_SYSTEM, prompt: userPrompt, sessionTag: 'build-research',
+      })
+      if (gw.ok) text = gw.text
+    }
+    if (!text) {
+      if (!process.env.ANTHROPIC_API_KEY) return []
+      const result = await generateText({
+        model:           anthropic('claude-haiku-4-5-20251001'),
+        system:          SYNTHESIS_SYSTEM,
+        prompt:          userPrompt,
+        maxOutputTokens: 2000,
+        temperature:     0.1,
+      })
+      text = result.text
+    }
     const match = text.match(/\[[\s\S]*\]/)
     if (!match) return []
     const raw = JSON.parse(match[0]) as Array<Partial<ResearchSuggestion>>
@@ -177,8 +192,8 @@ export async function POST(req: NextRequest) {
   // Step 2: Stack health
   const stackIssues = await runAudit()
 
-  // Step 3: Claude synthesis
-  const suggestions = await synthesise(searchResults)
+  // Step 3: Claude synthesis (gateway-billed when userId allowed)
+  const suggestions = await synthesise(searchResults, userId)
 
   // Step 4: Create Board cards
   const db = createServerClient()

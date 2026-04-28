@@ -23,8 +23,6 @@
  */
 
 import { NextRequest } from 'next/server'
-import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
@@ -32,6 +30,7 @@ import { scrapeWithConnected, formatScrapesForContext } from '@/lib/tools/firecr
 import { searchWeb, formatResultsAsContext } from '@/lib/tools/tavily'
 import { createServerClient } from '@/lib/supabase'
 import { ideaCardToRow, rowToIdeaCard, type IdeaRow } from '@/lib/idea-db'
+import { callClaude } from '@/lib/claw/llm'
 import type { IdeaCard, IdeaMode } from '@/lib/types'
 
 export const maxDuration = 90
@@ -83,10 +82,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'inspirationUrl is required in remodel mode' }, { status: 400 })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return Response.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 503 })
-  }
+  // Resolve userId early — callClaude needs it for the gateway gate.
+  const { userId } = await auth()
+  if (!userId) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
   // ── Gather research for remodel mode ───────────────────────────────────────
   const sources: Array<{ url: string; title: string }> = []
@@ -141,12 +139,18 @@ export async function POST(req: NextRequest) {
     metadata: { mode: body.mode, sourceCount: sources.length },
   })
 
-  const { text } = await generateText({
-    model: anthropic('claude-sonnet-4-6'),
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
+  const llm = await callClaude({
+    userId,
+    system:          SYSTEM_PROMPT,
+    prompt:          userPrompt,
+    model:           'claude-sonnet-4-6',
+    sessionTag:      'idea-analyse',
     maxOutputTokens: 2500,
   })
+  if (llm.error || !llm.text) {
+    return Response.json({ error: llm.error ?? 'Claude returned empty response' }, { status: 502 })
+  }
+  const text = llm.text
 
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
@@ -170,7 +174,6 @@ export async function POST(req: NextRequest) {
 
   // Persist for the signed-in user when Supabase is configured. Pages fall
   // back to localStorage when persistence isn't available.
-  const { userId } = await auth()
   const supabase = createServerClient()
   if (userId && supabase) {
     const { data, error } = await supabase

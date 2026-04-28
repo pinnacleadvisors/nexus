@@ -32,6 +32,9 @@ import {
   buildResearchQueries,
   SEARCH_ENABLED_CAPABILITIES,
 } from '@/lib/tools/tavily'
+import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
+import { callGateway } from '@/lib/claw/gateway-call'
+import { isGatewayHealthy } from '@/lib/claw/health'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -107,14 +110,6 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured — add it to Doppler.' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } },
-    )
-  }
-
   const model  = body.model ?? 'claude-sonnet-4-6'
   const system = capability.systemPrompt.replace(
     /\{\{businessName\}\}/g,
@@ -165,129 +160,167 @@ export async function POST(req: NextRequest) {
   // Resolve user ID once (best-effort — agent routes are not always authed)
   const { userId: clerkUserId } = await auth().catch(() => ({ userId: null }))
 
+  // Side-effects that fire after a run completes — extracted so the gateway
+  // and API-key paths can both call into them.
+  async function onAgentFinish(text: string) {
+    const db = createServerClient()
+
+    // ── Consultant: create one board card per recommendation ───────────────
+    if (body.capabilityId === 'consultant' && db) {
+      try {
+        const jsonMatch = text.match(/^\s*\{[\s\S]*?\}(?=\s*#)/m)
+        if (jsonMatch) {
+          const report = JSON.parse(jsonMatch[0]) as {
+            automationOpportunities?: Array<{
+              priority:    number
+              title:       string
+              description: string
+              tools:       string[]
+              estimatedSetupMinutes: number
+              requiresOpenClaw: boolean
+              complexity:  string
+            }>
+          }
+          const opps = report.automationOpportunities ?? []
+          for (const opp of opps.slice(0, 8)) {
+            const toolList = opp.tools.join(', ')
+            await db.from('tasks').insert({
+              title:       `[Automation] ${opp.title}`,
+              description: `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
+              column_id:   'backlog',
+              priority:    opp.priority <= 2 ? 'high' : opp.priority <= 4 ? 'medium' : 'low',
+              project_id:  body.projectId ?? null,
+              position:    opp.priority,
+            }).then(({ error }) => {
+              if (error) console.error('[agent/consultant] card insert:', error.message)
+            })
+          }
+        }
+      } catch (err) {
+        console.error('[agent/consultant] failed to parse recommendations:', err)
+      }
+
+      // Also create a single summary card in Review
+      await db.from('tasks').insert({
+        title:       `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
+        description: 'Full consultant report — approve to proceed with implementation.',
+        column_id:   'review',
+        priority:    'high',
+        project_id:  body.projectId ?? null,
+        position:    0,
+      }).then(({ error }) => {
+        if (error) console.error('[agent/consultant] summary card:', error.message)
+      })
+    } else if (db) {
+      // ── Default: create one board card in Review column ─────────────────
+      const title = `${capability!.name}: ${body.inputs.businessName ?? 'Untitled'}`
+      await db.from('tasks').insert({
+        title,
+        description: `Agent-generated ${capability!.name} document.`,
+        column_id:   'review',
+        priority:    'medium',
+        project_id:  body.projectId ?? null,
+        position:    0,
+      }).then(({ error }) => {
+        if (error) console.error('[agent] board card insert failed:', error.message)
+      })
+    }
+
+    // ── Auto-extract code snippets into library ─────────────────────────────
+    if (clerkUserId) {
+      const VALID_LANGS: CodeLanguage[] = [
+        'typescript', 'javascript', 'python', 'sql', 'bash', 'json', 'yaml',
+      ]
+      const blocks = extractCodeBlocksFromOutput(text)
+      for (const block of blocks.slice(0, 3)) {  // max 3 snippets per run
+        const lang = VALID_LANGS.includes(block.language as CodeLanguage)
+          ? (block.language as CodeLanguage)
+          : 'typescript'
+        await createEntry('code', clerkUserId, {
+          title:          `${capability!.name} — auto-extracted snippet`,
+          description:    `Auto-extracted from agent run: ${capability!.name}`,
+          language:       lang,
+          purpose:        capability!.category,
+          code:           block.code,
+          tags:           [capability!.category, lang, 'auto-extracted'],
+          dependencies:   [],
+          source_agent_run: body.capabilityId,
+        }).catch(err => {
+          console.error('[agent] library auto-extract failed:', err)
+        })
+      }
+    }
+
+    // ── Write to GitHub memory repo ────────────────────────────────────────
+    if (isMemoryConfigured()) {
+      const citations = tavilyResults.length > 0 ? formatCitations(tavilyResults) : undefined
+      await writeAgentRun(
+        body.capabilityId,
+        body.inputs.businessName ?? 'unknown',
+        text,
+        citations,
+      ).catch(err => {
+        console.error('[agent] memory write failed:', err)
+      })
+    }
+  }
+
+  const responseHeaders = {
+    'Content-Type':   'text/plain; charset=utf-8',
+    'X-Capability':   capability.id,
+    'X-Model':        model,
+    'X-Tavily-Count': String(tavilyResults.length),
+    'Cache-Control':  'no-cache',
+  }
+
+  // ── PRIMARY: self-hosted Claude Code gateway (plan-billed) ─────────────
+  // The gateway returns a whole-message reply, so we buffer-then-emit. The UX
+  // downgrade vs streamText is acceptable for one-shot agent runs (<2 min).
+  // When the streaming endpoint ships we can switch to SSE pass-through.
+  if (clerkUserId) {
+    const cfg = await resolveClaudeCodeConfig(clerkUserId)
+    if (cfg && (await isGatewayHealthy(cfg.gatewayUrl))) {
+      const gw = await callGateway({
+        gatewayUrl:  cfg.gatewayUrl,
+        bearerToken: cfg.bearerToken,
+        sessionTag:  `agent-${body.capabilityId}`,
+        message:     `${system}\n\n---\n\n${userPrompt}`,
+        userId:      clerkUserId,
+        timeoutMs:   55_000,
+      })
+      if (gw.ok && gw.text) {
+        const text = gw.text
+        // Fire-and-forget side effects so the response returns ASAP.
+        Promise.resolve().then(() => onAgentFinish(text))
+        const encoder = new TextEncoder()
+        const stream  = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(text))
+            controller.close()
+          },
+        })
+        return new Response(stream, { headers: { ...responseHeaders, 'X-Via': 'gateway' } })
+      }
+      console.warn('[agent] gateway failed, falling back to API:', gw.error ?? `status ${gw.status}`)
+    }
+  }
+
+  // ── FALLBACK: Anthropic API key (token-billed, streamed) ────────────────
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: 'No Claude provider configured — gateway down + ANTHROPIC_API_KEY unset.' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
   const result = streamText({
     model: anthropic(model),
     system,
     messages: [{ role: 'user', content: userPrompt }],
-
-    onFinish: async ({ text }) => {
-      const db = createServerClient()
-
-      // ── Consultant: create one board card per recommendation ───────────────
-      if (body.capabilityId === 'consultant' && db) {
-        try {
-          const jsonMatch = text.match(/^\s*\{[\s\S]*?\}(?=\s*#)/m)
-          if (jsonMatch) {
-            const report = JSON.parse(jsonMatch[0]) as {
-              automationOpportunities?: Array<{
-                priority:    number
-                title:       string
-                description: string
-                tools:       string[]
-                estimatedSetupMinutes: number
-                requiresOpenClaw: boolean
-                complexity:  string
-              }>
-            }
-            const opps = report.automationOpportunities ?? []
-            for (const opp of opps.slice(0, 8)) {
-              const toolList = opp.tools.join(', ')
-              await db.from('tasks').insert({
-                title:       `[Automation] ${opp.title}`,
-                description: `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
-                column_id:   'backlog',
-                priority:    opp.priority <= 2 ? 'high' : opp.priority <= 4 ? 'medium' : 'low',
-                project_id:  body.projectId ?? null,
-                position:    opp.priority,
-              }).then(({ error }) => {
-                if (error) console.error('[agent/consultant] card insert:', error.message)
-              })
-            }
-          }
-        } catch (err) {
-          console.error('[agent/consultant] failed to parse recommendations:', err)
-        }
-
-        // Also create a single summary card in Review
-        if (db) {
-          await db.from('tasks').insert({
-            title:       `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
-            description: 'Full consultant report — approve to proceed with implementation.',
-            column_id:   'review',
-            priority:    'high',
-            project_id:  body.projectId ?? null,
-            position:    0,
-          }).then(({ error }) => {
-            if (error) console.error('[agent/consultant] summary card:', error.message)
-          })
-        }
-        // Skip the generic card below for consultant
-      } else if (db) {
-        // ── Default: create one board card in Review column ─────────────────
-        const title = `${capability.name}: ${body.inputs.businessName ?? 'Untitled'}`
-        await db.from('tasks').insert({
-          title,
-          description: `Agent-generated ${capability.name} document.`,
-          column_id:   'review',
-          priority:    'medium',
-          project_id:  body.projectId ?? null,
-          position:    0,
-        }).then(({ error }) => {
-          if (error) console.error('[agent] board card insert failed:', error.message)
-        })
-      }
-
-      // ── Auto-extract code snippets into library ─────────────────────────────
-      if (clerkUserId) {
-        const VALID_LANGS: CodeLanguage[] = [
-          'typescript', 'javascript', 'python', 'sql', 'bash', 'json', 'yaml',
-        ]
-        const blocks = extractCodeBlocksFromOutput(text)
-        for (const block of blocks.slice(0, 3)) {  // max 3 snippets per run
-          const lang = VALID_LANGS.includes(block.language as CodeLanguage)
-            ? (block.language as CodeLanguage)
-            : 'typescript'
-          await createEntry('code', clerkUserId, {
-            title:          `${capability.name} — auto-extracted snippet`,
-            description:    `Auto-extracted from agent run: ${capability.name}`,
-            language:       lang,
-            purpose:        capability.category,
-            code:           block.code,
-            tags:           [capability.category, lang, 'auto-extracted'],
-            dependencies:   [],
-            source_agent_run: body.capabilityId,
-          }).catch(err => {
-            console.error('[agent] library auto-extract failed:', err)
-          })
-        }
-      }
-
-      // ── Write to GitHub memory repo ────────────────────────────────────────
-      if (isMemoryConfigured()) {
-        const citations = tavilyResults.length > 0 ? formatCitations(tavilyResults) : undefined
-        await writeAgentRun(
-          body.capabilityId,
-          body.inputs.businessName ?? 'unknown',
-          text,
-          citations,
-        ).catch(err => {
-          console.error('[agent] memory write failed:', err)
-        })
-      }
-
-      // Notion append removed — nexus-memory is the primary knowledge sink.
-      // Notion remains available as a future optional integration via /api/notion/* routes.
-    },
+    onFinish: async ({ text }) => onAgentFinish(text),
   })
 
-  // Stream plain text back to client
   return new Response(result.textStream.pipeThrough(new TextEncoderStream()), {
-    headers: {
-      'Content-Type':   'text/plain; charset=utf-8',
-      'X-Capability':   capability.id,
-      'X-Model':        model,
-      'X-Tavily-Count': String(tavilyResults.length),
-      'Cache-Control': 'no-cache',
-    },
+    headers: { ...responseHeaders, 'X-Via': 'api' },
   })
 }

@@ -42,6 +42,7 @@
 import { NextRequest } from 'next/server'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { tryGateway } from '@/lib/claw/llm'
 import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
@@ -530,6 +531,7 @@ export async function POST(req: NextRequest) {
 
   const workflowType = body.workflowType ?? 'build'
   const apiKey       = process.env.ANTHROPIC_API_KEY
+  const { userId: clerkUserId } = await auth().catch(() => ({ userId: null }))
   const capabilityIds = (body.availableCapabilities?.length
     ? body.availableCapabilities
     : AGENT_CAPABILITIES.map(c => c.id))
@@ -568,31 +570,46 @@ export async function POST(req: NextRequest) {
   let fallbackReason: string | undefined
   let aiRawOutput: string | undefined
 
-  if (!apiKey) {
-    fallbackUsed   = true
-    fallbackReason = 'ANTHROPIC_API_KEY not configured'
-  } else {
+  // Try gateway first (plan-billed), then API key, then fall back to scaffold.
+  const systemPrompt = buildSystemPrompt(workflowType, capabilityIds)
+  let text = ''
+  if (clerkUserId) {
+    const gw = await tryGateway({
+      userId:     clerkUserId,
+      system:     systemPrompt,
+      prompt:     userPrompt,
+      sessionTag: 'n8n-generate',
+      timeoutMs:  55_000,
+    })
+    if (gw.ok) text = gw.text
+  }
+  if (!text && apiKey) {
     try {
-      const { text } = await generateText({
+      const result = await generateText({
         model:           anthropic('claude-sonnet-4-6'),
-        system:          buildSystemPrompt(workflowType, capabilityIds),
+        system:          systemPrompt,
         messages:        [{ role: 'user', content: userPrompt }],
         maxOutputTokens: 4000,
       })
-      aiRawOutput = text
-      const parsed = parseGeneratedOutput(text)
-      if (parsed.workflow) {
-        workflow    = parsed.workflow
-        checklist   = parsed.checklist
-        explanation = parsed.explanation
-      } else {
-        fallbackUsed   = true
-        fallbackReason = 'Failed to parse workflow JSON from AI response'
-      }
+      text = result.text
     } catch (err) {
-      fallbackUsed   = true
       fallbackReason = err instanceof Error ? err.message : 'AI generation failed'
       console.error('[n8n/generate] AI call failed:', err)
+    }
+  }
+  if (!text) {
+    fallbackUsed   = true
+    fallbackReason = fallbackReason ?? 'No Claude provider available'
+  } else {
+    aiRawOutput = text
+    const parsed = parseGeneratedOutput(text)
+    if (parsed.workflow) {
+      workflow    = parsed.workflow
+      checklist   = parsed.checklist
+      explanation = parsed.explanation
+    } else {
+      fallbackUsed   = true
+      fallbackReason = 'Failed to parse workflow JSON from AI response'
     }
   }
 
@@ -678,7 +695,7 @@ export async function POST(req: NextRequest) {
 
   // Persist automation for the signed-in user when Supabase is configured.
   let savedAutomation: SavedAutomation | undefined
-  const { userId } = await auth()
+  const userId = clerkUserId
   if (userId && db) {
     const draft: Omit<SavedAutomation, 'id' | 'createdAt'> = {
       ideaId:       body.ideaId,

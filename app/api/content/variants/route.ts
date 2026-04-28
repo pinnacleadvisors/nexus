@@ -9,12 +9,11 @@
  */
 
 import { NextRequest } from 'next/server'
-import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { getTemplate, getToneProfile } from '@/lib/neuro-content'
+import { callClaude } from '@/lib/claw/llm'
 import type { VariantsResponse, ContentVariant, FormatId, ToneId } from '@/lib/neuro-content'
 
 export const runtime    = 'nodejs'
@@ -49,13 +48,6 @@ export async function POST(req: NextRequest) {
   if (!rl.success) return rateLimitResponse(rl)
 
   audit(req, { action: 'content.variants', resource: 'content', userId })
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured.' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
 
   const body = await req.json() as { content?: string; format?: FormatId; tone?: ToneId }
 
@@ -93,17 +85,22 @@ Output ONLY the rewritten content, ready to publish.
 ${formatContext}
 ${toneContext}`
 
-    const { text } = await generateText({
-      model:           anthropic('claude-sonnet-4-6'),
+    const llm = await callClaude({
+      userId,
       prompt,
+      model:           'claude-sonnet-4-6',
+      sessionTag:      `content-variants-${trigger.id}`,
       maxOutputTokens: 2000,
       temperature:     0.85,
     })
+    if (llm.error || !llm.text) {
+      throw new Error(llm.error ?? 'Claude returned empty text')
+    }
 
     return {
       id:           trigger.id,
       triggerFocus: trigger.triggerFocus,
-      content:      text.trim(),
+      content:      llm.text.trim(),
     } satisfies ContentVariant
   })
 

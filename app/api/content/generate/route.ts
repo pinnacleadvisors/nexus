@@ -10,8 +10,6 @@
  */
 
 import { NextRequest } from 'next/server'
-import { generateText, streamText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
@@ -22,6 +20,7 @@ import {
   getTemplate,
   getToneProfile,
 } from '@/lib/neuro-content'
+import { callClaude } from '@/lib/claw/llm'
 import type { GenerateContentRequest, PrincipleScore } from '@/lib/neuro-content'
 
 export const runtime    = 'nodejs'
@@ -77,19 +76,22 @@ ${toneSection}
 Write ONLY the final content — no preamble, no meta-commentary, no explanations. Output only what should be published.`
 }
 
-async function scoreContent(content: string): Promise<{
+async function scoreContent(userId: string, content: string): Promise<{
   overallScore: number
   weaknesses:   string[]
   improvements: string[]
 }> {
   const prompt = buildScoringPrompt(content)
 
-  const { text } = await generateText({
-    model:           anthropic('claude-haiku-4-5-20251001'),
+  const llm = await callClaude({
+    userId,
     prompt,
+    model:           'claude-haiku-4-5-20251001',
+    sessionTag:      'content-score-internal',
     maxOutputTokens: 1200,
     temperature:     0.1,
   })
+  const text = llm.text
 
   try {
     let parsed: {
@@ -142,13 +144,6 @@ export async function POST(req: NextRequest) {
     { status: 402, headers: { 'Content-Type': 'application/json' } },
   )
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured.' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
   const body = await req.json() as GenerateContentRequest
 
   if (!body.topic?.trim()) {
@@ -186,19 +181,27 @@ export async function POST(req: NextRequest) {
         formatId,
         toneId,
       )
-      const { text } = await generateText({
-        model:           anthropic('claude-sonnet-4-6'),
+      const llm = await callClaude({
+        userId,
         prompt:          genPrompt,
+        model:           'claude-sonnet-4-6',
+        sessionTag:      'content-gen',
         maxOutputTokens: 2000,
         temperature:     0.8,
       })
-      draft = text.trim()
+      if (llm.error || !llm.text) {
+        return new Response(
+          JSON.stringify({ error: llm.error ?? 'Generation failed' }),
+          { status: 502, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      draft = llm.text.trim()
     } else {
       // Revision pass
       const template = getTemplate(formatId as never)
       const tone     = getToneProfile(toneId)
 
-      const { score, weaknesses, improvements } = await scoreContent(draft).then(s => ({
+      const { score, weaknesses, improvements } = await scoreContent(userId, draft).then(s => ({
         score:        s.overallScore,
         weaknesses:   s.weaknesses,
         improvements: s.improvements,
@@ -215,33 +218,29 @@ export async function POST(req: NextRequest) {
         tone?.voice        ?? toneId,
       )
 
-      const { text } = await generateText({
-        model:           anthropic('claude-sonnet-4-6'),
+      const llm = await callClaude({
+        userId,
         prompt:          revisionPrompt,
+        model:           'claude-sonnet-4-6',
+        sessionTag:      'content-revise',
         maxOutputTokens: 2000,
         temperature:     0.7,
       })
-      draft = text.trim()
+      if (!llm.error && llm.text) {
+        draft = llm.text.trim()
+      }
     }
   }
 
   // Final score of the last draft
-  const { overallScore, weaknesses, improvements } = await scoreContent(draft)
+  const { overallScore } = await scoreContent(userId, draft)
   bestScore = overallScore
 
   // If we only did one iteration, still do a score pass
   if (iterations === 1 && bestScore === 0) {
-    const s = await scoreContent(draft)
+    const s = await scoreContent(userId, draft)
     bestScore = s.overallScore
   }
-
-  // Stream the final content back
-  const result = await streamText({
-    model:           anthropic('claude-sonnet-4-6'),
-    prompt:          `Return the following content exactly as provided, with no changes:\n\n${draft}`,
-    maxOutputTokens: 2500,
-    temperature:     0,
-  })
 
   // Build response headers
   const headers: Record<string, string> = {

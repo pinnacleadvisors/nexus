@@ -6,24 +6,14 @@ import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
 import {
   Lightbulb,
-  BookOpen,
   Workflow,
   LayoutDashboard,
   Settings,
-  Kanban,
-  GitBranch,
   Share2,
-  Network,
-  Sparkles,
-  Bot,
-  Zap,
-  Wrench,
-  Code2,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   Library,
-  MessageCircle,
   FileText,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -46,55 +36,35 @@ interface NavGroup {
 
 type NavItem = NavLink | NavGroup
 
+// Five top-level surfaces, mapped to the operator's mental model:
+//   Mission Control = Watch     (default landing)
+//   Ideas           = Capture
+//   Pipeline        = Decide    (board + automation library + swarm)
+//   Knowledge       = Learn     (graph + memory)
+//   Toolbox         = Reusable assets (agents, tools, snippets)
+//   Settings        = Admin     (everything that lived under Manage Platform)
 const NAV: NavItem[] = [
-  { type: 'link', href: '/idea',                 label: 'Idea',              icon: Lightbulb },
-  { type: 'link', href: '/idea-library',         label: 'Idea Library',      icon: BookOpen },
-  { type: 'link', href: '/automation-library',   label: 'Automation Library', icon: Workflow },
-  { type: 'link', href: '/dashboard',            label: 'Dashboard',         icon: LayoutDashboard },
-  { type: 'link', href: '/manage-platform',      label: 'Manage Platform',   icon: Settings },
-  {
-    type: 'group',
-    id: 'subfunctions',
-    label: 'Subfunctions',
-    icon: Network,
-    children: [
-      { type: 'link', href: '/board',            label: 'Board',      icon: Kanban },
-      { type: 'link', href: '/dashboard/org',    label: 'Org Chart',  icon: GitBranch },
-      { type: 'link', href: '/graph',            label: 'Graph',      icon: Share2 },
-      { type: 'link', href: '/swarm',            label: 'Swarm',      icon: Network },
-      { type: 'link', href: '/tools/consultant', label: 'Consultant', icon: MessageCircle },
-      { type: 'link', href: '/tools/content',    label: 'Content',    icon: Sparkles },
-    ],
-  },
-  {
-    type: 'group',
-    id: 'reusable',
-    label: 'Reusable Library',
-    icon: Library,
-    children: [
-      { type: 'link', href: '/tools/agents',         label: 'Agents',                   icon: Bot },
-      { type: 'link', href: '/tools/agents/managed', label: 'Managed Agents',           icon: Sparkles },
-      { type: 'link', href: '/tools/library',        label: 'Skills',                   icon: Zap },
-      { type: 'link', href: '/tools',            label: 'Tools',                    icon: Wrench },
-      { type: 'link', href: '/tools/code',       label: 'Reusable code functions',  icon: Code2 },
-    ],
-  },
+  { type: 'link', href: '/dashboard', label: 'Mission Control', icon: LayoutDashboard },
+  { type: 'link', href: '/idea',      label: 'Ideas',           icon: Lightbulb },
+  { type: 'link', href: '/board',     label: 'Pipeline',        icon: Workflow },
+  { type: 'link', href: '/graph',     label: 'Knowledge',       icon: Share2 },
+  { type: 'link', href: '/tools',     label: 'Toolbox',         icon: Library },
+  { type: 'link', href: '/settings',  label: 'Settings',        icon: Settings },
 ]
 
 function isActive(pathname: string, href: string) {
-  if (href === '/idea') return pathname === '/idea'
-  if (href === '/dashboard') return pathname === '/dashboard'
-  // Exact match so /tools/agents doesn't also light up for /tools/agents/managed
-  if (href === '/tools/agents') return pathname === '/tools/agents'
+  if (href === '/dashboard') return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+  if (href === '/idea')      return pathname === '/idea' || pathname.startsWith('/idea-library')
+  if (href === '/board')     return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
+  if (href === '/graph')     return pathname === '/graph'
+  if (href === '/tools')     return (pathname === '/tools' || pathname.startsWith('/tools/')) || pathname.startsWith('/manage-platform')
+  if (href === '/settings')  return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')
 }
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    subfunctions: true,
-    reusable: true,
-  })
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const pathname = usePathname() ?? ''
 
   function toggleGroup(id: string) {

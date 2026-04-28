@@ -12,6 +12,9 @@ import { auth } from '@clerk/nextjs/server'
 import { streamText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
+import { callGatewayStream } from '@/lib/claw/gateway-call'
+import { isGatewayHealthy } from '@/lib/claw/health'
 import type { BuildRequestType } from '@/lib/build/types'
 
 export const maxDuration = 60
@@ -89,14 +92,6 @@ export async function POST(req: Request) {
   const rl = await rateLimit(req as Parameters<typeof rateLimit>[0], { limit: 10, window: '1 m', prefix: 'build-plan' })
   if (!rl.success) return rateLimitResponse(rl)
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } },
-    )
-  }
-
   const body = await req.json() as {
     type: BuildRequestType
     description: string
@@ -107,13 +102,52 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ error: 'description is required' }), { status: 400 })
   }
 
+  const userPrompt = buildUserPrompt(body.type ?? 'feature', body.description, body.fileTree ?? '')
+
+  // ── Try gateway streaming first (plan-billed Opus) ─────────────────────
+  const cfg = await resolveClaudeCodeConfig(userId)
+  if (cfg && (await isGatewayHealthy(cfg.gatewayUrl))) {
+    const encoder = new TextEncoder()
+    const stream  = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const gw = await callGatewayStream(
+          {
+            gatewayUrl:  cfg.gatewayUrl,
+            bearerToken: cfg.bearerToken,
+            sessionTag:  'build-plan',
+            message:     `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`,
+            userId,
+            timeoutMs:   55_000,
+          },
+          {
+            onDelta: text => controller.enqueue(encoder.encode(text)),
+          },
+        )
+        // Quietly close on success or fall-through 404 (handled via API path below).
+        if (gw.ok || gw.status === 404) controller.close()
+        else {
+          controller.enqueue(encoder.encode(`\n\n[gateway error: ${gw.error}]`))
+          controller.close()
+        }
+      },
+    })
+    return new Response(stream, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Via': 'gateway' },
+    })
+  }
+
+  // ── Fallback: API key streamed Opus ────────────────────────────────────
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: 'No Claude provider configured' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
   const result = streamText({
     model:           anthropic('claude-opus-4-6'),
     system:          SYSTEM_PROMPT,
-    messages: [{
-      role:    'user',
-      content: buildUserPrompt(body.type ?? 'feature', body.description, body.fileTree ?? ''),
-    }],
+    messages: [{ role: 'user', content: userPrompt }],
     maxOutputTokens: 4096,
     temperature:     0.2,
   })

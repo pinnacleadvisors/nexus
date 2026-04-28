@@ -7,6 +7,9 @@ import AgentTable from '@/components/dashboard/AgentTable'
 import DateRangeFilter from '@/components/dashboard/DateRangeFilter'
 import AlertsPanel from '@/components/dashboard/AlertsPanel'
 import WorstOffendersWidget from '@/components/dashboard/WorstOffendersWidget'
+import ActiveRunsPanel from '@/components/dashboard/ActiveRunsPanel'
+import PendingReviewsPanel from '@/components/dashboard/PendingReviewsPanel'
+import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -114,11 +117,11 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: '#e8e8f0' }}>
-            Operations Dashboard
+            Mission Control
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-sm" style={{ color: '#9090b0' }}>
-              Live performance across all agents and businesses
+              What the Hive is doing right now, what needs your attention, and what it&apos;s costing.
             </p>
             {/* Data source indicator */}
             <span
@@ -161,6 +164,13 @@ export default function DashboardPage() {
             {loading ? '↻' : '↺'} Refresh
           </button>
         </div>
+      </div>
+
+      {/* ── Mission Control row: runs + reviews + spend ────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ActiveRunsPanel />
+        <PendingReviewsPanel />
+        <TodaySpendWidget />
       </div>
 
       {/* ── KPI grid ────────────────────────────────────────────────────── */}

@@ -16,9 +16,26 @@ const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
 const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 120_000)
 const DEBUG_HMAC    = process.env.DEBUG_HMAC === '1'
 
+// Defence-in-depth allowlist. When set, every signed POST must carry an
+// X-Nexus-User-Id header matching one of these Clerk user IDs. Bearer + HMAC
+// alone are not enough — if the bearer ever leaks, this stops it from being
+// used to drain your Max plan from anywhere except a session belonging to you.
+// Leave unset to allow any caller with a valid bearer (legacy behaviour).
+const ALLOWED_USER_IDS = new Set(
+  (process.env.ALLOWED_USER_IDS ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
+)
+const USER_ID_GATE_ACTIVE = ALLOWED_USER_IDS.size > 0
+
 if (!BEARER) {
   console.error('[gateway] CLAUDE_GATEWAY_BEARER is required — refusing to start')
   process.exit(1)
+}
+
+if (USER_ID_GATE_ACTIVE) {
+  console.log(`[gateway] ALLOWED_USER_IDS gate active (${ALLOWED_USER_IDS.size} ids)`)
 }
 
 const queue = new WorkQueue(QUEUE_MAX)
@@ -99,6 +116,20 @@ app.post('/api/sessions/:sessionId/messages', async c => {
     return c.json({ ok: false, error: 'unauthorized', reason: verdict.reason }, 401)
   }
 
+  // Allowlist gate (defence-in-depth). Even with a valid bearer + signature,
+  // refuse the request unless it identifies a known user. The Vercel app
+  // injects the Clerk userId via callGateway → X-Nexus-User-Id; out-of-band
+  // callers (cron, smoke tests) can be allowlisted via ALLOWED_USER_IDS too.
+  if (USER_ID_GATE_ACTIVE) {
+    const userId = c.req.header('x-nexus-user-id')?.trim() ?? ''
+    if (!userId || !ALLOWED_USER_IDS.has(userId)) {
+      return c.json(
+        { ok: false, error: 'unauthorized', reason: 'user-not-allowed' },
+        403,
+      )
+    }
+  }
+
   let body: z.infer<typeof messageBodySchema>
   try {
     const json = JSON.parse(bodyText) as unknown
@@ -151,6 +182,101 @@ app.post('/api/sessions/:sessionId/messages', async c => {
     model:      result.model,
     durationMs: result.durationMs,
     cliSessionId: result.sessionId,
+  })
+})
+
+// ── Streaming variant ──────────────────────────────────────────────────────
+// Same auth + body shape as /messages, but writes the response as
+// `text/event-stream`. Each assistant delta is sent as `event: delta` with
+// the raw text chunk in `data:`; the final `result` event carries usage and
+// duration. Callers that don't need progressive UX should keep using the
+// JSON endpoint above — this one only exists for chat / agent / build/plan
+// surfaces where token-by-token output materially improves the experience.
+app.post('/api/sessions/:sessionId/stream', async c => {
+  const sessionId = c.req.param('sessionId')
+  if (!sessionId || sessionId.length > 200) {
+    return c.json({ ok: false, error: 'invalid sessionId' }, 400)
+  }
+
+  const bodyText = await c.req.text()
+  const auth     = c.req.header('authorization') ?? ''
+  const bearer   = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : null
+  const sig      = c.req.header('x-nexus-signature') ?? null
+  const tsHeader = c.req.header('x-nexus-timestamp')
+  const ts       = tsHeader ? Number(tsHeader) : undefined
+
+  const verdict = verifyHmac({
+    bodyText, bearer, signature: sig, sharedSecret: BEARER, timestampMs: ts,
+  })
+  if (!verdict.ok) {
+    return c.json({ ok: false, error: 'unauthorized', reason: verdict.reason }, 401)
+  }
+  if (USER_ID_GATE_ACTIVE) {
+    const uid = c.req.header('x-nexus-user-id')?.trim() ?? ''
+    if (!uid || !ALLOWED_USER_IDS.has(uid)) {
+      return c.json({ ok: false, error: 'unauthorized', reason: 'user-not-allowed' }, 403)
+    }
+  }
+
+  let body: z.infer<typeof messageBodySchema>
+  try {
+    body = messageBodySchema.parse(JSON.parse(bodyText))
+  } catch (err) {
+    return c.json({ ok: false, error: 'invalid body', detail: (err as Error).message }, 400)
+  }
+
+  const agentSlug = body.agent && isSafeSlug(body.agent) ? body.agent : null
+
+  // Build an SSE stream. The CLI is spawned inside a queued task so we still
+  // serialise — only one Claude CLI runs at a time, matching the JSON path.
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      function send(event: string, data: unknown) {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+      }
+      send('open', { sessionId })
+
+      try {
+        const result = await queue.enqueue(() => runClaude({
+          agentSlug,
+          message:   body.content,
+          env:       body.env,
+          repoPath:  REPO_PATH,
+          timeoutMs: REQUEST_MAX_MS,
+          onDelta:   (delta) => send('delta', { text: delta }),
+        }))
+        if (!result.ok) {
+          send('error', { error: result.error ?? 'claude_cli_failed', durationMs: result.durationMs })
+        } else {
+          send('result', {
+            ok:           true,
+            content:      result.content,
+            usage:        result.usage,
+            model:        result.model,
+            durationMs:   result.durationMs,
+            cliSessionId: result.sessionId,
+          })
+        }
+      } catch (err) {
+        if (err instanceof QueueFullError) {
+          send('error', { error: 'queue_full', depth: err.depth, max: err.maxDepth })
+        } else {
+          send('error', { error: 'spawn_failed', detail: (err as Error).message })
+        }
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type':       'text/event-stream',
+      'Cache-Control':      'no-cache, no-transform',
+      'Connection':         'keep-alive',
+      'X-Accel-Buffering':  'no',
+    },
   })
 })
 
