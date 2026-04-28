@@ -14,6 +14,7 @@ const BEARER        = process.env.CLAUDE_GATEWAY_BEARER ?? ''
 const REPO_PATH     = process.env.NEXUS_REPO_PATH ?? '/repo'
 const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
 const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 120_000)
+const DEBUG_HMAC    = process.env.DEBUG_HMAC === '1'
 
 if (!BEARER) {
   console.error('[gateway] CLAUDE_GATEWAY_BEARER is required — refusing to start')
@@ -71,6 +72,29 @@ app.post('/api/sessions/:sessionId/messages', async c => {
     sharedSecret: BEARER,
     timestampMs:  ts,
   })
+
+  // Gated debug log so we can diagnose 401 bad-signature in transit (e.g.
+  // Cloudflare Tunnel mutating the body). NEVER enable in normal operation —
+  // the bearer hash + body bytes leak into Coolify logs. Set DEBUG_HMAC=1
+  // only while diagnosing, then unset.
+  if (DEBUG_HMAC) {
+    const { createHash, createHmac } = await import('node:crypto')
+    const expected = 'sha256=' + createHmac('sha256', BEARER).update(bodyText).digest('hex')
+    const bytes = Buffer.from(bodyText, 'utf8')
+    const hex   = bytes.toString('hex')
+    const bearerHash = bearer ? createHash('sha256').update(bearer).digest('hex') : 'null'
+    const expectedBearerHash = createHash('sha256').update(BEARER).digest('hex')
+    console.log('[debug-hmac] verdict=' + (verdict.ok ? 'ok' : verdict.reason))
+    console.log('[debug-hmac] bodyLen=' + bytes.length)
+    console.log('[debug-hmac] bodyHex=' + hex)
+    console.log('[debug-hmac] bodyAscii=' + JSON.stringify(bodyText))
+    console.log('[debug-hmac] sigReceived=' + sig)
+    console.log('[debug-hmac] sigExpected=' + expected)
+    console.log('[debug-hmac] bearerHashSent=' + bearerHash.slice(0, 16) + '...')
+    console.log('[debug-hmac] bearerHashEnv =' + expectedBearerHash.slice(0, 16) + '...')
+    console.log('[debug-hmac] tsReceived=' + tsHeader + ' tsParsed=' + ts + ' now=' + Date.now())
+  }
+
   if (!verdict.ok) {
     return c.json({ ok: false, error: 'unauthorized', reason: verdict.reason }, 401)
   }
