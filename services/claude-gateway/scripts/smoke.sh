@@ -120,7 +120,17 @@ echo "✓ unsigned POST correctly rejected"
 # ── 3. Signed POST → real claude reply ───────────────────────────────────────
 echo
 BODY='{"role":"user","content":"Reply with exactly: pong","agent":null,"env":{}}'
-SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$BEARER" | awk '{print $2}')"
+# Use $NF (last field) rather than $2 — macOS LibreSSL `openssl dgst` output
+# format differs from GNU/OpenSSL3, sometimes leaving the hash as the only
+# field. $NF is robust across both.
+SIG_HEX="$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$BEARER" | awk '{print $NF}')"
+if ! printf '%s' "$SIG_HEX" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+  echo "✘ openssl produced an unexpected signature: '$SIG_HEX'" >&2
+  echo "  Try: openssl version; printf 'x' | openssl dgst -sha256 -hmac 'k'" >&2
+  echo "  We expected a single line ending in a 64-char hex digest." >&2
+  exit 1
+fi
+SIG="sha256=$SIG_HEX"
 TS="$(now_ms)"
 
 echo "▶ POST $HOST/api/sessions/smoke/messages  (signed)"
