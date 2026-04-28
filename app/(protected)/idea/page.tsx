@@ -37,6 +37,10 @@ export default function IdeaPage() {
   const [hydrated, setHydrated] = useState(false)
   const [usingServer, setUsingServer] = useState(false)
 
+  // Last submit's routing decision — shown briefly so the operator sees
+  // whether the analyse call hit the gateway (free) or fell back to API.
+  const [lastVia, setLastVia] = useState<'gateway' | 'api' | null>(null)
+
   async function refreshLibrary() {
     try {
       const res = await fetch('/api/ideas')
@@ -96,7 +100,12 @@ export default function IdeaPage() {
       return
     }
 
-    const { card } = await res.json() as { card: IdeaCardType | Omit<IdeaCardType, 'id' | 'createdAt'> }
+    const json = await res.json() as {
+      card: IdeaCardType | Omit<IdeaCardType, 'id' | 'createdAt'>
+      via?: 'gateway' | 'api'
+    }
+    const { card } = json
+    if (json.via) setLastVia(json.via)
     const hasId = (c: IdeaCardType | Omit<IdeaCardType, 'id' | 'createdAt'>): c is IdeaCardType =>
       'id' in c && typeof c.id === 'string'
     const full: IdeaCardType = hasId(card)
@@ -202,6 +211,21 @@ export default function IdeaPage() {
             {ideas.length > 0 && (
               <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#1a1a2e', color: '#9090b0' }}>
                 {ideas.length}
+              </span>
+            )}
+            {lastVia && (
+              <span
+                className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
+                style={
+                  lastVia === 'gateway'
+                    ? { backgroundColor: '#0d2e1a', color: '#4ade80', border: '1px solid #22c55e44' }
+                    : { backgroundColor: '#2a1116', color: '#ff7a90', border: '1px solid #ff4d6d44' }
+                }
+                title={lastVia === 'gateway'
+                  ? 'Last analyse went through the Claude Code gateway — plan-billed.'
+                  : 'Last analyse fell back to ANTHROPIC_API_KEY — token-billed. Check the Settings → AI tab.'}
+              >
+                Last analyse: {lastVia === 'gateway' ? 'Max (free)' : 'API (paying)'}
               </span>
             )}
           </div>
