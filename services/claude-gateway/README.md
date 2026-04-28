@@ -89,6 +89,32 @@ The gateway is a single-worker FIFO queue (Max plan = one identity). Burst
 requests serialise; a queue depth >8 is rejected with 503 so n8n workflows fail
 fast rather than backing up. Bump `QUEUE_MAX_DEPTH` if you add a second seat.
 
+## Debugging `401 bad-signature` from outside
+
+When a signed POST works from inside the Docker network (`docker run --rm
+--network coolify curlimages/curl ...`) but fails through Cloudflare Tunnel,
+something in transit is mutating bytes the HMAC was computed over. Set
+`DEBUG_HMAC=1` on the Coolify service, redeploy, and replay the request.
+The gateway logs:
+
+```
+[debug-hmac] verdict=bad-signature
+[debug-hmac] bodyLen=74
+[debug-hmac] bodyHex=7b22726f6c65...
+[debug-hmac] bodyAscii="{\"role\":\"user\",...}"
+[debug-hmac] sigReceived=sha256=...
+[debug-hmac] sigExpected=sha256=...
+[debug-hmac] bearerHashSent=9c0a2e0cb1f0e03a...
+[debug-hmac] bearerHashEnv =9c0a2e0cb1f0e03a...
+[debug-hmac] tsReceived=... tsParsed=... now=...
+```
+
+Compare `bodyHex` from the failing run against the bytes your client signs.
+Any difference (extra bytes, encoding change, lowercased Unicode) is what
+the tunnel is doing. **Unset `DEBUG_HMAC` once you have the data** — the
+log line includes a SHA-256 of the bearer + the full request body, both of
+which are sensitive.
+
 ## Local dev
 
 ```bash
