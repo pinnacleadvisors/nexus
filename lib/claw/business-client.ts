@@ -1,10 +1,21 @@
 /**
- * Per-business OpenClaw config resolution.
+ * Per-business AI gateway config resolution.
  *
  * Layered fallback (in order of precedence):
  *   1. business_secrets   user_secrets row keyed by `kind = 'business:<slug>'`
- *   2. user default       `kind = 'openclaw'`
- *   3. environment        `OPENCLAW_GATEWAY_URL` + `OPENCLAW_BEARER_TOKEN`
+ *   2. user default       `kind = 'claude-code'` (self-hosted Claude Code on Hostinger/Coolify, drains the Max plan)
+ *   3. user default       `kind = 'openclaw'`    (legacy / fallback)
+ *   4. environment        `CLAUDE_CODE_GATEWAY_URL` + `CLAUDE_CODE_BEARER_TOKEN`
+ *   5. environment        `OPENCLAW_GATEWAY_URL`     + `OPENCLAW_BEARER_TOKEN`
+ *
+ * Claude Code is preferred because it's plan-billed (Max subscription) instead
+ * of API-billed. OpenClaw is retained as a fallback even when no instance is
+ * deployed — its presence in this chain is what makes the priority order
+ * documented in AGENTS.md a one-line config change rather than a code edit.
+ *
+ * The returned BusinessClawConfig has a stable shape so dispatchToOpenClaw and
+ * the /api/chat route can treat both gateways identically — both speak the
+ * HMAC-signed POST /api/sessions/:id/messages protocol.
  *
  * Slug constraints mirror agent slugs in /api/claude-session/dispatch:
  * lowercase, hyphenated, max 60 chars. Validated by `isBusinessSlug`.
@@ -61,6 +72,30 @@ export async function getBusinessClawConfig(
   }
 }
 
+/**
+ * Resolves the Claude Code self-hosted gateway only — used by callers that
+ * specifically want the plan-billed path and intend to fall back themselves
+ * when it's not available.
+ */
+export async function resolveClaudeCodeConfig(
+  userId: string,
+): Promise<BusinessClawConfig | null> {
+  const userDefault = await getSecrets(userId, 'claude-code')
+  if (userDefault.gatewayUrl && userDefault.bearerToken) {
+    return {
+      gatewayUrl:  userDefault.gatewayUrl,
+      bearerToken: userDefault.bearerToken,
+      modelAlias:  userDefault.modelAlias,
+    }
+  }
+  const envUrl    = process.env.CLAUDE_CODE_GATEWAY_URL
+  const envBearer = process.env.CLAUDE_CODE_BEARER_TOKEN
+  if (envUrl && envBearer) {
+    return { gatewayUrl: envUrl, bearerToken: envBearer }
+  }
+  return null
+}
+
 export async function resolveClawConfig(
   userId: string,
   businessSlug?: string | null,
@@ -69,6 +104,9 @@ export async function resolveClawConfig(
     const cfg = await getBusinessClawConfig(userId, businessSlug)
     if (cfg) return cfg
   }
+  const claudeCode = await resolveClaudeCodeConfig(userId)
+  if (claudeCode) return claudeCode
+
   const userDefault = await getSecrets(userId, 'openclaw')
   if (userDefault.gatewayUrl && userDefault.bearerToken) {
     return {
