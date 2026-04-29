@@ -188,6 +188,20 @@ When the user says "create an agent that…" (or any paraphrase), follow `docs/a
 
 The Board review modal (`components/board/ReviewModal.tsx`) has a "Quality feedback" disclosure that POSTs to `/api/workflow-feedback`. The `workflow-optimizer` agent reads `open` rows, proposes a minimal diff against the producing agent's spec, and logs the change to `workflow_changelog` after the edit lands.
 
+### Write Size Discipline (avoid Opus stream timeouts)
+
+Long single-shot Write/Edit/Bash payloads are the #1 cause of API stream errors on Opus. The PreToolUse hook `.claude/hooks/check-write-size.sh` enforces these limits — exceeding them blocks the call with a chunking instruction. Defaults: 300 lines / 10 KB per Write/Edit, 300 lines per Bash heredoc.
+
+Patterns to use, in order of preference:
+
+- **New large file → skeleton + fill.** Write the file with section headers + empty bodies in call 1; Edit each section in its own call.
+- **Existing file → Edit, never Write.** Re-emitting the full file to change a few lines wastes the stream and risks timeout. For multi-section refactors, use anchored Edits (unique section markers) so each pass is idempotent.
+- **Append-only content → Bash heredoc append.** `cat >> path <<'EOF' ... EOF` keeps the model emitting only the new chunk.
+- **Bulk generated data → external script.** For 1k+ lines of seed data or scaffolded code, write a small Node/Python generator and run it once. Stream the *script*, not the data.
+- **After each chunk, Read to verify.** Stream errors leave files in undefined state — never blindly retry.
+
+For long-horizon work in `task_plan.md`: every atomic task should fit in one tool call under the 300-line cap. If a task implies a 1000-line file, split it into `Task Na — scaffold`, `Task Nb — section A`, `Task Nc — section B`. Commit per chunk so a stream error costs at most one task.
+
 ### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors
 - [ ] All interactive components have `'use client'`

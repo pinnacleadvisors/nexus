@@ -36,6 +36,15 @@
             "command": "[ -f memory/molecular/INDEX.md ] && echo 'molecularmemory: /molecularmemory_local index exists at memory/molecular/INDEX.md — check it before raw search. Atomic notes live in memory/molecular/atoms/, MOCs in memory/molecular/mocs/, entities in memory/molecular/entities/.' || true"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-write-size.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
