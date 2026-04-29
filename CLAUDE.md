@@ -2,6 +2,12 @@
 
 ---
 
+> **Cross-repo protocols** — the 3-layer memory architecture, long-horizon task protocol, write-size discipline, memory-hq usage, and skill routing rules below also live as a standalone doc at `docs/global-claude-protocols.md`. Copy that file into `~/.claude/CLAUDE.md` on each machine where you run Claude Code — it then applies to every repo, and the duplicated sections here can be trimmed (the only Nexus-specific section that must stay is `# Platform Memory — quick reference` at the bottom).
+>
+> **Follow-up TODO**: once `~/.claude/CLAUDE.md` is verified working from a sibling repo, replace lines 1–229 of this file with `@AGENTS.md` and a small Nexus-specific note. Tracked as Step 7 in `task_plan-memory-architecture.md`.
+
+---
+
 # Memory Architecture — the 3-layer system
 
 `memory/` is Nexus's canonical context base. Every session loads Layer 1 automatically, queries Layer 2 on-demand, and promotes Layer 3 scratch into Layer 2 before a session ends. Inspired by Felixcraft.ai / Nat Eliason's OpenClaw framework — layers separated by volatility.

@@ -201,3 +201,60 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
 | `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 180 000). |
 | `CLAUDE_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `claude-gw.<your-domain>` → this. |
+
+## Memory HQ — central molecular memory (Phase A — Step 2)
+
+Central knowledge graph at `pinnacleadvisors/memory-hq` (private). Used by every repo and AI model that integrates with the platform. Code: `lib/molecular/github-backend.mjs`, `lib/memory/scope.ts`, `lib/memory/locator.ts`, `.claude/skills/molecularmemory_local/github-commands.mjs`.
+
+| Var | Purpose |
+|-----|---------|
+| `MEMORY_HQ_REPO` | Default `pinnacleadvisors/memory-hq`. Override only for staging. |
+| `MEMORY_HQ_TOKEN` | **Fine-grained PAT** scoped to `pinnacleadvisors/memory-hq` only. Permissions: `Contents: Read and write` + `Metadata: Read` (the latter is auto-required for any fine-grained PAT). No Issues / PRs / Workflows / Admin / org scopes. 90-day expiry recommended. Separate from Phase 20 `MEMORY_TOKEN` so blast radius stays small if either leaks. |
+| `MEMORY_AUTHOR` | Optional. Stamps `frontmatter.author` on every write (e.g. `claude-agent:nexus-architect`, `openclaw:research`, `n8n:idea-builder`). Defaults to `cli` — set per-process. |
+| `MOLECULAR_BACKEND` | Optional. `local` (default) or `github`. Lets `cli.mjs` default to github mode without `--backend=github` on every call. |
+
+### Locator credentials (only needed for resolving asset locators)
+
+`lib/memory/locator.ts` reads these on demand. Each is optional — missing creds simply mean the locator returns `{url, content: null}` so callers fall back to the next entry in the locators array.
+
+| Var | Used by | Purpose |
+|-----|---------|---------|
+| `R2_ACCOUNT_ID` | `r2` locator | Cloudflare R2 account ID (resolves to bucket URL). |
+| `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` | `r2` locator | S3-compatible signing creds for R2. |
+| `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_REGION` | `s3` locator | Optional — only if a memory atom points at S3 (e.g. customer assets). |
+| `YOUTUBE_API_KEY` | `youtube` locator | Optional — fetches metadata/transcripts. Without it, locator still returns the watch URL. |
+
+### Multi-AI-model writers (Phase A — Step 3, future)
+
+When `/api/memory/event` is added, the same `MEMORY_HQ_TOKEN` is the only secret an external writer needs. OpenClaw, n8n, managed agents and external webhooks all post to that endpoint with their own `source:` value — no per-writer GitHub PATs are issued.
+
+## Memory HQ — Supabase mirror (Step 5)
+
+| Var | Purpose |
+|-----|---------|
+| `GITHUB_WEBHOOK_SECRET` | HMAC sha256 secret configured on the `pinnacleadvisors/memory-hq` repo webhook. The webhook posts to `<NEXUS_BASE_URL>/api/cron/sync-memory` on every push; the route verifies the `x-hub-signature-256` header before applying changes to the `mol_*` mirror tables. |
+
+Webhook setup (one-time, owner action):
+
+1. Generate a secret: `openssl rand -hex 32`
+2. Add to Doppler as `GITHUB_WEBHOOK_SECRET`
+3. `pinnacleadvisors/memory-hq` -> Settings -> Webhooks -> Add webhook
+   - Payload URL: `https://nexus.<your-domain>/api/cron/sync-memory`
+   - Content type: `application/json`
+   - Secret: paste the value from step 1
+   - Events: "Just the push event"
+   - Active: yes
+4. After setup, run a one-shot reconcile to seed the mirror:
+   `curl -H "Authorization: Bearer $CRON_SECRET" "$NEXUS_BASE_URL/api/cron/sync-memory?reconcile=1"`
+
+The nightly cron at `0 4 * * *` performs an automatic reconcile every day in case any push event was dropped.
+
+### Bootstrap (one-time, owner action)
+
+```bash
+gh auth login                              # if not already
+./scripts/bootstrap-memory-hq.sh           # creates pinnacleadvisors/memory-hq + seeds framework
+# then create the fine-grained PAT and add to Doppler as MEMORY_HQ_TOKEN
+```
+
+The bootstrap script is idempotent — re-run it to sync framework changes from `docs/framework/` into `memory-hq/framework/`. Devices then `node cli.mjs --backend=github framework-pull` to refresh their local `~/.claude/CLAUDE.md`.

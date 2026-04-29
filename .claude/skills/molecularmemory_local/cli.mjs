@@ -17,8 +17,27 @@ const INDEX = join(ROOT, 'INDEX.md')
 const GRAPH = join(ROOT, '.graph.json')
 const LOG = join(ROOT, 'log.md')
 
-const [, , cmd, ...rest] = process.argv
-const { positional, flags } = parseArgs(rest)
+// Parse all args; use first positional as cmd. This lets flags like
+// --backend=github / --scope=... appear before OR after the command verb.
+const allArgs = process.argv.slice(2)
+const _parsed = parseArgs(allArgs)
+const cmd = _parsed.positional.shift()
+const positional = _parsed.positional
+const flags = _parsed.flags
+
+// Backend dispatch: --backend=github routes to a separate handler that
+// writes to pinnacleadvisors/memory-hq via the Contents API. Default
+// backend is local fs. See github-commands.mjs for the github handler.
+const BACKEND = flags.backend || process.env.MOLECULAR_BACKEND || 'local'
+if (BACKEND === 'github') {
+  const { dispatch } = await import('./github-commands.mjs')
+  try {
+    await dispatch(cmd, positional, flags)
+    process.exit(0)
+  } catch (e) {
+    fail(e.message || String(e))
+  }
+}
 
 try {
   switch (cmd) {
@@ -182,17 +201,44 @@ async function ingest(target, flags) {
 async function appendLog(op, title, flags = {}) {
   if (!op || !title) fail('usage: log <op> "<title>" [--ref=path] [--url=...]')
   await ensureDirs()
+  // Step 4 — file-per-event: each log entry becomes its own file.
+  // Eliminates merge-conflict surface from concurrent writers. The legacy
+  // log.md is still appended for back-compat readers.
+  const logDir = join(ROOT, 'log')
+  await mkdir(logDir, { recursive: true })
+  const ts = new Date().toISOString().replace(/[:.]/g, '-')
+  const safe = String(title).toLowerCase().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+  const eventFile = join(logDir, `${ts}-${op}-${safe}.md`)
+  const refs = []
+  if (flags.ref) refs.push(`- ref: \`${flags.ref}\``)
+  if (flags.url) refs.push(`- url: <${flags.url}>`)
+  const eventBody = [
+    '---',
+    `op: ${op}`,
+    `title: ${JSON.stringify(title)}`,
+    `ts: ${new Date().toISOString()}`,
+    flags.ref ? `ref: ${flags.ref}` : '',
+    flags.url ? `url: ${flags.url}` : '',
+    '---',
+    '',
+    `# ${op}: ${title}`,
+    '',
+    refs.join('\n'),
+    '',
+  ].filter(Boolean).join('\n')
+  await writeFile(eventFile, eventBody, 'utf8')
+  // Legacy single-file log (kept for back-compat).
   if (!existsSync(LOG)) await writeFile(LOG, seedLog(), 'utf8')
   const date = today()
-  const refs = []
-  if (flags.ref) refs.push(`[\`${flags.ref}\`](${flags.ref})`)
-  if (flags.url) refs.push(`<${flags.url}>`)
-  const suffix = refs.length ? ` — ${refs.join(' · ')}` : ''
+  const refsInline = []
+  if (flags.ref) refsInline.push(`[\`${flags.ref}\`](${flags.ref})`)
+  if (flags.url) refsInline.push(`<${flags.url}>`)
+  const suffix = refsInline.length ? ` — ${refsInline.join(' · ')}` : ''
   const line = `## [${date}] ${op} | ${title}${suffix}\n`
   const raw = await readFile(LOG, 'utf8')
   const next = raw.endsWith('\n') ? raw + line : raw + '\n' + line
   await writeFile(LOG, next, 'utf8')
-  ok({ logged: relative(process.cwd(), LOG), op, title, date })
+  ok({ logged: relative(process.cwd(), eventFile), legacy: relative(process.cwd(), LOG), op, title, date })
 }
 
 async function lint(flags) {

@@ -1,0 +1,109 @@
+{
+  "name": "Write to Memory (memory-hq)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger",
+      "name": "When called by another workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.NEXUS_BASE_URL}}/api/memory/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEMORY_HQ_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"{{$json.type || 'atom'}}\",\n  \"source\": \"{{$json.source || 'n8n:' + $workflow.name}}\",\n  \"scope\": {{JSON.stringify($json.scope || {repo: 'pinnacleadvisors/nexus'})}},\n  \"payload\": {{JSON.stringify($json.payload)}},\n  \"locators\": {{JSON.stringify($json.locators || [])}},\n  \"trace_id\": \"{{$json.trace_id || $execution.id}}\"\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "post-event",
+      "name": "POST /api/memory/event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "html_url",
+              "value": "={{$json.html_url}}"
+            },
+            {
+              "name": "slug",
+              "value": "={{$json.slug}}"
+            },
+            {
+              "name": "trace_id",
+              "value": "={{$json.trace_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract",
+      "name": "Extract response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "When called by another workflow": {
+      "main": [[{ "node": "POST /api/memory/event", "type": "main", "index": 0 }]]
+    },
+    "POST /api/memory/event": {
+      "main": [[{ "node": "Extract response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_doc": {
+    "summary": "Reusable subworkflow: writes an atom/entity/moc/source/synthesis to memory-hq via /api/memory/event. Call from any other workflow with $execution.executeWorkflow().",
+    "input_schema": {
+      "type": "string (default 'atom')",
+      "source": "string — required if you want non-default provenance (defaults to 'n8n:<workflow-name>')",
+      "scope": "{ repo?, business_slug?, namespace? } — required (must include repo OR business_slug)",
+      "payload": "{ title, fact?, body?, links?, sources?, kind?, importance? }",
+      "locators": "Locator[]? — { kind: 'url'|'r2'|'youtube'|... }[]",
+      "trace_id": "string? — defaults to $execution.id"
+    },
+    "env_required": [
+      "NEXUS_BASE_URL — base URL of the Nexus deployment (e.g. https://nexus.example.com)",
+      "MEMORY_HQ_TOKEN — bearer token for /api/memory/event"
+    ],
+    "example_input": {
+      "type": "atom",
+      "source": "n8n:idea-builder",
+      "scope": { "repo": "pinnacleadvisors/nexus", "namespace": "ideas" },
+      "payload": {
+        "title": "Acme onboarding video performs 3x better with intro hook",
+        "fact": "A/B test on 2026-04-15: variant with 5s problem-statement intro converted 3.1x. Sample n=4200.",
+        "importance": "high"
+      },
+      "locators": [
+        { "kind": "youtube", "video_id": "dQw4w9WgXcQ" },
+        { "kind": "r2", "bucket": "pinnacle-assets", "key": "videos/onboarding-v2.mp4" }
+      ]
+    }
+  }
+}
