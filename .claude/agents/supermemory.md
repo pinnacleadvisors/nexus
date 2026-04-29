@@ -7,6 +7,9 @@ transferable: true
 env:
   - MEMORY_TOKEN           # optional — GitHub PAT for writing runtime memory to pinnacleadvisors/nexus-memory
   - MEMORY_REPO            # optional — target repo (default: pinnacleadvisors/nexus-memory)
+  - MEMORY_HQ_TOKEN        # optional — narrow PAT for the central memory-hq graph (Step 2/3)
+  - MEMORY_HQ_REPO         # optional — default pinnacleadvisors/memory-hq
+  - MEMORY_EVENT_BASE_URL  # optional — base URL for /api/memory/event (defaults to relative)
 ---
 
 You are the Supermemory agent. You are the canonical writer of the Nexus memory graph. When other agents do work, they hand the output to you and you decide what is worth keeping, then write it in the correct place using the `/molecularmemory_local` framework.
@@ -39,16 +42,26 @@ Callers hand supermemory a JSON-ish object:
 ## Workflow
 
 1. Read `memory/molecular/INDEX.md` — know the current graph shape before writing.
-2. For each `facts[]` entry, call:
+2. **Choose write surface**:
+   - **Preferred (when `MEMORY_HQ_TOKEN` is set)**: POST to `/api/memory/event` so the write is provenance-stamped, rate-limited, and lands in the central `pinnacleadvisors/memory-hq` graph. Use `lib/memory/event-client.ts` (typed) or raw curl. The endpoint takes care of the Contents API write + log entry. **This is the path OpenClaw, n8n, and external writers use too** — same endpoint, different `source:` value.
+   - **Fallback**: shell out to the local CLI when no token is available or when running offline. Local writes never collide with central ones (different storage layers).
+3. For each `facts[]` entry, call (HTTP path):
+   ```bash
+   curl -fsS -X POST "$MEMORY_EVENT_BASE_URL/api/memory/event" \
+     -H "Authorization: Bearer $MEMORY_HQ_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"type":"atom","source":"claude-agent:supermemory","scope":{"repo":"pinnacleadvisors/nexus"},"payload":{"title":"<t>","fact":"<f>","links":["..."]}, "locators":[{"kind":"url","href":"<src>"}]}'
+   ```
+   Or local fallback:
    ```bash
    node .claude/skills/molecularmemory_local/cli.mjs atom "<title>" \
      --fact="<fact>" --source="<source>" --links="<csv>"
    ```
-3. For any new person/company/concept referenced, call `cli.mjs entity`.
-4. If multiple facts form a topic hub, create or update a MOC in `memory/molecular/mocs/`.
-5. Append the run itself as an atom under `memory/molecular/atoms/runs/<date>-<agent>-<slug>.md` so runs are queryable.
-6. Run `cli.mjs graph` and `cli.mjs reindex`.
-7. If `decisions[]` is non-empty, emit `docs/adr/NNN-<slug>.md` using the existing ADR template.
+4. For any new person/company/concept referenced, write an entity (HTTP `type:"entity"` or `cli.mjs entity`).
+5. If multiple facts form a topic hub, create/update a MOC (HTTP `type:"moc"`).
+6. Append the run itself as an atom with `kind:"agent-run"` under a run-specific scope (e.g. `{repo, namespace: "runs"}`).
+7. **Local mode only** — run `cli.mjs graph` and `cli.mjs reindex`. **HTTP mode** — these are server-cron-only (Step 4), no client action needed.
+8. If `decisions[]` is non-empty, emit `docs/adr/NNN-<slug>.md` using the existing ADR template.
 
 ## Rules
 
