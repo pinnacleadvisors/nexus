@@ -227,3 +227,24 @@ Central knowledge graph at `pinnacleadvisors/memory-hq` (private). Used by every
 ### Multi-AI-model writers (Phase A — Step 3, future)
 
 When `/api/memory/event` is added, the same `MEMORY_HQ_TOKEN` is the only secret an external writer needs. OpenClaw, n8n, managed agents and external webhooks all post to that endpoint with their own `source:` value — no per-writer GitHub PATs are issued.
+
+## Memory HQ — Supabase mirror (Step 5)
+
+| Var | Purpose |
+|-----|---------|
+| `GITHUB_WEBHOOK_SECRET` | HMAC sha256 secret configured on the `pinnacleadvisors/memory-hq` repo webhook. The webhook posts to `<NEXUS_BASE_URL>/api/cron/sync-memory` on every push; the route verifies the `x-hub-signature-256` header before applying changes to the `mol_*` mirror tables. |
+
+Webhook setup (one-time, owner action):
+
+1. Generate a secret: `openssl rand -hex 32`
+2. Add to Doppler as `GITHUB_WEBHOOK_SECRET`
+3. `pinnacleadvisors/memory-hq` -> Settings -> Webhooks -> Add webhook
+   - Payload URL: `https://nexus.<your-domain>/api/cron/sync-memory`
+   - Content type: `application/json`
+   - Secret: paste the value from step 1
+   - Events: "Just the push event"
+   - Active: yes
+4. After setup, run a one-shot reconcile to seed the mirror:
+   `curl -H "Authorization: Bearer $CRON_SECRET" "$NEXUS_BASE_URL/api/cron/sync-memory?reconcile=1"`
+
+The nightly cron at `0 4 * * *` performs an automatic reconcile every day in case any push event was dropped.

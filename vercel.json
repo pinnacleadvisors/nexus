@@ -10,6 +10,10 @@
     {
       "path": "/api/cron/rebuild-graph-hq",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-memory?reconcile=1",
+      "schedule": "0 4 * * *"
     }
   ]
 }
