@@ -17,8 +17,27 @@ const INDEX = join(ROOT, 'INDEX.md')
 const GRAPH = join(ROOT, '.graph.json')
 const LOG = join(ROOT, 'log.md')
 
-const [, , cmd, ...rest] = process.argv
-const { positional, flags } = parseArgs(rest)
+// Parse all args; use first positional as cmd. This lets flags like
+// --backend=github / --scope=... appear before OR after the command verb.
+const allArgs = process.argv.slice(2)
+const _parsed = parseArgs(allArgs)
+const cmd = _parsed.positional.shift()
+const positional = _parsed.positional
+const flags = _parsed.flags
+
+// Backend dispatch: --backend=github routes to a separate handler that
+// writes to pinnacleadvisors/memory-hq via the Contents API. Default
+// backend is local fs. See github-commands.mjs for the github handler.
+const BACKEND = flags.backend || process.env.MOLECULAR_BACKEND || 'local'
+if (BACKEND === 'github') {
+  const { dispatch } = await import('./github-commands.mjs')
+  try {
+    await dispatch(cmd, positional, flags)
+    process.exit(0)
+  } catch (e) {
+    fail(e.message || String(e))
+  }
+}
 
 try {
   switch (cmd) {

@@ -142,7 +142,55 @@ This is the same discipline as the existing `memory/INDEX.md` flow, extended to 
 | "What do I know about topic X?"                | `memory/molecular/mocs/<topic>.md`  |
 | Session-durable decisions                      | `docs/adr/` (still the right place) |
 
+## Backends — `--backend=local` (default) vs `--backend=github`
+
+Every CLI command accepts `--backend=local|github`. Local writes to `memory/molecular/` in the current repo (historical behaviour). GitHub writes to `pinnacleadvisors/memory-hq` via the Contents API — no local clone required, accessible from any session in any repo.
+
+```bash
+# Local (default)
+node cli.mjs atom "X causes Y" --fact="..." --source=https://example.com
+
+# GitHub-hosted central memory (memory-hq)
+node cli.mjs --backend=github --scope=repo:pinnacleadvisors/nexus \
+  atom "X causes Y" --fact="..." --source=https://example.com \
+  --locator=url:https://example.com
+```
+
+### `--scope` (required for github mode)
+
+Atoms in `memory-hq` carry a structured `scope` so the same title can exist independently across projects/businesses. Layout: `<kind>/<scope-id>/<slug>.md`.
+
+```bash
+--scope=repo:pinnacleadvisors/nexus
+--scope=business:acme-coffee,namespace:research
+--scope='{"repo":"pinnacleadvisors/nexus","namespace":"integration"}'
+```
+
+When omitted in github mode, the CLI infers `scope.repo` from `git remote get-url origin`.
+
+### `--locator` (optional)
+
+Structured asset pointer attached to an atom. Multi-locator atoms self-heal — a 404 on R2 falls back to the next entry. Supported kinds: `url`, `youtube`, `github`, `r2`, `s3`, `vercel-blob`, `local`. Complex shapes use JSON via `--locators=[...]`.
+
+```bash
+--locator=url:https://docs.example.com/onboarding
+--locator=youtube:dQw4w9WgXcQ
+--locators='[{"kind":"r2","bucket":"pinnacle-assets","key":"videos/onboarding.mp4"}]'
+```
+
+### Required env (github mode)
+
+| Var | Purpose |
+|---|---|
+| `MEMORY_HQ_REPO` | Default `pinnacleadvisors/memory-hq`. |
+| `MEMORY_HQ_TOKEN` | PAT scoped to `pinnacleadvisors/memory-hq` only (contents r/w). Separate from the Phase 20 `MEMORY_TOKEN`. |
+| `MEMORY_AUTHOR` | Optional. Stamps `frontmatter.author` (e.g. `claude-agent:nexus-architect`). Defaults to `cli`. |
+
+### What's *not* in github mode (yet)
+
+`graph`, `reindex`, `lint`, `touch`, `supersede`, `migrate-decay` are no-ops in github mode. These are owned by the `/api/cron/rebuild-graph` job that runs server-side against `memory-hq` (Step 4). Use local mode for ad-hoc graph rebuilds during development.
+
 ## Limitations
-- Storage is markdown files — no server, no embeddings, no vector search. Full-text only.
+- Local storage is markdown files — no server, no embeddings, no vector search. Full-text only. (GitHub mode adds a Supabase + pgvector mirror in Step 5.)
 - Ranking is connectivity-weighted term matching; it won't find semantic neighbours the way an embedding store would.
 - Dense linking requires discipline; the skill can't force it — Claude must follow the rules above.
