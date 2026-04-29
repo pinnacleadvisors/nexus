@@ -8,6 +8,7 @@ import { verifyHmac } from './auth.js'
 import { WorkQueue, QueueFullError } from './queue.js'
 import { runClaude } from './spawn.js'
 import { isSafeSlug } from './agentSpec.js'
+import { JobStore } from './jobStore.js'
 
 const PORT          = Number(process.env.CLAUDE_GATEWAY_PORT ?? 3000)
 const BEARER        = process.env.CLAUDE_GATEWAY_BEARER ?? ''
@@ -39,6 +40,7 @@ if (USER_ID_GATE_ACTIVE) {
 }
 
 const queue = new WorkQueue(QUEUE_MAX)
+const jobs  = new JobStore()
 const app   = new Hono()
 
 // One-line request log so the operator can confirm calls actually hit the
@@ -82,11 +84,12 @@ app.get('/health', async c => {
     loggedIn = false
   }
   return c.json({
-    ok:         true,
+    ok:           true,
     loggedIn,
-    queueDepth: queue.depth,
-    queueMax:   QUEUE_MAX,
-    repoPath:   REPO_PATH,
+    queueDepth:   queue.depth,
+    queueMax:     QUEUE_MAX,
+    repoPath:     REPO_PATH,
+    jobsTracked:  jobs.size(),
   })
 })
 
@@ -203,6 +206,109 @@ app.post('/api/sessions/:sessionId/messages', async c => {
     model:      result.model,
     durationMs: result.durationMs,
     cliSessionId: result.sessionId,
+  })
+})
+
+// ── Async job variant ──────────────────────────────────────────────────────
+// `POST /api/jobs` enqueues the same shape as `/messages` but returns a jobId
+// immediately instead of blocking on the spawned CLI. Use this when the
+// caller (Vercel function, n8n node) has its own short timeout that the CLI
+// can't fit inside. Poll `GET /api/jobs/:jobId` until status is `done` or
+// `error` and pick up the result.
+//
+// Auth shape mirrors `/messages`: bearer + HMAC over the body + ALLOWED_USER_IDS.
+// The GET counterpart needs only the bearer (no body to sign).
+app.post('/api/jobs', async c => {
+  const bodyText = await c.req.text()
+  const auth     = c.req.header('authorization') ?? ''
+  const bearer   = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : null
+  const sig      = c.req.header('x-nexus-signature') ?? null
+  const tsHeader = c.req.header('x-nexus-timestamp')
+  const ts       = tsHeader ? Number(tsHeader) : undefined
+
+  const verdict = verifyHmac({
+    bodyText, bearer, signature: sig, sharedSecret: BEARER, timestampMs: ts,
+  })
+  if (!verdict.ok) {
+    return c.json({ ok: false, error: 'unauthorized', reason: verdict.reason }, 401)
+  }
+  if (USER_ID_GATE_ACTIVE) {
+    const uid = c.req.header('x-nexus-user-id')?.trim() ?? ''
+    if (!uid || !ALLOWED_USER_IDS.has(uid)) {
+      return c.json({ ok: false, error: 'unauthorized', reason: 'user-not-allowed' }, 403)
+    }
+  }
+
+  let body: z.infer<typeof messageBodySchema>
+  try {
+    body = messageBodySchema.parse(JSON.parse(bodyText))
+  } catch (err) {
+    return c.json({ ok: false, error: 'invalid body', detail: (err as Error).message }, 400)
+  }
+
+  const agentSlug  = body.agent && isSafeSlug(body.agent) ? body.agent : null
+  const sessionTag = c.req.header('x-nexus-session-tag') ?? null
+  const jobId      = jobs.create({ agentSlug, sessionTag })
+
+  // Fire-and-forget — but enforce queue admission UP FRONT so the caller
+  // gets a 503 instead of a phantom jobId that will never advance.
+  if (queue.depth >= QUEUE_MAX) {
+    jobs.markFailed(jobId, 'queue_full')
+    return c.json({ ok: false, error: 'queue_full', depth: queue.depth, max: QUEUE_MAX }, 503)
+  }
+
+  // Detached promise: we deliberately don't await. The job advances inside the
+  // queue's existing FIFO drain loop and writes its result back into the store.
+  void queue.enqueue(async () => {
+    jobs.markRunning(jobId)
+    const result = await runClaude({
+      agentSlug,
+      message:   body.content,
+      env:       body.env,
+      repoPath:  REPO_PATH,
+      timeoutMs: REQUEST_MAX_MS,
+    })
+    jobs.markDone(jobId, result)
+    return result
+  }).catch(err => {
+    if (err instanceof QueueFullError) {
+      jobs.markFailed(jobId, 'queue_full')
+    } else {
+      jobs.markFailed(jobId, (err as Error).message ?? 'spawn_failed')
+    }
+  })
+
+  return c.json({ ok: true, jobId, status: 'pending' })
+})
+
+app.get('/api/jobs/:jobId', async c => {
+  const auth   = c.req.header('authorization') ?? ''
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : null
+  // GETs aren't HMAC-signed (no body), but we still require the bearer match.
+  if (!bearer || bearer !== BEARER) {
+    return c.json({ ok: false, error: 'unauthorized' }, 401)
+  }
+  if (USER_ID_GATE_ACTIVE) {
+    const uid = c.req.header('x-nexus-user-id')?.trim() ?? ''
+    if (!uid || !ALLOWED_USER_IDS.has(uid)) {
+      return c.json({ ok: false, error: 'unauthorized', reason: 'user-not-allowed' }, 403)
+    }
+  }
+
+  const jobId = c.req.param('jobId')
+  const job   = jobs.get(jobId)
+  if (!job) return c.json({ ok: false, error: 'not_found' }, 404)
+
+  return c.json({
+    ok:         true,
+    jobId:      job.jobId,
+    status:     job.status,
+    agent:      job.agentSlug,
+    sessionTag: job.sessionTag,
+    createdAt:  job.createdAt,
+    startedAt:  job.startedAt,
+    finishedAt: job.finishedAt,
+    result:     job.result,
   })
 })
 
