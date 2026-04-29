@@ -4,8 +4,9 @@ Goal: Make `~/.claude/CLAUDE.md` the single source of cross-repo protocols, lift
 
 Success criteria:
 - A new Claude Code session in *any* repo loads the long-horizon protocol, skill routing, and memory protocol from `~/.claude/CLAUDE.md` automatically. Per-repo `CLAUDE.md` shrinks to project-specific stack rules + file structure.
-- `cli.mjs --backend=github` reads/writes atoms, entities, MOCs, sources, and synthesis directly to a dedicated GitHub repo (default: `pinnacleadvisors/claude-memory`) with no local clone required. Local mode stays as an offline cache.
-- `POST /api/memory/event` accepts `{type, source, payload, trace_id}` from any caller authed with `MEMORY_TOKEN`. Behind it: GitHub write → optional Supabase mirror → audit log. OpenClaw + n8n + managed agents all use this same endpoint.
+- `cli.mjs --backend=github` reads/writes atoms, entities, MOCs, sources, and synthesis directly to a dedicated GitHub repo (`pinnacleadvisors/memory-hq` — private, multi-AI-model hub) with no local clone required. Local mode stays as an offline cache.
+- `POST /api/memory/event` accepts `{type, source, scope, payload, locators?, trace_id}` from any caller authed with `MEMORY_HQ_TOKEN` (a fresh narrow-scope PAT, separate from the Phase 20 `MEMORY_TOKEN`). Behind it: GitHub write → optional Supabase mirror → audit log. OpenClaw + n8n + managed agents all use this same endpoint.
+- **Cross-scope addressing**: every atom/entity carries a structured `scope: {repo?, business_slug?, namespace?}` so the same title (e.g. "Onboarding checklist") can exist independently across repos/businesses. Files live at `<kind>/<scope-id>/<slug>.md`. Every fact also carries `locators: [{kind, ...}]` — an array of structured asset pointers (kinds: `github`, `r2`, `s3`, `url`, `youtube`, `vercel-blob`, `local`) so an agent can fetch the underlying image, video, PDF, or source file from wherever it actually lives. Resolved by `lib/memory/locator.ts`.
 - Generated files (`INDEX.md`, `.graph.json`) are owned only by `POST /api/cron/rebuild-graph`; no client process touches them. `log.md` is replaced by `log/<iso>-<slug>.md` (file-per-event).
 - Optional Supabase mirror (atoms/entities/mocs/sources/synthesis tables + pgvector) is updated by a GitHub webhook → `/api/cron/sync-memory`. All read/query traffic shifts to Supabase; GitHub is touched only on writes.
 - Optional `mcp-memory` server exposes `memory_atom`, `memory_entity`, `memory_query`, `memory_search` to any Claude Code session in any repo.
@@ -15,7 +16,9 @@ Hard constraints:
 - Markdown stays the source of truth. Supabase is a derived read cache — if it ever drifts, replay from GitHub.
 - One file per atom/entity/MOC. Never coalesce. Two writers on different items must never collide.
 - Every write stamps `frontmatter.author: <source>` (e.g. `claude-agent:nexus-architect`, `openclaw:research`, `n8n:idea-builder`). Provenance is non-negotiable.
-- `MEMORY_TOKEN` lives in Doppler, never committed. Endpoint enforces `auth()` + rate-limit + per-source daily write cap.
+- Every write also stamps `frontmatter.scope` (at minimum `{repo: <owner>/<name>}` for repo-derived facts; `{business_slug, namespace}` for business-scoped facts). Atoms/entities without a scope are rejected by `/api/memory/event`.
+- Asset references go in `frontmatter.locators[]` with a discriminated `kind` field — never inline binary data. Locators are resolved by `lib/memory/locator.ts`, which carries the per-kind credentials (R2 keys, S3 IAM, etc.) from Doppler.
+- `MEMORY_HQ_TOKEN` (narrow PAT scoped to `pinnacleadvisors/memory-hq` only) lives in Doppler, never committed. Endpoint enforces `auth()` + rate-limit + per-source daily write cap.
 - No PII or secrets in atoms. The memory repo can be private, but treat its contents as if it were public.
 - `npx tsc --noEmit` passes. New routes have a basic happy-path test.
 - Branch: `claude/global-config-access-tzmUa`. No auto-merge to main; human gate on the PR.
@@ -42,6 +45,7 @@ Hard constraints:
 - `log.md` is append-only single file — also conflict-prone.
 - No `mcp-memory` server (deferred until API stabilizes).
 - `~/.claude/CLAUDE.md` is empty — no global protocols yet.
+- No cross-scope addressing — `frontmatter.source` is a free-text URL/path, not a structured `scope + locators[]` schema. Cannot disambiguate same-title facts across businesses; cannot point an agent at the actual asset (R2 video, YouTube link, S3 PDF) — only at a string that may or may not be fetchable.
 
 ### Risks
 
@@ -65,13 +69,15 @@ Each task is sized to fit one Write/Edit call under the 300-line hook limit. Tas
 
 ### Step 2 — CLI `--backend=github` mode
 
-- **T2a** Add `lib/molecular/github-backend.mjs` (~150 lines) wrapping Contents API: `getAtom(slug)`, `putAtom(slug, body, sha?)`, `deleteAtom(slug, sha)`, `listAtoms()`, plus the same for entities/mocs/sources/synthesis. Honors `CLAUDE_MEMORY_REPO` (default `pinnacleadvisors/claude-memory`) and `MEMORY_TOKEN`. SHA-based optimistic concurrency with 3 retries on 409. Parallel: yes.
-- **T2b** Refactor `cli.mjs` to read `--backend=github|local` (default `local`); abstract the fs layer into a `Backend` interface so `atom`, `entity`, `moc`, `source`, `synthesis`, `query`, `lint` route through it. Skip `graph` and `reindex` in github mode (server-cron-only — see Step 4). Parallel: no (depends on T2a).
-- **T2c** `.claude/skills/molecularmemory_local/SKILL.md` — document `--backend` flag and `CLAUDE_MEMORY_REPO` / `MEMORY_TOKEN` env vars. Parallel: yes.
-- **T2d** Bootstrap `pinnacleadvisors/claude-memory` repo with `atoms/`, `entities/`, `mocs/`, `sources/`, `synthesis/`, `log/` directories + a `README.md`. Done via `mcp__github__create_repository` + `mcp__github__push_files` (one batched commit). Parallel: yes.
-- **T2e** `memory/platform/SECRETS.md` — add `CLAUDE_MEMORY_REPO`, document `MEMORY_TOKEN` reuse from Phase 20. Parallel: yes.
+- **T2a** Add `lib/molecular/github-backend.mjs` (~180 lines) wrapping Contents API: `getAtom(scope, slug)`, `putAtom(scope, slug, body, sha?)`, `deleteAtom(scope, slug, sha)`, `listAtoms(scope?)`, plus the same shape for entities/mocs/sources/synthesis. Path layout: `<kind>/<scope-id>/<slug>.md` where `scope-id = sha1(JSON.stringify(canonicalScope)).slice(0,8) + '-' + (business_slug || repo-name)`. Honors `MEMORY_HQ_REPO` (default `pinnacleadvisors/memory-hq`) and `MEMORY_HQ_TOKEN`. SHA-based optimistic concurrency with 3 retries on 409. Parallel: yes.
+- **T2b** Refactor `cli.mjs` to read `--backend=github|local` (default `local`) and `--scope=<json>` flag; abstract the fs layer into a `Backend` interface so `atom`, `entity`, `moc`, `source`, `synthesis`, `query`, `lint` route through it. CLI auto-fills `scope.repo` from `git remote get-url origin` when omitted. Skip `graph` and `reindex` in github mode (server-cron-only — see Step 4). Parallel: no (depends on T2a).
+- **T2c** `.claude/skills/molecularmemory_local/SKILL.md` — document `--backend` + `--scope` flags, the new `MEMORY_HQ_REPO` / `MEMORY_HQ_TOKEN` env vars, and locator examples. Parallel: yes.
+- **T2d** Bootstrap `pinnacleadvisors/memory-hq` repo (private) with `atoms/`, `entities/`, `mocs/`, `sources/`, `synthesis/`, `log/`, `digest/` directories + a `README.md` documenting the scope layout, locator schema, and contributing AI models. Done via `mcp__github__create_repository` + `mcp__github__push_files` (one batched commit). Parallel: yes.
+- **T2e** `memory/platform/SECRETS.md` — add `MEMORY_HQ_REPO`, `MEMORY_HQ_TOKEN`, plus the per-locator-kind creds Doppler will need: `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` + `R2_ACCOUNT_ID`, `YOUTUBE_API_KEY`, etc. Parallel: yes.
+- **T2f** Add `lib/memory/locator.ts` (~120 lines) with `resolveLocator(locator) → {url, content?, mediaType, size?}` dispatching on `locator.kind`. Initial kinds: `github` (uses `mcp__github__` or PAT), `r2` (Cloudflare S3-compatible), `s3`, `url` (plain HTTP fetch), `youtube` (returns embed/watch URLs + transcript via API), `vercel-blob`, `local` (fs read; only when running outside Vercel). Each resolver returns a uniform shape; missing creds → returns `{url, content: null}` with a warning. Parallel: yes.
+- **T2g** Add `lib/memory/scope.ts` — `canonicalScope(input)` normalises `{repo, business_slug, namespace}`, computes the deterministic `scope-id`, validates required fields. Used by T2a + T3a + cli.mjs. Parallel: yes.
 
-Verify Step 2: `node cli.mjs --backend=github atom "Test fact" --fact="..." --source=test` creates a file in the central repo; `cli.mjs --backend=github query "Test"` finds it.
+Verify Step 2: `node cli.mjs --backend=github --scope='{"repo":"pinnacleadvisors/nexus"}' atom "Test fact" --fact="..." --source=test --locator=url:https://example.com` creates a file at `atoms/<scope-id>/test-fact.md` in `memory-hq`; `cli.mjs --backend=github query "Test"` finds it; `resolveLocator()` returns the URL.
 
 ### Step 3 — `/api/memory/event` universal write surface
 
@@ -138,7 +144,7 @@ When implementation begins, follow CLAUDE.md PDCA gates:
 - [x] **Step 1 — Write Size Discipline** — hook + settings wiring + AGENTS.md policy + this plan file. PR #TBD on `claude/global-config-access-tzmUa`.
 
 ### Remaining
-- [ ] Step 2 — CLI `--backend=github` mode (5 atomic tasks).
+- [ ] Step 2 — CLI `--backend=github` mode + scope + locator (7 atomic tasks: T2a–T2g).
 - [ ] Step 3 — `/api/memory/event` universal write surface (5 tasks).
 - [ ] Step 4 — Generated files cron-only + log-per-event (4 tasks).
 - [ ] Step 5 — Supabase mirror + webhook (6 tasks).
@@ -146,9 +152,17 @@ When implementation begins, follow CLAUDE.md PDCA gates:
 - [ ] Step 7 — Global `~/.claude/CLAUDE.md` (3 tasks).
 - [ ] Step 8 — Branch-per-agent + GitHub App (deferred until rate limits actually bite).
 
-### Blockers / Open Questions
-1. **Memory repo name** — `pinnacleadvisors/claude-memory` proposed; user picks final name before T2d.
-2. **MEMORY_TOKEN scope** — reuse the Phase 20 PAT or mint a separate one with narrower scope (only `claude-memory` repo)? Recommend separate for blast-radius isolation.
-3. **Public vs private memory repo** — private by default, but consider public if no PII ever lands there. Owner decision.
-4. **MCP install path** — bundle `mcp-memory` in this monorepo (`services/mcp-memory/`) or publish as standalone npm? Bundle first; extract later if other users want it.
-5. **Per-repo `memory/` directory** — keep `memory/platform/` and `memory/roadmap/` per-repo. Only `memory/molecular/` lifts to the central repo. Confirm before T7b.
+### Decisions locked (2026-04-29)
+1. **Memory repo name** → `pinnacleadvisors/memory-hq` (private). Naming reflects multi-AI-model future — not Claude-specific.
+2. **Token** → mint a fresh narrow-scope PAT `MEMORY_HQ_TOKEN` (only `pinnacleadvisors/memory-hq` repo, contents r/w). The Phase 20 `MEMORY_TOKEN` stays scoped to `pinnacleadvisors/nexus-memory`. Blast-radius isolation.
+3. **Visibility** → private. Default closed; can flip to public per-folder later if specific knowledge becomes shareable.
+4. **`mcp-memory` path** → bundle in monorepo at `services/mcp-memory/`. Extract to standalone npm only when a second consumer asks for it.
+5. **Per-repo `memory/` directories** → confirmed: only `memory/molecular/` lifts to `memory-hq`. `memory/platform/` and `memory/roadmap/` stay per-repo (project-specific). Step 7 will codify this in `~/.claude/CLAUDE.md`.
+
+### New capability locked: cross-scope addressing + locators
+- `frontmatter.scope: {repo?, business_slug?, namespace?}` disambiguates same-named atoms across projects/businesses. Storage layout: `<kind>/<scope-id>/<slug>.md` where `scope-id` is a deterministic 8-char SHA prefix + human-readable suffix.
+- `frontmatter.locators: [{kind, ...}]` — structured asset pointers. Initial kinds: `github`, `r2`, `s3`, `url`, `youtube`, `vercel-blob`, `local`. Resolved by `lib/memory/locator.ts` so any agent can fetch the actual image/video/PDF/source from wherever it lives. Multi-locator atoms self-heal (try next on 404).
+
+### Open before Step 3
+- **Per-source rate-limit defaults** for `/api/memory/event`. Proposed: 100 writes/min/source, 1000/day/source. Owner override via env.
+- **Locator credentials** — Doppler keys for R2/S3/YouTube need to be added before T2f resolver tests pass. Non-blocking for T2a–T2e.
