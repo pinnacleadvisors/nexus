@@ -141,16 +141,27 @@ When implementation begins, follow CLAUDE.md PDCA gates:
 ## Progress (as of 2026-04-29)
 
 ### Completed
-- [x] **Step 1 — Write Size Discipline** — hook + settings wiring + AGENTS.md policy + this plan file. PR #TBD on `claude/global-config-access-tzmUa`.
+- [x] **Step 1 — Write Size Discipline** — hook + settings wiring + AGENTS.md policy + this plan file. Commit `b834d02`.
+- [x] **Step 2 — CLI `--backend=github` mode + scope + locators** (T2a, T2b, T2c, T2e, T2f, T2g). Commit `895e7ed`. T2d (memory-hq repo bootstrap) is owner-action.
+- [x] **Step 3 — `/api/memory/event` universal write surface** (T3a, T3b, T3c-substitute, T3d, T3e). Commit `41ca0ca`.
+- [x] **Step 4 — Cron-only generated files + log-per-event** (T4a-T4d). Commit `2305185`.
+- [x] **Step 5 — Supabase mirror + webhook + reader** (T5a, T5b, T5d, T5f). Commit `519b34e`. T5c is owner action (configure GitHub webhook). T5e deferred (cli.mjs reads stay local-only — full-text reads route through `lib/memory/supabase-reader.ts` from inside Next.js).
+- [x] **Step 6 — `mcp-memory` server + `/api/memory/query`** (T6a). Commit `3165376`. T6b/T6c are owner actions.
+- [x] **Step 7 — Global protocols doc + per-repo pointer** (T7a, T7b-soft). `docs/global-claude-protocols.md` written; `CLAUDE.md` carries a pointer note. T7b-hard (full removal of duplicated sections) deferred until owner confirms `~/.claude/CLAUDE.md` works from a sibling repo. T7c is owner action.
 
 ### Remaining
-- [ ] Step 2 — CLI `--backend=github` mode + scope + locator (7 atomic tasks: T2a–T2g).
-- [ ] Step 3 — `/api/memory/event` universal write surface (5 tasks).
-- [ ] Step 4 — Generated files cron-only + log-per-event (4 tasks).
-- [ ] Step 5 — Supabase mirror + webhook (6 tasks).
-- [ ] Step 6 — `mcp-memory` server (3 tasks).
-- [ ] Step 7 — Global `~/.claude/CLAUDE.md` (3 tasks).
 - [ ] Step 8 — Branch-per-agent + GitHub App (deferred until rate limits actually bite).
+
+### Owner actions to make Steps 2–7 live
+1. **Create `pinnacleadvisors/memory-hq`** — private, empty, default branch `main`. Bootstrap directory layout per Step 2 (CLI `init` will populate on first write).
+2. **Mint `MEMORY_HQ_TOKEN`** — fresh PAT, contents r/w, scoped only to `memory-hq`. Add to Doppler.
+3. **Configure GitHub webhook** on `memory-hq` per `memory/platform/SECRETS.md` Step 5 instructions.
+4. **Register `mcp-memory`** in `~/.claude/settings.json` per `services/mcp-memory/README.md` (after `npm install && npm run build`).
+5. **Copy `docs/global-claude-protocols.md`** to `~/.claude/CLAUDE.md`. Test from a sibling repo — if protocols load correctly, raise a follow-up PR to trim the duplicated sections from `pinnacleadvisors/nexus/CLAUDE.md`.
+
+### Open before Step 3 (resolved)
+- Per-source rate-limit defaults: **100 writes/min** (`MEMORY_EVENT_RATE_PER_MIN` override).
+- Locator credentials: documented in `memory/platform/SECRETS.md`. Optional — missing creds simply mean `lib/memory/locator.ts` returns `{url, content: null}` and callers fall back to next locator.
 
 ### Decisions locked (2026-04-29)
 1. **Memory repo name** → `pinnacleadvisors/memory-hq` (private). Naming reflects multi-AI-model future — not Claude-specific.
