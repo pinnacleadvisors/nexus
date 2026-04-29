@@ -73,35 +73,42 @@ export async function callClaude(opts: CallClaudeOpts): Promise<CallClaudeResult
   // ── 1. Gateway (plan-billed) ────────────────────────────────────────────
   if (!opts.forceApi) {
     const cfg = await resolveClaudeCodeConfig(opts.userId)
-    if (cfg && (await isGatewayHealthy(cfg.gatewayUrl))) {
-      // Build a single prompt: system on top, user below. Mirrors what
-      // /api/chat already does — the gateway has no separate "system"
-      // channel and the agent spec is loaded via agentSlug instead.
-      const message = opts.system
-        ? `${opts.system}\n\n---\n\n${opts.prompt}`
-        : opts.prompt
+    if (!cfg) {
+      console.log('[callClaude] no gateway config — set CLAUDE_CODE_GATEWAY_URL + CLAUDE_CODE_BEARER_TOKEN')
+    } else {
+      const healthy = await isGatewayHealthy(cfg.gatewayUrl)
+      if (!healthy) {
+        console.warn(`[callClaude] gateway probe failed for ${cfg.gatewayUrl}/health — falling back to API`)
+      } else {
+        // Build a single prompt: system on top, user below. Mirrors what
+        // /api/chat already does — the gateway has no separate "system"
+        // channel and the agent spec is loaded via agentSlug instead.
+        const message = opts.system
+          ? `${opts.system}\n\n---\n\n${opts.prompt}`
+          : opts.prompt
 
-      const result = await callGateway({
-        gatewayUrl:  cfg.gatewayUrl,
-        bearerToken: cfg.bearerToken,
-        sessionTag:  opts.sessionTag ?? 'llm',
-        message,
-        agentSlug:   opts.agentSlug ?? null,
-        userId:      opts.userId,
-        timeoutMs:   opts.timeoutMs ?? DEFAULT_TIMEOUT,
-      })
+        const result = await callGateway({
+          gatewayUrl:  cfg.gatewayUrl,
+          bearerToken: cfg.bearerToken,
+          sessionTag:  opts.sessionTag ?? 'llm',
+          message,
+          agentSlug:   opts.agentSlug ?? null,
+          userId:      opts.userId,
+          timeoutMs:   opts.timeoutMs ?? DEFAULT_TIMEOUT,
+        })
 
-      if (result.ok && result.text) {
-        return {
-          text:       result.text,
-          via:        'gateway',
-          durationMs: result.durationMs ?? Date.now() - started,
+        if (result.ok && result.text) {
+          return {
+            text:       result.text,
+            via:        'gateway',
+            durationMs: result.durationMs ?? Date.now() - started,
+          }
         }
+        // Fall through to API path on any gateway failure — visible in logs
+        // so the operator can investigate, but the user's request still works.
+        console.warn('[callClaude] gateway POST failed, falling back to API:',
+          `status=${result.status} error=${result.error ?? 'unknown'}`)
       }
-      // Fall through to API path on any gateway failure — visible in logs
-      // so the operator can investigate, but the user's request still works.
-      console.warn('[callClaude] gateway failed, falling back to API:',
-        result.error ?? `status ${result.status}`)
     }
   }
 

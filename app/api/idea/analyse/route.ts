@@ -147,10 +147,14 @@ export async function POST(req: NextRequest) {
     sessionTag:      'idea-analyse',
     maxOutputTokens: 2500,
   })
+  // Surface routing decision so the operator can verify gateway usage in
+  // DevTools (X-Via header) and Vercel logs without redeploying.
+  console.log(`[idea/analyse] via=${llm.via} mode=${body.mode} sources=${sources.length} userId=${userId.slice(0, 8)}…`)
   if (llm.error || !llm.text) {
     return Response.json({ error: llm.error ?? 'Claude returned empty response' }, { status: 502 })
   }
   const text = llm.text
+  const responseHeaders = { 'X-Via': llm.via }
 
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
@@ -183,10 +187,10 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (!error && data) {
-      return Response.json({ card: rowToIdeaCard(data as unknown as IdeaRow), sources })
+      return Response.json({ card: rowToIdeaCard(data as unknown as IdeaRow), sources, via: llm.via }, { headers: responseHeaders })
     }
     if (error) console.error('[idea/analyse] persist failed:', error.message)
   }
 
-  return Response.json({ card: draft, sources })
+  return Response.json({ card: draft, sources, via: llm.via }, { headers: responseHeaders })
 }
