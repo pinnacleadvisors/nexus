@@ -272,28 +272,30 @@ async function generateWorkflow(
     executeInput.trim() ? `\nExtra instructions from owner: ${executeInput.trim()}` : '',
   ].filter(Boolean).join('\n')
 
+  const requestBody = {
+    description,
+    businessContext: context,
+    workflowType,
+    ideaId: card.id,
+    // A5 — thread the Run id so every dispatch node in the generated
+    // workflow can carry it and every run_event is attributed.
+    runId,
+    // Structured idea-card fields — consumed by the server-side fallback
+    // so a paste-ready workflow can be built even if the AI call fails.
+    howItMakesMoney: card.howItMakesMoney,
+    tools:           card.tools.map(t => ({ name: t.name, purpose: t.purpose })),
+    steps:           card.steps.map(s => ({
+      title:       s.title,
+      automatable: s.automatable,
+      phase:       s.phase,
+      tools:       s.tools,
+    })),
+  }
+
   const res = await fetch('/api/n8n/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      description,
-      businessContext: context,
-      workflowType,
-      ideaId: card.id,
-      // A5 — thread the Run id so every dispatch node in the generated
-      // workflow can carry it and every run_event is attributed.
-      runId,
-      // Structured idea-card fields — consumed by the server-side fallback
-      // so a paste-ready workflow can be built even if the AI call fails.
-      howItMakesMoney: card.howItMakesMoney,
-      tools:           card.tools.map(t => ({ name: t.name, purpose: t.purpose })),
-      steps:           card.steps.map(s => ({
-        title:       s.title,
-        automatable: s.automatable,
-        phase:       s.phase,
-        tools:       s.tools,
-      })),
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   if (!res.ok) {
@@ -301,7 +303,34 @@ async function generateWorkflow(
     throw new Error(j.error ?? `Request failed (${res.status})`)
   }
 
-  return res.json() as Promise<GenerateResponse>
+  const data = await res.json() as GenerateResponse & { async?: boolean; jobId?: string }
+
+  // Async path — poll /status until done. Bounded to 5 min so a wedged
+  // gateway can't keep the caller hung forever.
+  if (data?.async && data.jobId) {
+    const jobId   = data.jobId
+    const startMs = Date.now()
+    const POLL_MS = 3000
+    const MAX_MS  = 5 * 60_000
+    await new Promise(r => setTimeout(r, POLL_MS))
+    while (Date.now() - startMs < MAX_MS) {
+      const sr = await fetch('/api/n8n/generate/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, request: requestBody }),
+      })
+      if (!sr.ok) {
+        const j = await sr.json().catch(() => ({})) as { error?: string }
+        throw new Error(j.error ?? `Status ${sr.status}`)
+      }
+      const sd = await sr.json() as GenerateResponse & { async?: boolean }
+      if (sd?.async === false) return sd
+      await new Promise(r => setTimeout(r, POLL_MS))
+    }
+    throw new Error('Generation timed out after 5 minutes — try again')
+  }
+
+  return data
 }
 
 function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => void }) {

@@ -435,17 +435,48 @@ function GeneratePanel({ onClose }: { onClose: () => void }) {
     setBridgeResult(null)
     setLoading(true)
     try {
+      const requestBody = { description, businessContext }
       const res = await fetch('/api/n8n/generate', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ description, businessContext }),
+        body:    JSON.stringify(requestBody),
       })
       if (!res.ok) {
         const json = await res.json() as { error?: string }
         throw new Error(json.error ?? `Server error ${res.status}`)
       }
-      const data = await res.json() as typeof result
-      setResult(data)
+      const data = await res.json() as (typeof result & { async?: boolean; jobId?: string })
+
+      // Async path — poll /status until done. Bounded to 5 min so a wedged
+      // gateway can't keep the spinner up forever.
+      if (data?.async && data.jobId) {
+        const jobId   = data.jobId
+        const startMs = Date.now()
+        const POLL_MS = 3000
+        const MAX_MS  = 5 * 60_000
+        // Brief wait before first poll — the gateway often hasn't started
+        // the CLI yet, so an immediate poll is wasted work.
+        await new Promise(r => setTimeout(r, POLL_MS))
+        let final: typeof result | null = null
+        while (Date.now() - startMs < MAX_MS) {
+          const sr = await fetch('/api/n8n/generate/status', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ jobId, request: requestBody }),
+          })
+          if (!sr.ok) {
+            const j = await sr.json().catch(() => ({})) as { error?: string }
+            throw new Error(j.error ?? `Status ${sr.status}`)
+          }
+          const sd = await sr.json() as (typeof result & { async?: boolean; status?: string })
+          if (sd?.async === false) { final = sd; break }
+          await new Promise(r => setTimeout(r, POLL_MS))
+        }
+        if (!final) throw new Error('Generation timed out after 5 minutes — try again')
+        setResult(final)
+      } else {
+        setResult(data)
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
