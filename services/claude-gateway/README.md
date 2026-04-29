@@ -37,6 +37,52 @@ Response:
 `GET /health` → `{ "ok": true, "loggedIn": true|false, "queueDepth": N }` for
 liveness probes (used by Nexus to fail fast over to OpenClaw / Anthropic API).
 
+### Async job variant
+
+For callers behind a short HTTP timeout (e.g. Vercel functions on the Hobby
+plan, capped at 60s), the synchronous `/messages` endpoint is too slow when
+the spawned CLI takes >55s. The async pair below decouples enqueue from
+result fetch:
+
+```
+POST /api/jobs
+Authorization:    Bearer <CLAUDE_GATEWAY_BEARER>
+X-Nexus-Signature: sha256=<hmac of body>
+X-Nexus-Timestamp: <ms epoch>
+X-Nexus-Session-Tag: <free-form, e.g. n8n-generate>   ← optional
+Content-Type:     application/json
+
+{ "role": "user", "content": "<task brief>", "agent": "<slug>", "env": { ... } }
+
+→ 200 { "ok": true, "jobId": "job_<uuid>", "status": "pending" }
+```
+
+```
+GET /api/jobs/:jobId
+Authorization: Bearer <CLAUDE_GATEWAY_BEARER>
+
+→ 200 {
+    "ok":         true,
+    "jobId":      "job_<uuid>",
+    "status":     "pending" | "running" | "done" | "error",
+    "agent":      "<slug or null>",
+    "sessionTag": "<tag or null>",
+    "createdAt":  <ms>,
+    "startedAt":  <ms or absent>,
+    "finishedAt": <ms or absent>,
+    "result":     { ok, content, usage?, model?, durationMs?, error? }   ← present when finished
+  }
+```
+
+Jobs live in-memory on the single gateway process and are garbage-collected
+10 minutes after completion (configurable via `JOB_RETAIN_MS`). Restarting
+the container drops in-flight jobs — that's acceptable because they're
+user-triggered and retryable. Queue admission is enforced at enqueue time
+(503 with `queue_full` when depth exceeds `QUEUE_MAX_DEPTH`).
+
+`lib/claw/gateway-jobs.ts::enqueueGatewayJob` and `getGatewayJob` are the
+typed clients in the Vercel app.
+
 ### Streaming variant
 
 For chat / agent surfaces that benefit from progressive token output:
