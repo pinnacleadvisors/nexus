@@ -41,6 +41,27 @@ if (USER_ID_GATE_ACTIVE) {
 const queue = new WorkQueue(QUEUE_MAX)
 const app   = new Hono()
 
+// One-line request log so the operator can confirm calls actually hit the
+// container. /health is noisy (Coolify probe + status pill poll), so it's
+// logged at a quieter level — every other path logs every request with
+// status + duration. Keep this tight: STDOUT lines are what `docker logs`
+// shows, so verbose traffic dilutes signal.
+app.use('*', async (c, next) => {
+  const started = Date.now()
+  await next()
+  const ms = Date.now() - started
+  const path = c.req.path
+  const status = c.res.status
+  const userId = c.req.header('x-nexus-user-id')?.slice(0, 12)
+  if (path === '/health') {
+    // Only log unhealthy / unusual statuses for /health to keep logs readable.
+    if (status >= 400) console.log(`[gw] GET /health ${status} ${ms}ms`)
+    return
+  }
+  const userTag = userId ? ` user=${userId}…` : ''
+  console.log(`[gw] ${c.req.method} ${path} ${status} ${ms}ms${userTag}`)
+})
+
 const messageBodySchema = z.object({
   role:    z.literal('user'),
   content: z.string().min(1).max(200_000),
