@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Library,
   FileText,
+  Inbox,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,7 @@ type NavItem = NavLink | NavGroup
 const NAV: NavItem[] = [
   { type: 'link', href: '/dashboard', label: 'Mission Control', icon: LayoutDashboard },
   { type: 'link', href: '/idea',      label: 'Ideas',           icon: Lightbulb },
+  { type: 'link', href: '/signals',   label: 'Signals',         icon: Inbox },
   { type: 'link', href: '/board',     label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',     label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/tools',     label: 'Toolbox',         icon: Library },
@@ -55,6 +57,7 @@ const NAV: NavItem[] = [
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard') return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
   if (href === '/idea')      return pathname === '/idea' || pathname.startsWith('/idea-library')
+  if (href === '/signals')   return pathname === '/signals' || pathname.startsWith('/signals/')
   if (href === '/board')     return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
   if (href === '/graph')     return pathname === '/graph'
   if (href === '/tools')     return (pathname === '/tools' || pathname.startsWith('/tools/')) || pathname.startsWith('/manage-platform')
