@@ -1,5 +1,11 @@
 {
   "git": {
     "deploymentEnabled": false
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/signal-review",
+      "schedule": "0 8 * * *"
+    }
+  ]
 }

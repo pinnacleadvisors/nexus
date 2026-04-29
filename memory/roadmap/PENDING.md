@@ -86,3 +86,8 @@ Tracked in `task_plan.md`. Cross-references to `memory/roadmap/SUMMARY.md`.
 ### Pillar A — post-A5 follow-ups
 - Final launch/publish human-gated step in the forge→board flow (tie into A10 providers)
 - Fill in TikTok + Instagram providers once app review clears (stubs in `lib/publish/`)
+
+## Signals (platform-improvement inbox)
+
+- ~~**Signals v1** — `/signals` page + capture API + LLM council cron (memory→architect→tester→judge)~~ ⏳ landed on `claude/feedback-llm-evaluation-uOYNM`; needs migration 020 applied + `CRON_SECRET` set in Doppler/Vercel + self-hosted Firecrawl wired up
+- **Signals v2** — accepted signals auto-append a one-liner here; implemented signals seed an atom in `memory/molecular/`. Currently only `signals.status` flips — no auto-promotion yet.
