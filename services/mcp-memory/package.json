@@ -1,0 +1,26 @@
+{
+  "name": "@nexus/mcp-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing the memory-hq write/read API as native tools to any Claude Code session. Wraps /api/memory/event (writes) and lib/memory/supabase-reader (reads). One env var (MEMORY_HQ_TOKEN) and the server is callable from any repo.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.0.4",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2"
+  }
+}
