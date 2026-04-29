@@ -209,7 +209,7 @@ Central knowledge graph at `pinnacleadvisors/memory-hq` (private). Used by every
 | Var | Purpose |
 |-----|---------|
 | `MEMORY_HQ_REPO` | Default `pinnacleadvisors/memory-hq`. Override only for staging. |
-| `MEMORY_HQ_TOKEN` | Fresh narrow-scope PAT (contents r/w, **only** `pinnacleadvisors/memory-hq`). Separate from the Phase 20 `MEMORY_TOKEN` so blast radius stays small if either leaks. |
+| `MEMORY_HQ_TOKEN` | **Fine-grained PAT** scoped to `pinnacleadvisors/memory-hq` only. Permissions: `Contents: Read and write` + `Metadata: Read` (the latter is auto-required for any fine-grained PAT). No Issues / PRs / Workflows / Admin / org scopes. 90-day expiry recommended. Separate from Phase 20 `MEMORY_TOKEN` so blast radius stays small if either leaks. |
 | `MEMORY_AUTHOR` | Optional. Stamps `frontmatter.author` on every write (e.g. `claude-agent:nexus-architect`, `openclaw:research`, `n8n:idea-builder`). Defaults to `cli` — set per-process. |
 | `MOLECULAR_BACKEND` | Optional. `local` (default) or `github`. Lets `cli.mjs` default to github mode without `--backend=github` on every call. |
 
@@ -248,3 +248,13 @@ Webhook setup (one-time, owner action):
    `curl -H "Authorization: Bearer $CRON_SECRET" "$NEXUS_BASE_URL/api/cron/sync-memory?reconcile=1"`
 
 The nightly cron at `0 4 * * *` performs an automatic reconcile every day in case any push event was dropped.
+
+### Bootstrap (one-time, owner action)
+
+```bash
+gh auth login                              # if not already
+./scripts/bootstrap-memory-hq.sh           # creates pinnacleadvisors/memory-hq + seeds framework
+# then create the fine-grained PAT and add to Doppler as MEMORY_HQ_TOKEN
+```
+
+The bootstrap script is idempotent — re-run it to sync framework changes from `docs/framework/` into `memory-hq/framework/`. Devices then `node cli.mjs --backend=github framework-pull` to refresh their local `~/.claude/CLAUDE.md`.

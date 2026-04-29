@@ -153,8 +153,8 @@ When implementation begins, follow CLAUDE.md PDCA gates:
 - [ ] Step 8 — Branch-per-agent + GitHub App (deferred until rate limits actually bite).
 
 ### Owner actions to make Steps 2–7 live
-1. **Create `pinnacleadvisors/memory-hq`** — private, empty, default branch `main`. Bootstrap directory layout per Step 2 (CLI `init` will populate on first write).
-2. **Mint `MEMORY_HQ_TOKEN`** — fresh PAT, contents r/w, scoped only to `memory-hq`. Add to Doppler.
+1. **Bootstrap `pinnacleadvisors/memory-hq`** — `gh auth login` then `./scripts/bootstrap-memory-hq.sh` from this checkout. Idempotent — re-run to sync framework changes from `docs/framework/` into `memory-hq/framework/`.
+2. **Mint `MEMORY_HQ_TOKEN`** — fine-grained PAT, `Contents: r/w` + `Metadata: read`, scoped only to `pinnacleadvisors/memory-hq`. Add to Doppler.
 3. **Configure GitHub webhook** on `memory-hq` per `memory/platform/SECRETS.md` Step 5 instructions.
 4. **Register `mcp-memory`** in `~/.claude/settings.json` per `services/mcp-memory/README.md` (after `npm install && npm run build`).
 5. **Copy `docs/global-claude-protocols.md`** to `~/.claude/CLAUDE.md`. Test from a sibling repo — if protocols load correctly, raise a follow-up PR to trim the duplicated sections from `pinnacleadvisors/nexus/CLAUDE.md`.
