@@ -66,6 +66,8 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     ...args.env,
   }
 
+  console.log(`[gw] spawn claude agent=${args.agentSlug ?? 'none'} msgLen=${args.message.length}`)
+
   return await new Promise<RunResult>(resolve => {
     const child = spawn(args.binary ?? 'claude', cliArgs, {
       cwd:   args.repoPath,
