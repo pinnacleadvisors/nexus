@@ -108,7 +108,7 @@ async function applyPaths(paths: ChangedPath[]): Promise<{ upserted: number; del
     const scope_id = parts[1]
     const slug = parts[2].replace(/\.md$/, '')
     if (removed) {
-      await sb.from(table).delete().eq('scope_id', scope_id).eq('slug', slug)
+      await sb.from(table as never).delete().eq('scope_id', scope_id).eq('slug', slug)
       deleted += 1
       continue
     }
@@ -120,7 +120,7 @@ async function applyPaths(paths: ChangedPath[]): Promise<{ upserted: number; del
       slug, scope_id, title, body_md: body, frontmatter, sha: f.sha, path,
     }
     if (kind === 'entities') row.entity_kind = (frontmatter.kind as string) || null
-    await sb.from(table).upsert(row, { onConflict: 'scope_id,slug' })
+    await sb.from(table as never).upsert(row as never, { onConflict: 'scope_id,slug' })
     upserted += 1
   }
   return { upserted, deleted, skipped }
