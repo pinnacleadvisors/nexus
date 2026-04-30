@@ -18,6 +18,10 @@
     {
       "path": "/api/cron/post-deploy-smoke",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-learning-cards",
+      "schedule": "0 5 * * *"
     }
   ]
 }

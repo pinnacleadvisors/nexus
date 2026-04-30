@@ -879,6 +879,36 @@ Louvain can produce **disconnected communities** — nodes grouped into the same
 
 ---
 
+## Phase 23 — Learning System (In Progress)
+
+Duolingo-style daily learning surface that keeps the operator fluent in their own platform as it grows. Cards are derived from `mol_atoms` — the molecular memory graph is the source of truth.
+
+**Surface area:**
+- `/learn` — path UI (each MOC = a unit, atoms = lessons, mastery shown as 5-tier crown ring)
+- `/learn/session` — review session with four card kinds: flip Q&A, cloze deletion, multiple-choice, Feynman explain
+- `/learn/stats` — streak with 90-day heatmap, retention per MOC, mastery histogram, weakest atoms
+
+**Learning methods built in:**
+- FSRS-4 spaced repetition (`lib/learning/fsrs.ts`) — modern memory model, schedules cards based on stability + difficulty + retrievability
+- Active recall (cloze + flip)
+- Interleaving (sessions round-robin across MOCs)
+- Generation effect (typed answer before reveal on cloze)
+- Feynman technique (Claude Haiku grades free-text explanations against the source atom + neighbours)
+- Streak gamification with up to 2 freeze tokens (Duolingo-style)
+- Daily XP goal (default 30, env-tunable via `LEARN_DAILY_GOAL_XP`)
+
+**Auto-sync:**
+- Nightly cron `/api/cron/sync-learning-cards` reads `mol_atoms` + `mol_mocs`, materialises new cards, soft-resets stale ones (when an atom's SHA changes), archives orphans.
+
+**Manual setup:**
+- Apply migration `supabase/migrations/023_learning_system.sql`
+- Set `OWNER_USER_ID` in Doppler (Clerk user ID for the cron)
+- Optional: `LEARN_DAILY_GOAL_XP` (default 30)
+
+Plan + atomic tasks: `task_plan-learning-system.md`. Branch: `claude/evaluate-learning-system-WuPd5`.
+
+---
+
 ## Tech Stack Reference
 
 | Layer | Tool | Status |

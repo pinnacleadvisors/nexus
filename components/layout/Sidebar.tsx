@@ -16,6 +16,7 @@ import {
   Library,
   FileText,
   Inbox,
+  Brain,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -50,6 +51,7 @@ const NAV: NavItem[] = [
   { type: 'link', href: '/signals',   label: 'Signals',         icon: Inbox },
   { type: 'link', href: '/board',     label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',     label: 'Knowledge',       icon: Share2 },
+  { type: 'link', href: '/learn',     label: 'Learn',           icon: Brain },
   { type: 'link', href: '/tools',     label: 'Toolbox',         icon: Library },
   { type: 'link', href: '/settings',  label: 'Settings',        icon: Settings },
 ]
@@ -60,6 +62,7 @@ function isActive(pathname: string, href: string) {
   if (href === '/signals')   return pathname === '/signals' || pathname.startsWith('/signals/')
   if (href === '/board')     return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
   if (href === '/graph')     return pathname === '/graph'
+  if (href === '/learn')     return pathname === '/learn' || pathname.startsWith('/learn/')
   if (href === '/tools')     return (pathname === '/tools' || pathname.startsWith('/tools/')) || pathname.startsWith('/manage-platform')
   if (href === '/settings')  return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')

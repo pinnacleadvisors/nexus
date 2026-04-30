@@ -87,6 +87,16 @@ Tracked in `task_plan.md`. Cross-references to `memory/roadmap/SUMMARY.md`.
 - Final launch/publish human-gated step in the forge→board flow (tie into A10 providers)
 - Fill in TikTok + Instagram providers once app review clears (stubs in `lib/publish/`)
 
+## Phase 23 — Learning System
+
+Plan in `task_plan-learning-system.md`. Branch `claude/evaluate-learning-system-WuPd5`.
+
+- **Migration 023** — apply `supabase/migrations/023_learning_system.sql` (4 tables + RLS).
+- **Doppler env vars** — set `OWNER_USER_ID` (Clerk user ID for the cron) and optionally `LEARN_DAILY_GOAL_XP` (default 30).
+- **Cron** — `/api/cron/sync-learning-cards` wired into `vercel.json` at `0 5 * * *`.
+- **Auto-cloze quality pass** — currently uses the regex heuristic in `lib/learning/card-generator.ts`; layer a Claude Haiku blank-picker on top once the deck is large enough to need it.
+- **Tests** — add `lib/learning/__tests__/fsrs.test.ts` covering 4 transition cases (new→good, learning→again, review→good, review→again).
+
 ## Signals (platform-improvement inbox)
 
 - ~~**Signals v1** — `/signals` page + capture API + LLM council cron (memory→architect→tester→judge)~~ ⏳ landed on `claude/feedback-llm-evaluation-uOYNM`; needs migration 020 applied + `CRON_SECRET` set in Doppler/Vercel + self-hosted Firecrawl wired up
