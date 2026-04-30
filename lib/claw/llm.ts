@@ -113,6 +113,17 @@ export async function callClaude(opts: CallClaudeOpts): Promise<CallClaudeResult
   }
 
   // ── 2. Anthropic API key (token-billed) ─────────────────────────────────
+  // Max-plan-only guard: when CLAUDE_MAX_ONLY=1, refuse the API fallback so
+  // accidental gateway misconfigurations surface as visible errors instead of
+  // silent API spend. Set this in production once every call site is migrated
+  // through the gateway.
+  if (process.env.CLAUDE_MAX_ONLY === '1') {
+    return {
+      text:  '',
+      via:   'api',
+      error: 'CLAUDE_MAX_ONLY is set; the API fallback refused. Gateway must succeed.',
+    }
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     return {
       text:  '',
