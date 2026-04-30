@@ -12,6 +12,7 @@ app/
 │   ├── swarm/            # Multi-agent swarm orchestration
 │   ├── graph/            # 3D relational knowledge graph
 │   ├── build/            # Dev console + research loop (Phase 19)
+│   ├── learn/            # Phase 23 — Duolingo-style learning surface (path/session/stats)
 │   ├── tools/
 │   │   ├── agents/       # 10 specialist agent capabilities
 │   │   ├── claw/         # OpenClaw config + skill registry + status
@@ -37,6 +38,7 @@ app/
 │   ├── gdrive/           # Google Drive upload
 │   ├── graph/            # Graph API (full, node, path, query, context, mcp)
 │   ├── inngest/          # Inngest background jobs endpoint
+│   ├── learn/            # Phase 23 — session/review/grade-feynman/stats/path
 │   ├── library/          # Library CRUD + search + promoteRunId (C4)
 │   ├── memory/           # GitHub memory read/write/search (Phase 20 runtime)
 │   ├── milestones/       # Milestone CRUD
@@ -84,6 +86,7 @@ lib/
 ├── runs/                 # Run controller — startRun, advancePhase, appendEvent; measure-ingester, metric-triggers — A3/A9/A11
 ├── publish/              # youtube.ts (live), tiktok.ts + instagram.ts (stubbed), metrics poller — A10
 ├── experiments/          # A/B harness — types, client, two-proportion z-test winner — C5
+├── learning/             # Phase 23 — fsrs.ts (FSRS-4 scheduler), card-generator.ts, atom-sync.ts, types.ts
 ├── library/promoter.ts   # Promotes successful-run output into library tagged with run_id — C4
 ├── agent-capabilities.ts # 10+ capability definitions + system prompts
 ├── n8n/                  # n8n client, templates, gap-detector, types

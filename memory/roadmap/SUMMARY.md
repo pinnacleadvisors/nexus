@@ -27,6 +27,7 @@
 | 20 | Local-First Memory Engine | 🔧 | GitHub memory API ✅; Notion sync optional ⬜ |
 | 21 | OSS-First Stack | ⬜ | Brevo, Umami, GlitchTip, Coolify, Coqui TTS, SadTalker |
 | 22 | Leiden Algorithm Migration | ⬜ | Replace Louvain in `lib/graph/builder.ts` with pure TS Leiden |
+| 23 | Learning System | 🔧 | Duolingo path + FSRS-4 + 4 card kinds + Feynman grader; cards derived from `mol_atoms`. Plan: `task_plan-learning-system.md`. Migration 023 + manual setup pending. |
 | **SOE** | **Self-Optimising Ecosystem** | **🔧** | See below — Pillars A/B/C from `task_plan.md` |
 
 ## Self-Optimising Ecosystem (SOE) — cross-cutting phase

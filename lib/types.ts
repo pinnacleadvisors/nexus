@@ -428,3 +428,140 @@ export interface RunEvent {
   payload: Record<string, unknown>
   createdAt: string
 }
+
+// ── Learning System (Phase 23) ────────────────────────────────────────────────
+export type CardKind = 'flip' | 'cloze' | 'multiple-choice' | 'feynman'
+export type CardState = 'new' | 'learning' | 'review' | 'relearning' | 'archived'
+export type ReviewRating = 'again' | 'hard' | 'good' | 'easy'
+
+export interface Flashcard {
+  id: string
+  userId: string
+  kind: CardKind
+  /** Source MOC slug (lesson grouping for the path UI) */
+  mocSlug: string | null
+  /** Source atom slug (canonical fact) */
+  atomSlug: string
+  /** SHA of the source atom body at generation time — drives stale detection */
+  sourceSha: string
+  /** Front of card / cloze sentence with `{{c1::answer}}` placeholders / MC question */
+  front: string
+  /** Back of card / cloze answer / MC correct option */
+  back: string
+  /** MC options or alternative blanks */
+  options?: string[]
+  /** Free-text reference for Feynman-grading */
+  referenceContext?: string
+  state: CardState
+  /** FSRS stability (days) */
+  stability: number
+  /** FSRS difficulty (1–10) */
+  difficulty: number
+  /** Computed retrievability at last review (0–1) */
+  retrievability: number
+  /** ISO timestamp the card is next due */
+  dueAt: string
+  /** Crown level (0–5) — UI mastery indicator derived from stability buckets */
+  crown: number
+  /** Number of consecutive correct (≥good) reviews */
+  streakCount: number
+  /** ISO timestamp of last review (null for new cards) */
+  lastReviewedAt: string | null
+  /** When the underlying atom changed and the card was reset, why */
+  staleReason?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FlashcardReview {
+  id: string
+  cardId: string
+  userId: string
+  rating: ReviewRating
+  /** User's answer text (cloze input, Feynman explanation) — null for flip */
+  answer: string | null
+  /** Claude grade for Feynman cards, 0–100 */
+  grade?: number
+  gradeFeedback?: string
+  /** Time spent on this card in milliseconds */
+  durationMs: number
+  /** XP awarded for this review */
+  xp: number
+  /** State the card was in BEFORE this review */
+  prevState: CardState
+  /** State the card transitioned to AFTER FSRS scheduling */
+  newState: CardState
+  /** New stability after FSRS */
+  stabilityAfter: number
+  /** New due_at ISO string */
+  dueAtAfter: string
+  createdAt: string
+}
+
+export interface LearningSession {
+  id: string
+  userId: string
+  startedAt: string
+  endedAt: string | null
+  cardsReviewed: number
+  correctCount: number
+  xpEarned: number
+  /** Average response time in ms */
+  avgDurationMs: number
+}
+
+export interface DailyStreak {
+  userId: string
+  /** Current consecutive-day streak */
+  currentStreak: number
+  /** Longest streak ever */
+  longestStreak: number
+  /** Number of freeze tokens available (max 2) */
+  freezesAvailable: number
+  /** ISO date (YYYY-MM-DD) of the last day with at least 1 review */
+  lastReviewDate: string | null
+  /** XP earned today (resets at midnight UTC) */
+  xpToday: number
+  /** Cumulative XP all-time */
+  xpTotal: number
+  updatedAt: string
+}
+
+export interface LearnPathLesson {
+  /** Atom slug — primary key for the lesson */
+  atomSlug: string
+  title: string
+  /** Crown level 0–5 (max across all derived cards for this atom) */
+  crown: number
+  /** Number of derived cards in any non-archived state */
+  cardCount: number
+  /** Earliest dueAt across the lesson's cards (null if all reviewed) */
+  nextDueAt: string | null
+  /** True if any card has staleReason set */
+  isStale: boolean
+}
+
+export interface LearnPathUnit {
+  /** MOC slug — section header on the path */
+  mocSlug: string
+  title: string
+  lessons: LearnPathLesson[]
+  /** Aggregate progress 0–1 (sum(crown) / (lessons*5)) */
+  progress: number
+}
+
+export interface LearnStats {
+  streak: DailyStreak
+  /** Last 90 calendar days, oldest first; each entry: { date, xp, cardsReviewed } */
+  heatmap: Array<{ date: string; xp: number; cardsReviewed: number }>
+  /** Per-MOC retention rate over the last 30 days */
+  retentionByMoc: Array<{ mocSlug: string; title: string; retention: number; sampleSize: number }>
+  /** Distribution of crowns across all active cards */
+  masteryHistogram: { crown0: number; crown1: number; crown2: number; crown3: number; crown4: number; crown5: number }
+  /** Top 5 lowest-retrievability atoms */
+  weakestAtoms: Array<{ atomSlug: string; title: string; retrievability: number }>
+  /** Cards flagged as stale because their atom changed */
+  staleCount: number
+  /** Daily XP goal (env-tuned) */
+  dailyGoalXp: number
+}
