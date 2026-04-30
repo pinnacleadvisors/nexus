@@ -65,6 +65,12 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     ...process.env,
     ...args.env,
   }
+  // Force plan-mode auth: any of these would override the OAuth token in
+  // /root/.claude/.credentials.json and silently route to API/Bedrock/Vertex billing.
+  delete childEnv.ANTHROPIC_API_KEY
+  delete childEnv.ANTHROPIC_AUTH_TOKEN
+  delete childEnv.CLAUDE_CODE_USE_BEDROCK
+  delete childEnv.CLAUDE_CODE_USE_VERTEX
 
   console.log(`[gw] spawn claude agent=${args.agentSlug ?? 'none'} msgLen=${args.message.length}`)
 
