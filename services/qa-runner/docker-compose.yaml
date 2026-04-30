@@ -1,0 +1,49 @@
+# Coolify resource template for the autonomous QA runner.
+#
+# Sits next to claude-gateway on the same host so it can dispatch over the
+# `coolify` network alias `claude-gateway` without exposing port 3000 publicly.
+# Ingress (Cloudflare Tunnel) maps qa-runner.<your-domain> → qa-runner:3001
+# so /api/cron/post-deploy-smoke can webhook in.
+#
+# Volumes: dist/ holds the Playwright JSON report + traces from the last run.
+# Persisted so a Coolify restart doesn't lose the most recent failure context.
+
+services:
+  qa-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
+    restart: unless-stopped
+    environment:
+      QA_RUNNER_PORT:           "3001"
+      QA_RUNNER_HMAC_SECRET:    "${QA_RUNNER_HMAC_SECRET}"
+      BASE_URL:                 "${BASE_URL}"
+      NEXUS_BASE_URL:           "${NEXUS_BASE_URL}"
+      BOT_ISSUER_SECRET:        "${BOT_ISSUER_SECRET}"
+      BOT_CLERK_USER_ID:        "${BOT_CLERK_USER_ID}"
+      BOT_API_TOKEN:            "${BOT_API_TOKEN}"
+      CLAUDE_GATEWAY_URL:       "${CLAUDE_GATEWAY_URL:-http://claude-gateway:3000}"
+      CLAUDE_GATEWAY_BEARER:    "${CLAUDE_GATEWAY_BEARER}"
+      PLAYWRIGHT_WORKERS:       "${PLAYWRIGHT_WORKERS:-1}"
+    volumes:
+      - qa_runner_dist:/app/dist
+    expose:
+      - "3001"
+    networks:
+      default: {}
+      coolify:
+        aliases:
+          - qa-runner
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+
+volumes:
+  qa_runner_dist:
+
+networks:
+  coolify:
+    external: true
