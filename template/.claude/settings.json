@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Bash(node .claude/skills/molecularmemory_local/*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Skill"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f .claude/framework/AGENT-FRAMEWORK.md ] && echo 'framework: cross-project memory-hq protocols at .claude/framework/AGENT-FRAMEWORK.md — atoms via cli.mjs --backend=github or memory_atom MCP tool.' || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-write-size.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

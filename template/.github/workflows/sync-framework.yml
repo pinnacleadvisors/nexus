@@ -1,0 +1,52 @@
+name: Sync framework from memory-hq
+
+on:
+  # Daily — picks up framework updates without owner action.
+  schedule:
+    - cron: '0 6 * * *'
+  # Manual trigger for "sync now" cases.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Pull framework from memory-hq
+        env:
+          MEMORY_HQ_TOKEN: ${{ secrets.MEMORY_HQ_TOKEN }}
+        run: |
+          if [ -z "$MEMORY_HQ_TOKEN" ]; then
+            echo "::error::MEMORY_HQ_TOKEN secret not set on this repo. Add via: gh secret set MEMORY_HQ_TOKEN"
+            exit 1
+          fi
+          node .claude/skills/molecularmemory_local/cli.mjs \
+            --backend=github framework-pull \
+            --to=.claude/framework \
+            --dropIn=CLAUDE.md
+
+      - name: Open PR if framework changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: sync framework from memory-hq'
+          title: 'chore: sync framework from memory-hq'
+          body: |
+            Automated daily sync from `pinnacleadvisors/memory-hq/framework/`.
+
+            If this PR is empty, the framework hasn't changed since the last
+            run — safe to close.
+
+            To trigger manually: `gh workflow run sync-framework.yml`
+          branch: framework-sync
+          delete-branch: true
+          labels: framework-sync,automated
