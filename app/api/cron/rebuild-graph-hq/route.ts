@@ -13,7 +13,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { recordSamples } from '@/lib/observability'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -161,12 +160,18 @@ export async function POST(req: NextRequest) {
     const tree = await getTree()
     const { counts } = await rebuildIndex(tree)
     const digestEvents = await foldDigest(tree)
-    await recordSamples([
-      { metric: 'memory_hq.atoms', value: counts.atoms, ts: new Date().toISOString() },
-      { metric: 'memory_hq.entities', value: counts.entities, ts: new Date().toISOString() },
-      { metric: 'memory_hq.scopes', value: counts.scopes.size, ts: new Date().toISOString() },
-      { metric: 'memory_hq.digest_events', value: digestEvents, ts: new Date().toISOString() },
-    ]).catch(() => {})
+    // Counts are returned in the JSON response; log them too for cron-tail.
+    // Wiring into lib/observability requires a memory-hq-shaped MetricKind —
+    // do that in a follow-up if trend graphs become useful.
+    console.log('[memory-hq cron]', JSON.stringify({
+      atoms: counts.atoms,
+      entities: counts.entities,
+      mocs: counts.mocs,
+      sources: counts.sources,
+      synthesis: counts.synthesis,
+      scopes: counts.scopes.size,
+      digestEvents,
+    }))
     return NextResponse.json({
       ok: true,
       counts: {
