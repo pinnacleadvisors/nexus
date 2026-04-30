@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
+import { resolveCallerUserId } from '@/lib/auth/bot'
 import type { WorkflowFeedback } from '@/lib/types'
 
 export const runtime = 'nodejs'
@@ -73,7 +74,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
+  const { userId: clerkUserId } = await auth()
+  const userId = resolveCallerUserId(req, clerkUserId)
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const body = (await req.json()) as {
@@ -81,8 +83,13 @@ export async function POST(req: NextRequest) {
     agentSlug?: string
     feedback?: string
     artifactUrl?: string
+    summary?: string
+    details?: string
+    source?: string
   }
-  const feedback = body.feedback?.trim()
+  // Allow the qa-runner shape (`{ summary, details }`) as well as the human
+  // review-modal shape (`{ feedback }`). The two map to the same row.
+  const feedback = (body.feedback ?? body.details ?? body.summary ?? '').trim()
   if (!feedback) {
     return NextResponse.json({ error: 'feedback required' }, { status: 400 })
   }

@@ -253,6 +253,14 @@ async function executeTask(
   // C3 — cache the per-role system prompt. Same role → same bytes across every
   // task, so Anthropic prompt caching turns the system prefix into a cheap
   // cache-read after the first call.
+  //
+  // Q3 audit (task_plan-autonomous-qa.md): kept on the API path because the
+  // Anthropic prompt-cache prefix here is meaningful (~30% of swarm token
+  // spend). The gateway's CLI doesn't yet expose cache_creation/cache_read
+  // counters, so migrating now would lose telemetry. Track as a follow-up.
+  if (process.env.CLAUDE_MAX_ONLY === '1') {
+    throw new Error('CLAUDE_MAX_ONLY=1 — Queen.ts per-task call not yet migrated; see task_plan-autonomous-qa.md Q3')
+  }
   const { text, usage } = await generateText({
     model:           anthropic(task.model),
     messages: [
@@ -333,7 +341,13 @@ async function checkDrift(
   emit:          EventEmitter,
   threshold      = 0.4,
 ): Promise<boolean> {
-  // Lightweight drift check: ask Claude if completed work is still aligned
+  // Lightweight drift check: ask Claude if completed work is still aligned.
+  // Q3 audit (task_plan-autonomous-qa.md): tiny call — 10 output tokens,
+  // < 1k input — migration deferred behind the per-task call above so they
+  // can be moved together. Documented exception, not a bug.
+  if (process.env.CLAUDE_MAX_ONLY === '1') {
+    return false // best-effort — assume no drift rather than blowing up the swarm
+  }
   const { text } = await generateText({
     model:     anthropic(TACTICAL_MODEL),
     prompt:           `Original goal: "${goal.slice(0, 300)}"\n\nCompleted work so far:\n${completedWork.slice(0, 1000)}\n\nIs the completed work still aligned with the original goal? Answer with only "yes" or "no".`,

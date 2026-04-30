@@ -167,12 +167,44 @@ PDCA gates:
 ## Progress (as of 2026-04-30)
 
 ### Completed
-- _none yet_
+- [x] Q1  CLAUDE_MAX_ONLY guard (`lib/claw/llm.ts`)
+- [x] Q4  bot bearer-token auth helper (`lib/auth/bot.ts`)
+- [x] Q5  Clerk sign-in ticket issuer (`app/api/admin/issue-bot-session/route.ts`)
+- [x] Q6  log_events migration (`supabase/migrations/022_log_events.sql`)
+- [x] Q7  Vercel log-drain endpoint (`app/api/vercel/log-drain/route.ts`)
+- [x] Q8  log search helpers (`lib/logs/vercel.ts`) + `/api/logs/slice` bot endpoint
+- [x] Q9  qa-runner scaffold (Dockerfile, package.json, configs, compose)
+- [x] Q10 Tier 1 smoke spec (`services/qa-runner/e2e/smoke.spec.ts`)
+- [x] Q11 orchestrator (`services/qa-runner/src/{auth,runSpec,dispatch,index}.ts`)
+- [x] Q12 cron trigger (`app/api/cron/post-deploy-smoke/route.ts`) + `vercel.json` schedule
+- [x] Q2  research-loop migrated to gateway (`inngest/functions/research-loop.ts`)
+- [x] Q3  audited remaining `@ai-sdk/anthropic` call sites; added `CLAUDE_MAX_ONLY`
+       refusal at `/api/agent`, `/api/build/plan`, `lib/swarm/Queen.ts` (per-task
+       generateText + drift check). Already-gateway-first sites untouched.
+- [x] Q13 SECRETS.md updated (Autonomous QA + Vercel log drain sections)
+- [x] Q14 ARCHITECTURE.md updated (new routes + qa-runner service entries)
+- [x] Q15 qa-runner README + manual-step checklist (`services/qa-runner/README.md`)
+- [x] Patched `/api/workflow-feedback` to accept the bot bearer token so the
+       runner can file feedback rows without a Clerk session.
 
-### Remaining
-- All 15 tasks above
+### Remaining (deferred — requires user environment)
+- [ ] Create `qa-bot@<your-domain>` Clerk user — see Q15 checklist step 1.
+- [ ] Append bot user_id to `ALLOWED_USER_IDS` in Doppler — Q15 step 2.
+- [ ] Generate + set BOT_*, QA_RUNNER_*, VERCEL_LOG_DRAIN_SECRET in Doppler — Q15 step 3.
+- [ ] Configure Vercel JSON log drain pointing at `/api/vercel/log-drain` — Q15 step 4.
+- [ ] Apply migration `022_log_events.sql` (`npm run migrate`) — Q15 step 5.
+- [ ] Deploy `services/qa-runner/` on Coolify next to claude-gateway — Q15 step 6.
+- [ ] Smoke-test the end-to-end loop — Q15 step 7.
+- [ ] Once stable: set `CLAUDE_MAX_ONLY=1` in Doppler (after a few clean smoke
+       runs land through the gateway).
 
-### Blockers / Open Questions
-- Need user-side Clerk bot user creation (manual, listed in Q15 checklist).
-- Need user-side Vercel Log Drain configuration (manual, listed in Q15 checklist).
-- Need user-side Doppler env additions (Q13 enumerates).
+### Follow-up (not in this PR)
+- Migrate `lib/swarm/Queen.ts` per-task generateText to a gateway path that
+  preserves prompt-cache telemetry (gateway CLI needs to surface
+  `cache_creation_input_tokens`/`cache_read_input_tokens`). Tracked at the
+  Q3 doc comments.
+- Migrate `/api/build/plan` streaming Opus call to a gateway-streaming
+  wrapper so `streamText` shape is preserved.
+- Tier 2 visual diff spec (deferred until Tier 1 is shown to be stable).
+- `lib/library/seed.ts` contains template strings showing the AI SDK usage
+  pattern — not a real call site, no migration needed.

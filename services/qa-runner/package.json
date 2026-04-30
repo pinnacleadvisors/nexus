@@ -1,0 +1,30 @@
+{
+  "name": "@nexus/qa-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous QA runner for Nexus. On post-deploy webhooks: signs in as the qa-bot via a Clerk sign-in ticket, runs Playwright smoke specs against the live deployment, and on failure fetches Vercel logs + dispatches a fix-attempt to the self-hosted Claude Code gateway. Plan-billed by construction.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "smoke": "playwright test --workers=1",
+    "smoke:headed": "playwright test --workers=1 --headed",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "@playwright/test": "1.49.0",
+    "hono": "4.12.15",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2"
+  }
+}

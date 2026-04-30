@@ -35,6 +35,7 @@
 | `OPENCLAW_GATEWAY_URL` | Fallback OpenClaw / MyClaw gateway URL (single-tenant fallback when neither business-specific nor Claude Code config exists). |
 | `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth. |
 | `ANTHROPIC_API_KEY` | Final fallback when both gateways are unavailable. |
+| `CLAUDE_MAX_ONLY` | Set to `1` in production once every call site is migrated through the gateway. Forces `lib/claw/llm.ts::callClaude` and the auditied direct call sites (`/api/agent`, `/api/build/plan`, `lib/swarm/Queen.ts`) to refuse the API fallback so accidental gateway misconfigurations surface as visible errors instead of silent token spend. Track migration progress in `task_plan-autonomous-qa.md`. |
 
 ### Per-business OpenClaw fleet (D6 / D7)
 
@@ -258,3 +259,30 @@ gh auth login                              # if not already
 ```
 
 The bootstrap script is idempotent — re-run it to sync framework changes from `docs/framework/` into `memory-hq/framework/`. Devices then `node cli.mjs --backend=github framework-pull` to refresh their local `~/.claude/CLAUDE.md`.
+
+## Autonomous QA Loop (`task_plan-autonomous-qa.md`)
+
+The autonomous QA loop has two surfaces — Vercel (Next.js routes + cron) and the
+qa-runner service that lives next to `claude-gateway` on Coolify. Each row notes
+where the secret must be present.
+
+| Var | Where | Purpose |
+|-----|-------|---------|
+| `BOT_CLERK_USER_ID`        | Doppler **and** qa-runner | Clerk user ID of the dedicated `qa-bot@<your-domain>` user. Must be added to `ALLOWED_USER_IDS`. Created manually in the Clerk dashboard. |
+| `BOT_API_TOKEN`            | Doppler **and** qa-runner | Random bearer the qa-runner uses to authenticate against bot-only endpoints (`/api/logs/slice`, `/api/workflow-feedback`, `/api/cron/post-deploy-smoke` manual). Generate: `openssl rand -hex 32`. |
+| `BOT_ISSUER_SECRET`        | Doppler **and** qa-runner | HMAC secret for `POST /api/admin/issue-bot-session`. Binds the request body to the signature so the bearer alone can't replay with a different `userId`. Rotate quarterly. |
+| `QA_RUNNER_WEBHOOK_URL`    | Doppler                   | Public URL of the qa-runner `/run` endpoint (Cloudflare Tunnel → `qa-runner:3001`). Cron POSTs here. |
+| `QA_RUNNER_HMAC_SECRET`    | Doppler **and** qa-runner | HMAC secret signing the cron → qa-runner webhook. Same `X-Nexus-Signature` shape as the gateway. |
+| `QA_RUNNER_BASE_URL`       | Doppler (optional)        | Default `BASE_URL` the runner targets when the cron sends an empty body. Falls back to `NEXT_PUBLIC_APP_URL`. |
+| `BASE_URL`                 | qa-runner only            | Live deployment URL (e.g. `https://nexus.example.com`). Required by `playwright.config.ts`. |
+| `NEXUS_BASE_URL`           | qa-runner only            | Base URL for outbound calls back into Nexus (issue-bot-session, log slice, workflow feedback). Usually equals `BASE_URL`. |
+| `CLAUDE_GATEWAY_URL`       | qa-runner only            | Internal gateway URL used by the runner for fix-attempt dispatch. Default `http://claude-gateway:3000` over the `coolify` network. |
+| `CLAUDE_GATEWAY_BEARER`    | qa-runner only            | Same bearer the gateway expects from Vercel. Lets the runner POST to `/api/sessions/<tag>/messages`. |
+
+## Vercel log drain
+
+| Var | Where | Purpose |
+|-----|-------|---------|
+| `VERCEL_LOG_DRAIN_SECRET`     | Doppler | HMAC secret configured on the Vercel JSON log drain (`Project Settings → Log Drains`). The `/api/vercel/log-drain` route verifies `x-vercel-signature` against the body before indexing. |
+| `VERCEL_LOG_REDACT_HEADERS`   | Doppler (optional) | Comma-separated header names to scrub from `proxy.headers` before persistence. Defaults to `authorization,cookie,__session,x-clerk-session-token`. Add custom auth headers here. |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | Doppler | Already required for Phase 17/18 assets. The drain reuses the same bucket — raw NDJSON shards land at `logs/<deployment_id>/YYYY-MM-DD/HH.jsonl`. |

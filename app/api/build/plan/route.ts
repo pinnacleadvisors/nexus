@@ -137,6 +137,17 @@ export async function POST(req: Request) {
   }
 
   // ── Fallback: API key streamed Opus ────────────────────────────────────
+  // Q3 audit (task_plan-autonomous-qa.md): this call uses streamText for
+  // progressive output. The gateway's stream endpoint exists but the SSE
+  // contract differs from `streamText`'s shape — migrating this is its own
+  // task. CLAUDE_MAX_ONLY=1 will short-circuit here once we ship the
+  // streaming-aware `streamClaude` wrapper.
+  if (process.env.CLAUDE_MAX_ONLY === '1') {
+    return new Response(
+      JSON.stringify({ error: 'CLAUDE_MAX_ONLY=1 — gateway streaming not yet wired for /api/build/plan' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
       JSON.stringify({ error: 'No Claude provider configured' }),

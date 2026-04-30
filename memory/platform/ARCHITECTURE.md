@@ -127,3 +127,31 @@ lib/
 - **Cost guard** — `/api/chat` + `/api/content/generate` return HTTP 402 once a user crosses `USER_DAILY_USD_LIMIT` (default $25)
 - **Graph-cache short-circuit** — `/api/chat` POST detects when a prompt maps to a single dominant molecular atom or MOC and returns the cached answer with a `<graph-cache nodeId=.../>` marker (C7)
 - **Nightly graph rebuild** — `/api/cron/rebuild-graph` re-runs `.claude/skills/molecularmemory_local/cli.mjs graph` + `reindex` and logs node/orphan/degree metrics (C8)
+- **Autonomous QA loop** — Vercel cron `/api/cron/post-deploy-smoke` HMAC-pings the qa-runner on Coolify; the runner mints a Clerk sign-in ticket via `/api/admin/issue-bot-session`, runs Playwright smoke specs as `qa-bot`, and on failure dispatches a fix-attempt to the self-hosted gateway. Server-side context comes from `lib/logs/vercel.ts::attachLogsToBrief` — see `task_plan-autonomous-qa.md`.
+- **Vercel log drain** — Vercel JSON drain → `POST /api/vercel/log-drain` (HMAC) → R2 archive (`logs/<deployment>/YYYY-MM-DD/HH.jsonl`) + `log_events` hot-field index. Service-role only; agents query through `lib/logs/vercel.ts::searchLogs` or `POST /api/logs/slice` (bot-token auth).
+
+## New routes (autonomous QA)
+
+| Route | Method | Auth | Purpose |
+|-------|--------|------|---------|
+| `/api/admin/issue-bot-session` | POST | HMAC (`BOT_ISSUER_SECRET`) | Mints a Clerk sign-in ticket the qa-runner redeems for a real session as `qa-bot`. |
+| `/api/vercel/log-drain` | POST | HMAC (`VERCEL_LOG_DRAIN_SECRET`) | Receives Vercel NDJSON log batches, redacts sensitive headers, writes raw to R2 + indexes hot fields in `log_events`. |
+| `/api/logs/slice` | POST | Bot bearer (`BOT_API_TOKEN`) | Returns a markdown slice of the last `windowSeconds` of logs for embedding in a dispatch brief. |
+| `/api/cron/post-deploy-smoke` | POST/GET | Vercel `CRON_SECRET` or bot bearer | Webhooks the qa-runner with the live deployment URL. Schedule: `*/30 * * * *`. |
+
+## New service: `services/qa-runner/`
+
+Sits next to `services/claude-gateway/` on the Coolify host. Headless Playwright (`mcr.microsoft.com/playwright:v1.49.0-noble` base) + Hono entrypoint listening on `:3001`. On HMAC-verified `/run`:
+
+1. POST to `/api/admin/issue-bot-session` → sign-in ticket URL.
+2. Spawn `npx playwright test --workers=1` with `BASE_URL` + `BOT_SESSION_TICKET_URL` injected.
+3. On failure: fetch a 30 s slice via `/api/logs/slice`, dispatch a fix-attempt to the gateway over the private `coolify` network, file a `workflow_feedback` row.
+
+Plan-budget cost: 0 tokens on a clean deploy. ~1 dispatch on a failing one.
+
+## New library code
+
+- `lib/auth/bot.ts` — `authBotToken()` + `resolveCallerUserId()`. Bearer token → `BOT_CLERK_USER_ID`; uniform identity for routes accepting human-or-bot.
+- `lib/logs/vercel.ts` — `searchLogs()` + `attachLogsToBrief()`. Service-role queries against `log_events`; markdown formatting for dispatch briefs.
+
+Migration `022_log_events.sql` adds the `log_events` table (RLS deny-by-default, service-role only) with hot-path indexes on `request_id`, `created_at`, `(route, created_at)`, and a partial index on `level in ('error','warn')`.

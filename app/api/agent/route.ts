@@ -306,6 +306,14 @@ export async function POST(req: NextRequest) {
   }
 
   // ── FALLBACK: Anthropic API key (token-billed, streamed) ────────────────
+  // Q3 audit (task_plan-autonomous-qa.md): when CLAUDE_MAX_ONLY=1 every API
+  // fallback should refuse instead of silently spending tokens.
+  if (process.env.CLAUDE_MAX_ONLY === '1') {
+    return new Response(
+      JSON.stringify({ error: 'CLAUDE_MAX_ONLY=1 — gateway must succeed; API fallback refused.' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
       JSON.stringify({ error: 'No Claude provider configured — gateway down + ANTHROPIC_API_KEY unset.' }),

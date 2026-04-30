@@ -8,8 +8,7 @@
  */
 
 import { inngest } from '@/inngest/client'
-import { anthropic } from '@ai-sdk/anthropic'
-import { generateText } from 'ai'
+import { callClaude } from '@/lib/claw/llm'
 import { createServerClient } from '@/lib/supabase'
 import { searchWebMulti } from '@/lib/tools/tavily'
 import {
@@ -131,24 +130,34 @@ export const weeklyResearchLoop = inngest.createFunction(
     }) as { issues: StackIssue[] }
 
     // ── Step 3: Claude synthesis ─────────────────────────────────────────────
+    // Routed through `callClaude` (gateway → API → CLAUDE_MAX_ONLY guard).
+    // The bot user owns this lane so the gateway's allowlist accepts the
+    // dispatch even when no human session is active.
     const suggestions = await step['run']('synthesize-suggestions', async () => {
-      if (!process.env.ANTHROPIC_API_KEY || searchResults.count === 0) return []
+      if (searchResults.count === 0) return []
+      const synthUserId = process.env.BOT_CLERK_USER_ID
+        ?? process.env.OWNER_CLERK_USER_ID
+        ?? ''
+      if (!synthUserId) return [] // no identity → no dispatch
 
       const searchContext = searchResults.results
         .map(r => `### ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 800)}`)
         .join('\n\n---\n\n')
 
       try {
-        const { text } = await generateText({
-          model:           anthropic('claude-haiku-4-5-20251001'),
+        const result = await callClaude({
+          userId:          synthUserId,
           system:          SYNTHESIS_SYSTEM,
           prompt:          `Research results from this week:\n\n${searchContext}\n\nOutput JSON array of suggestions.`,
+          model:           'claude-haiku-4-5-20251001',
+          sessionTag:      'research-loop',
           maxOutputTokens: 2000,
           temperature:     0.1,
         })
+        if (result.error || !result.text) return []
 
         // Extract JSON from response
-        const jsonMatch = text.match(/\[[\s\S]*\]/)
+        const jsonMatch = result.text.match(/\[[\s\S]*\]/)
         if (!jsonMatch) return []
         return JSON.parse(jsonMatch[0]) as ResearchSuggestion[]
       } catch {
