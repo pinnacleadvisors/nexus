@@ -33,6 +33,18 @@ export const runtime = 'nodejs'
 // we keep the function fast — no streaming, just buffer + insert.
 export const maxDuration = 30
 
+// Vercel's log-drain configuration wizard probes the endpoint with GET before
+// activating the drain. Return 200 + a small JSON payload so the validator
+// sees a 2xx and doesn't refuse with "endpoint sent a 307". This is a public
+// liveness check — no secrets exposed.
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({ ok: true, drain: 'ready', accepts: 'POST application/x-ndjson' })
+}
+
+export async function HEAD(): Promise<NextResponse> {
+  return new NextResponse(null, { status: 200 })
+}
+
 const DEFAULT_REDACT_HEADERS = ['authorization', 'cookie', '__session', 'x-clerk-session-token']
 
 interface VercelLogLine {
