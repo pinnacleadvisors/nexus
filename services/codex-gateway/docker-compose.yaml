@@ -1,0 +1,50 @@
+# Coolify resource template for the Codex CLI gateway.
+#
+# Mount /root/.codex from a persistent Coolify volume so the OAuth token from
+# `codex login` survives restarts. The Cloudflare Tunnel ingress (configured
+# outside Coolify) maps codex-gw.<your-domain> -> codex-gateway:3000.
+#
+# Networks: in Coolify v4 each Compose service gets its own private network.
+# We additionally attach to the shared external `coolify` network so a
+# cloudflared container running there can resolve us by the alias
+# `codex-gateway` regardless of the auto-suffixed container name. Survives
+# redeploys; no need to manually `docker network connect` after each one.
+
+services:
+  codex-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
+    restart: unless-stopped
+    environment:
+      CODEX_GATEWAY_PORT:     "3000"
+      CODEX_GATEWAY_BEARER:   "${CODEX_GATEWAY_BEARER}"
+      NEXUS_REPO_URL:         "${NEXUS_REPO_URL}"
+      CODEX_GATEWAY_REPO_REF: "${CODEX_GATEWAY_REPO_REF:-main}"
+      CODEX_MODEL:            "${CODEX_MODEL:-}"
+      QUEUE_MAX_DEPTH:        "${QUEUE_MAX_DEPTH:-4}"
+      REQUEST_TIMEOUT_MS:     "${REQUEST_TIMEOUT_MS:-180000}"
+    volumes:
+      - codex_home:/root/.codex
+      - nexus_repo:/repo
+    expose:
+      - "3000"
+    networks:
+      default: {}
+      coolify:
+        aliases:
+          - codex-gateway
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+
+volumes:
+  codex_home:
+  nexus_repo:
+
+networks:
+  coolify:
+    external: true
