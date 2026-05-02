@@ -150,14 +150,20 @@ deploy_coolify() {
 if [ $do_vercel = 1 ]; then
   require_env VERCEL_TOKEN "https://vercel.com/account/tokens"
   hdr "Vercel"
-  if ! command -v vercel >/dev/null 2>&1; then
-    printf 'installing vercel CLI...\n'
-    npm install -g vercel@latest >/dev/null
+  # Use vercel via npx by default — avoids the permission issue when
+  # /usr/local/lib/node_modules is owned by root (default on macOS). If you
+  # already have vercel installed via 'sudo npm i -g vercel' or 'brew install
+  # vercel-cli', that wins because it's faster.
+  if command -v vercel >/dev/null 2>&1; then
+    vercel_cmd=(vercel)
+  else
+    printf 'vercel CLI not on PATH — using npx (first run fetches ~80MB to cache)\n'
+    vercel_cmd=(npx --yes vercel@latest)
   fi
   vercel_args=(deploy --prod --token "$VERCEL_TOKEN" --yes)
   [ -n "${VERCEL_TEAM_ID:-}" ] && vercel_args+=(--scope "$VERCEL_TEAM_ID")
-  printf 'vercel %s\n' "${vercel_args[*]}"
-  if vercel "${vercel_args[@]}"; then
+  printf '%s %s\n' "${vercel_cmd[*]}" "${vercel_args[*]}"
+  if "${vercel_cmd[@]}" "${vercel_args[@]}"; then
     ok "Vercel production deploy triggered"
   else
     err "Vercel deploy failed"
