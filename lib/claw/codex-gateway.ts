@@ -14,7 +14,7 @@ import {
   callGateway,
   callGatewayStream,
   type GatewayStreamCallbacks,
-} from './gateway-call.js'
+} from './gateway-call'
 
 export function isCodexGatewayConfigured(): boolean {
   return Boolean(
