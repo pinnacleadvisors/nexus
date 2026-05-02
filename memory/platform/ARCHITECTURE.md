@@ -12,7 +12,12 @@ app/
 │   ├── swarm/            # Multi-agent swarm orchestration
 │   ├── graph/            # 3D relational knowledge graph
 │   ├── build/            # Dev console + research loop (Phase 19)
-│   ├── learn/            # Phase 23 — Duolingo-style learning surface (path/session/stats)
+│   ├── learn/            # Phase 23 — Duolingo-style learning surface (path/session/stats); manual Sync now button
+│   ├── idea/             # Capture new ideas (description / remodel modes)
+│   ├── idea-library/     # Browse captured ideas
+│   ├── settings/         # Platform config + /settings/businesses (business_operators CRUD)
+│   ├── signals/          # Platform-improvement inbox + LLM council
+│   ├── manage-platform/  # Dev console + Research loop + Health tab (cron status + orphan sweep)
 │   ├── tools/
 │   │   ├── agents/       # 10 specialist agent capabilities
 │   │   ├── claw/         # OpenClaw config + skill registry + status
@@ -32,7 +37,9 @@ app/
 │   ├── claw/             # OpenClaw proxy
 │   ├── claude-session/   # Dispatch endpoint (auto-creates managed agent + forwards to OpenClaw with swarm env + run-aware A6)
 │   ├── content/          # Score + generate + variants (Tribe v2, auth-gated, writes experiment variants)
-│   ├── cron/             # Scheduled jobs: metric-optimiser (A9), ingest-metrics (A11), regression-sweep (C2), rebuild-graph (C8)
+│   ├── cron/             # Scheduled jobs: metric-optimiser (A9), ingest-metrics (A11), regression-sweep (C2), rebuild-graph (C8), sync-learning-cards (Phase 23), sync-memory, sweep-orphan-cards (2026-05-03), post-deploy-smoke (autonomous QA)
+│   ├── businesses/       # business_operators CRUD; PATCH triggers Slack verification + creates a "🔌 connected" board card (2026-05-03)
+│   ├── health/           # Owner-only health endpoints: /api/health/cron returns per-cron last-run + verdict
 │   ├── dashboard/        # KPI + chart data
 │   ├── experiments/      # A/B experiment CRUD (C5)
 │   ├── gdrive/           # Google Drive upload
@@ -65,6 +72,8 @@ components/
 ├── dashboard/            # KpiGrid, RevenueChart, AgentTable
 ├── board/                # KanbanColumn, KanbanCard, ReviewModal
 ├── graph/                # GraphScene (Three.js)
+├── learn/                # PathView (Duolingo-style)
+├── admin/                # HealthPanel — cron table + orphan-sweep buttons (Health tab on /manage-platform)
 └── tools/                # ToolsGrid, ToolCard
 
 lib/
@@ -119,6 +128,10 @@ lib/
   - **016 plan_patterns** — ReasoningBank archive for successful decompositions — A8
   - **017 metric_samples** — per-run + per-agent observability samples — C1
   - **018 experiments** — A/B variant record with z-test winner selection — C5
+  - 019 token_events_business_slug · 020 signals · 021 molecular_mirror · 022 log_events · 023 learning_system
+  - **024 business_operators** — Phase A autonomous orchestrator config (slug PK, money_model JSONB, slack_webhook_url, current_run_id FK)
+  - **025 tasks_lineage** — adds `idea_id`/`run_id` (FK ON DELETE SET NULL) + `business_slug` to `tasks`. Closes the orphan-card detection gap. Existing rows stay NULL (legacy-keep)
+  - **026 encrypt_slack_webhook** — adds `slack_webhook_url_enc` (AES-256-GCM via `lib/crypto.ts`); plaintext column kept for back-compat until owner re-saves
 - Realtime: enabled on agents, tasks, projects, milestones, businesses, swarm tables
 
 ## Key Contracts
@@ -132,6 +145,10 @@ lib/
 - **Nightly graph rebuild** — `/api/cron/rebuild-graph` re-runs `.claude/skills/molecularmemory_local/cli.mjs graph` + `reindex` and logs node/orphan/degree metrics (C8)
 - **Autonomous QA loop** — Vercel cron `/api/cron/post-deploy-smoke` HMAC-pings the qa-runner on Coolify; the runner mints a Clerk sign-in ticket via `/api/admin/issue-bot-session`, runs Playwright smoke specs as `qa-bot`, and on failure dispatches a fix-attempt to the self-hosted gateway. Server-side context comes from `lib/logs/vercel.ts::attachLogsToBrief` — see `task_plan-autonomous-qa.md`.
 - **Vercel log drain** — Vercel JSON drain → `POST /api/vercel/log-drain` (HMAC) → R2 archive (`logs/<deployment>/YYYY-MM-DD/HH.jsonl`) + `log_events` hot-field index. Service-role only; agents query through `lib/logs/vercel.ts::searchLogs` or `POST /api/logs/slice` (bot-token auth).
+- **Webhook fail-closed in production** — `/api/webhooks/n8n` (`N8N_WEBHOOK_SECRET`) and `/api/webhooks/claw` (`OPENCLAW_BEARER_TOKEN`) refuse unsigned POSTs in production with 503 when their secret env var is unset. Dev still allows the unsigned path so local OpenClaw / n8n iteration works.
+- **Visible-failure surface** — `/manage-platform` Health tab + `GET /api/health/cron`. Each cron in `vercel.json` is mirrored in `app/api/health/cron/route.ts` `CRONS` array; verdict is green/amber/red based on `log_events` last invocation. Adding a new cron requires updating BOTH files.
+- **Orphan-card sweep** — nightly `/api/cron/sweep-orphan-cards` at 04:30 UTC + `POST ?dryRun=1` for the admin button. See atom `[[orphan-sweep-cron]]`.
+- **Slack webhook verification on save** — `POST /api/businesses` compares `slack_webhook_url` against the persisted row; if changed, calls `lib/slack/client.ts::postVerification()` which sends a Block Kit "✅ connected" message AND inserts a `🔌 Slack connected` card into the `review` column. Failures return `slack_warning` in the response so the UI can prompt the owner to retry.
 
 ## New routes (autonomous QA)
 
@@ -141,6 +158,10 @@ lib/
 | `/api/vercel/log-drain` | POST | HMAC (`VERCEL_LOG_DRAIN_SECRET`) | Receives Vercel NDJSON log batches, redacts sensitive headers, writes raw to R2 + indexes hot fields in `log_events`. |
 | `/api/logs/slice` | POST | Bot bearer (`BOT_API_TOKEN`) | Returns a markdown slice of the last `windowSeconds` of logs for embedding in a dispatch brief. |
 | `/api/cron/post-deploy-smoke` | POST/GET | Vercel `CRON_SECRET` or bot bearer | Webhooks the qa-runner with the live deployment URL. Schedule: `*/30 * * * *`. |
+
+## New service: `services/claude-gateway/`
+
+Self-hosted Claude Code gateway running on Hostinger + Coolify, plan-billed via 20× Max. HMAC-protected (`CLAUDE_CODE_BEARER_TOKEN`). The primary AI provider for `/api/chat` and `/api/agent` — falls back to OpenClaw, then `ANTHROPIC_API_KEY`. See `task_plan-claude-gateway.md` for the deploy walkthrough.
 
 ## New service: `services/qa-runner/`
 

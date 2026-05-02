@@ -66,15 +66,32 @@ interface N8nExecutionEvent {
   errorMessage?: string
   taskCardId?:   string
   summary?:      string
+  // Lineage (optional — included so the orphan sweep can detect cards whose
+  // parent business / run is later deleted; see migration 025_tasks_lineage).
+  businessSlug?: string
+  runId?:        string
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const bodyText = await req.text()
 
-  // Signature check (skip if N8N_WEBHOOK_SECRET not set yet)
+  // Signature check.
+  //
+  // In production we fail-closed: without N8N_WEBHOOK_SECRET configured, this
+  // endpoint refuses to process anything (any unauthenticated POST could create
+  // board cards otherwise). In dev/local the unconfigured path is allowed so a
+  // contributor running n8n locally without TLS can iterate.
   const secret = process.env.N8N_WEBHOOK_SECRET
-  if (secret) {
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'webhook not configured (N8N_WEBHOOK_SECRET unset)' },
+        { status: 503 },
+      )
+    }
+    console.warn('[n8n webhook] N8N_WEBHOOK_SECRET unset — accepting unsigned requests in non-prod')
+  } else {
     const sigHeader = req.headers.get('x-n8n-signature') ?? ''
     if (!sigHeader) {
       return NextResponse.json({ error: 'Missing X-N8N-Signature header' }, { status: 401 })
@@ -138,13 +155,15 @@ export async function POST(req: NextRequest) {
       }
     }).from('tasks')
       .insert({
-        title:       `${emoji} [n8n] ${event.workflowName}`,
-        description: event.summary
+        title:         `${emoji} [n8n] ${event.workflowName}`,
+        description:   event.summary
           ? `${event.summary}\n\nExecution: ${event.executionId}\nStatus: ${event.status}`
           : `Workflow execution ${event.status}.\n\nExecution ID: ${event.executionId}`,
-        column_id:   column,
-        priority:    event.status === 'error' ? 'high' : 'medium',
-        position:    0,
+        column_id:     column,
+        priority:      event.status === 'error' ? 'high' : 'medium',
+        business_slug: event.businessSlug ?? null,
+        run_id:        event.runId ?? null,
+        position:      0,
       })
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) console.error('[n8n webhook] new card insert:', error.message)

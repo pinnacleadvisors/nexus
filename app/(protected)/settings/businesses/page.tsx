@@ -19,12 +19,14 @@ import { BUSINESS_SEEDS } from '@/lib/business/seeds'
 import type { BusinessRow, BusinessStatus } from '@/lib/business/types'
 
 interface ApiList { ok: boolean; businesses: BusinessRow[] }
-interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string }
+interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string; slack_warning?: string }
 
 export default function BusinessesPage() {
   const [rows, setRows]     = useState<BusinessRow[]>([])
   const [loading, setLoad]  = useState(true)
   const [err, setErr]       = useState<string | null>(null)
+  // Per-business warnings (e.g. failed Slack webhook verification). Keyed by slug.
+  const [slackWarnings, setSlackWarnings] = useState<Record<string, string>>({})
 
   async function refresh() {
     setLoad(true)
@@ -72,6 +74,12 @@ export default function BusinessesPage() {
       setErr(data.error ?? 'update failed')
       return
     }
+    setSlackWarnings(prev => {
+      const next = { ...prev }
+      if (data.slack_warning) next[slug] = data.slack_warning
+      else delete next[slug]
+      return next
+    })
     await refresh()
   }
 
@@ -169,6 +177,26 @@ export default function BusinessesPage() {
                   placeholder="https://hooks.slack.com/services/..."
                   className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 font-mono text-xs"
                 />
+                {slackWarnings[r.slug] && (
+                  <p className="mt-1 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                    <span aria-hidden>⚠</span>
+                    <span className="flex-1">
+                      {slackWarnings[r.slug]}{' '}
+                      <button
+                        type="button"
+                        onClick={() => void patchBusiness(r.slug, { slack_webhook_url: r.slack_webhook_url })}
+                        className="underline hover:no-underline"
+                      >
+                        Retry
+                      </button>
+                    </span>
+                  </p>
+                )}
+                {!slackWarnings[r.slug] && r.slack_webhook_url && (
+                  <p className="mt-1 text-xs text-emerald-600">
+                    ✓ Verification message sent on save. Check the channel.
+                  </p>
+                )}
               </label>
             </div>
 

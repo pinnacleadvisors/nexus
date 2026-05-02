@@ -22,6 +22,10 @@
     {
       "path": "/api/cron/sync-learning-cards",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/sweep-orphan-cards",
+      "schedule": "30 4 * * *"
     }
   ]
 }

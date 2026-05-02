@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest) {
       weakestAtoms: [],
       staleCount: 0,
       dailyGoalXp,
+      lastSyncedAt: null,
     }
     return NextResponse.json(empty)
   }
@@ -179,6 +180,17 @@ export async function GET(_req: NextRequest) {
     }))
   }
 
+  // Last successful card-sync — proxy via the most recently updated flashcard.
+  // The /learn page surfaces this so the owner sees when the cron last ran.
+  const lastSyncResp = await db.from('flashcards')
+    .select('updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const lastSyncRow = lastSyncResp.data as { updated_at: string } | null
+  const lastSyncedAt = lastSyncRow?.updated_at ?? null
+
   const out: LearnStats = {
     streak,
     heatmap,
@@ -187,6 +199,7 @@ export async function GET(_req: NextRequest) {
     weakestAtoms,
     staleCount,
     dailyGoalXp,
+    lastSyncedAt,
   }
   return NextResponse.json(out)
 }
