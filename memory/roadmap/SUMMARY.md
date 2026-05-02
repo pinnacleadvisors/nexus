@@ -1,6 +1,6 @@
 # Nexus — Roadmap Summary
 
-> Last updated: 2026-04-24. Source of truth: `ROADMAP.md` + `task_plan.md`.
+> Last updated: 2026-05-03. Source of truth: `ROADMAP.md` + `task_plan.md` + `task_plan-platform-improvements.md`.
 > Legend: ✅ Complete · 🔧 Partial · ⬜ Not started
 
 | Phase | Title | Status | Notes |
@@ -8,12 +8,12 @@
 | 1 | Foundation | ✅ | Next.js 16, Clerk, Doppler, Vercel, sidebar, dark theme |
 | 2 | Idea Forge | 🔧 | Chat ✅; Gantt ✅; save/resume + multi-business → Supabase pending |
 | 3 | Dashboard | 🔧 | UI ✅; Supabase data + Stripe revenue + Sentry pending |
-| 4 | Kanban Board | 🔧 | Board + drag-drop ✅; diff viewer ✅ (A12); most items ✅ |
+| 4 | Kanban Board | 🔧 | Board + drag-drop ✅; diff viewer ✅ (A12); orphan-card sweep + lineage FKs ✅ (migration 025, 2026-05-03) |
 | 5 | OpenClaw Integration | ✅ | API + proxy ✅; encrypted `user_secrets` DB-backed config ✅ (B10) |
 | 6 | Knowledge Base / Notes | ✅ | Notion + Obsidian integration complete |
 | 7 | Backend & Data Layer | ✅ | Supabase, R2, Inngest wired |
 | 8 | Token Efficiency | ✅ | Sliding window, dual-model, prompt caching (C3), cost alerts + hard cap (B9) |
-| 9 | Security Hardening | ✅ | MFA, encryption (fail-closed B6), rate limiting, CSRF, audit log, CSP dev-gated (B7), r2-url-guard (B3), storage user-id prefix (B4), auth on chat/content/r2/storage/audit (B1–B5) |
+| 9 | Security Hardening | ✅ | MFA, encryption (fail-closed B6), rate limiting, CSRF, audit log, CSP dev-gated (B7), r2-url-guard (B3), storage user-id prefix (B4), auth on chat/content/r2/storage/audit (B1–B5), proxy.ts matcher widened to all `(protected)/` routes (2026-05-03) |
 | 10 | Agent Capabilities | ✅ | 10 specialist agents at `/tools/agents` |
 | 11 | Multi-Agent Orchestration | ✅ | Swarm kernel, Queen, Consensus, Router (decay C6), ReasoningBank (A8 feedforward), WASM, MCP, GraphRetriever (A7) |
 | 12 | Tribe v2 Content Engine | 🔧 | Core ✅; content analytics + muapi.ai media pairing ⬜ |
@@ -27,8 +27,10 @@
 | 20 | Local-First Memory Engine | 🔧 | GitHub memory API ✅; Notion sync optional ⬜ |
 | 21 | OSS-First Stack | ⬜ | Brevo, Umami, GlitchTip, Coolify, Coqui TTS, SadTalker |
 | 22 | Leiden Algorithm Migration | ⬜ | Replace Louvain in `lib/graph/builder.ts` with pure TS Leiden |
-| 23 | Learning System | 🔧 | Duolingo path + FSRS-4 + 4 card kinds + Feynman grader; cards derived from `mol_atoms`. Plan: `task_plan-learning-system.md`. Migration 023 + manual setup pending. |
+| 23 | Learning System | 🔧 | Duolingo path + FSRS-4 + 4 card kinds + Feynman grader; manual sync button on `/learn` ✅ (2026-05-03); cron at `0 5 * * *` UTC; migration 023 + manual `OWNER_USER_ID` setup pending |
+| **A** | **Autonomous Business Operator** | **🔧** | `business_operators` table (migration 024) + Inngest daily cron + Slack approve/reject. Webhook health check, slack URL encryption, board "connected" card on URL save: 2026-05-03 |
 | **SOE** | **Self-Optimising Ecosystem** | **🔧** | See below — Pillars A/B/C from `task_plan.md` |
+| **PI** | **Platform Improvements** | **🔧** | `task_plan-platform-improvements.md` — onboarding doc, orphan sweep, webhook verify, /learn sync button, /manage-platform health panel, security pass |
 
 ## Self-Optimising Ecosystem (SOE) — cross-cutting phase
 

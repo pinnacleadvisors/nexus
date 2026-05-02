@@ -55,9 +55,21 @@ function resolveHookToken(req: NextRequest): string | null {
 export async function POST(req: NextRequest) {
   const bodyText = await req.text()
 
-  // Signature verification (skip if no token is configured yet)
+  // Signature verification.
+  //
+  // Production fails closed: without OPENCLAW_BEARER_TOKEN (or a per-user
+  // hook token in cookies) any unauthenticated POST could insert review-column
+  // cards. Dev still allows the unsigned path so local OpenClaw runs work.
   const hookToken = resolveHookToken(req)
-  if (hookToken) {
+  if (!hookToken) {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'webhook not configured (OPENCLAW_BEARER_TOKEN unset and no nexus_claw_cfg cookie)' },
+        { status: 503 },
+      )
+    }
+    console.warn('[claw webhook] no hook token resolved — accepting unsigned requests in non-prod')
+  } else {
     const sigHeader = req.headers.get('x-nexus-signature')
       ?? req.headers.get('x-claw-signature')
       ?? ''
@@ -87,14 +99,16 @@ export async function POST(req: NextRequest) {
       // Fire-and-forget — don't block the 200 response
       db.from('tasks')
         .insert({
-          title:        String(payload.title ?? 'Agent Task Completed'),
-          description:  String(payload.description ?? ''),
-          column_id:    'review',
-          assignee:     String(payload.agentName ?? 'OpenClaw'),
-          priority:     'medium',
-          asset_url:    payload.assetUrl    ? String(payload.assetUrl)    : null,
-          project_id:   payload.projectId   ? String(payload.projectId)   : null,
-          milestone_id: payload.milestoneId ? String(payload.milestoneId) : null,
+          title:         String(payload.title ?? 'Agent Task Completed'),
+          description:   String(payload.description ?? ''),
+          column_id:     'review',
+          assignee:      String(payload.agentName ?? 'OpenClaw'),
+          priority:      'medium',
+          asset_url:     payload.assetUrl    ? String(payload.assetUrl)    : null,
+          project_id:    payload.projectId   ? String(payload.projectId)   : null,
+          milestone_id:  payload.milestoneId ? String(payload.milestoneId) : null,
+          business_slug: payload.businessSlug ? String(payload.businessSlug) : null,
+          run_id:        payload.runId        ? String(payload.runId)        : null,
         })
         .then(({ error }) => {
           if (error) console.error('[claw webhook] task insert failed:', error.message)

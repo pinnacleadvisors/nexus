@@ -101,6 +101,50 @@ export async function postSlackNotification(
 }
 
 /**
+ * Send a one-shot verification message to a freshly-pasted incoming-webhook URL.
+ * Used by /api/businesses when the slack_webhook_url field changes — the owner
+ * gets immediate visual confirmation that the URL is live, and the receiving
+ * channel gets a "Nexus is connected" announcement.
+ *
+ * Bypasses getSlackConfig() because the URL hasn't been persisted yet — we want
+ * to test exactly the URL the owner just pasted, not the previously-saved one.
+ *
+ * Returns { ok: true } when Slack accepts; { ok: false, status, reason } otherwise.
+ */
+export async function postVerification(
+  webhookUrl: string,
+  opts: { businessName?: string; channel?: string } = {},
+): Promise<{ ok: true } | { ok: false; status: number; reason: string }> {
+  const name = opts.businessName ?? 'this business'
+  const channelLine = opts.channel ? `Channel: \`${opts.channel}\`` : 'Channel pinned by webhook URL'
+  const blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:white_check_mark: *Nexus connected to ${name}*\nThis channel will receive approval requests, run summaries, and alerts.`,
+      },
+    },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: channelLine }] },
+  ]
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `Nexus connected to ${name}. Approvals and run summaries will arrive here.`,
+        blocks,
+      }),
+    })
+    if (res.ok) return { ok: true }
+    const reason = await res.text().catch(() => res.statusText)
+    return { ok: false, status: res.status, reason: reason.slice(0, 200) || res.statusText }
+  } catch (err) {
+    return { ok: false, status: 0, reason: err instanceof Error ? err.message : 'network error' }
+  }
+}
+
+/**
  * Build a small Block Kit card for a Board approval request.
  */
 export function approvalBlocks(opts: {

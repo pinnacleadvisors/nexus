@@ -182,15 +182,17 @@ export async function POST(req: NextRequest) {
             }>
           }
           const opps = report.automationOpportunities ?? []
+          const lineageSlug = body.inputs.businessSlug?.trim() || null
           for (const opp of opps.slice(0, 8)) {
             const toolList = opp.tools.join(', ')
             await db.from('tasks').insert({
-              title:       `[Automation] ${opp.title}`,
-              description: `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
-              column_id:   'backlog',
-              priority:    opp.priority <= 2 ? 'high' : opp.priority <= 4 ? 'medium' : 'low',
-              project_id:  body.projectId ?? null,
-              position:    opp.priority,
+              title:         `[Automation] ${opp.title}`,
+              description:   `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
+              column_id:     'backlog',
+              priority:      opp.priority <= 2 ? 'high' : opp.priority <= 4 ? 'medium' : 'low',
+              project_id:    body.projectId ?? null,
+              business_slug: lineageSlug,
+              position:      opp.priority,
             }).then(({ error }) => {
               if (error) console.error('[agent/consultant] card insert:', error.message)
             })
@@ -202,12 +204,13 @@ export async function POST(req: NextRequest) {
 
       // Also create a single summary card in Review
       await db.from('tasks').insert({
-        title:       `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
-        description: 'Full consultant report — approve to proceed with implementation.',
-        column_id:   'review',
-        priority:    'high',
-        project_id:  body.projectId ?? null,
-        position:    0,
+        title:         `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
+        description:   'Full consultant report — approve to proceed with implementation.',
+        column_id:     'review',
+        priority:      'high',
+        project_id:    body.projectId ?? null,
+        business_slug: body.inputs.businessSlug?.trim() || null,
+        position:      0,
       }).then(({ error }) => {
         if (error) console.error('[agent/consultant] summary card:', error.message)
       })
@@ -216,11 +219,12 @@ export async function POST(req: NextRequest) {
       const title = `${capability!.name}: ${body.inputs.businessName ?? 'Untitled'}`
       await db.from('tasks').insert({
         title,
-        description: `Agent-generated ${capability!.name} document.`,
-        column_id:   'review',
-        priority:    'medium',
-        project_id:  body.projectId ?? null,
-        position:    0,
+        description:   `Agent-generated ${capability!.name} document.`,
+        column_id:     'review',
+        priority:      'medium',
+        project_id:    body.projectId ?? null,
+        business_slug: body.inputs.businessSlug?.trim() || null,
+        position:      0,
       }).then(({ error }) => {
         if (error) console.error('[agent] board card insert failed:', error.message)
       })

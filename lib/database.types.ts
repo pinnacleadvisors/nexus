@@ -150,6 +150,12 @@ export type Database = {
           position: number
           task_type: 'manual' | 'automated'
           depends_on: string[]
+          // Lineage columns added in migration 025_tasks_lineage. Used by the
+          // orphan-sweep cron to detect cards whose parent idea/run/business
+          // was deleted. Pre-025 rows stay NULL (legacy-keep policy).
+          idea_id: string | null
+          run_id: string | null
+          business_slug: string | null
           created_at: string
           updated_at: string
         }
@@ -167,6 +173,9 @@ export type Database = {
           position?: number
           task_type?: 'manual' | 'automated'
           depends_on?: string[]
+          idea_id?: string | null
+          run_id?: string | null
+          business_slug?: string | null
           created_at?: string
         }
         Update: {
@@ -182,6 +191,9 @@ export type Database = {
           position?: number
           task_type?: 'manual' | 'automated'
           depends_on?: string[]
+          idea_id?: string | null
+          run_id?: string | null
+          business_slug?: string | null
         }
         Relationships: []
       }

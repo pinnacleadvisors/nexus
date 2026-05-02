@@ -9,6 +9,16 @@ const isProtectedRoute = createRouteMatcher([
   '/build(.*)',
   '/graph(.*)',
   '/swarm(.*)',
+  // Defense-in-depth — these pages live under app/(protected)/ and rely on the
+  // route-group layout for auth, but we still middleware-gate them so a future
+  // page added to the group without explicit `auth()` in its layout never
+  // leaks. See docs/adr/003-protected-route-matcher.md for the rationale.
+  '/idea(.*)',
+  '/idea-library(.*)',
+  '/learn(.*)',
+  '/settings(.*)',
+  '/signals(.*)',
+  '/manage-platform(.*)',
 ])
 
 // Owner-only allowlist: comma-separated Clerk user IDs (e.g. "user_abc,user_xyz").

@@ -10,8 +10,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { listBusinessesForUser, upsertBusiness, type BusinessUpsert } from '@/lib/business/db'
+import { listBusinessesForUser, upsertBusiness, getBusinessBySlug, type BusinessUpsert } from '@/lib/business/db'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { postVerification } from '@/lib/slack/client'
+import { createServerClient } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
 
@@ -66,8 +68,49 @@ export async function POST(req: NextRequest) {
     slack_webhook_url:     body.slack_webhook_url ?? null,
   }
 
+  // Compare against persisted state to detect a slack URL change.
+  const previous = await getBusinessBySlug(row.slug)
+  const slackChanged =
+    !!row.slack_webhook_url &&
+    row.slack_webhook_url !== previous?.slack_webhook_url
+
   const saved = await upsertBusiness(row)
   if (!saved) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
 
-  return NextResponse.json({ ok: true, business: saved })
+  // Verify the freshly-pasted webhook by sending a one-shot Block Kit message.
+  // Failures are returned as a warning so the UI can prompt the owner to retry.
+  let slackWarning: string | undefined
+  if (slackChanged && row.slack_webhook_url) {
+    const result = await postVerification(row.slack_webhook_url, {
+      businessName: row.name,
+      channel:      row.slack_channel ?? undefined,
+    })
+    if (result.ok) {
+      // Drop a "Slack connected" card on the board so the owner sees a visible
+      // confirmation alongside the Slack message itself.
+      const db = createServerClient()
+      if (db) {
+        await (db.from('tasks' as never) as unknown as {
+          insert: (rec: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
+        }).insert({
+          title:         `🔌 Slack connected: ${row.name}`,
+          description:   `Verification message delivered to ${row.slack_channel ?? 'the pinned channel'}. Approvals and run summaries will land here.`,
+          column_id:     'review',
+          priority:      'low',
+          business_slug: row.slug,
+          position:      0,
+        }).then(({ error }: { error: { message: string } | null }) => {
+          if (error) console.error('[businesses] slack-connected card insert:', error.message)
+        })
+      }
+    } else {
+      slackWarning = `Slack verification failed (${result.status}): ${result.reason}`
+    }
+  }
+
+  return NextResponse.json({
+    ok:            true,
+    business:      saved,
+    slack_warning: slackWarning,
+  })
 }

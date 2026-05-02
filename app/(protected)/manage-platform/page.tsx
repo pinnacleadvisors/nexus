@@ -28,6 +28,7 @@ import {
   Shield,
   Play,
   Package,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BuildPlan, BuildRequestType } from '@/lib/build/types'
@@ -38,9 +39,10 @@ import {
   type ResearchDigest,
   type ResearchCategory,
 } from '@/lib/build/research'
+import HealthPanel from '@/components/admin/HealthPanel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type ActiveTab = 'console' | 'research'
+type ActiveTab = 'console' | 'research' | 'health'
 
 type PanelState =
   | 'idle'
@@ -451,16 +453,22 @@ export default function BuildPage() {
             >
               {activeTab === 'console'
                 ? <Terminal size={18} style={{ color: '#6c63ff' }} />
-                : <Search   size={18} style={{ color: '#6c63ff' }} />}
+                : activeTab === 'research'
+                ? <Search   size={18} style={{ color: '#6c63ff' }} />
+                : <Activity size={18} style={{ color: '#6c63ff' }} />}
             </div>
             <div>
               <h1 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>
-                {activeTab === 'console' ? 'Dev Console' : 'Research Loop'}
+                {activeTab === 'console' ? 'Dev Console'
+                 : activeTab === 'research' ? 'Research Loop'
+                 : 'System Health'}
               </h1>
               <p className="text-xs" style={{ color: '#6c6c88' }}>
                 {activeTab === 'console'
                   ? 'Nexus builds Nexus — describe a change, approve the plan, dispatch to Claude Code'
-                  : 'Weekly AI/dev research digest — suggestions, stack health, improvement ideas'}
+                  : activeTab === 'research'
+                  ? 'Weekly AI/dev research digest — suggestions, stack health, improvement ideas'
+                  : 'Cron jobs, orphan-card sweep, gateway pings — visible failure surface'}
               </p>
             </div>
           </div>
@@ -469,7 +477,7 @@ export default function BuildPage() {
             className="flex rounded-lg p-0.5 shrink-0"
             style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
           >
-            {(['console', 'research'] as const).map(tab => (
+            {(['console', 'research', 'health'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => handleTabChange(tab)}
@@ -478,8 +486,12 @@ export default function BuildPage() {
                   ? { backgroundColor: '#6c63ff', color: '#fff' }
                   : { backgroundColor: 'transparent', color: '#6c6c88' }}
               >
-                {tab === 'console' ? <Terminal size={12} /> : <Search size={12} />}
-                {tab === 'console' ? 'Console' : 'Research'}
+                {tab === 'console' ? <Terminal size={12} />
+                 : tab === 'research' ? <Search size={12} />
+                 : <Activity size={12} />}
+                {tab === 'console' ? 'Console'
+                 : tab === 'research' ? 'Research'
+                 : 'Health'}
               </button>
             ))}
           </div>
@@ -998,6 +1010,13 @@ export default function BuildPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Health tab ─────────────────────────────────────────────────────── */}
+      {activeTab === 'health' && (
+        <div className="flex-1 overflow-y-auto p-6">
+          <HealthPanel />
         </div>
       )}
     </div>

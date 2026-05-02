@@ -564,4 +564,7 @@ export interface LearnStats {
   staleCount: number
   /** Daily XP goal (env-tuned) */
   dailyGoalXp: number
+  /** Most recent `flashcards.updated_at` — proxy for the last successful sync run.
+   *  null when no cards exist yet. */
+  lastSyncedAt: string | null
 }
