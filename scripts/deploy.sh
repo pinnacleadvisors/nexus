@@ -61,7 +61,17 @@ do_vercel=0; do_claude=0; do_codex=0; do_qa=0; do_typecheck=1; interactive=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --all)            do_vercel=1; do_claude=1; do_codex=1; do_qa=1; interactive=0 ;;
+    --all)
+      do_vercel=1
+      # In --all mode, only auto-include a Coolify service if its UUID env
+      # var is set. Lets you skip services you haven't deployed yet (e.g.
+      # qa-runner) without configuring placeholder env vars. Explicit
+      # --claude / --codex / --qa still hard-requires the UUID.
+      [ -n "${COOLIFY_KVM4_CLAUDE_UUID:-}" ] && do_claude=1
+      [ -n "${COOLIFY_KVM4_QA_UUID:-}"     ] && do_qa=1
+      [ -n "${COOLIFY_KVM2_CODEX_UUID:-}"  ] && do_codex=1
+      interactive=0
+      ;;
     --vercel)         do_vercel=1; interactive=0 ;;
     --claude)         do_claude=1; interactive=0 ;;
     --codex)          do_codex=1;  interactive=0 ;;
