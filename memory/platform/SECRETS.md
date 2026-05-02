@@ -32,6 +32,8 @@
 |-----|---------|
 | `CLAUDE_CODE_GATEWAY_URL` | **Primary.** Self-hosted Claude Code instance on Hostinger + Coolify (`services/claude-gateway/`). Drains the user's 20x Max plan instead of API credits. Resolves before OpenClaw in `lib/claw/business-client.ts`. |
 | `CLAUDE_CODE_BEARER_TOKEN` | Shared secret used both as bearer auth and HMAC key (`X-Nexus-Signature`) when Nexus calls the gateway. Must match `CLAUDE_GATEWAY_BEARER` set on the gateway container. |
+| `CODEX_GATEWAY_URL` | **Phase 8.** Self-hosted Codex CLI gateway on Hostinger KVM2 (`services/codex-gateway/`). Drains the user's ChatGPT Pro 10x plan. Routed to when `/api/claude-session/dispatch` body specifies `model: 'gpt-5.5-codex'` (or any `gpt*` / `codex*` prefix). See ADR 002. |
+| `CODEX_GATEWAY_BEARER_TOKEN` | Bearer + HMAC key when Nexus calls the codex gateway. Must match `CODEX_GATEWAY_BEARER` set on the gateway container. |
 | `OPENCLAW_GATEWAY_URL` | Fallback OpenClaw / MyClaw gateway URL (single-tenant fallback when neither business-specific nor Claude Code config exists). |
 | `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth. |
 | `ANTHROPIC_API_KEY` | Final fallback when both gateways are unavailable. |
@@ -188,6 +190,25 @@ Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
 2. **OpenClaw** (`OPENCLAW_GATEWAY_URL` or cookie config) — legacy fallback, retained but no longer required for new deployments.
 3. **`ANTHROPIC_API_KEY`** — final API-billed fallback when both gateways are unavailable.
 4. Helpful error message when nothing is configured.
+
+The **Codex gateway** is NOT in this default chain — it's opt-in via the `model` field on `/api/claude-session/dispatch` (ADR 002). Codex is for execution-heavy work (debug, container setup, sysadmin, current-UI research). Claude is for design-heavy work (architecture, codegen, multi-file refactor).
+
+## Codex gateway — container-side env (`services/codex-gateway/`)
+
+Set on the Coolify service running the codex gateway on KVM2 (NOT on Nexus / Vercel):
+
+| Var | Purpose |
+|-----|---------|
+| `CODEX_GATEWAY_BEARER` | Same value as Nexus's `CODEX_GATEWAY_BEARER_TOKEN`. Bearer + HMAC validation on inbound. |
+| `ALLOWED_USER_IDS` | Comma-separated Clerk user IDs. Same defence-in-depth gate as claude-gateway. Mirror the Vercel-side allowlist. |
+| `NEXUS_REPO_URL` | Git URL the entrypoint clones into `/repo` so spawned `codex` sessions can read `.claude/agents/`. |
+| `CODEX_GATEWAY_REPO_REF` | Branch / tag to check out (default `main`). |
+| `CODEX_MODEL` | Optional pin (e.g. `gpt-5.5`) — forwarded as `--model` to the spawned `codex exec`. |
+| `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 4). Lower than claude-gateway because ChatGPT Pro is one identity per request. |
+| `REQUEST_TIMEOUT_MS` | Per-request timeout for the spawned `codex` CLI (default 180 000). |
+| `CODEX_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `codex-gw.<your-domain>` → this. |
+
+> **Doppler `sandbox` config.** The KVM2 VPS uses a Doppler service token scoped to a `sandbox` config that **excludes** financial / secret-management secrets — see ADR 002 for the deny-list. For secret-gated work, codex must invoke the `doppler-broker` agent (ADR 001). Codex never holds raw values.
 
 ## Claude Code gateway — container-side env (`services/claude-gateway/`)
 

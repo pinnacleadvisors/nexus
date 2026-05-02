@@ -8,6 +8,10 @@ env:
   - ANTHROPIC_API_KEY
   - OPENCLAW_GATEWAY_URL
   - OPENCLAW_BEARER_TOKEN
+  - CLAUDE_CODE_GATEWAY_URL
+  - CLAUDE_CODE_BEARER_TOKEN
+  - CODEX_GATEWAY_URL
+  - CODEX_GATEWAY_BEARER_TOKEN
   - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
   - N8N_BASE_URL
   - N8N_API_KEY
@@ -31,6 +35,34 @@ Use a managed agent when the step requires ALL three of:
 - outputs that would benefit from being inspected by a Review node later
 
 Otherwise prefer `n8n-nodes-base.set`, `n8n-nodes-base.code`, or a direct provider node (Slack, Gmail, Notion, Stripe, …).
+
+## When to route a step to Codex (vs Claude — ADR 002)
+
+The dispatch route now supports a `model` field that picks which gateway runs the step:
+
+- **omit `model`** (or set `claude-*` / `sonnet` / `opus`) → routes to OpenClaw / Claude Code gateway. Use for **DESIGN-heavy** work: codegen, architecture, multi-file feature work, content writing, strategy.
+- **set `model: 'gpt-5.5-codex'`** → routes to the Codex gateway sandbox (KVM2). Use for **EXECUTION-heavy** work — typically the manual ops a human operator would otherwise do.
+
+Pick Codex when the step is one of:
+- debugging a stack trace, container, or deployment failure
+- setting up a service (Postgres, Redis, a Docker image, a build runner)
+- researching the **current** state of a third-party UI (Cloudflare, Hostinger, Coolify, Stripe, GitHub) — claude's training data is too stale for "what does the dashboard look like RIGHT NOW"
+- installing tooling on a VPS / VM / container
+- diagnosing flaky tests, network blips, or perf regressions
+- writing or running a deploy script
+
+Pick Claude (no `model` set) when the step is one of:
+- writing a feature, refactoring, generating code
+- writing copy, blog posts, ad creative, email sequences
+- system / data architecture
+- multi-file or whole-repo work
+- anything that needs `swarm: true` (codex doesn't support sub-agent teams)
+
+When both gateways could plausibly handle a step, **default to Claude**. Codex is opt-in via `model`.
+
+The generated `claude-session/dispatch` node carries the chosen model in its body. The route uses `shouldRouteToCodex(model)` from `lib/claw/codex-gateway.ts` to pick the gateway and falls through to OpenClaw if codex is unconfigured (so a misrouted step still completes).
+
+The `codex-operator` managed agent spec at `.claude/agents/codex-operator.md` documents the constraints — sandbox deny-list, network egress restrictions, PR-only trust level — so the strategist's prompts to it can stay tight.
 
 ## When to enable swarm (Agent Teams) on a managed-agent step
 

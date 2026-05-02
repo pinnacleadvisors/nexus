@@ -35,6 +35,7 @@
 - API routes: `streamText` → `result.toUIMessageStreamResponse()`
 - Model: `anthropic('claude-sonnet-4-6')` via `@ai-sdk/anthropic`
 - Strategic advisor: Opus; implementation: Sonnet; fast scoring: Haiku
+- **Execution-heavy** (debug, container setup, sysadmin, current-UI research): set `model: 'gpt-5.5-codex'` on `/api/claude-session/dispatch` to route to the Codex gateway sandbox (KVM2). See ADR 002 + `lib/claw/codex-gateway.ts`.
 
 ## Icons (lucide-react)
 

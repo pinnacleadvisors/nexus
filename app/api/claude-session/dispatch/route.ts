@@ -54,6 +54,7 @@ import { buildSessionEnv } from '@/lib/n8n/managed-agent-builder'
 import { advancePhase as advanceRunPhase, appendEvent as appendRunEvent, getRun } from '@/lib/runs/controller'
 import { RUN_PHASE_ORDER, type RunPhase } from '@/lib/types'
 import { resolveClawConfig, isBusinessSlug, type BusinessClawConfig } from '@/lib/claw/business-client'
+import { dispatchToCodexGateway, shouldRouteToCodex, isCodexGatewayConfigured } from '@/lib/claw/codex-gateway'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { wake } from '@/lib/notify/wake'
 
@@ -74,6 +75,14 @@ interface DispatchBody {
   advanceTo?: RunPhase
   /** D8 — route this dispatch to a specific per-business OpenClaw container. */
   businessSlug?: string
+  /**
+   * Phase 8 — when set to a GPT/codex model id (e.g. `gpt-5.5-codex`), route
+   * to the Codex gateway sandbox (services/codex-gateway) instead of OpenClaw.
+   * Used for execution-heavy work: debugging, container setup, sysadmin,
+   * current-UI research. Falls through to OpenClaw when codex is unconfigured.
+   * See ADR 002.
+   */
+  model?: string
   /** E11 — fire a Slack wake notification on completion. */
   notifyOnDone?: boolean
   inputs?: {
@@ -393,10 +402,99 @@ export async function POST(req: NextRequest) {
 
   // 2. Build env
   const env = buildSessionEnv({ swarm })
-
-  // 3. Dispatch to OpenClaw (if configured) — businessSlug routes to a per-business container.
-  const clawConfig = await resolveClawConfig(userId, businessSlug)
   const message = buildAgentBrief(body, env)
+
+  // 3. Codex routing — when the body specifies a GPT-class model AND the
+  // Codex gateway is configured, dispatch to the sandbox VPS instead of
+  // OpenClaw. Bypasses the per-business resolver entirely (codex is
+  // single-tenant by design — see ADR 002). Falls through to OpenClaw on
+  // any error or when codex is unconfigured so a routing typo doesn't
+  // wedge the workflow.
+  const wantsCodex = shouldRouteToCodex(body.model)
+  if (wantsCodex && isCodexGatewayConfigured()) {
+    const codexDispatch = await dispatchToCodexGateway({
+      agentSlug: body.agentSlug,
+      message,
+      env,
+      userId,
+    })
+
+    audit(req, {
+      action:     'claude.session.dispatch.codex',
+      resource:   'agent',
+      resourceId: body.agentSlug,
+      metadata:   {
+        capabilityId,
+        model:      body.model,
+        swarm,
+        asset,
+        created,
+        dispatched: Boolean(codexDispatch?.ok),
+        gateway:    'codex',
+      },
+    })
+
+    if (!codexDispatch) {
+      // Should be unreachable — isCodexGatewayConfigured guards this — but
+      // defensive: fall through to OpenClaw instead of erroring.
+    } else {
+      if (runId) {
+        await appendRunEvent(runId, 'dispatch.completed', {
+          agentSlug: body.agentSlug,
+          sessionId: codexDispatch.sessionId,
+          gateway:   'codex',
+          status:    codexDispatch.ok ? 'ok' : 'failed',
+          httpStatus: codexDispatch.status,
+        })
+        if (codexDispatch.ok && advanceTo) {
+          await advanceRunPhase(runId, advanceTo, {
+            reason:    'dispatch.success',
+            agentSlug: body.agentSlug,
+            gateway:   'codex',
+          })
+        }
+      }
+
+      if (codexDispatch.ok && body.notifyOnDone) {
+        void wake({
+          userId,
+          runId: runId ?? undefined,
+          title: `${body.agentSlug} (codex) completed`,
+          description: body.inputs?.task ?? capability.description.slice(0, 120),
+        })
+      }
+
+      if (!codexDispatch.ok) {
+        return NextResponse.json(
+          {
+            ok:         false,
+            agentSlug:  body.agentSlug,
+            sessionId:  codexDispatch.sessionId,
+            gateway:    'codex',
+            swarm,
+            envApplied: env,
+            created,
+            error:      codexDispatch.error ?? `codex gateway returned ${codexDispatch.status}`,
+          },
+          { status: codexDispatch.status === 401 ? 401 : 502 },
+        )
+      }
+
+      return NextResponse.json({
+        ok:          true,
+        sessionId:   codexDispatch.sessionId,
+        agentSlug:   body.agentSlug,
+        gateway:     'codex',
+        swarm,
+        envApplied:  env,
+        created,
+        ...(runId ? { runId, advancedTo: advanceTo ?? undefined } : {}),
+      })
+    }
+  }
+
+  // 4. Fall through to OpenClaw / Claude gateway (existing path).
+  const clawConfig = await resolveClawConfig(userId, businessSlug)
   const dispatch = await dispatchToOpenClaw({
     agentSlug: body.agentSlug,
     message,
