@@ -182,6 +182,7 @@ import { weeklyResearchLoop as _weeklyResearchLoop } from './research-loop'
 import { metricOptimiserHourly as _metricOptimiserHourly } from './metric-optimiser'
 import { ingestMetricsHourly as _ingestMetricsHourly } from './ingest-metrics'
 import { regressionSweepDaily as _regressionSweepDaily } from './regression-detector'
+import { businessOperatorDaily as _businessOperatorDaily } from './business-operator'
 
 export const functions = [
   onMilestoneCompleted,
@@ -192,4 +193,5 @@ export const functions = [
   _metricOptimiserHourly,
   _ingestMetricsHourly,
   _regressionSweepDaily,
+  _businessOperatorDaily,
 ]

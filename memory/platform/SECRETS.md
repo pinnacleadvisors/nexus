@@ -116,7 +116,7 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `MEMORY_TOKEN` | 20 | GitHub PAT (repo scope) for runtime agent memory |
 | `MEMORY_REPO` | 20 | e.g. `pinnacleadvisors/nexus-memory` |
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
-| `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands. Per-user override at `kind='slack' name='signingSecret'`. |
+| `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands AND `/api/slack/decision` business-operator approval webhooks (Phase A). Per-user override at `kind='slack' name='signingSecret'`. |
 | `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |
 
 ## Publish Pipeline (A10 / A11)
@@ -192,6 +192,25 @@ Defined in `docs/agents/GENERATION_PROTOCOL.md` and `.claude/agents/*.md`.
 4. Helpful error message when nothing is configured.
 
 The **Codex gateway** is NOT in this default chain — it's opt-in via the `model` field on `/api/claude-session/dispatch` (ADR 002). Codex is for execution-heavy work (debug, container setup, sysadmin, current-UI research). Claude is for design-heavy work (architecture, codegen, multi-file refactor).
+
+## Business Operator (Phase A — `inngest/functions/business-operator.ts`)
+
+The daily cron at 04:00 UTC iterates over `businesses WHERE status='active'`,
+dispatches the `business-operator` agent (sonnet) to claude-gateway for each,
+parses the JSON plan, and posts a Slack digest with inline Approve / Reject
+buttons. Per-business Slack webhook URL is stored in the `businesses` row, not
+in env. Inbound interactivity (`/api/slack/decision`) is signed-verified
+against `NEXUS_SLACK_SIGNING_SECRET`.
+
+| Var | Purpose |
+|-----|---------|
+| `CLAUDE_CODE_GATEWAY_URL` | Already required for chat — operator dispatches to it too |
+| `CLAUDE_CODE_BEARER_TOKEN` | Already required — operator uses same auth |
+| `NEXUS_SLACK_SIGNING_SECRET` | Required to accept Approve / Reject button clicks. Set to the same Slack app's signing secret as your slash commands (single app, multiple interactivities) |
+
+Per-business secrets (NOT env vars — stored in `businesses` table):
+- `slack_channel` — display name (e.g. `#nexus-ledger-lane`)
+- `slack_webhook_url` — incoming webhook pinned to the business's channel
 
 ## Codex gateway — container-side env (`services/codex-gateway/`)
 
