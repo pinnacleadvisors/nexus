@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual deploy: Vercel + Coolify (claude-gateway, codex-gateway, qa-runner).
+# Manual deploy: Vercel + Coolify (claude-gateway, codex-gateway, qa-runner, firecrawl).
 #
 # Triggers fresh deploys without waiting for git auto-deploy. Run when you
 # want to test platform changes — not on every commit.
@@ -32,6 +32,7 @@
 #      COOLIFY_KVM4_CLAUDE_UUID
 #    Optional (per service deployed):
 #      COOLIFY_KVM4_QA_UUID
+#      COOLIFY_KVM4_FIRECRAWL_UUID
 #      COOLIFY_KVM2_URL          COOLIFY_KVM2_API_TOKEN
 #      COOLIFY_KVM2_CODEX_UUID
 #
@@ -41,7 +42,14 @@
 #   ./scripts/deploy.sh --all
 #   ./scripts/deploy.sh --vercel
 #   ./scripts/deploy.sh --claude --codex
+#   ./scripts/deploy.sh --firecrawl
 #   ./scripts/deploy.sh --skip-typecheck --all  # bypass tsc gate
+#
+# NOTE: cloudflared (the tunnel connector) does NOT need to be redeployed
+# when testing platform features. It's a stateless tunnel daemon — it routes
+# inbound traffic to whatever container is currently behind the alias and
+# stays running across gateway restarts. Only redeploy cloudflared if you
+# rotate the tunnel token or bump its image.
 
 set -euo pipefail
 
@@ -57,7 +65,7 @@ warn() { printf '%s⚠%s %s\n' "$Y" "$X" "$1"; }
 err()  { printf '%s✘%s %s\n' "$R" "$X" "$1" >&2; }
 hdr()  { printf '\n%s── %s ──%s\n' "$B" "$1" "$X"; }
 
-do_vercel=0; do_claude=0; do_codex=0; do_qa=0; do_typecheck=1; interactive=1
+do_vercel=0; do_claude=0; do_codex=0; do_qa=0; do_firecrawl=0; do_typecheck=1; interactive=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -66,18 +74,20 @@ while [ $# -gt 0 ]; do
       # In --all mode, only auto-include a Coolify service if its UUID env
       # var is set. Lets you skip services you haven't deployed yet (e.g.
       # qa-runner) without configuring placeholder env vars. Explicit
-      # --claude / --codex / --qa still hard-requires the UUID.
-      [ -n "${COOLIFY_KVM4_CLAUDE_UUID:-}" ] && do_claude=1
-      [ -n "${COOLIFY_KVM4_QA_UUID:-}"     ] && do_qa=1
-      [ -n "${COOLIFY_KVM2_CODEX_UUID:-}"  ] && do_codex=1
+      # --claude / --codex / --qa / --firecrawl still hard-requires the UUID.
+      [ -n "${COOLIFY_KVM4_CLAUDE_UUID:-}"    ] && do_claude=1
+      [ -n "${COOLIFY_KVM4_QA_UUID:-}"        ] && do_qa=1
+      [ -n "${COOLIFY_KVM4_FIRECRAWL_UUID:-}" ] && do_firecrawl=1
+      [ -n "${COOLIFY_KVM2_CODEX_UUID:-}"     ] && do_codex=1
       interactive=0
       ;;
-    --vercel)         do_vercel=1; interactive=0 ;;
-    --claude)         do_claude=1; interactive=0 ;;
-    --codex)          do_codex=1;  interactive=0 ;;
-    --qa)             do_qa=1;     interactive=0 ;;
+    --vercel)         do_vercel=1;    interactive=0 ;;
+    --claude)         do_claude=1;    interactive=0 ;;
+    --codex)          do_codex=1;     interactive=0 ;;
+    --qa)             do_qa=1;        interactive=0 ;;
+    --firecrawl)      do_firecrawl=1; interactive=0 ;;
     --skip-typecheck) do_typecheck=0 ;;
-    -h|--help)        sed -n '2,45p' "$0"; exit 0 ;;
+    -h|--help)        sed -n '2,52p' "$0"; exit 0 ;;
     *) err "unknown flag: $1"; exit 2 ;;
   esac
   shift
@@ -88,9 +98,10 @@ if [ $interactive = 1 ]; then
   read -rp "Deploy claude-gateway (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_claude=1
   read -rp "Deploy codex-gateway  (KVM2)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_codex=1
   read -rp "Deploy qa-runner      (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_qa=1
+  read -rp "Deploy firecrawl      (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_firecrawl=1
 fi
 
-if [ $do_vercel = 0 ] && [ $do_claude = 0 ] && [ $do_codex = 0 ] && [ $do_qa = 0 ]; then
+if [ $do_vercel = 0 ] && [ $do_claude = 0 ] && [ $do_codex = 0 ] && [ $do_qa = 0 ] && [ $do_firecrawl = 0 ]; then
   warn "nothing selected — exiting"
   exit 0
 fi
@@ -199,6 +210,15 @@ if [ $do_qa = 1 ]; then
     "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_QA_UUID"
 fi
 
+# ─── firecrawl (KVM4) ───────────────────────────────────────────────────────
+if [ $do_firecrawl = 1 ]; then
+  require_env COOLIFY_KVM4_URL
+  require_env COOLIFY_KVM4_API_TOKEN
+  require_env COOLIFY_KVM4_FIRECRAWL_UUID "Coolify → firecrawl resource URL → last UUID"
+  deploy_coolify "firecrawl (KVM4)" \
+    "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_FIRECRAWL_UUID"
+fi
+
 # ─── codex-gateway (KVM2) ───────────────────────────────────────────────────
 if [ $do_codex = 1 ]; then
   require_env COOLIFY_KVM2_URL          "e.g. http://72.62.244.75:8000"
@@ -212,7 +232,8 @@ fi
 hdr "done"
 ok "all selected deploys triggered"
 printf '\nWatch logs:\n'
-[ $do_vercel = 1 ] && printf '  vercel: vercel logs --token $VERCEL_TOKEN --follow\n'
-[ $do_claude = 1 ] && printf '  claude: %s → claude-gateway → Logs\n' "$COOLIFY_KVM4_URL"
-[ $do_codex  = 1 ] && printf '  codex:  %s → codex-gateway → Logs\n' "$COOLIFY_KVM2_URL"
-[ $do_qa     = 1 ] && printf '  qa:     %s → qa-runner → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_vercel    = 1 ] && printf '  vercel:    vercel logs --token $VERCEL_TOKEN --follow\n'
+[ $do_claude    = 1 ] && printf '  claude:    %s → claude-gateway → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_codex     = 1 ] && printf '  codex:     %s → codex-gateway → Logs\n' "$COOLIFY_KVM2_URL"
+[ $do_qa        = 1 ] && printf '  qa:        %s → qa-runner → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_firecrawl = 1 ] && printf '  firecrawl: %s → firecrawl → Logs\n' "$COOLIFY_KVM4_URL"
