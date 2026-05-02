@@ -1,10 +1,15 @@
--- Migration: 024_businesses
+-- Migration: 024_business_operators
 -- Description: Phase A — autonomous business orchestration.
 --   One row per business the operator runs. The Inngest cron at
 --   inngest/functions/business-operator.ts iterates over
 --   WHERE status='active' and dispatches the `business-operator` agent
 --   for each, carrying the row (slug, money_model JSONB, kpi_targets JSONB,
 --   etc.) as inputs.business so the agent can plan in context.
+--
+-- Naming: `business_operators` (not `businesses`) because migration 003 already
+--   created a `businesses` table for the legacy "business workspace" concept
+--   used by lib/graph/builder.ts. This is the orchestrator-config table — same
+--   per-business semantics, distinct schema.
 --
 -- Slack: each business pins ONE channel via slack_webhook_url. Inline
 --   approve/reject buttons POST to /api/slack/decision which verifies the
@@ -18,7 +23,7 @@
 --   (presets keep typed templates in code rather than embedding user-id
 --   placeholders here).
 
-CREATE TABLE IF NOT EXISTS businesses (
+CREATE TABLE IF NOT EXISTS business_operators (
   slug                    TEXT        PRIMARY KEY,
   name                    TEXT        NOT NULL,
   status                  TEXT        NOT NULL DEFAULT 'active'
@@ -50,10 +55,10 @@ CREATE TABLE IF NOT EXISTS businesses (
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS businesses_user_status_idx ON businesses(user_id, status);
+CREATE INDEX IF NOT EXISTS business_operators_user_status_idx ON business_operators(user_id, status);
 
 -- updated_at trigger
-CREATE OR REPLACE FUNCTION businesses_set_updated_at()
+CREATE OR REPLACE FUNCTION business_operators_set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -61,26 +66,26 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS businesses_updated_at ON businesses;
-CREATE TRIGGER businesses_updated_at
-  BEFORE UPDATE ON businesses
-  FOR EACH ROW EXECUTE FUNCTION businesses_set_updated_at();
+DROP TRIGGER IF EXISTS business_operators_updated_at ON business_operators;
+CREATE TRIGGER business_operators_updated_at
+  BEFORE UPDATE ON business_operators
+  FOR EACH ROW EXECUTE FUNCTION business_operators_set_updated_at();
 
 -- RLS — owner-scoped. Service role (used by cron + dispatch routes) bypasses RLS.
-ALTER TABLE businesses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE business_operators ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS businesses_select_own ON businesses;
-CREATE POLICY businesses_select_own ON businesses
+DROP POLICY IF EXISTS business_operators_select_own ON business_operators;
+CREATE POLICY business_operators_select_own ON business_operators
   FOR SELECT USING (user_id = current_setting('request.jwt.claim.sub', true));
 
-DROP POLICY IF EXISTS businesses_insert_own ON businesses;
-CREATE POLICY businesses_insert_own ON businesses
+DROP POLICY IF EXISTS business_operators_insert_own ON business_operators;
+CREATE POLICY business_operators_insert_own ON business_operators
   FOR INSERT WITH CHECK (user_id = current_setting('request.jwt.claim.sub', true));
 
-DROP POLICY IF EXISTS businesses_update_own ON businesses;
-CREATE POLICY businesses_update_own ON businesses
+DROP POLICY IF EXISTS business_operators_update_own ON business_operators;
+CREATE POLICY business_operators_update_own ON business_operators
   FOR UPDATE USING (user_id = current_setting('request.jwt.claim.sub', true));
 
-DROP POLICY IF EXISTS businesses_delete_own ON businesses;
-CREATE POLICY businesses_delete_own ON businesses
+DROP POLICY IF EXISTS business_operators_delete_own ON business_operators;
+CREATE POLICY business_operators_delete_own ON business_operators
   FOR DELETE USING (user_id = current_setting('request.jwt.claim.sub', true));

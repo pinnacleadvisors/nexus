@@ -1,5 +1,10 @@
 /**
- * Phase A — read/write helpers for the businesses table.
+ * Phase A — read/write helpers for the `business_operators` table.
+ *
+ * Note: the table is `business_operators` (not `businesses`) because migration
+ * 003_businesses_milestones.sql already created a `businesses` table for the
+ * legacy workspace concept used by lib/graph/builder.ts. This file owns the
+ * orchestrator-config table — same per-business semantics, distinct schema.
  *
  * All writes use the service-role Supabase client (bypasses RLS) because
  * cron + dispatch routes need to operate without a Clerk session. Read paths
@@ -54,7 +59,7 @@ function rowFromDb(row: DbRow): BusinessRow {
 export async function listActiveBusinesses(): Promise<BusinessRow[]> {
   const db = createServerClient()
   if (!db) return []
-  const { data } = await (db.from('businesses' as never) as unknown as {
+  const { data } = await (db.from('business_operators' as never) as unknown as {
     select: (cols: string) => {
       eq: (c: string, v: string) => {
         order: (c: string, opts: { ascending: boolean }) => Promise<{ data: DbRow[] | null }>
@@ -70,7 +75,7 @@ export async function listActiveBusinesses(): Promise<BusinessRow[]> {
 export async function getBusinessBySlug(slug: string): Promise<BusinessRow | null> {
   const db = createServerClient()
   if (!db) return null
-  const { data } = await (db.from('businesses' as never) as unknown as {
+  const { data } = await (db.from('business_operators' as never) as unknown as {
     select: (cols: string) => {
       eq: (c: string, v: string) => {
         maybeSingle: () => Promise<{ data: DbRow | null }>
@@ -86,7 +91,7 @@ export async function getBusinessBySlug(slug: string): Promise<BusinessRow | nul
 export async function listBusinessesForUser(userId: string): Promise<BusinessRow[]> {
   const db = createServerClient()
   if (!db) return []
-  const { data } = await (db.from('businesses' as never) as unknown as {
+  const { data } = await (db.from('business_operators' as never) as unknown as {
     select: (cols: string) => {
       eq: (c: string, v: string) => {
         order: (c: string, opts: { ascending: boolean }) => Promise<{ data: DbRow[] | null }>
@@ -106,7 +111,7 @@ export type BusinessUpsert = Omit<BusinessRow,
 export async function upsertBusiness(row: BusinessUpsert): Promise<BusinessRow | null> {
   const db = createServerClient()
   if (!db) return null
-  const { data } = await (db.from('businesses' as never) as unknown as {
+  const { data } = await (db.from('business_operators' as never) as unknown as {
     upsert: (rec: unknown, opts: { onConflict: string }) => {
       select: () => { single: () => Promise<{ data: DbRow | null }> }
     }
@@ -120,7 +125,7 @@ export async function upsertBusiness(row: BusinessUpsert): Promise<BusinessRow |
 export async function setBusinessRun(slug: string, runId: string | null): Promise<void> {
   const db = createServerClient()
   if (!db) return
-  await (db.from('businesses' as never) as unknown as {
+  await (db.from('business_operators' as never) as unknown as {
     update: (patch: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> }
   })
     .update({ current_run_id: runId, last_operator_at: new Date().toISOString() })

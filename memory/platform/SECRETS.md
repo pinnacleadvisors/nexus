@@ -195,12 +195,17 @@ The **Codex gateway** is NOT in this default chain — it's opt-in via the `mode
 
 ## Business Operator (Phase A — `inngest/functions/business-operator.ts`)
 
-The daily cron at 04:00 UTC iterates over `businesses WHERE status='active'`,
+The daily cron at 04:00 UTC iterates over `business_operators WHERE status='active'`,
 dispatches the `business-operator` agent (sonnet) to claude-gateway for each,
 parses the JSON plan, and posts a Slack digest with inline Approve / Reject
-buttons. Per-business Slack webhook URL is stored in the `businesses` row, not
-in env. Inbound interactivity (`/api/slack/decision`) is signed-verified
+buttons. Per-business Slack webhook URL is stored in the `business_operators`
+row, not in env. Inbound interactivity (`/api/slack/decision`) is signed-verified
 against `NEXUS_SLACK_SIGNING_SECRET`.
+
+> Table is `business_operators` because the legacy `businesses` table from
+> migration 003 has a different schema (id UUID PK + workspace fields) and is
+> still in use by `lib/graph/builder.ts`. See ADR-worthy migration note in
+> `supabase/migrations/024_business_operators.sql`.
 
 | Var | Purpose |
 |-----|---------|
