@@ -15,6 +15,13 @@ export const ingestMetricsHourly = inngest.createFunction(
   {
     id:   'ingest-metrics-hourly',
     name: 'Publish-metric ingestion sweep',
+    // retries: 1 — each user's metrics call hits YouTube / TikTok / Instagram
+    // APIs which are quota-limited (YouTube especially). 3× retry × N users
+    // × N providers = quota exhaustion on a flaky upstream. Per-user step
+    // catches its own errors below, so function-level retry only fires on
+    // the list-measuring-users DB call. One retry covers transient pool
+    // exhaustion. See docs/RETRY_STORM_AUDIT.md finding 2.
+    retries: 1,
     triggers: [{ cron: '15 * * * *' }],   // :15 past the hour — offset from metric optimiser
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
@@ -33,8 +40,19 @@ export const ingestMetricsHourly = inngest.createFunction(
 
     const results = []
     for (const userId of userIds) {
+      // Wrap each user in try/catch — one user's broken provider creds (e.g.
+      // expired YouTube refresh token) shouldn't fail the function and trigger
+      // a function-level retry that re-pings the SAME broken provider for
+      // every other user.
       const r = await step['run'](`ingest-${userId.slice(0, 12)}`, async () => {
-        return ingestMetricsForUser(userId)
+        try {
+          return await ingestMetricsForUser(userId)
+        } catch (err) {
+          return {
+            error: err instanceof Error ? err.message : String(err),
+            userId,
+          }
+        }
       })
       results.push({ userId, results: r })
     }

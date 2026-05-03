@@ -257,6 +257,12 @@ export const businessOperatorDaily = inngest.createFunction(
   {
     id:   'business-operator-daily',
     name: 'Business Operator — daily cycle (per active business)',
+    // retries: 1 — the daily cycle dispatches Claude through the gateway.
+    // Default 3 retries × N businesses × Max-plan tokens = expensive on a
+    // flaky gateway. One retry catches transient flakes; further failures
+    // skip until tomorrow rather than burning the plan. See
+    // docs/RETRY_STORM_AUDIT.md finding 2.
+    retries: 1,
     triggers: [{ cron: '0 4 * * *' }],   // 04:00 UTC = 11:00 ICT
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {

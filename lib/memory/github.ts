@@ -43,6 +43,16 @@ function headers(): Record<string, string> {
   }
 }
 
+/**
+ * GitHub API rate limit is 5k req/hr per token. A hung fetch blocks the
+ * Vercel function until the platform timeout fires; in a parent retry loop
+ * (n8n webhook handler that calls appendToPage on every event) this can
+ * exhaust function-seconds and re-trigger the parent retry. 15s timeout
+ * surfaces stalls quickly. See docs/RETRY_STORM_AUDIT.md finding 5.
+ */
+const GH_TIMEOUT_MS = 15_000
+function ghSignal(): AbortSignal { return AbortSignal.timeout(GH_TIMEOUT_MS) }
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface MemoryFile {
@@ -104,6 +114,7 @@ export async function writePage(
     try {
       const getRes = await fetch(`${BASE}/repos/${r}/contents/${encodeURIComponent(path)}`, {
         headers: headers(),
+        signal:  ghSignal(),
       })
       if (getRes.ok) {
         const data = await getRes.json() as { sha: string }
@@ -121,6 +132,7 @@ export async function writePage(
       method:  'PUT',
       headers: headers(),
       body:    JSON.stringify(body),
+      signal:  ghSignal(),
     })
 
     if (!res.ok) {
@@ -146,6 +158,7 @@ export async function readPage(path: string): Promise<MemoryPage | null> {
     const r = repo()
     const res = await fetch(`${BASE}/repos/${r}/contents/${encodeURIComponent(path)}`, {
       headers: headers(),
+      signal:  ghSignal(),
     })
     if (!res.ok) return null
     const data = await res.json() as { content: string; sha: string; html_url: string; encoding: string }
@@ -167,6 +180,7 @@ export async function listPages(folder: string): Promise<MemoryFile[]> {
     const r = repo()
     const res = await fetch(`${BASE}/repos/${r}/contents/${encodeURIComponent(folder)}`, {
       headers: headers(),
+      signal:  ghSignal(),
     })
     if (!res.ok) return []
     const data = await res.json() as Array<{
@@ -198,6 +212,7 @@ export async function searchPages(query: string, limit = 10): Promise<MemorySear
     const q  = encodeURIComponent(`${query} repo:${r}`)
     const res = await fetch(`${BASE}/search/code?q=${q}&per_page=${Math.min(limit, 30)}`, {
       headers: headers(),
+      signal:  ghSignal(),
     })
     if (!res.ok) return []
     const data = await res.json() as {

@@ -98,7 +98,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, processed: results.length, results })
   }
 
-  const queue = await listNewSignals(MAX_PER_RUN)
+  // Queue-level try/catch — DB error in listNewSignals shouldn't 5xx the cron
+  // (that would prompt Vercel to log it as a failed run; the per-signal loop
+  // already handles individual processSignal failures).
+  let queue: Awaited<ReturnType<typeof listNewSignals>> = []
+  try {
+    queue = await listNewSignals(MAX_PER_RUN)
+  } catch (err) {
+    return NextResponse.json({
+      ok:        false,
+      processed: 0,
+      pending:   0,
+      results,
+      error:     `listNewSignals failed: ${err instanceof Error ? err.message : String(err)}`,
+    }, { status: 200 })  // Return 200 so cron isn't auto-retried
+  }
+
   for (const signal of queue) {
     try {
       results.push(await processSignal(signal))

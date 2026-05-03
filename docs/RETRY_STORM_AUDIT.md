@@ -46,32 +46,35 @@ Every external surface (webhook, cron, frontend fetch, outbound API) MUST follow
 
 > Generated 2026-05-03 by the Explore-agent audit (see [Audit procedure](#audit-procedure)). Re-generate after every external-integration addition.
 
-### Summary (2026-05-03 pass)
+### Summary (2026-05-03 pass — fixes shipped 2026-05-03)
 
-| Category | Findings | HIGH | MEDIUM | LOW |
-|---|---|---|---|---|
-| Webhooks | 4 | 0 | 3 | 1 |
-| Inngest | 4 | 0 | 3 | 1 |
-| Cron | 8 | 1 | 2 | 5 |
-| Frontend | 3 | 0 | 2 | 1 |
-| Outbound APIs | 5 | 0 | 5 | 0 |
-| DB writers | 2 | 0 | 1 | 1 |
-| **Total** | **26** | **1** | **16** | **9** |
+| Category | Findings | HIGH | MEDIUM | LOW | Status |
+|---|---|---|---|---|---|
+| Webhooks | 4 | 0 | 3 | 1 | ✅ all actionable fixed |
+| Inngest | 4 | 0 | 3 | 1 | ✅ all actionable fixed |
+| Cron | 8 | 1 | 2 | 5 | ✅ all actionable fixed |
+| Frontend | 3 | 0 | 2 | 1 | ✅ all actionable fixed |
+| Outbound APIs | 5 | 0 | 5 | 0 | ✅ all actionable fixed |
+| DB writers | 2 | 0 | 1 | 1 | ✅ all actionable fixed |
+| **Total** | **26** | **1** | **16** | **9** | **✅ 14/14 actionable shipped** |
 
-Top three follow-ups (in order):
+All HIGH + MEDIUM findings fixed. LOW findings deliberately left as-is (they're already-idempotent / single-shot / manually-triggered and require no code change). Shared infrastructure introduced:
 
-1. **HIGH** — `/api/cron/signal-review` loop has no per-signal try/catch; one bad signal fails the cron, Vercel re-fires next schedule, processes the bad signal again
-2. **MEDIUM** — `/api/webhooks/claw` lacks idempotency; replayed webhook = duplicate cards
-3. **MEDIUM** — frontend pollers (`/tools/claw/status`, `/dashboard/org`) hit 5xx endpoints at 8s/15s cadence with no backoff
+- [`lib/board/insert-task.ts`](../lib/board/insert-task.ts) — fail-soft inserts (already shipped)
+- [`lib/health/circuit-breaker.ts`](../lib/health/circuit-breaker.ts) — process-local breaker
+- [`lib/http/fetch-with-timeout.ts`](../lib/http/fetch-with-timeout.ts) — timeout + bounded retry
+- [`lib/hooks/usePollWithBackoff.ts`](../lib/hooks/usePollWithBackoff.ts) — frontend polling with exponential backoff + auto-pause
+- [`lib/webhooks/idempotency.ts`](../lib/webhooks/idempotency.ts) — claimEvent dedup helper
+- [`supabase/migrations/027_idempotency_and_dedup.sql`](../supabase/migrations/027_idempotency_and_dedup.sql) — `webhook_events` table + `metric_samples` UNIQUE
 
 ### 1. Webhook handlers under `app/api/webhooks/`
 
 | Route | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `/api/webhooks/n8n` | **MEDIUM** | n8n auto-retries 5xx 5×. `insertTask` already mitigates the column-mismatch class. Signature failures still 401 → n8n no-retries 4xx, OK. | Add explicit rate-limit headers; document in route header comment |
-| `/api/webhooks/claw` | **MEDIUM** | Fire-and-forget `insertTask()` — claw retries 5× on 5xx. Currently returns 200 quickly, so this is OK. But no idempotency: a replayed event creates duplicate cards. | Add UNIQUE constraint or pre-insert existence check on `(claw_event_id, user_id)`; stamp event ID on the row |
-| `/api/webhooks/stripe` | **MEDIUM** | Stripe retries until 4xx, for up to 3 days. Revenue events inserted without dedup → replays = duplicate revenue rows. | Add `UNIQUE(stripe_event_id)` on `revenue_events`; ON CONFLICT DO NOTHING |
-| `/api/webhooks/slack` | **LOW** | Slash commands rarely retry; `advancePhase` / `setStatus` are phase-aware (won't double-advance). | None needed |
+| ✅ `/api/webhooks/n8n` | **MEDIUM** | n8n auto-retries 5xx 5×. `insertTask` already mitigates the column-mismatch class. | **Fixed** — `claimEvent('n8n', executionId)` returns 200+`{duplicate:true}` on retry; insertTask + idempotency table dedupe at the DB layer |
+| ✅ `/api/webhooks/claw` | **MEDIUM** | Fire-and-forget `insertTask()` — claw retries 5× on 5xx. No idempotency. | **Fixed** — `claimEvent('claw', sessionId)` returns 200+`{duplicate:true}` on replay before any insert runs |
+| ✅ `/api/webhooks/stripe` | **MEDIUM** | Stripe retries until 4xx, for up to 3 days. Revenue events inserted without dedup. | **Fixed** — `claimEvent('stripe', event.id)` short-circuits replays; uses `webhook_events` PK as the natural UNIQUE constraint |
+| `/api/webhooks/slack` | **LOW** | Slash commands rarely retry; `advancePhase` / `setStatus` are phase-aware. | None needed |
 
 ### 2. Inngest functions under `inngest/functions/`
 
@@ -79,9 +82,9 @@ Inngest retries failed steps 3× by default. Each retry re-runs the entire funct
 
 | Function | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `inngest/functions/research-loop.ts` | **MEDIUM** | Calls Tavily (paid per query) + Anthropic (gateway / API key) inside a single function. On any throw, Inngest retries 3× → 3× Tavily quota burn + 3× LLM tokens. | Wrap Tavily/Anthropic in `step.run('search', { maxRetries: 0 }, ...)`; surface failures to the digest output instead of throwing |
-| `inngest/functions/business-operator.ts` | **MEDIUM** | Gateway plan synthesis on every business. Flaky gateway → 3× Inngest retry → 3× Max-plan token burn. | Add circuit-breaker to `isGatewayHealthy()`; skip retry when health check already failed in last 5 min |
-| `inngest/functions/ingest-metrics.ts` | **MEDIUM** | YouTube / TikTok / Instagram polling per measuring run. Provider timeout → throw → 3× retry → 3× quota. YouTube quota especially limited. | `.catch(() => null)` per provider; log failure for manual review instead of throwing |
+| ✅ `inngest/functions/research-loop.ts` | **MEDIUM** | Tavily + Anthropic inside one function. Throw → 3× retry → 3× cost. | **Fixed** — `retries: 0` set on `createFunction` config. Steps already wrap their own errors so degradation is graceful (empty digest) instead of throwing |
+| ✅ `inngest/functions/business-operator.ts` | **MEDIUM** | Gateway flaky → 3× retry × N businesses × Max-plan tokens. | **Fixed** — `retries: 1` set. Gateway health check already cached in `lib/claw/health.ts` (60s positive / 10s negative TTL) |
+| ✅ `inngest/functions/ingest-metrics.ts` | **MEDIUM** | Provider timeout → throw → 3× retry × N users × N providers = quota exhaustion. | **Fixed** — `retries: 1` set; per-user `step.run` wraps `ingestMetricsForUser` in try/catch returning `{error}` so one user's broken creds doesn't fail the function |
 | `metric-optimiser.ts`, `regression-detector.ts` | **LOW** | Local-only operations, no paid calls per retry. | None needed |
 
 ### 3. Vercel cron routes under `app/api/cron/`
@@ -90,9 +93,9 @@ Vercel itself doesn't retry crons, but a failing cron re-fires on its next sched
 
 | Route | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `/api/cron/signal-review` | **HIGH** | Loop processes signals via LLM council. No per-signal try/catch — one bad signal fails the whole cron → Vercel re-fires → same signal fails again next slot → LLM tokens burn each time. | Wrap each signal in try/catch; return partial results on failure; mark bad signals so they're skipped on subsequent runs |
-| `/api/cron/rebuild-graph` | **MEDIUM** | `recordSamples()` writes observability metrics on every run. Re-fire = duplicate metric rows. | Add `(timestamp, agent_slug, kind)` dedup or tag with cron-run-id |
-| `/api/cron/sync-memory` | **MEDIUM** | GitHub webhook receiver. Replayed webhook = duplicate mol_* rows. | Add `UNIQUE(scope_id, slug)` on mol_* tables (likely already there — verify) |
+| ✅ `/api/cron/signal-review` | **HIGH** | (audit was partially wrong — per-signal try/catch was already there at lines 102-114, AND `listNewSignals` only returns `status='new'` so stuck-triaging signals aren't re-picked). | **Verified mitigated** + added queue-level try/catch around `listNewSignals` so DB errors return 200 instead of triggering Vercel re-fires |
+| ✅ `/api/cron/rebuild-graph` | **MEDIUM** | `recordSamples()` writes observability metrics on every run. Re-fire = duplicate metric rows. | **Fixed** — migration 027 adds `metric_samples_run_agent_kind_uniq` partial UNIQUE (run_id, agent_slug, kind) WHERE run_id IS NOT NULL. Duplicate inserts become no-ops |
+| ✅ `/api/cron/sync-memory` | **MEDIUM** | GitHub webhook replays = duplicate mol_* rows. | **Verified** — `mol_*` tables already use `upsert(row, { onConflict: 'scope_id,slug' })` (see `applyPaths` in route). Replays become no-op upserts. No code change needed |
 | `/api/cron/sweep-orphan-cards` | **LOW** | Idempotent (deletes by ID); already wrapped in try/catch. | None |
 | `/api/cron/sync-learning-cards` | **LOW** | Idempotent upsert via `syncCardsFromMolecular`. | None |
 | `/api/cron/post-deploy-smoke` | **LOW** | Read-only smoke probe. | None |
@@ -103,8 +106,8 @@ Vercel itself doesn't retry crons, but a failing cron re-fires on its next sched
 
 | Page | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `app/(protected)/tools/claw/status/page.tsx:87` | **MEDIUM** | `setInterval(fetchStatus, 8_000)` — no backoff on 5xx. Status endpoint failing = 7.5 calls/minute forever. | Exponential backoff: 8s → 16s → 32s capped at 60s; reset on 2xx |
-| `app/(protected)/dashboard/org/page.tsx:135` | **MEDIUM** | `setInterval(fetchData, 15_000)` — same pattern. | Same fix |
+| ✅ `app/(protected)/tools/claw/status/page.tsx` | **MEDIUM** | `setInterval(fetchStatus, 8_000)` — no backoff on 5xx. | **Fixed** — `usePollWithBackoff` hook: 8s base, doubles on failure capped at 60s, auto-pauses after 5 consecutive failures. UI surfaces `Auto-paused (N failures)` instead of silent hammering |
+| ✅ `app/(protected)/dashboard/org/page.tsx` | **MEDIUM** | `setInterval(fetchData, 15_000)` — same pattern. | **Fixed** — same `usePollWithBackoff` hook with 15s base. Refresh button turns red + tooltip when auto-paused; clicking it re-enables polling |
 | `app/(protected)/dashboard/page.tsx:72-109` | **LOW** | Supabase Realtime subscription with auto-reconnect. Supabase client handles backoff internally. | None |
 
 ### 5. Outbound external API calls
@@ -113,17 +116,17 @@ These are called by the routes/functions above. The risk is **per-attempt cost a
 
 | Module | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `lib/claw/llm.ts` | **MEDIUM** | `callClaude` has no retry, but parents (research-loop, business-operator) retry the whole function → 3× LLM cost. Gateway health check at line 79 is per-call, not cached. | Set `maxRetries: 1` on `generateText()` calls; cache `isGatewayHealthy()` result for 30s |
-| `lib/tools/tavily.ts` | **MEDIUM** | No internal retry. Inngest parent retry = 3× Tavily quota. Free tier 1k/mo. | Catch `AbortError` in research-loop; don't retry Tavily |
-| `lib/firecrawl.ts` (hosted path) | **MEDIUM** | Similar to Tavily — caller retries amplify. | Add explicit `maxRetries: 0` in caller |
-| `lib/memory/github.ts` | **MEDIUM** | `writePage` does GET-SHA then PUT. No idempotency on `appendToPage` — replayed n8n webhooks duplicate the same body. GitHub rate limit 5k/hr authenticated. | Check content-already-exists before append; honor `Retry-After` header |
-| `lib/notion.ts` | **MEDIUM** | No retry, no timeout cap. 3 req/sec rate limit. Rarely used currently. | Add `AbortSignal.timeout(15000)` to all fetch calls |
+| ✅ `lib/claw/llm.ts` | **MEDIUM** | Parents retry → 3× LLM cost. Gateway health probe at line 79. | **Verified** — `lib/claw/health.ts` already caches probe results 60s-positive / 10s-negative. Parent retry caps shipped via Inngest config (above) |
+| ✅ `lib/tools/tavily.ts` | **MEDIUM** | No internal retry; parent retry = 3× quota burn. | **Verified** — file already has `signal: AbortSignal.timeout(15_000)` at line 76 + try/catch returning `[]`. Parent (research-loop) now has `retries: 0` |
+| ✅ `lib/tools/firecrawl.ts` | **MEDIUM** | Similar — caller retries amplify. | **Verified** — file already has `signal: AbortSignal.timeout(timeoutMs)` at line 81. Parent retry caps applied above |
+| ✅ `lib/memory/github.ts` | **MEDIUM** | No idempotency on `appendToPage` — replayed webhooks duplicate. | **Fixed** — webhook-level `claimEvent` guard (above) prevents replays from reaching `appendToPage` at all. Plus added `signal: ghSignal()` (15s timeout) on every fetch in this file |
+| ✅ `lib/notion.ts` | **MEDIUM** | No timeout cap. 3 req/sec rate limit. | **Fixed** — added `notionSignal()` helper + `signal: notionSignal()` (15s timeout) on every fetch in this file |
 
 ### 6. Database writes that could fail+retry
 
 | File | Severity | Issue | Mitigation |
 |---|---|---|---|
-| `lib/observability.ts::recordSamples` | **MEDIUM** | Fire-and-forget batch insert. Task completes → metrics logged → task crashes → restarts → metrics logged again. | Add `UNIQUE(user_id, agent_slug, kind, at)` with `ON CONFLICT DO NOTHING` |
+| ✅ `lib/observability.ts::recordSamples` | **MEDIUM** | Duplicate metrics on task restart. | **Fixed** — migration 027 adds partial UNIQUE `(run_id, agent_slug, kind) WHERE run_id IS NOT NULL`. Existing supabase-js upsert path treats duplicates as no-ops |
 | `lib/runs/measure-ingester.ts` | **LOW** | Single insert per phase advance, idempotent at the run-state level. | None |
 
 ### 7. Auto-promotion / observability writers
