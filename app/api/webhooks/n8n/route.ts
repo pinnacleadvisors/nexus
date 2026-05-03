@@ -26,6 +26,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { insertTask } from '@/lib/board/insert-task'
 import { appendToPage, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 
@@ -149,25 +150,21 @@ export async function POST(req: NextRequest) {
     const emoji  = event.status === 'success' ? '✅' : '❌'
     const column = event.status === 'success' ? 'review' : 'in-progress'
 
-    await (db as unknown as {
-      from: (t: string) => {
-        insert: (v: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
-      }
-    }).from('tasks')
-      .insert({
-        title:         `${emoji} [n8n] ${event.workflowName}`,
-        description:   event.summary
-          ? `${event.summary}\n\nExecution: ${event.executionId}\nStatus: ${event.status}`
-          : `Workflow execution ${event.status}.\n\nExecution ID: ${event.executionId}`,
-        column_id:     column,
-        priority:      event.status === 'error' ? 'high' : 'medium',
-        business_slug: event.businessSlug ?? null,
-        run_id:        event.runId ?? null,
-        position:      0,
-      })
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) console.error('[n8n webhook] new card insert:', error.message)
-      })
+    // Use the lineage-aware helper so a missing migration 025 doesn't
+    // turn this into a retry storm (n8n auto-retries 5xx).
+    insertTask(db, {
+      title:         `${emoji} [n8n] ${event.workflowName}`,
+      description:   event.summary
+        ? `${event.summary}\n\nExecution: ${event.executionId}\nStatus: ${event.status}`
+        : `Workflow execution ${event.status}.\n\nExecution ID: ${event.executionId}`,
+      column_id:     column as 'in-progress' | 'review',
+      priority:      event.status === 'error' ? 'high' : 'medium',
+      business_slug: event.businessSlug ?? null,
+      run_id:        event.runId ?? null,
+      position:      0,
+    }).then(({ error }) => {
+      if (error) console.error('[n8n webhook] new card insert:', error.message)
+    })
   }
 
   // ── Append to nexus-memory ───────────────────────────────────────────────
