@@ -208,6 +208,10 @@ export async function POST(req: NextRequest) {
     description:      string
     businessContext?: string
     projectId?:       string
+    // Lineage (PR 3 of task_plan-ux-security-onboarding.md). Optional.
+    ideaId?:          string
+    runId?:           string
+    businessSlug?:    string
   }
 
   if (!body.description?.trim()) {
@@ -308,12 +312,15 @@ export async function POST(req: NextRequest) {
     })
       .from('tasks')
       .insert({
-        title:       cardTitle,
-        description: details,
-        column_id:   'backlog',
-        priority:    plan.hybridRequired ? 'high' : 'medium',
-        project_id:  body.projectId ?? null,
-        position:    0,
+        title:         cardTitle,
+        description:   details,
+        column_id:     'backlog',
+        priority:      plan.hybridRequired ? 'high' : 'medium',
+        project_id:    body.projectId    ?? null,
+        idea_id:       body.ideaId       ?? null,
+        run_id:        body.runId        ?? null,
+        business_slug: body.businessSlug ?? null,
+        position:      0,
       })
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) console.error('[n8n/bridge] board card:', error.message)

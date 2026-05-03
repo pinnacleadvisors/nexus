@@ -98,7 +98,7 @@ export const onAssetCreated = inngest.createFunction(
     triggers: [{ event: 'asset/created' }],
   },
   async ({ event, step }: { event: { data: Record<string, string | undefined> }; step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
-    const { assetUrl, assetType, title, projectId, milestoneId } = event.data
+    const { assetUrl, assetType, title, projectId, milestoneId, ideaId, runId, businessSlug } = event.data
     if (!assetUrl || !title) return { skipped: true }
 
     // Step 1: Mirror to R2 if configured
@@ -120,13 +120,16 @@ export const onAssetCreated = inngest.createFunction(
       if (!supabase) return 'skipped'
       await supabase.from('tasks').insert({
         title,
-        description: `Agent-generated ${assetType ?? 'asset'}.${r2Key ? ` R2: ${r2Key}` : ''}`,
-        column_id: 'review',
-        priority: 'medium',
-        project_id: projectId ?? null,
-        milestone_id: milestoneId ?? null,
-        asset_url: assetUrl,
-        position: 0,
+        description:   `Agent-generated ${assetType ?? 'asset'}.${r2Key ? ` R2: ${r2Key}` : ''}`,
+        column_id:     'review',
+        priority:      'medium',
+        project_id:    projectId    ?? null,
+        milestone_id:  milestoneId  ?? null,
+        idea_id:       ideaId       ?? null,
+        run_id:        runId        ?? null,
+        business_slug: businessSlug ?? null,
+        asset_url:     assetUrl,
+        position:      0,
       })
       return 'created'
     })

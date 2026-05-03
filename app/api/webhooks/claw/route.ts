@@ -87,14 +87,20 @@ export async function POST(req: NextRequest) {
       // Fire-and-forget — don't block the 200 response
       db.from('tasks')
         .insert({
-          title:        String(payload.title ?? 'Agent Task Completed'),
-          description:  String(payload.description ?? ''),
-          column_id:    'review',
-          assignee:     String(payload.agentName ?? 'OpenClaw'),
-          priority:     'medium',
-          asset_url:    payload.assetUrl    ? String(payload.assetUrl)    : null,
-          project_id:   payload.projectId   ? String(payload.projectId)   : null,
-          milestone_id: payload.milestoneId ? String(payload.milestoneId) : null,
+          title:         String(payload.title ?? 'Agent Task Completed'),
+          description:   String(payload.description ?? ''),
+          column_id:     'review',
+          assignee:      String(payload.agentName ?? 'OpenClaw'),
+          priority:      'medium',
+          asset_url:     payload.assetUrl    ? String(payload.assetUrl)    : null,
+          project_id:    payload.projectId   ? String(payload.projectId)   : null,
+          milestone_id:  payload.milestoneId ? String(payload.milestoneId) : null,
+          // Lineage stamps — caller should pass these on the OpenClaw event
+          // payload when known so the orphan sweeper can find these cards
+          // when their idea/run is deleted.
+          idea_id:       payload.ideaId       ? String(payload.ideaId)       : null,
+          run_id:        payload.runId        ? String(payload.runId)        : null,
+          business_slug: payload.businessSlug ? String(payload.businessSlug) : null,
         })
         .then(({ error }) => {
           if (error) console.error('[claw webhook] task insert failed:', error.message)

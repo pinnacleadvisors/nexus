@@ -66,6 +66,12 @@ interface N8nExecutionEvent {
   errorMessage?: string
   taskCardId?:   string
   summary?:      string
+  // Lineage (PR 3 of task_plan-ux-security-onboarding.md). The n8n workflow
+  // generator threads these through every execution event so the orphan
+  // sweeper can find the spawned cards when their idea/run is deleted.
+  ideaId?:       string
+  runId?:        string
+  businessSlug?: string
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -138,13 +144,16 @@ export async function POST(req: NextRequest) {
       }
     }).from('tasks')
       .insert({
-        title:       `${emoji} [n8n] ${event.workflowName}`,
-        description: event.summary
+        title:         `${emoji} [n8n] ${event.workflowName}`,
+        description:   event.summary
           ? `${event.summary}\n\nExecution: ${event.executionId}\nStatus: ${event.status}`
           : `Workflow execution ${event.status}.\n\nExecution ID: ${event.executionId}`,
-        column_id:   column,
-        priority:    event.status === 'error' ? 'high' : 'medium',
-        position:    0,
+        column_id:     column,
+        priority:      event.status === 'error' ? 'high' : 'medium',
+        idea_id:       event.ideaId       ?? null,
+        run_id:        event.runId        ?? null,
+        business_slug: event.businessSlug ?? null,
+        position:      0,
       })
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) console.error('[n8n webhook] new card insert:', error.message)

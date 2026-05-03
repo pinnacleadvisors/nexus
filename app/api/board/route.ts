@@ -87,8 +87,9 @@ function decorateAndSort(cards: KanbanCard[]): KanbanCard[] {
 
 // ── GET — list cards ──────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  const projectId = req.nextUrl.searchParams.get('project_id')
-  const typeParam = req.nextUrl.searchParams.get('type') // 'manual' | 'automated' | null
+  const projectId       = req.nextUrl.searchParams.get('project_id')
+  const typeParam       = req.nextUrl.searchParams.get('type') // 'manual' | 'automated' | null
+  const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
 
   const db = createServerClient()
   if (!db) {
@@ -108,6 +109,13 @@ export async function GET(req: NextRequest) {
 
   if (projectId) {
     query = query.eq('project_id', projectId)
+  }
+
+  // Hide soft-archived rows by default. The orphan sweeper sets archived_at
+  // for cards whose idea/run was deleted; keep them queryable via
+  // ?include_archived=1 for a future Recycle Bin view.
+  if (!includeArchived) {
+    query = query.is('archived_at', null)
   }
 
   const { data, error } = await query
