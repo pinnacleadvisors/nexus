@@ -14,6 +14,7 @@ import { listBusinessesForUser, upsertBusiness, getBusinessBySlug, type Business
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { postVerification } from '@/lib/slack/client'
 import { createServerClient } from '@/lib/supabase'
+import { insertTask } from '@/lib/board/insert-task'
 
 export const runtime = 'nodejs'
 
@@ -90,16 +91,14 @@ export async function POST(req: NextRequest) {
       // confirmation alongside the Slack message itself.
       const db = createServerClient()
       if (db) {
-        await (db.from('tasks' as never) as unknown as {
-          insert: (rec: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
-        }).insert({
+        await insertTask(db, {
           title:         `🔌 Slack connected: ${row.name}`,
           description:   `Verification message delivered to ${row.slack_channel ?? 'the pinned channel'}. Approvals and run summaries will land here.`,
           column_id:     'review',
           priority:      'low',
           business_slug: row.slug,
           position:      0,
-        }).then(({ error }: { error: { message: string } | null }) => {
+        }).then(({ error }) => {
           if (error) console.error('[businesses] slack-connected card insert:', error.message)
         })
       }

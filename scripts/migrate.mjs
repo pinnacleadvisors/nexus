@@ -36,22 +36,63 @@ if (!PROJECT_REF || !ACCESS_TOKEN) {
 }
 
 // ── Management API wrapper ────────────────────────────────────────────────────
-async function runSql(sql) {
-  const res = await fetch(`${MGMT_API}/v1/projects/${PROJECT_REF}/database/query`, {
-    method:  'POST',
-    headers: {
-      Authorization:  `Bearer ${ACCESS_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query: sql }),
-  })
+//
+// Supabase free-tier projects auto-pause after a week of inactivity. The first
+// query after a pause wakes the project, but the wakeup itself can exceed the
+// Management API's ~30s timeout, surfacing as HTTP 544 ("Connection terminated
+// due to connection timeout"). Retry transient connection errors with
+// exponential backoff so the runner doesn't bail on a cold start.
+const TRANSIENT_STATUSES = new Set([502, 503, 504, 522, 524, 544])
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '(no body)')
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 600)}`)
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+async function runSql(sql, { maxAttempts = 4 } = {}) {
+  let lastErr = null
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${MGMT_API}/v1/projects/${PROJECT_REF}/database/query`, {
+        method:  'POST',
+        headers: {
+          Authorization:  `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: sql }),
+      })
+
+      if (res.ok) return res.json()
+
+      const body = await res.text().catch(() => '(no body)')
+
+      // Transient — retry with backoff.
+      if (TRANSIENT_STATUSES.has(res.status) && attempt < maxAttempts) {
+        const wait = 2_000 * 2 ** (attempt - 1) // 2s, 4s, 8s
+        const hint = res.status === 544 || res.status === 522 || res.status === 524
+          ? '(project may be cold-starting)'
+          : '(transient upstream error)'
+        process.stdout.write(`\n    ↻  HTTP ${res.status} ${hint} — retrying in ${wait / 1000}s … `)
+        await sleep(wait)
+        continue
+      }
+
+      throw new Error(`HTTP ${res.status}: ${body.slice(0, 600)}`)
+    } catch (err) {
+      // Network-level failures (TLS, DNS, ECONNRESET) — also retryable.
+      lastErr = err
+      const networkError =
+        err.code === 'ECONNRESET' ||
+        err.code === 'ETIMEDOUT'  ||
+        err.code === 'ENOTFOUND'  ||
+        /fetch failed|network|timeout/i.test(err.message ?? '')
+      if (networkError && attempt < maxAttempts) {
+        const wait = 2_000 * 2 ** (attempt - 1)
+        process.stdout.write(`\n    ↻  ${err.message} — retrying in ${wait / 1000}s … `)
+        await sleep(wait)
+        continue
+      }
+      throw err
+    }
   }
-
-  return res.json()
+  throw lastErr ?? new Error('runSql exhausted retries')
 }
 
 // ── Bootstrap: ensure schema_migrations table exists ─────────────────────────
