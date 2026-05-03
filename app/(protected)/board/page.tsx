@@ -43,10 +43,17 @@ function findColumnOfCard(cardId: string, columns: Record<ColumnId, KanbanCardTy
   return null
 }
 
-function cardsToColumns(cards: KanbanCardType[]): Record<ColumnId, KanbanCardType[]> {
+function cardsToColumns(cards: KanbanCardType[] | null | undefined): Record<ColumnId, KanbanCardType[]> {
+  // Defensive: this used to throw "undefined is not an object" (Sentry
+  // 08b0af12d55d) when /api/board returned an error envelope without a `cards`
+  // field, or when a row's column_id was missing/malformed. Treat any of those
+  // as "empty board" rather than crashing the whole page.
   const map = { backlog: [], 'in-progress': [], review: [], completed: [] } as Record<ColumnId, KanbanCardType[]>
+  if (!Array.isArray(cards)) return map
   for (const card of cards) {
-    map[card.columnId].push(card)
+    if (!card) continue
+    const col = isColumnId(card.columnId) ? card.columnId : 'backlog'
+    map[col].push(card)
   }
   return map
 }
@@ -77,8 +84,12 @@ export default function BoardPage() {
   })
   const [activeCard,  setActiveCard]  = useState<KanbanCardType | null>(null)
   const [reviewCard,  setReviewCard]  = useState<KanbanCardType | null>(null)
-  const [source,      setSource]      = useState<'supabase' | 'mock' | 'empty' | 'loading'>('loading')
+  const [source,      setSource]      = useState<'supabase' | 'mock' | 'empty' | 'loading' | 'error'>('loading')
   const [isRealtime,  setIsRealtime]  = useState(false)
+  // Surface API failures inline so the page doesn't go silently empty. The
+  // /api/board endpoint returns `{error}` on a Supabase outage; without this
+  // banner the user sees an empty board and assumes the work just disappeared.
+  const [loadError,   setLoadError]   = useState<string | null>(null)
 
   // ── Project filter ────────────────────────────────────────────────────────
   const [projects,         setProjects]         = useState<ForgeProject[]>([])
@@ -133,10 +144,32 @@ export default function BoardPage() {
     const qs = params.toString()
     const url = qs ? `/api/board?${qs}` : '/api/board'
 
-    const res = await fetch(url)
-    const data = (await res.json()) as { cards: KanbanCardType[]; source: string }
-    setColumns(cardsToColumns(data.cards))
-    setSource(data.source as typeof source)
+    setLoadError(null)
+    try {
+      const res = await fetch(url)
+      let data: { cards?: KanbanCardType[]; source?: string; error?: string }
+      try {
+        data = (await res.json()) as typeof data
+      } catch {
+        // Non-JSON response (typically Vercel's HTML 500 page).
+        setLoadError(`Board API returned a non-JSON response (HTTP ${res.status}). Check Vercel function logs.`)
+        setColumns(cardsToColumns([]))
+        setSource('empty')
+        return
+      }
+      if (!res.ok || data.error) {
+        setLoadError(data.error ?? `Board API returned HTTP ${res.status}.`)
+        setColumns(cardsToColumns([]))
+        setSource('empty')
+        return
+      }
+      setColumns(cardsToColumns(data.cards))
+      setSource((data.source as typeof source) ?? 'empty')
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Network error loading board')
+      setColumns(cardsToColumns([]))
+      setSource('empty')
+    }
   }, [])
 
   useEffect(() => {
@@ -550,6 +583,30 @@ export default function BoardPage() {
             style={{ color: '#9090b0', backgroundColor: 'transparent', border: '1px solid #24243e', cursor: 'pointer' }}
           >
             Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* ── Load-error banner — surfaces API failures so the board never goes silently empty ── */}
+      {loadError && (
+        <div
+          className="mx-6 mt-4 rounded-lg px-4 py-3 text-sm flex items-start gap-3"
+          style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid #ef444444', color: '#ef4444' }}
+        >
+          <span aria-hidden style={{ flex: '0 0 auto' }}>⚠</span>
+          <div className="flex-1">
+            <p className="font-medium">Couldn&apos;t load the board from Supabase.</p>
+            <p className="text-xs mt-0.5" style={{ color: '#c08080' }}>{loadError}</p>
+            <p className="text-xs mt-1" style={{ color: '#9090b0' }}>
+              Check <code>/api/health/db</code> for connectivity, or run <code>vercel logs --follow</code> for the underlying error.
+            </p>
+          </div>
+          <button
+            onClick={() => void loadCards(activeProjectId, typeFilter)}
+            className="text-xs px-2 py-1 rounded transition-colors"
+            style={{ color: '#fff', backgroundColor: '#ef4444', border: '1px solid #ef444466' }}
+          >
+            Retry
           </button>
         </div>
       )}

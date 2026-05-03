@@ -87,42 +87,62 @@ function decorateAndSort(cards: KanbanCard[]): KanbanCard[] {
 }
 
 // ── GET — list cards ──────────────────────────────────────────────────────────
+//
+// Always returns `{ cards: [], source }` — even on Supabase failure the `cards`
+// field is present (empty) and `error` carries the human-readable reason. The
+// frontend's `cardsToColumns(undefined)` previously crashed Sentry-style with
+// "undefined is not an object" because the old shape on error was just
+// `{error}` (no cards key). See app/(protected)/board/page.tsx loadError.
 export async function GET(req: NextRequest) {
-  const projectId = req.nextUrl.searchParams.get('project_id')
-  const typeParam = req.nextUrl.searchParams.get('type') // 'manual' | 'automated' | null
+  try {
+    const projectId = req.nextUrl.searchParams.get('project_id')
+    const typeParam = req.nextUrl.searchParams.get('type') // 'manual' | 'automated' | null
 
-  const db = createServerClient()
-  if (!db) {
-    // Supabase not configured — return seeded mock data (also decorated/sorted)
-    let cards = INITIAL_COLUMNS.flatMap(col => col.cards)
+    const db = createServerClient()
+    if (!db) {
+      // Supabase not configured — return seeded mock data (also decorated/sorted)
+      let cards = INITIAL_COLUMNS.flatMap(col => col.cards)
+      if (typeParam === 'manual' || typeParam === 'automated') {
+        cards = cards.filter(c => (c.taskType ?? 'automated') === typeParam)
+      }
+      return NextResponse.json({ cards: decorateAndSort(cards), source: 'mock' })
+    }
+
+    let query = db
+      .from('tasks')
+      .select('*')
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    if (projectId) {
+      query = query.eq('project_id', projectId)
+    }
+
+    const { data, error } = await query
+    if (error) {
+      return NextResponse.json({
+        cards:  [],
+        source: 'error',
+        error:  error.message,
+      }, { status: 200 })
+    }
+
+    // Always fetch the full set so dependent-counts stay accurate even when the
+    // caller filtered by type. Filter after decoration.
+    let cards = (data ?? []).map(rowToCard)
+    cards = decorateAndSort(cards)
     if (typeParam === 'manual' || typeParam === 'automated') {
       cards = cards.filter(c => (c.taskType ?? 'automated') === typeParam)
     }
-    return NextResponse.json({ cards: decorateAndSort(cards), source: 'mock' })
+
+    return NextResponse.json({ cards, source: data?.length ? 'supabase' : 'empty' })
+  } catch (err) {
+    return NextResponse.json({
+      cards:  [],
+      source: 'error',
+      error:  err instanceof Error ? err.message : String(err),
+    }, { status: 200 })
   }
-
-  let query = db
-    .from('tasks')
-    .select('*')
-    .order('position', { ascending: true })
-    .order('created_at', { ascending: true })
-
-  if (projectId) {
-    query = query.eq('project_id', projectId)
-  }
-
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // Always fetch the full set so dependent-counts stay accurate even when the
-  // caller filtered by type. Filter after decoration.
-  let cards = (data ?? []).map(rowToCard)
-  cards = decorateAndSort(cards)
-  if (typeParam === 'manual' || typeParam === 'automated') {
-    cards = cards.filter(c => (c.taskType ?? 'automated') === typeParam)
-  }
-
-  return NextResponse.json({ cards, source: data?.length ? 'supabase' : 'empty' })
 }
 
 // ── POST — create card ────────────────────────────────────────────────────────
