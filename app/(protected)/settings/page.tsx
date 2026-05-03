@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Platform Settings — three tabs covering everything that *isn't* a feature.
+ * Platform Settings — four tabs covering everything that *isn't* a feature.
  * Replaces the previous "Manage Platform" sidebar slot (which is actually the
  * dev console — kept at /manage-platform under Toolbox, see /tools).
  *
@@ -9,26 +9,24 @@
  *   AI         — provider chain, cost cap, gateway health
  *   Alerts     — thresholds + Slack/email destinations (delegates to AlertsPanel)
  *   Access     — ALLOWED_USER_IDS audit + audit log link
+ *   Businesses — separate page at /settings/businesses (CRUD over business_operators)
  *
- * Rather than duplicating logic, each tab embeds existing components or links
- * to existing routes. Goal: one place to find every knob, without a 1005-line
- * file.
+ * Active tab is read from `?tab=` so deep-links and refreshes preserve state.
+ * The Businesses tab navigates to its own URL because the CRUD UI deserves a
+ * dedicated route; the same `<SettingsTabs />` bar renders there with that tab
+ * highlighted, so navigation stays consistent in both directions.
  */
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Settings as SettingsIcon, Server, Bell, Shield, ExternalLink } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Settings as SettingsIcon, ExternalLink } from 'lucide-react'
 import AlertsPanel from '@/components/dashboard/AlertsPanel'
 import GatewayStatusPill from '@/components/dashboard/GatewayStatusPill'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
+import SettingsTabs, { type SettingsTabId } from '@/components/settings/SettingsTabs'
 
-type TabId = 'ai' | 'alerts' | 'access'
-
-const TABS: { id: TabId; label: string; icon: typeof Server }[] = [
-  { id: 'ai',     label: 'AI providers', icon: Server },
-  { id: 'alerts', label: 'Alerts',       icon: Bell },
-  { id: 'access', label: 'Access',       icon: Shield },
-]
+type ContentTabId = Exclude<SettingsTabId, 'businesses'>
 
 interface GatewayStatus {
   provider:       'gateway' | 'openclaw' | 'api' | 'none'
@@ -38,9 +36,26 @@ interface GatewayStatus {
   queueDepth?:    number
 }
 
-export default function SettingsPage() {
-  const [tab, setTab] = useState<TabId>('ai')
+function resolveTab(value: string | null): ContentTabId {
+  if (value === 'alerts' || value === 'access') return value
+  return 'ai'
+}
 
+function SettingsContent() {
+  const searchParams = useSearchParams()
+  const tab = resolveTab(searchParams?.get('tab') ?? null)
+
+  return (
+    <>
+      <SettingsTabs activeTab={tab} />
+      {tab === 'ai'     && <AiTab />}
+      {tab === 'alerts' && <AlertsTab />}
+      {tab === 'access' && <AccessTab />}
+    </>
+  )
+}
+
+export default function SettingsPage() {
   return (
     <div className="p-6 min-h-full" style={{ backgroundColor: '#050508' }}>
       <div className="max-w-4xl mx-auto">
@@ -56,31 +71,9 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-1 mb-6 border-b" style={{ borderColor: '#24243e' }}>
-          {TABS.map(t => {
-            const Icon = t.icon
-            const active = tab === t.id
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors"
-                style={{
-                  borderColor: active ? '#6c63ff' : 'transparent',
-                  color:       active ? '#e8e8f0' : '#9090b0',
-                }}
-              >
-                <Icon size={14} />
-                {t.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {tab === 'ai'     && <AiTab />}
-        {tab === 'alerts' && <AlertsTab />}
-        {tab === 'access' && <AccessTab />}
+        <Suspense fallback={<SettingsTabs activeTab="ai" />}>
+          <SettingsContent />
+        </Suspense>
       </div>
     </div>
   )

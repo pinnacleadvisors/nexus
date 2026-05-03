@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { BUSINESS_SEEDS } from '@/lib/business/seeds'
 import type { BusinessRow, BusinessStatus } from '@/lib/business/types'
+import SettingsTabs from '@/components/settings/SettingsTabs'
 
 interface ApiList { ok: boolean; businesses: BusinessRow[] }
 interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string; slack_warning?: string }
@@ -88,6 +89,8 @@ export default function BusinessesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
+      <SettingsTabs activeTab="businesses" />
+
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Businesses</h1>
         <p className="text-sm text-zinc-500">

@@ -17,6 +17,7 @@ import {
   FileText,
   Inbox,
   Brain,
+  Terminal,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -46,25 +47,27 @@ type NavItem = NavLink | NavGroup
 //   Toolbox         = Reusable assets (agents, tools, snippets)
 //   Settings        = Admin     (everything that lived under Manage Platform)
 const NAV: NavItem[] = [
-  { type: 'link', href: '/dashboard', label: 'Mission Control', icon: LayoutDashboard },
-  { type: 'link', href: '/idea',      label: 'Ideas',           icon: Lightbulb },
-  { type: 'link', href: '/signals',   label: 'Signals',         icon: Inbox },
-  { type: 'link', href: '/board',     label: 'Pipeline',        icon: Workflow },
-  { type: 'link', href: '/graph',     label: 'Knowledge',       icon: Share2 },
-  { type: 'link', href: '/learn',     label: 'Learn',           icon: Brain },
-  { type: 'link', href: '/tools',     label: 'Toolbox',         icon: Library },
-  { type: 'link', href: '/settings',  label: 'Settings',        icon: Settings },
+  { type: 'link', href: '/dashboard',       label: 'Mission Control', icon: LayoutDashboard },
+  { type: 'link', href: '/idea',            label: 'Ideas',           icon: Lightbulb },
+  { type: 'link', href: '/signals',         label: 'Signals',         icon: Inbox },
+  { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
+  { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
+  { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
+  { type: 'link', href: '/tools',           label: 'Toolbox',         icon: Library },
+  { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
+  { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
 
 function isActive(pathname: string, href: string) {
-  if (href === '/dashboard') return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
-  if (href === '/idea')      return pathname === '/idea' || pathname.startsWith('/idea-library')
-  if (href === '/signals')   return pathname === '/signals' || pathname.startsWith('/signals/')
-  if (href === '/board')     return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
-  if (href === '/graph')     return pathname === '/graph'
-  if (href === '/learn')     return pathname === '/learn' || pathname.startsWith('/learn/')
-  if (href === '/tools')     return (pathname === '/tools' || pathname.startsWith('/tools/')) || pathname.startsWith('/manage-platform')
-  if (href === '/settings')  return pathname === '/settings' || pathname.startsWith('/settings/')
+  if (href === '/dashboard')       return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+  if (href === '/idea')            return pathname === '/idea' || pathname.startsWith('/idea-library')
+  if (href === '/signals')         return pathname === '/signals' || pathname.startsWith('/signals/')
+  if (href === '/board')           return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
+  if (href === '/graph')           return pathname === '/graph'
+  if (href === '/learn')           return pathname === '/learn' || pathname.startsWith('/learn/')
+  if (href === '/tools')           return pathname === '/tools' || pathname.startsWith('/tools/')
+  if (href === '/manage-platform') return pathname === '/manage-platform' || pathname.startsWith('/manage-platform/')
+  if (href === '/settings')        return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')
 }
 
