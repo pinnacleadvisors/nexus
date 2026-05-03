@@ -564,4 +564,6 @@ export interface LearnStats {
   staleCount: number
   /** Daily XP goal (env-tuned) */
   dailyGoalXp: number
+  /** ISO timestamp of the most recent flashcard sync (`MAX(flashcards.updated_at)` of the user's non-archived cards). `null` when no cards exist yet. */
+  lastSyncedAt: string | null
 }

@@ -25,7 +25,7 @@ export default function PathView({ units }: Props) {
           No cards yet
         </p>
         <p className="text-sm" style={{ color: '#9090b0' }}>
-          Add atoms to <code className="text-xs px-1 rounded" style={{ backgroundColor: '#1a1a2e' }}>memory/molecular</code> and run the sync cron, or POST to <code className="text-xs px-1 rounded" style={{ backgroundColor: '#1a1a2e' }}>/api/cron/sync-learning-cards</code>.
+          Add atoms to <code className="text-xs px-1 rounded" style={{ backgroundColor: '#1a1a2e' }}>memory/molecular</code>, then click <strong style={{ color: '#e8e8f0' }}>Run sync now</strong> above to materialise flashcards immediately. Otherwise the daily cron (05:00 UTC) will pick them up.
         </p>
       </div>
     )

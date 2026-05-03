@@ -61,13 +61,28 @@ export default function IdeaPage() {
   useEffect(() => { void refreshLibrary() }, [])
 
   async function deleteIdea(id: string) {
+    if (usingServer) {
+      // Server-mode: delete remotely first, only update local state on success.
+      // Previously this swallowed errors with `.catch(() => {})` so the user
+      // saw the card disappear even when the row was still in Supabase (F7).
+      try {
+        const res = await fetch(`/api/ideas?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({})) as { error?: string }
+          setError(`Couldn't delete idea: ${j.error ?? `HTTP ${res.status}`}`)
+          return
+        }
+      } catch (err) {
+        setError(`Couldn't delete idea: ${err instanceof Error ? err.message : 'network error'}`)
+        return
+      }
+      setIdeas(prev => prev.filter(i => i.id !== id))
+      return
+    }
+    // Local-mode (Supabase unconfigured): drop from localStorage.
     const next = ideas.filter(i => i.id !== id)
     setIdeas(next)
-    if (usingServer) {
-      await fetch(`/api/ideas?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
-    } else {
-      saveLocal(next)
-    }
+    saveLocal(next)
   }
 
   async function submit() {
@@ -141,6 +156,19 @@ export default function IdeaPage() {
             </p>
           </div>
         </div>
+
+        {/* Library-level error banner — shown when delete or list fetch fails.
+            Without this, deleteIdea() failures used to be silent (F7). */}
+        {error && !mode && (
+          <div
+            className="rounded-lg p-3 flex items-start gap-2 text-sm"
+            style={{ backgroundColor: '#2a1116', color: '#ff7a90', borderLeft: '2px solid #ff4d6d' }}
+          >
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError(null)} className="text-xs px-1" style={{ color: '#9090b0' }}>×</button>
+          </div>
+        )}
 
         {/* ── Capture form ───────────────────────────────────────────── */}
         <div className="max-w-3xl">

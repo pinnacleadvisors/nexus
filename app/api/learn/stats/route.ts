@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest) {
       weakestAtoms: [],
       staleCount: 0,
       dailyGoalXp,
+      lastSyncedAt: null,
     }
     return NextResponse.json(empty)
   }
@@ -179,6 +180,17 @@ export async function GET(_req: NextRequest) {
     }))
   }
 
+  // Last sync timestamp — MAX(updated_at) of the user's non-archived flashcards.
+  // Used by the /learn empty state to show when the cron last produced cards.
+  const lastSyncResp = await db.from('flashcards')
+    .select('updated_at')
+    .eq('user_id', userId)
+    .neq('state', 'archived')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+  const lastSyncRow = (lastSyncResp.data ?? [])[0] as { updated_at: string } | undefined
+  const lastSyncedAt = lastSyncRow?.updated_at ?? null
+
   const out: LearnStats = {
     streak,
     heatmap,
@@ -187,6 +199,7 @@ export async function GET(_req: NextRequest) {
     weakestAtoms,
     staleCount,
     dailyGoalXp,
+    lastSyncedAt,
   }
   return NextResponse.json(out)
 }
