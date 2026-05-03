@@ -26,6 +26,18 @@
     {
       "path": "/api/cron/sweep-orphan-cards",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/onboarding-drift",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/review-nag",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/webhook-probe",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

@@ -87,4 +87,7 @@ export const KNOWN_CRONS: ReadonlyArray<{ name: string; expectedWindowMin: numbe
   { name: 'post-deploy-smoke',      expectedWindowMin: 30 + 5 },           // */30 * * * *
   { name: 'sync-learning-cards',    expectedWindowMin: 60 * 24 + 15 },     // 0 5 * * *
   { name: 'sweep-orphan-cards',     expectedWindowMin: 60 * 24 + 15 },     // 30 4 * * *
+  { name: 'onboarding-drift',       expectedWindowMin: 60 * 24 * 7 + 60 }, // weekly Monday 06:00
+  { name: 'review-nag',             expectedWindowMin: 60 * 24 + 15 },     // 0 9 * * *
+  { name: 'webhook-probe',          expectedWindowMin: 60 * 6 + 15 },      // 0 */6 * * *
 ]
