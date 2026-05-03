@@ -25,6 +25,7 @@ import {
   Trash2,
   XCircle,
   HelpCircle,
+  Zap,
 } from 'lucide-react'
 
 interface CronStatus {
@@ -47,13 +48,14 @@ interface SweepSample {
 }
 
 interface SweepResponse {
-  ok:       boolean
-  dryRun?:  boolean
-  total:    number
-  deleted?: number
-  byReason: Record<string, number>
-  sample:   SweepSample[]
-  error?:   string
+  ok:        boolean
+  dryRun?:   boolean
+  total:     number
+  deleted?:  number
+  byReason:  Record<string, number>
+  sample:    SweepSample[]
+  warnings?: string[]
+  error?:    string
 }
 
 const VERDICT_STYLE: Record<CronStatus['verdict'], { bg: string; color: string; label: string; icon: typeof CheckCircle2 }> = {
@@ -63,10 +65,25 @@ const VERDICT_STYLE: Record<CronStatus['verdict'], { bg: string; color: string; 
   unknown: { bg: '#12121e', color: '#6c6c88', label: 'Unknown',  icon: HelpCircle    },
 }
 
+interface RunResponse {
+  ok:          boolean
+  status?:     number
+  duration_ms?: number
+  response?:   unknown
+  error?:      string
+  targetPath?: string
+}
+
 export default function HealthPanel() {
   const [crons, setCrons]         = useState<CronStatus[] | null>(null)
   const [cronLoading, setCronLoading] = useState(true)
   const [cronError, setCronError] = useState<string | null>(null)
+
+  // Per-cron manual trigger: which cron path is currently running, plus the
+  // last result for each (success/failure summary shown inline next to the
+  // verdict pill).
+  const [runningPath, setRunningPath] = useState<string | null>(null)
+  const [runResults, setRunResults]   = useState<Record<string, { ok: boolean; status?: number; ms?: number; error?: string; at: number }>>({})
 
   const [sweepPreview, setSweepPreview] = useState<SweepResponse | null>(null)
   const [sweepLoading, setSweepLoading] = useState(false)
@@ -94,6 +111,44 @@ export default function HealthPanel() {
   }
 
   useEffect(() => { void loadCrons() }, [])
+
+  async function handleRunCron(path: string) {
+    setRunningPath(path)
+    try {
+      const res = await fetch('/api/health/cron/run', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ path }),
+      })
+      let data: RunResponse | null = null
+      try { data = (await res.json()) as RunResponse } catch { /* response wasn't JSON */ }
+      setRunResults(prev => ({
+        ...prev,
+        [path]: {
+          ok:     res.ok && (data?.ok ?? false),
+          status: data?.status ?? res.status,
+          ms:     data?.duration_ms,
+          error:  res.ok && data?.ok ? undefined : (data?.error ?? `HTTP ${res.status}`),
+          at:     Date.now(),
+        },
+      }))
+      // Refresh the panel so the cron's new last-run timestamp shows up
+      // (assuming Vercel log-drain is wired — otherwise verdict stays Unknown
+      // but the inline run result still confirms it executed).
+      void loadCrons()
+    } catch (err) {
+      setRunResults(prev => ({
+        ...prev,
+        [path]: {
+          ok:    false,
+          error: err instanceof Error ? err.message : 'Network error',
+          at:    Date.now(),
+        },
+      }))
+    } finally {
+      setRunningPath(null)
+    }
+  }
 
   async function handlePreviewSweep() {
     setSweepLoading(true)
@@ -164,26 +219,52 @@ export default function HealthPanel() {
         {!cronError && (
           <div className="divide-y" style={{ borderColor: '#1a1a2e' }}>
             {(crons ?? []).map(c => {
-              const style = VERDICT_STYLE[c.verdict]
-              const Icon  = style.icon
+              const style    = VERDICT_STYLE[c.verdict]
+              const Icon     = style.icon
+              const isRunning = runningPath === c.path
+              const lastRun  = runResults[c.path]
               return (
-                <div key={c.path} className="px-5 py-3 grid gap-4 grid-cols-12 items-center">
+                <div key={c.path} className="px-5 py-3 grid gap-3 grid-cols-12 items-start">
                   <div
-                    className="col-span-2 flex items-center gap-2 px-2 py-1 rounded text-xs font-medium"
+                    className="col-span-2 flex items-center gap-2 px-2 py-1 rounded text-xs font-medium self-center"
                     style={{ backgroundColor: style.bg, color: style.color, border: `1px solid ${style.color}33` }}
                   >
                     <Icon size={12} />
                     {style.label}
                   </div>
-                  <div className="col-span-6">
-                    <code className="text-xs font-mono block" style={{ color: '#e8e8f0' }}>{c.path}</code>
+                  <div className="col-span-5">
+                    <code className="text-xs font-mono block break-all" style={{ color: '#e8e8f0' }}>{c.path}</code>
                     <p className="text-xs mt-0.5" style={{ color: '#6c6c88' }}>{c.description}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#9090b0' }}>{c.detail}</p>
+                    {lastRun && (
+                      <p
+                        className="text-xs mt-1 inline-flex items-center gap-1"
+                        style={{ color: lastRun.ok ? '#22c55e' : '#ef4444' }}
+                      >
+                        {lastRun.ok
+                          ? <CheckCircle2 size={11} />
+                          : <XCircle size={11} />}
+                        {lastRun.ok
+                          ? `Manual run OK${lastRun.ms ? ` (${lastRun.ms}ms)` : ''}`
+                          : `Manual run failed: ${lastRun.error ?? 'unknown'}`}
+                      </p>
+                    )}
                   </div>
-                  <div className="col-span-2 text-xs" style={{ color: '#9090b0' }}>
+                  <div className="col-span-2 text-xs self-center" style={{ color: '#9090b0' }}>
                     <code className="font-mono">{c.schedule}</code>
                   </div>
-                  <div className="col-span-2 text-xs text-right" style={{ color: '#9090b0' }}>
-                    {c.detail}
+                  <div className="col-span-3 self-center flex justify-end">
+                    <button
+                      onClick={() => void handleRunCron(c.path)}
+                      disabled={isRunning || runningPath !== null}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-opacity disabled:opacity-50"
+                      style={{ backgroundColor: '#1a1a2e', color: '#c0c0d8', border: '1px solid #24243e' }}
+                      title={`POST ${c.path} via /api/health/cron/run`}
+                    >
+                      {isRunning
+                        ? <><Loader2 size={11} className="animate-spin" />Running…</>
+                        : <><Zap size={11} />Run now</>}
+                    </button>
                   </div>
                 </div>
               )
@@ -230,11 +311,29 @@ export default function HealthPanel() {
 
         {sweepPreview && (
           <div className="px-5 py-4 space-y-3">
+            {(sweepPreview.warnings ?? []).length > 0 && (
+              <div
+                className="rounded border p-3 text-xs space-y-1"
+                style={{ backgroundColor: '#1a1408', borderColor: '#f59e0b33', color: '#f59e0b' }}
+              >
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle size={12} /> Sweep ran with warnings
+                </p>
+                {sweepPreview.warnings!.map((w, i) => (
+                  <p key={i} className="pl-5" style={{ color: '#c08854' }}>{w}</p>
+                ))}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-sm" style={{ color: '#e8e8f0' }}>
                   <strong>{sweepPreview.total}</strong> orphan card{sweepPreview.total === 1 ? '' : 's'} detected
                 </p>
+                {sweepPreview.total === 0 && (
+                  <p className="text-xs mt-0.5" style={{ color: '#6c6c88' }}>
+                    Either there are no stale cards (legacy heuristic requires &gt;30 days untouched and no business / idea / run linkage), or migration 025 isn&apos;t applied yet.
+                  </p>
+                )}
                 {Object.entries(sweepPreview.byReason).length > 0 && (
                   <p className="text-xs mt-0.5" style={{ color: '#6c6c88' }}>
                     {Object.entries(sweepPreview.byReason)

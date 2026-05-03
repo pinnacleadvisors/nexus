@@ -16,10 +16,11 @@ interface Props {
   columnId: ColumnId
   label: string
   cards: KanbanCardType[]
-  onCardClick?: (card: KanbanCardType) => void
+  onCardClick?:  (card: KanbanCardType) => void
+  onCardDelete?: (card: KanbanCardType) => void
 }
 
-export default function KanbanColumn({ columnId, label, cards, onCardClick }: Props) {
+export default function KanbanColumn({ columnId, label, cards, onCardClick, onCardDelete }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId })
   const accent = COLUMN_ACCENT[columnId]
 
@@ -56,6 +57,7 @@ export default function KanbanColumn({ columnId, label, cards, onCardClick }: Pr
               key={card.id}
               card={card}
               onClick={onCardClick ? () => onCardClick(card) : undefined}
+              onDelete={onCardDelete}
             />
           ))}
         </SortableContext>

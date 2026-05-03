@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { KanbanCard as KanbanCardType } from '@/lib/types'
-import { User, ExternalLink, FileText, GitBranch, Table2, Layout, Bot, Hand, Zap } from 'lucide-react'
+import { User, ExternalLink, FileText, GitBranch, Table2, Layout, Bot, Hand, Zap, Trash2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 const PRIORITY_COLOR: Record<KanbanCardType['priority'], string> = {
@@ -90,10 +90,15 @@ interface Props {
   card: KanbanCardType
   overlay?: boolean
   onClick?: () => void
+  /** Called when the owner clicks the trash icon. The icon is hidden if this
+   *  prop is omitted (e.g. on the drag overlay). The handler is responsible
+   *  for confirmation and the actual DELETE request. */
+  onDelete?: (card: KanbanCardType) => void
 }
 
-export default function KanbanCard({ card, overlay, onClick }: Props) {
+export default function KanbanCard({ card, overlay, onClick, onDelete }: Props) {
   const [showPreview, setShowPreview] = useState(false)
+  const [hovered, setHovered] = useState(false)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
@@ -115,12 +120,18 @@ export default function KanbanCard({ card, overlay, onClick }: Props) {
       {...attributes}
       {...listeners}
       onClick={onClick}
-      className="rounded-xl p-3 select-none"
+      className="rounded-xl p-3 select-none relative"
       onMouseEnter={e => {
-        if (!overlay) (e.currentTarget as HTMLDivElement).style.borderColor = '#32325a'
+        if (!overlay) {
+          (e.currentTarget as HTMLDivElement).style.borderColor = '#32325a'
+          setHovered(true)
+        }
       }}
       onMouseLeave={e => {
-        if (!overlay) (e.currentTarget as HTMLDivElement).style.borderColor = '#24243e'
+        if (!overlay) {
+          (e.currentTarget as HTMLDivElement).style.borderColor = '#24243e'
+          setHovered(false)
+        }
       }}
       style={{
         ...style,
@@ -130,8 +141,36 @@ export default function KanbanCard({ card, overlay, onClick }: Props) {
         cursor:     onClick ? 'pointer' : 'grab',
       }}
     >
-      {/* Priority dot + title + type badge */}
-      <div className="flex items-start gap-2 mb-2">
+      {/* Delete button — visible on hover only, top-right corner. Stops drag
+          and click propagation so a hover-click doesn't also trigger the
+          card's onClick or kick off a dnd-kit drag. */}
+      {!overlay && onDelete && hovered && (
+        <button
+          onClick={e => {
+            e.stopPropagation()
+            e.preventDefault()
+            onDelete(card)
+          }}
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          className="absolute top-2 right-2 flex items-center justify-center w-6 h-6 rounded transition-colors z-10"
+          style={{
+            backgroundColor: '#1a0d0d',
+            color:           '#ef4444',
+            border:          '1px solid #ef444444',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#2e0d0d' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1a0d0d' }}
+          title="Delete this card"
+          aria-label="Delete card"
+        >
+          <Trash2 size={11} />
+        </button>
+      )}
+
+      {/* Priority dot + title + type badge — pad-right to make room for the
+          hover delete button so it never overlaps the type badge. */}
+      <div className={`flex items-start gap-2 mb-2 ${onDelete && !overlay ? 'pr-7' : ''}`}>
         <span
           className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
           style={{ backgroundColor: PRIORITY_COLOR[card.priority] }}

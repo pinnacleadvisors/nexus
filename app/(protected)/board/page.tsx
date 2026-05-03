@@ -351,6 +351,46 @@ export default function BoardPage() {
     setReviewCard(null)
   }
 
+  // Owner-initiated card deletion. Optimistic — removes from local state
+  // immediately, rolls back on server failure. The server delete is gated
+  // by /api/board's auth check; per-row Supabase delete cascades to nothing
+  // (tasks has no children — runs/ideas can outlive their cards).
+  function handleDelete(card: KanbanCardType) {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        `Delete "${card.title}"?\n\nThis removes the card from the board permanently. The associated idea / run / business is unaffected.`,
+      )
+      if (!confirmed) return
+    }
+    const previousColumns = columns
+    setColumns(prev => {
+      const next = { ...prev }
+      for (const col of COLUMN_ORDER) {
+        next[col] = prev[col].filter(c => c.id !== card.id)
+      }
+      return next
+    })
+    fetch('/api/board', {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id: card.id }),
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({})) as { error?: string }
+          console.warn('[board] delete failed:', data.error ?? res.status)
+          setColumns(previousColumns)
+          if (typeof window !== 'undefined') {
+            window.alert(`Could not delete card: ${data.error ?? `HTTP ${res.status}`}`)
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('[board] delete network error:', err)
+        setColumns(previousColumns)
+      })
+  }
+
   const totalCards = COLUMN_ORDER.reduce((n, id) => n + columns[id].length, 0)
   const activeProject = projects.find(p => p.id === activeProjectId)
 
@@ -530,6 +570,7 @@ export default function BoardPage() {
               label={COLUMN_LABELS[colId]}
               cards={columns[colId]}
               onCardClick={colId === 'review' ? setReviewCard : undefined}
+              onCardDelete={handleDelete}
             />
           ))}
         </div>

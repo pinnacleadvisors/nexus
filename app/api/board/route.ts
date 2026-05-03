@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
 import type { KanbanCard, ColumnId, TaskType } from '@/lib/types'
 import type { Database } from '@/lib/database.types'
@@ -195,13 +196,50 @@ export async function PATCH(req: NextRequest) {
 }
 
 // ── DELETE — remove card ──────────────────────────────────────────────────────
+// Owner-only. Required because the row-level RLS on `tasks` is bypassed by the
+// service-role client this route uses, so we have to enforce ownership at the
+// app layer. The hover trash icon on every Kanban card calls into this.
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json() as { id: string }
+  try {
+    const a = await auth()
+    if (!a.userId) {
+      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+    }
+    const allowed = (process.env.ALLOWED_USER_IDS ?? '')
+      .split(',').map(s => s.trim()).filter(Boolean)
+    if (allowed.length > 0 && !allowed.includes(a.userId)) {
+      return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+    }
 
-  const db = createServerClient()
-  if (!db) return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
+    let body: { id?: string }
+    try {
+      body = (await req.json()) as { id?: string }
+    } catch {
+      return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
+    }
+    const id = body.id?.trim()
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'id required' }, { status: 400 })
+    }
 
-  const { error } = await db.from('tasks').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true })
+    const db = createServerClient()
+    if (!db) return NextResponse.json({ ok: false, error: 'Supabase not configured' }, { status: 503 })
+
+    const { error } = await db.from('tasks').delete().eq('id', id)
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    }
+    audit(req, {
+      action:     'board.card.delete',
+      resource:   'tasks',
+      resourceId: id,
+      metadata:   { user_id: a.userId },
+    })
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({
+      ok:    false,
+      error: err instanceof Error ? err.message : String(err),
+    }, { status: 500 })
+  }
 }
