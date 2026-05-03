@@ -10,6 +10,7 @@ import WorstOffendersWidget from '@/components/dashboard/WorstOffendersWidget'
 import ActiveRunsPanel from '@/components/dashboard/ActiveRunsPanel'
 import PendingReviewsPanel from '@/components/dashboard/PendingReviewsPanel'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
+import FailureBadge from '@/components/dashboard/FailureBadge'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -138,6 +139,8 @@ export default function DashboardPage() {
                 <><Database size={10} /> Demo data</>
               )}
             </span>
+            {/* PR 5 — single failures aggregator. Renders nothing when all green. */}
+            <FailureBadge />
           </div>
         </div>
 

@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { syncCardsFromMolecular } from '@/lib/learning/atom-sync'
+import { recordCronRun } from '@/lib/cron/record'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -37,7 +38,10 @@ export async function POST(req: NextRequest) {
   }
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const result = await syncCardsFromMolecular(userId)
+  // recordCronRun writes a structured log_events row (route, level, status,
+  // duration_ms, message) so /api/health/cron can surface freshness on the
+  // /manage-platform Health panel. PR 5 of task_plan-ux-security-onboarding.md.
+  const result = await recordCronRun('sync-learning-cards', () => syncCardsFromMolecular(userId))
   return NextResponse.json({ ok: true, ...result })
 }
 

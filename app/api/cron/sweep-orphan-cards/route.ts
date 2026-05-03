@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { sweepOrphans } from '@/lib/runs/orphan-sweeper'
 import { audit } from '@/lib/audit'
+import { recordCronRun } from '@/lib/cron/record'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -46,7 +47,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
 
   try {
-    const result = await sweepOrphans({ dryRun })
+    // Skip log_events write for dry-run so the /manage-platform Preview button
+    // doesn't pollute the cron-health timeline with fake "runs".
+    const result = dryRun
+      ? await sweepOrphans({ dryRun })
+      : await recordCronRun('sweep-orphan-cards', () => sweepOrphans({ dryRun }))
     audit(req, {
       action: dryRun ? 'orphan-sweep.preview' : 'orphan-sweep.run',
       resource: 'tasks',

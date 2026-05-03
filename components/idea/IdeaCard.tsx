@@ -358,11 +358,22 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
           body: JSON.stringify({ ideaId: card.id }),
         })
         if (runRes.ok) {
-          const { run } = await runRes.json() as { run?: { id: string } }
+          const { run, ephemeral, userMessage } = await runRes.json() as {
+            run?: { id: string }
+            ephemeral?: boolean
+            userMessage?: string
+          }
           runId = run?.id
+          // F8 / S6 — make ephemeral state visible. The workflow generation
+          // still proceeds (best-effort) but the operator now knows the run
+          // wasn't persisted.
+          if (ephemeral && userMessage) {
+            setError(userMessage)
+          }
         }
       } catch {
-        // Swallow — run creation is best-effort during the transition window
+        // Swallow network blip — run creation is best-effort during the
+        // transition window. Workflow generation continues without runId.
       }
 
       setProgress('Generating BUILD workflow…')

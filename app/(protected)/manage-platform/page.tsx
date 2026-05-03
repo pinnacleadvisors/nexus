@@ -39,6 +39,7 @@ import {
   type ResearchCategory,
 } from '@/lib/build/research'
 import OrphanSweepCard from '@/components/manage/OrphanSweepCard'
+import HealthPanel from '@/components/manage/HealthPanel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ActiveTab = 'console' | 'research'
@@ -488,10 +489,10 @@ export default function BuildPage() {
       </div>
 
       {/* ── Maintenance row (always visible — admin-only) ──────────────────── */}
-      <div className="px-6 pt-4 pb-2 shrink-0">
+      <div className="px-6 pt-4 pb-2 shrink-0 space-y-3">
+        <HealthPanel />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
           <OrphanSweepCard />
-          {/* PR 5 — health panel slot */}
         </div>
       </div>
 

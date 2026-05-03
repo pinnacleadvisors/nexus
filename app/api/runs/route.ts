@@ -56,12 +56,23 @@ export async function POST(req: NextRequest) {
   }
 
   if (!run) {
+    // F8 / S6 — make the ephemeral state visible to the UI. Same shape as
+    // success but with severity + userMessage so client banners can show
+    // "your Run wasn't persisted; fix Supabase before continuing."
+    const reason = errorReason
+      ? 'start_failed'
+      : isSupabaseConfigured() ? 'insert_failed' : 'supabase_unconfigured'
+    const userMessage = reason === 'supabase_unconfigured'
+      ? 'Run started but not persisted — Supabase env vars are missing. Set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to keep history across sessions.'
+      : reason === 'insert_failed'
+        ? 'Run started but the database refused the insert. Likely cause: missing migration or RLS denial. Check /manage-platform Health.'
+        : `Run start failed: ${errorReason ?? 'unknown'}`
     return NextResponse.json({
       run: null,
       ephemeral: true,
-      reason: errorReason
-        ? 'start_failed'
-        : isSupabaseConfigured() ? 'insert_failed' : 'supabase_unconfigured',
+      severity: 'warn',
+      reason,
+      userMessage,
       ...(errorReason ? { error: errorReason } : {}),
     })
   }
