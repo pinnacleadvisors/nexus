@@ -15,6 +15,17 @@ function headers(token: string) {
   }
 }
 
+/**
+ * Notion API rate limit is 3 req/sec. A hung fetch holds a Vercel function
+ * open until the platform-level timeout fires, and if the parent route is
+ * being auto-retried by an upstream service, each attempt re-pings Notion.
+ * 15s is generous for legitimate Notion calls and tight enough that a stalled
+ * upstream surfaces as a quick failure rather than burning function-seconds.
+ * See docs/RETRY_STORM_AUDIT.md finding 5.
+ */
+const NOTION_TIMEOUT_MS = 15_000
+function notionSignal(): AbortSignal { return AbortSignal.timeout(NOTION_TIMEOUT_MS) }
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface NotionPage {
   id:        string
@@ -148,6 +159,7 @@ export async function listPages(token: string, limit = 20): Promise<NotionPage[]
     const res = await fetch(`${BASE}/search`, {
       method:  'POST',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({
         filter: { property: 'object', value: 'page' },
         sort:   { direction: 'descending', timestamp: 'last_edited_time' },
@@ -166,6 +178,7 @@ export async function searchPages(token: string, query: string, limit = 5): Prom
     const res = await fetch(`${BASE}/search`, {
       method:  'POST',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({
         query,
         filter: { property: 'object', value: 'page' },
@@ -184,6 +197,7 @@ export async function getPageContent(token: string, pageId: string): Promise<str
   try {
     const res = await fetch(`${BASE}/blocks/${pageId.replace(/-/g, '')}/children?page_size=100`, {
       headers: headers(token),
+      signal:  notionSignal(),
     })
     if (!res.ok) return ''
     const data = await res.json() as { results?: Record<string, unknown>[] }
@@ -204,6 +218,7 @@ export async function createPage(
     const res = await fetch(`${BASE}/pages`, {
       method:  'POST',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({
         parent:     { type: 'page_id', page_id: opts.parentPageId },
         properties: {
@@ -232,6 +247,7 @@ export async function createDatabaseEntry(
     const res = await fetch(`${BASE}/pages`, {
       method:  'POST',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({
         parent:     { type: 'database_id', database_id: opts.databaseId },
         properties: {
@@ -257,6 +273,7 @@ export async function appendBlocks(
     const res = await fetch(`${BASE}/blocks/${pageId}/children`, {
       method:  'PATCH',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({ children: blocks.map(blockToNotion) }),
     })
     return res.ok
@@ -273,6 +290,7 @@ export async function createKnowledgeDatabase(
     const res = await fetch(`${BASE}/databases`, {
       method:  'POST',
       headers: headers(token),
+      signal:  notionSignal(),
       body: JSON.stringify({
         parent: { type: 'page_id', page_id: parentPageId },
         title:  [{ type: 'text', text: { content: title } }],

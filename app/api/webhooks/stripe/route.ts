@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { claimEvent } from '@/lib/webhooks/idempotency'
 
 export const runtime = 'nodejs'
 
@@ -53,11 +54,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  let event: { type: string; data: { object: Record<string, unknown> } }
+  let event: { id?: string; type: string; data: { object: Record<string, unknown> } }
   try {
     event = JSON.parse(body)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  // ── Idempotency — Stripe retries until 4xx, for up to 3 days ─────────────
+  // Without this guard, replayed webhook deliveries (network failures, manual
+  // resends from the Stripe dashboard) would create duplicate revenue rows.
+  if (event.id) {
+    const claim = await claimEvent('stripe', event.id, { type: event.type })
+    if (claim.duplicate) {
+      return NextResponse.json({ received: true, duplicate: true })
+    }
   }
 
   const db = createServerClient()

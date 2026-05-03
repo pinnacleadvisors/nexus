@@ -27,6 +27,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { insertTask } from '@/lib/board/insert-task'
+import { claimEvent } from '@/lib/webhooks/idempotency'
 import { appendToPage, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 
@@ -108,6 +109,22 @@ export async function POST(req: NextRequest) {
     event = JSON.parse(bodyText) as N8nExecutionEvent
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  // ── Idempotency — n8n retries 3× on 5xx with backoff ────────────────────
+  // Use executionId as the dedup key. Duplicate deliveries become no-ops at
+  // the DB layer (UNIQUE on webhook_events.source+event_id from migration 027).
+  const claim = await claimEvent('n8n', event.executionId, {
+    workflowId:   event.workflowId,
+    workflowName: event.workflowName,
+    status:       event.status,
+  })
+  if (claim.duplicate) {
+    return NextResponse.json({
+      ok:          true,
+      duplicate:   true,
+      executionId: event.executionId,
+    })
   }
 
   const db = createServerClient()

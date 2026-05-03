@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { insertTask } from '@/lib/board/insert-task'
+import { claimEvent } from '@/lib/webhooks/idempotency'
 import type { ClawEvent } from '@/lib/types'
 import { audit } from '@/lib/audit'
 
@@ -92,6 +93,16 @@ export async function POST(req: NextRequest) {
   }
 
   const { type, payload } = event
+
+  // ── Idempotency check — claw gateway retries 5× on 5xx ─────────────────────
+  // Use sessionId as the dedup key. If the same event arrives twice (network
+  // hiccup, gateway retry on a 5xx that was actually a 200 mid-flight), the
+  // duplicate claim returns early without creating duplicate cards.
+  const dedupKey = event.sessionId ?? `${type}:${payload.title ?? ''}:${payload.runId ?? ''}`
+  const claim = await claimEvent('claw', dedupKey, { type })
+  if (claim.duplicate) {
+    return NextResponse.json({ ok: true, duplicate: true })
+  }
 
   // ── Auto-create Kanban card in Review column ──────────────────────────────
   if (type === 'task_completed' || type === 'asset_created') {

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import Link from 'next/link'
+import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 import {
   ArrowLeft, Activity, RefreshCw, Cpu, CheckCircle2, XCircle,
   Loader2, Clock, Zap, ListTodo, AlertCircle,
@@ -64,29 +65,31 @@ export default function ClawStatusPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [autoRefresh,  setAutoRefresh]  = useState(true)
 
+  // Fetch — throws on error so usePollWithBackoff can detect failures.
   const fetchStatus = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/claw/status')
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
       const json = await res.json() as StatusData
       setData(json)
       setLastRefreshed(new Date())
-    } catch {
-      setData({ configured: false, online: false, sessions: [] })
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Initial load
-  useEffect(() => { fetchStatus() }, [fetchStatus])
-
-  // Auto-refresh every 8 seconds when auto-refresh is on
-  useEffect(() => {
-    if (!autoRefresh) return
-    const interval = setInterval(fetchStatus, 8_000)
-    return () => clearInterval(interval)
-  }, [autoRefresh, fetchStatus])
+  // Polling with exponential backoff: 8s base, doubles on failure (cap 60s),
+  // pauses entirely after 5 consecutive failures so a 5xx endpoint can't
+  // generate 7.5 calls/minute forever.
+  const poll = usePollWithBackoff(fetchStatus, {
+    intervalMs:               8_000,
+    maxIntervalMs:            60_000,
+    maxConsecutiveFailures:   5,
+    enabled:                  autoRefresh,
+  })
 
   const runningCount   = data?.sessions.filter(s => s.status === 'running').length   ?? 0
   const completedCount = data?.sessions.filter(s => s.status === 'completed').length ?? 0
@@ -133,11 +136,13 @@ export default function ClawStatusPage() {
             }}
           >
             <Activity size={11} />
-            {autoRefresh ? 'Auto' : 'Paused'}
+            {!autoRefresh ? 'Paused'
+             : poll.paused ? `Auto-paused (${poll.consecutiveFailures} failures)`
+             : 'Auto'}
           </button>
-          {/* Manual refresh */}
+          {/* Manual refresh — also unpauses polling if it auto-paused after repeated failures */}
           <button
-            onClick={fetchStatus}
+            onClick={() => { poll.retry(); void fetchStatus() }}
             disabled={loading}
             className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
             style={{

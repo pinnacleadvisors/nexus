@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useCallback } from 'react'
+import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 import {
   GitBranch, Layers, Users, Zap, Loader2,
   RefreshCw, LayoutGrid, Network,
@@ -115,26 +116,30 @@ export default function OrgChartPage() {
   const [loading,    setLoading]   = useState(true)
   const [lastFetch,  setLastFetch] = useState<Date | null>(null)
 
-  async function fetchData() {
+  // Wrapped in useCallback so usePollWithBackoff can keep a stable reference
+  // across renders. Throws on non-OK so the hook detects failure.
+  const fetchData = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/org', { cache: 'no-store' })
-      if (res.ok) {
-        const json = await res.json() as { tree: OrgTreeType; swimlanes: Swimlane[] }
-        setTree(json.tree)
-        setSwimlanes(json.swimlanes)
-        setLastFetch(new Date())
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json() as { tree: OrgTreeType; swimlanes: Swimlane[] }
+      setTree(json.tree)
+      setSwimlanes(json.swimlanes)
+      setLastFetch(new Date())
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => {
-    void fetchData()
-    const interval = setInterval(fetchData, 15_000)  // poll every 15s
-    return () => clearInterval(interval)
   }, [])
+
+  // 15s base interval, exponential backoff capped at 60s, auto-pause after
+  // 5 consecutive failures. Replaces the unconditional setInterval that
+  // hammered /api/org on persistent 5xx.
+  const poll = usePollWithBackoff(fetchData, {
+    intervalMs:               15_000,
+    maxIntervalMs:            60_000,
+    maxConsecutiveFailures:   5,
+  })
 
   const stats = tree?.stats
 
@@ -178,12 +183,15 @@ export default function OrgChartPage() {
               ))}
             </div>
 
-            {/* Refresh */}
+            {/* Refresh — also unpauses polling if it auto-paused after repeated failures */}
             <button
-              onClick={fetchData}
+              onClick={() => { poll.retry() }}
               disabled={loading}
-              className="p-2 rounded-lg transition-colors"
-              style={{ backgroundColor: '#12121e', color: '#55556a', border: '1px solid #24243e' }}
+              className="p-2 rounded-lg transition-colors relative"
+              style={{ backgroundColor: '#12121e', color: poll.paused ? '#ef4444' : '#55556a', border: `1px solid ${poll.paused ? '#ef444466' : '#24243e'}` }}
+              title={poll.paused
+                ? `Polling auto-paused after ${poll.consecutiveFailures} failures: ${poll.lastError ?? 'unknown'}. Click to resume.`
+                : 'Refresh now'}
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             </button>

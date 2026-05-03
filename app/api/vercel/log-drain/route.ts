@@ -49,6 +49,29 @@ export async function HEAD(): Promise<NextResponse> {
 
 const DEFAULT_REDACT_HEADERS = ['authorization', 'cookie', '__session', 'x-clerk-session-token']
 
+// Per-process cache for R2 health. R2 misconfiguration (rotated key, wrong
+// account ID, etc.) returns the same SignatureDoesNotMatch / InvalidAccessKeyId
+// error on every batch — and the drain receives one batch per Vercel function
+// invocation, so an unguarded retry loop spams the logs at request rate. After
+// the first auth-class failure we mark R2 as bad for the lifetime of this Node
+// process; the operator's "fix Doppler + redeploy" cycle resets it because
+// every deploy spawns fresh function instances.
+let r2DisabledReason: string | null = null
+
+function isR2AuthError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { name?: string; Code?: string; message?: string }
+  // AWS SDK v3 throws errors with `.name` set to the S3 error code, sometimes
+  // also `.Code`. Match the two configurations that cannot self-heal without
+  // operator action.
+  const name = e.name ?? e.Code ?? ''
+  if (name === 'SignatureDoesNotMatch' || name === 'InvalidAccessKeyId') return true
+  // Fall back to substring match — older SDK versions and some R2 edge cases
+  // surface only `.message`.
+  const msg = e.message ?? ''
+  return /signature.*does not match|InvalidAccessKeyId|access ?key/i.test(msg)
+}
+
 interface VercelLogLine {
   id?:           string
   message?:      string
@@ -137,7 +160,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const r2Key        = `logs/${deploymentId}/${hourShard}.jsonl`
 
   let rawUrl: string | null = null
-  if (isR2Configured()) {
+  // Skip if we already proved R2 is misconfigured this process — prevents log
+  // spam at request rate when creds are stale.
+  if (isR2Configured() && !r2DisabledReason) {
     try {
       const existing  = sanitisedLines.join('\n')
       // Append-mode is unavailable on R2; the hour shard granularity is small
@@ -152,9 +177,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       })
       rawUrl = result.url
     } catch (err) {
-      // Don't reject the drain on R2 failure — Supabase indexing still gives
-      // us the searchable signal.
-      console.warn('[log-drain] R2 upload failed:', err instanceof Error ? err.message : err)
+      const message = err instanceof Error ? err.message : String(err)
+      if (isR2AuthError(err)) {
+        // Auth errors won't self-heal — disable R2 for this process and log
+        // ONCE so the operator sees the actionable instruction without
+        // their logs being flooded.
+        r2DisabledReason = message
+        console.error(
+          '[log-drain] R2 credentials are invalid — disabling R2 archive for this process. Fix: regenerate the R2 API token in Cloudflare → R2 → Manage R2 API Tokens, then update R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY in Doppler. Redeploy resets the cache. Last error:',
+          message,
+        )
+      } else {
+        // Transient — log and continue. Supabase indexing still works so the
+        // batch isn't lost.
+        console.warn('[log-drain] R2 upload failed:', message)
+      }
     }
   }
 

@@ -97,6 +97,12 @@ export const weeklyResearchLoop = inngest.createFunction(
   {
     id:   'weekly-research-loop',
     name: 'Weekly Research Loop',
+    // retries: 0 — every step in this function is wrapped in try/catch so
+    // failures degrade to empty results, NOT thrown errors. Auto-retries
+    // would just multiply Tavily quota burn (paid) and Anthropic tokens by
+    // 3-4× without changing the outcome. See docs/RETRY_STORM_AUDIT.md
+    // finding 2 (Inngest research-loop).
+    retries: 0,
     triggers: [
       { cron: '0 9 * * 0' },           // Every Sunday 09:00 UTC
       { event: 'build/research-loop' }, // Manual trigger via POST /api/build/research
