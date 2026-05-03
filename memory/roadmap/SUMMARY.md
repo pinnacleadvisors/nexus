@@ -1,6 +1,6 @@
 # Nexus — Roadmap Summary
 
-> Last updated: 2026-04-24. Source of truth: `ROADMAP.md` + `task_plan.md`.
+> Last updated: 2026-05-02. Source of truth: `ROADMAP.md` + `task_plan.md`.
 > Legend: ✅ Complete · 🔧 Partial · ⬜ Not started
 
 | Phase | Title | Status | Notes |
@@ -27,7 +27,11 @@
 | 20 | Local-First Memory Engine | 🔧 | GitHub memory API ✅; Notion sync optional ⬜ |
 | 21 | OSS-First Stack | ⬜ | Brevo, Umami, GlitchTip, Coolify, Coqui TTS, SadTalker |
 | 22 | Leiden Algorithm Migration | ⬜ | Replace Louvain in `lib/graph/builder.ts` with pure TS Leiden |
-| 23 | Learning System | 🔧 | Duolingo path + FSRS-4 + 4 card kinds + Feynman grader; cards derived from `mol_atoms`. Plan: `task_plan-learning-system.md`. Migration 023 + manual setup pending. |
+| 23 | Learning System | 🔧 | Duolingo path + FSRS-4 + 4 card kinds + Feynman grader; cards derived from `mol_atoms`. Plan: `task_plan-learning-system.md`. Migration 023 ✅; PR 2 of `task_plan-ux-security-onboarding.md` adds manual sync button + lastSyncedAt + cron-schedule UI. |
+| 24 | Vercel log drain | ✅ | Migration 022 + `/api/vercel/log-drain` + R2 archive + `log_events` hot-field index. Service-role only. |
+| **A** | **Business Operator (autonomous)** | **🔧** | Mig 024 ✅; daily Inngest cron at 04:00 UTC ✅; Slack digest with Approve/Reject buttons ✅; `business_operators` table (renamed to avoid `003 businesses` conflict). PR 3+4 of `task_plan-ux-security-onboarding.md` add lineage tracking + webhook verification + Board cards. |
+| **QA** | **Autonomous QA loop** | **✅** | qa-runner on Coolify, Clerk sign-in tickets, Playwright smoke, fix-attempt dispatch on failure. Plan: `task_plan-autonomous-qa.md`. |
+| **UX** | **UX, Security, Onboarding hardening** | **🔧** | Plan: `task_plan-ux-security-onboarding.md`. PR 1 (docs+memory) ✅; PR 2-7 in flight. |
 | **SOE** | **Self-Optimising Ecosystem** | **🔧** | See below — Pillars A/B/C from `task_plan.md` |
 
 ## Self-Optimising Ecosystem (SOE) — cross-cutting phase

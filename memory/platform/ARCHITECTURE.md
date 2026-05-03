@@ -13,6 +13,13 @@ app/
 │   ├── graph/            # 3D relational knowledge graph
 │   ├── build/            # Dev console + research loop (Phase 19)
 │   ├── learn/            # Phase 23 — Duolingo-style learning surface (path/session/stats)
+│   ├── idea/             # Idea capture + library (Remodel + Description modes)
+│   ├── idea-library/     # Redirects to /idea (legacy URL)
+│   ├── signals/          # Daily LLM-council signal review
+│   ├── manage-platform/  # Admin surface — orphan cleanup, health panel, research loop
+│   ├── automation-library/ # n8n automation library + import-error surfacing
+│   ├── settings/
+│   │   └── businesses/   # CRUD for business_operators rows + Slack webhook verify
 │   ├── tools/
 │   │   ├── agents/       # 10 specialist agent capabilities
 │   │   ├── claw/         # OpenClaw config + skill registry + status
@@ -54,6 +61,11 @@ app/
 │   ├── swarm/            # Swarm dispatch + status + MCP
 │   ├── token-events/     # Token usage logging
 │   ├── video/            # Video generation + polling
+│   ├── businesses/       # CRUD for business_operators + verify-webhook (PR 4)
+│   ├── slack/            # /notify outbound + /decision inbound interactivity (HMAC)
+│   ├── admin/            # /issue-bot-session — Clerk sign-in ticket issuer for qa-bot
+│   ├── vercel/           # /log-drain — HMAC-gated NDJSON receiver
+│   ├── health/           # /cron — query log_events for cron freshness (PR 5)
 │   └── webhooks/         # Stripe, Claw, n8n webhook receivers
 ├── layout.tsx            # Root layout (ClerkProvider)
 ├── page.tsx              # Sign-in page
@@ -119,6 +131,14 @@ lib/
   - **016 plan_patterns** — ReasoningBank archive for successful decompositions — A8
   - **017 metric_samples** — per-run + per-agent observability samples — C1
   - **018 experiments** — A/B variant record with z-test winner selection — C5
+  - **019 token_events_business_slug** — per-business cost accounting
+  - **020 signals** — opportunity scout signals
+  - **021 molecular_mirror** — `mol_atoms`, `mol_entities`, `mol_mocs`, `mol_sources`, `mol_synthesis` Supabase mirror of memory-hq
+  - **022 log_events** — Vercel log drain hot-field index (RLS deny-by-default)
+  - **023 learning_system** — `flashcards` table for FSRS-4 spaced repetition (Phase 23)
+  - **024 business_operators** — orchestrator-config table (separate from legacy `businesses`); per-business slack_webhook_url, money_model JSONB, kpi_targets JSONB, approval_gates
+  - **025 tasks_lineage** — `idea_id`, `run_id`, `business_slug`, `archived_at` on `tasks` (PR 3 of `task_plan-ux-security-onboarding.md`)
+  - **026 business_webhook_health** — `webhook_last_verified_at`, `webhook_last_error`, encrypted `slack_webhook_url_enc` column (PR 4)
 - Realtime: enabled on agents, tasks, projects, milestones, businesses, swarm tables
 
 ## Key Contracts

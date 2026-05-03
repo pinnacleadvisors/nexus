@@ -11,6 +11,7 @@ Self-hosted Claude Code on Hostinger + Coolify. Plan-billed primary AI runtime f
 
 ## Atoms
 - [[atoms/claude-code-gateway-is-plan-billed-via-20x-max]]
+- [[atoms/claude-gateway-services-folder-exists|claude-gateway services folder exists]]
 - [[atoms/coolify-v4-creates-a-private-network-per-compose-stack]]
 - [[atoms/coolify-secret-edits-require-redeploy-not-restart]]
 - [[atoms/cloudflare-tunnel-orphan-hostname-trap]]

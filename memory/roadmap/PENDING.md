@@ -1,6 +1,15 @@
 # Nexus — Pending Items
 
-> All ⬜ not-started items, grouped by phase. Source of truth: `ROADMAP.md`.
+> Last updated: 2026-05-02. All ⬜ not-started items, grouped by phase. Source of truth: `ROADMAP.md` + `task_plan-ux-security-onboarding.md`.
+
+## UX / Security / Onboarding hardening (active — PR 2-7)
+
+- PR 2 — `/learn` manual sync button + `lastSyncedAt` + idea-delete error surfacing
+- PR 3 — Mig 025 lineage + orphan sweeper + `/manage-platform` clean-orphans button + one-shot purge script
+- PR 4 — Slack webhook verification + Board card on first verify + Mig 026 webhook health & encryption
+- PR 5 — `/manage-platform` Health Panel + `/api/health/cron` + `recordCronRun` + Mission Control failure badge + ephemeral-run banner
+- PR 6 — ADR 003 + proxy.ts matcher + webhook fail-closed in production + ADR 004 ENCRYPTION_KEY policy
+- PR 7 — Onboarding-drift watcher + funnel metrics + review nag + webhook health probe
 
 ## Phase 2 — Idea Forge
 
