@@ -101,6 +101,59 @@ export async function postSlackNotification(
 }
 
 /**
+ * Verify a Slack incoming-webhook URL is reachable by POSTing a small
+ * confirmation message. Used by /api/businesses on save (PR 4 of
+ * task_plan-ux-security-onboarding.md) so the operator immediately knows
+ * if the URL is wrong — instead of waiting until the next 04:00 UTC operator
+ * digest fails silently.
+ *
+ * Returns `{ ok: true }` on 2xx, `{ ok: false, error }` otherwise.
+ *
+ * Defence-in-depth note: this calls a user-supplied URL. Slack webhook URLs
+ * are always `https://hooks.slack.com/services/...`. We enforce the prefix
+ * before issuing the request to prevent SSRF onto internal hosts.
+ */
+export async function postVerification(
+  webhookUrl: string,
+  businessName?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!/^https:\/\/hooks\.slack\.com\//.test(webhookUrl)) {
+    return { ok: false, error: 'webhook_url must be https://hooks.slack.com/services/...' }
+  }
+  const blocks = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '✅ Nexus connected' },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: businessName
+          ? `Connected to *${businessName}*. This channel will receive daily operator digests, approval requests, and run summaries.`
+          : 'This channel will receive daily operator digests, approval requests, and run summaries.',
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `Verification sent at ${new Date().toISOString()}` }],
+    },
+  ]
+  try {
+    const res = await fetch(webhookUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text: '✅ Nexus connected', blocks }),
+    })
+    if (res.ok) return { ok: true }
+    const text = await res.text().catch(() => '')
+    return { ok: false, error: `slack_${res.status}${text ? `: ${text.slice(0, 80)}` : ''}` }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'network_error' }
+  }
+}
+
+/**
  * Build a small Block Kit card for a Board approval request.
  */
 export function approvalBlocks(opts: {

@@ -10,8 +10,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { listBusinessesForUser, upsertBusiness, type BusinessUpsert } from '@/lib/business/db'
+import { getBusinessBySlug, listBusinessesForUser, recordWebhookVerify, upsertBusiness, type BusinessUpsert } from '@/lib/business/db'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { postVerification } from '@/lib/slack/client'
 
 export const runtime = 'nodejs'
 
@@ -66,8 +67,30 @@ export async function POST(req: NextRequest) {
     slack_webhook_url:     body.slack_webhook_url ?? null,
   }
 
+  // Detect webhook-URL change so we can auto-verify and stamp a Board card on
+  // first verify. Comparing pre-save value ensures we don't re-fire a Slack
+  // ping on every "save" round-trip when the URL didn't actually change.
+  const previous     = await getBusinessBySlug(row.slug)
+  const isOwner      = !previous || previous.user_id === userId
+  const webhookChanged = isOwner && row.slack_webhook_url !== (previous?.slack_webhook_url ?? null)
+
   const saved = await upsertBusiness(row)
   if (!saved) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
 
-  return NextResponse.json({ ok: true, business: saved })
+  // Auto-verify on save when the URL changed and is non-empty. Failure does
+  // NOT roll back the save — the operator can fix the URL and re-trigger
+  // via the standalone Verify button (PR 4).
+  let slackWarning: string | null = null
+  if (webhookChanged && saved.slack_webhook_url) {
+    const result = await postVerification(saved.slack_webhook_url, saved.name)
+    await recordWebhookVerify(saved.slug, result)
+    if (!result.ok) slackWarning = result.error ?? 'verification_failed'
+  }
+
+  return NextResponse.json({
+    ok:            true,
+    business:      saved,
+    slack_warning: slackWarning,
+    webhook_verified: webhookChanged && !slackWarning,
+  })
 }

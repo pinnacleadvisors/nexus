@@ -80,7 +80,12 @@ export interface BusinessRow {
   approval_gates:           ApprovalGate[]
 
   slack_channel:            string | null
+  /** Plaintext webhook URL (resolved from `slack_webhook_url_enc` when present, else legacy column). */
   slack_webhook_url:        string | null
+  /** ISO timestamp of the most recent successful webhook verification. Null = never verified. */
+  webhook_last_verified_at: string | null
+  /** Error from the most recent failed verification. Cleared (NULL) on the next successful verify. */
+  webhook_last_error:       string | null
 
   current_run_id:           string | null
   last_operator_at:         string | null

@@ -19,12 +19,28 @@ import { BUSINESS_SEEDS } from '@/lib/business/seeds'
 import type { BusinessRow, BusinessStatus } from '@/lib/business/types'
 
 interface ApiList { ok: boolean; businesses: BusinessRow[] }
-interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string }
+interface ApiUpsert {
+  ok: boolean
+  business: BusinessRow
+  error?: string
+  slack_warning?: string | null
+  webhook_verified?: boolean
+}
+interface ApiVerify {
+  ok: boolean
+  error?: string | null
+  cardCreated?: boolean
+  verifiedAt?: string
+}
 
 export default function BusinessesPage() {
   const [rows, setRows]     = useState<BusinessRow[]>([])
   const [loading, setLoad]  = useState(true)
   const [err, setErr]       = useState<string | null>(null)
+  // Per-business webhook status. Cleared on every refresh so stale verify
+  // results never linger after a row-level edit.
+  const [hookStatus, setHookStatus] = useState<Record<string, { ok: boolean; message: string }>>({})
+  const [verifying, setVerifying] = useState<Record<string, boolean>>({})
 
   async function refresh() {
     setLoad(true)
@@ -72,7 +88,38 @@ export default function BusinessesPage() {
       setErr(data.error ?? 'update failed')
       return
     }
+    // Surface auto-verify outcome inline next to the webhook field. The
+    // server only runs a verify when the URL actually changed.
+    if (data.webhook_verified) {
+      setHookStatus(s => ({ ...s, [slug]: { ok: true, message: 'Slack verified ✓' } }))
+    } else if (data.slack_warning) {
+      setHookStatus(s => ({ ...s, [slug]: { ok: false, message: `Verify failed: ${data.slack_warning}` } }))
+    }
     await refresh()
+  }
+
+  async function verifyWebhook(slug: string) {
+    setVerifying(v => ({ ...v, [slug]: true }))
+    setHookStatus(s => ({ ...s, [slug]: { ok: false, message: 'Sending test message…' } }))
+    try {
+      const res = await fetch('/api/businesses/verify-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      })
+      const data = (await res.json()) as ApiVerify
+      setHookStatus(s => ({
+        ...s,
+        [slug]: data.ok
+          ? { ok: true, message: data.cardCreated ? 'Slack verified ✓ · Board card created' : 'Slack verified ✓' }
+          : { ok: false, message: `Verify failed: ${data.error ?? 'unknown'}` },
+      }))
+      if (data.ok) await refresh()
+    } catch (e) {
+      setHookStatus(s => ({ ...s, [slug]: { ok: false, message: e instanceof Error ? e.message : 'network error' } }))
+    } finally {
+      setVerifying(v => ({ ...v, [slug]: false }))
+    }
   }
 
   const ownedSlugs = new Set(rows.map(r => r.slug))
@@ -159,16 +206,45 @@ export default function BusinessesPage() {
               </label>
               <label className="text-sm">
                 <span className="block text-xs uppercase text-zinc-500">Slack webhook URL</span>
-                <input
-                  type="password"
-                  defaultValue={r.slack_webhook_url ?? ''}
-                  onBlur={e => {
-                    const v = e.target.value.trim() || null
-                    if (v !== r.slack_webhook_url) void patchBusiness(r.slug, { slack_webhook_url: v })
-                  }}
-                  placeholder="https://hooks.slack.com/services/..."
-                  className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 font-mono text-xs"
-                />
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="password"
+                    defaultValue={r.slack_webhook_url ?? ''}
+                    onBlur={e => {
+                      const v = e.target.value.trim() || null
+                      if (v !== r.slack_webhook_url) void patchBusiness(r.slug, { slack_webhook_url: v })
+                    }}
+                    placeholder="https://hooks.slack.com/services/..."
+                    className="flex-1 rounded border border-zinc-300 px-2 py-1 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void verifyWebhook(r.slug)}
+                    disabled={!r.slack_webhook_url || verifying[r.slug]}
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+                    title="Send a test message to this webhook"
+                  >
+                    {verifying[r.slug] ? 'Verifying…' : 'Verify'}
+                  </button>
+                </div>
+                {hookStatus[r.slug] && (
+                  <span
+                    className="mt-1 block text-xs"
+                    style={{ color: hookStatus[r.slug]!.ok ? '#16a34a' : '#dc2626' }}
+                  >
+                    {hookStatus[r.slug]!.message}
+                  </span>
+                )}
+                {!hookStatus[r.slug] && r.webhook_last_error && (
+                  <span className="mt-1 block text-xs" style={{ color: '#dc2626' }}>
+                    Last verify failed: {r.webhook_last_error}
+                  </span>
+                )}
+                {!hookStatus[r.slug] && !r.webhook_last_error && r.webhook_last_verified_at && (
+                  <span className="mt-1 block text-xs" style={{ color: '#16a34a' }}>
+                    Verified {new Date(r.webhook_last_verified_at).toLocaleString()}
+                  </span>
+                )}
               </label>
             </div>
 
