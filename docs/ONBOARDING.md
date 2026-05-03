@@ -147,6 +147,7 @@ Visible failure surfaces — bookmark these:
 | **Cost cap hit (402)** | Dashboard alert + Slack | Bump `USER_DAILY_USD_LIMIT` or wait for the next UTC day |
 | **Board has stale cards** from a deleted idea | Nightly orphan sweep deletes them at 04:30 UTC | Click **Clean orphans now** in `/manage-platform` for immediate cleanup |
 | **Cron didn't run** | `/manage-platform` health panel — each cron shows its last-run time | Click the cron's **Run now** button |
+| **All crons show "Unknown" in Health panel** | Vercel log drain isn't wired up | Optional setup — see [docs/LOG_DRAIN_SETUP.md](LOG_DRAIN_SETUP.md). Requires Vercel Pro. |
 
 If the dashboard itself won't load, it's probably Clerk: domain whitelist mismatch, or the publishable key changed. The middleware (`proxy.ts`) wraps Clerk in a try/catch so a Clerk outage degrades to "looks signed-out" rather than crashing.
 

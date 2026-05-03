@@ -19,7 +19,9 @@
  * Configure on Vercel: Project Settings → Log Drains → JSON drain →
  *   URL:    https://<your-domain>/api/vercel/log-drain
  *   Secret: <same value as VERCEL_LOG_DRAIN_SECRET>
- *   Headers signed with `x-vercel-signature` (sha256 hex of body).
+ *   Vercel signs each batch with `x-vercel-signature: <hmac-sha1-hex>`
+ *   (raw hex, no prefix). The receiver also accepts SHA-256 for resilience
+ *   against a future Vercel algorithm migration.
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
@@ -80,9 +82,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, lines: 0 })
   }
 
+  // Vercel signs Log Drain payloads with HMAC-SHA1, hex-encoded, raw (no
+  // `sha1=` prefix) — see https://vercel.com/docs/drains/reference/logs and
+  // the OpenObserve implementer's post for confirmation. The original receiver
+  // in this file used SHA-256 which silently 401'd the wizard's POST probe;
+  // accept BOTH algorithms so a future Vercel migration to SHA-256 doesn't
+  // re-break the drain. The constant-time comparator short-circuits on length
+  // mismatch (40 hex for SHA-1, 64 for SHA-256), so checking both is cheap.
   const sigHeader = req.headers.get('x-vercel-signature') ?? ''
-  const expected  = createHmac('sha256', secret).update(bodyText).digest('hex')
-  if (!constantTimeEqual(sigHeader, expected)) {
+  const expectedSha1   = createHmac('sha1',   secret).update(bodyText).digest('hex')
+  const expectedSha256 = createHmac('sha256', secret).update(bodyText).digest('hex')
+  const matched =
+    constantTimeEqual(sigHeader, expectedSha1) ||
+    constantTimeEqual(sigHeader, expectedSha256)
+  if (!matched) {
+    // Diagnostic — never logs the secret. Header length identifies which
+    // algorithm Vercel used (40 = sha1, 64 = sha256). The 8-char prefix of
+    // each expected digest helps the operator confirm the secret matches if
+    // they capture the drain headers from the wizard's failure.
+    console.warn(
+      '[log-drain] bad_signature',
+      'header_len=',  sigHeader.length,
+      'body_bytes=',  bodyText.length,
+      'expected_sha1_prefix=',   expectedSha1.slice(0, 8),
+      'expected_sha256_prefix=', expectedSha256.slice(0, 8),
+    )
     return NextResponse.json({ ok: false, error: 'bad_signature' }, { status: 401 })
   }
 
