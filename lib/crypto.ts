@@ -13,19 +13,33 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 
 const ALGORITHM = 'aes-256-gcm'
 
+/**
+ * ADR 004 — fail-closed in production AND staging-equivalent environments.
+ * The dev placeholder is only used when explicitly running locally
+ * (NODE_ENV=development) AND no Vercel preview / staging override is set.
+ */
+function isStagingLike(): boolean {
+  if (process.env.NEXUS_REQUIRE_ENCRYPTION_KEY === '1') return true
+  // Vercel preview deploys are real deployed instances against real services
+  // even when NODE_ENV reports otherwise.
+  if (process.env.VERCEL_ENV === 'preview') return true
+  return false
+}
+
 function getKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY
   if (!hex || hex.length !== 64) {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' || isStagingLike()) {
       throw new Error(
-        'ENCRYPTION_KEY missing or invalid in production. ' +
+        'ENCRYPTION_KEY missing or invalid in production/staging. ' +
         'Set a 64-hex-character value in Doppler. ' +
-        'Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+        'Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" ' +
+        'See docs/adr/004-encryption-key-policy.md.'
       )
     }
     console.warn(
       '[crypto] WARNING: ENCRYPTION_KEY not set — using insecure dev fallback. ' +
-      'This MUST NOT be used in production.'
+      'This MUST NOT be used in production or staging. See ADR 004.'
     )
     return Buffer.from('nexus_dev_fallback_key_NOT_FOR_PROD_USE_00000000', 'utf8').subarray(0, 32)
   }

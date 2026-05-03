@@ -66,7 +66,8 @@ default → env vars above. See `lib/claw/business-client.ts`.
 
 | Var | Purpose |
 |-----|---------|
-| `ENCRYPTION_KEY` | AES-256-GCM key for user-secret / OAuth token encryption (generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Required in production — `lib/crypto.ts` throws on import if missing. **Rotation:** see `rotateKey()` in `lib/crypto.ts` — set old + new keys simultaneously, re-encrypt every row, then drop the old. |
+| `ENCRYPTION_KEY` | AES-256-GCM key for user-secret / OAuth token encryption (generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Required in production AND staging (`VERCEL_ENV=preview` OR `NEXUS_REQUIRE_ENCRYPTION_KEY=1`) — `lib/crypto.ts` throws on import if missing. **Rotation:** see `rotateKey()` in `lib/crypto.ts` — set old + new keys simultaneously, re-encrypt every row, then drop the old. See [ADR 004](../../docs/adr/004-encryption-key-policy.md). |
+| `NEXUS_REQUIRE_ENCRYPTION_KEY` | Set to `1` on self-hosted staging Coolify deploys to force `lib/crypto.ts` to fail-closed when `ENCRYPTION_KEY` is unset. Vercel preview deploys are detected via `VERCEL_ENV=preview` automatically; this flag covers everything else. |
 | `UPSTASH_REDIS_REST_URL` | Rate limiter (in-memory fallback if unset — do NOT rely on fallback in production, cross-lambda counters won't work) |
 | `UPSTASH_REDIS_REST_TOKEN` | Rate limiter |
 

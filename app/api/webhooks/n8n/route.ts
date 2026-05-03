@@ -78,9 +78,23 @@ interface N8nExecutionEvent {
 export async function POST(req: NextRequest) {
   const bodyText = await req.text()
 
-  // Signature check (skip if N8N_WEBHOOK_SECRET not set yet)
+  // Signature check. Fail CLOSED in production when the secret is unset —
+  // previously this fail-OPEN'd, leaving production deploys exposed (S2 in
+  // task_plan-ux-security-onboarding.md). Dev preserved so contributors can
+  // exercise the route without configuring a secret.
   const secret = process.env.N8N_WEBHOOK_SECRET
-  if (secret) {
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'webhook_secret_unset', detail: 'set N8N_WEBHOOK_SECRET in Doppler' },
+        { status: 503 },
+      )
+    }
+    // dev: log a warning the first time so the gap is obvious in logs
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[webhooks/n8n] N8N_WEBHOOK_SECRET unset — accepting unsigned dev payloads')
+    }
+  } else {
     const sigHeader = req.headers.get('x-n8n-signature') ?? ''
     if (!sigHeader) {
       return NextResponse.json({ error: 'Missing X-N8N-Signature header' }, { status: 401 })

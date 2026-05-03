@@ -55,9 +55,21 @@ function resolveHookToken(req: NextRequest): string | null {
 export async function POST(req: NextRequest) {
   const bodyText = await req.text()
 
-  // Signature verification (skip if no token is configured yet)
+  // Signature verification. Fail CLOSED in production when no token is
+  // configured — previously this fail-OPEN'd (S3 in
+  // task_plan-ux-security-onboarding.md). Dev preserved.
   const hookToken = resolveHookToken(req)
-  if (hookToken) {
+  if (!hookToken) {
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'webhook_secret_unset', detail: 'set OPENCLAW_BEARER_TOKEN in Doppler' },
+        { status: 503 },
+      )
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[webhooks/claw] OPENCLAW_BEARER_TOKEN unset — accepting unsigned dev payloads')
+    }
+  } else {
     const sigHeader = req.headers.get('x-nexus-signature')
       ?? req.headers.get('x-claw-signature')
       ?? ''

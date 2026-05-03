@@ -1,6 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
 
+// Defence-in-depth: every authenticated page is gated by both the route-group
+// layout (app/(protected)/layout.tsx) AND middleware. Adding a new page under
+// (protected)/ that opts out of the layout would otherwise leak — the matcher
+// here is the catch-all. See docs/adr/003-protected-route-matcher.md.
 const isProtectedRoute = createRouteMatcher([
   '/dashboard(.*)',
   '/forge(.*)',
@@ -9,6 +13,13 @@ const isProtectedRoute = createRouteMatcher([
   '/build(.*)',
   '/graph(.*)',
   '/swarm(.*)',
+  '/idea(.*)',
+  '/idea-library(.*)',
+  '/learn(.*)',
+  '/settings(.*)',
+  '/signals(.*)',
+  '/manage-platform(.*)',
+  '/automation-library(.*)',
 ])
 
 // Owner-only allowlist: comma-separated Clerk user IDs (e.g. "user_abc,user_xyz").
