@@ -132,10 +132,36 @@ Each PR commits independently. After each: `npx tsc --noEmit` then proceed.
 ## Progress
 
 - [x] Plan written and approved (2026-05-02)
-- [ ] PR 1 — Foundation
-- [ ] PR 2 — Learn UX
-- [ ] PR 3 — Orphan cleanup
-- [ ] PR 4 — Webhook verification
-- [ ] PR 5 — Failures panel
-- [ ] PR 6 — Security pass
-- [ ] PR 7 — Self-improvement loops
+- [x] PR 1 — Foundation (commit 43abad9)
+- [x] PR 2 — Learn UX (commit 8040670)
+- [x] PR 3 — Orphan cleanup (commit 2ff2821)
+- [x] PR 4 — Webhook verification (commit f068af8)
+- [x] PR 5 — Failures panel (commit 168cdfb)
+- [x] PR 6 — Security pass (commit e969566)
+- [x] PR 7 — Self-improvement loops (commit 2c0fd03)
+
+## Manual operator tasks (post-merge)
+
+These need a human and won't happen automatically:
+
+1. **Apply migrations 025 + 026** — `npm run migrate` against the live Supabase project.
+2. **Run the one-shot orphan purge** to clear the current Board flood:
+   ```bash
+   # dry-run first
+   npx tsx scripts/purge-existing-orphans.ts
+   # if counts look right
+   npx tsx scripts/purge-existing-orphans.ts --commit
+   ```
+3. **Re-encrypt existing Slack webhook URLs** (optional — only if you want plaintext gone today): in the Settings UI, blank then re-paste each `slack_webhook_url`. The new save path encrypts to `slack_webhook_url_enc`. The legacy column is read as fallback so you don't *have* to do this immediately.
+4. **Set `NEXUS_REQUIRE_ENCRYPTION_KEY=1`** on any self-hosted staging Coolify deploys (Vercel preview deploys are auto-detected).
+5. **Verify each business webhook** by clicking the new "Verify" button on `/settings/businesses` — confirms Slack arrives, stamps `webhook_last_verified_at`, creates a 🔌 Board card on first verify.
+6. **Trigger `/api/cron/sync-learning-cards`** once via the new "Run sync now" button on `/learn` to seed flashcards from the molecular memory mirror.
+7. **Add `BOT_API_TOKEN` + `BOT_CLERK_USER_ID` to Doppler** if not already set — the new `/api/health/cron` and other admin routes accept the bot bearer for automation.
+
+## Deferred (own task plans)
+
+- F1 Idea→Run friction (UX redesign — own plan)
+- 6.5 RLS narrow + 39-route auth tightening (gate behind `MULTI_USER_MODE=1`, ship when adding 2nd tester)
+- 7.2 Idea→approval funnel metric
+- 7.5 Idea backlog grader (needs scoring rubric)
+- 7.6 Card retention sweep (`tasks_archive` table)
