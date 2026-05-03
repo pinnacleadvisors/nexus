@@ -103,8 +103,13 @@ export async function POST(req: NextRequest) {
           if (error) console.error('[businesses] slack-connected card insert:', error.message)
         })
       }
+    } else if (result.silent) {
+      // 200 OK from Slack but the message never reached a channel
+      // (channel_is_archived, no_service, etc.). Most dangerous case — looks
+      // like a successful POST but no human will see the messages.
+      slackWarning = `Slack accepted the request but the message did NOT reach a channel. ${result.reason}`
     } else {
-      slackWarning = `Slack verification failed (${result.status}): ${result.reason}`
+      slackWarning = `Slack rejected the webhook (${result.status || 'network error'}): ${result.reason}`
     }
   }
 
