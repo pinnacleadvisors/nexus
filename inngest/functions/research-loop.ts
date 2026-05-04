@@ -10,6 +10,7 @@
 import { inngest } from '@/inngest/client'
 import { callClaude } from '@/lib/claw/llm'
 import { createServerClient } from '@/lib/supabase'
+import type { Json } from '@/lib/database.types'
 import { searchWebMulti } from '@/lib/tools/tavily'
 import { insertTask } from '@/lib/board/insert-task'
 import {
@@ -245,11 +246,14 @@ export const weeklyResearchLoop = inngest.createFunction(
       const db = createServerClient()
       if (db) {
         try {
+          // Json columns require an `as unknown as Json` cast — same pattern
+          // as app/api/build/research/route.ts. Without it the overload
+          // resolver falls back to `never` and reports the first key as unknown.
           await db.from('build_research').insert({
             run_at:           digest.runAt,
-            queries_run:      digest.queriesRun,
-            suggestions:      digest.suggestions as unknown,
-            stack_issues:     digest.stackIssues as unknown,
+            queries_run:      digest.queriesRun as unknown as Json,
+            suggestions:      digest.suggestions as unknown as Json,
+            stack_issues:     digest.stackIssues as unknown as Json,
             raw_search_count: digest.rawSearchCount,
             duration_ms:      digest.durationMs,
           })

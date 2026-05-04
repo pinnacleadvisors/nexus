@@ -496,9 +496,16 @@ export async function POST(req: NextRequest) {
                   .eq('enabled', true)
                   .eq('metric', 'daily_cost')
 
+                // DB columns are free-text — narrow to the literal-union shape
+                // before handing to sendSlackOrEmail.
+                type AlertChannel = 'email' | 'slack'
                 for (const t of thresholds ?? []) {
                   await sendSlackOrEmail(
-                    t,
+                    {
+                      ...t,
+                      metric:  'daily_cost',
+                      channel: (t.channel === 'slack' ? 'slack' : 'email') as AlertChannel,
+                    },
                     `Single chat run cost $${cost.toFixed(4)} using ${advisorModel}, ` +
                     `exceeding the per-run alert threshold of $${costThreshold}.`,
                   )

@@ -5,6 +5,22 @@ import type { AlertThreshold } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
+// DB columns are free-text (no CHECK constraints); narrow the read here so
+// the rest of the codebase can rely on the literal-union types in lib/types.ts.
+const VALID_METRICS = new Set<AlertThreshold['metric']>(['daily_cost', 'error_rate', 'agent_down'])
+const VALID_CHANNELS = new Set<AlertThreshold['channel']>(['email', 'slack'])
+
+function narrowMetric(value: string): AlertThreshold['metric'] {
+  return VALID_METRICS.has(value as AlertThreshold['metric'])
+    ? (value as AlertThreshold['metric'])
+    : 'daily_cost'
+}
+function narrowChannel(value: string): AlertThreshold['channel'] {
+  return VALID_CHANNELS.has(value as AlertThreshold['channel'])
+    ? (value as AlertThreshold['channel'])
+    : 'email'
+}
+
 // ── GET — list thresholds ─────────────────────────────────────────────────────
 export async function GET() {
   const db = createServerClient()
@@ -17,14 +33,16 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const thresholds: AlertThreshold[] = (data ?? []).map(r => ({
-    id: r.id,
-    metric: r.metric,
-    threshold: Number(r.threshold),
-    channel: r.channel,
-    destination: r.destination,
-    enabled: r.enabled,
-  }))
+  const thresholds: AlertThreshold[] = (data ?? [])
+    .filter(r => VALID_METRICS.has(r.metric as AlertThreshold['metric']))
+    .map(r => ({
+      id: r.id,
+      metric: narrowMetric(r.metric),
+      threshold: Number(r.threshold),
+      channel: narrowChannel(r.channel),
+      destination: r.destination,
+      enabled: r.enabled,
+    }))
 
   return NextResponse.json({ thresholds, source: 'supabase' })
 }
@@ -80,11 +98,12 @@ export async function POST(req: NextRequest) {
     const fired: string[] = []
 
     for (const t of thresholdsRes.data ?? []) {
+      if (!VALID_METRICS.has(t.metric as AlertThreshold['metric'])) continue
       const threshold: AlertThreshold = {
         id: t.id,
-        metric: t.metric,
+        metric: narrowMetric(t.metric),
         threshold: Number(t.threshold),
-        channel: t.channel,
+        channel: narrowChannel(t.channel),
         destination: t.destination,
         enabled: t.enabled,
       }

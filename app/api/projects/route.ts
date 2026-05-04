@@ -6,6 +6,11 @@
  * POST   /api/projects              — create project { name, userId? }
  * PATCH  /api/projects?id=<id>      — rename project { name }
  * DELETE /api/projects?id=<id>      — delete project (cascades milestones + tasks)
+ *
+ * Note: the canonical column is `title` (regenerated database.types.ts).
+ * The wire API still accepts/returns `name` for back-compat with existing
+ * callers (Forge UI, board page, knowledge page). Migration 032 ensures
+ * the column is named `title` on the live DB.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -20,12 +25,20 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, user_id, created_at, updated_at')
+    .select('id, title, user_id, created_at, updated_at')
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ projects: data ?? [] })
+  // Re-emit `title` as `name` so existing client code keeps working.
+  const projects = (data ?? []).map(row => ({
+    id:         row.id,
+    name:       row.title,
+    user_id:    row.user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }))
+  return NextResponse.json({ projects })
 }
 
 export async function POST(req: NextRequest) {
@@ -41,13 +54,13 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('projects')
-    .insert({ name: body.name.trim(), user_id: body.userId ?? null })
+    .insert({ title: body.name.trim(), user_id: body.userId ?? null })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ project: data }, { status: 201 })
+  return NextResponse.json({ project: data ? { ...data, name: data.title } : null }, { status: 201 })
 }
 
 export async function PATCH(req: NextRequest) {
@@ -67,14 +80,14 @@ export async function PATCH(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('projects')
-    .update({ name: body.name.trim() })
+    .update({ title: body.name.trim() })
     .eq('id', id)
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ project: data })
+  return NextResponse.json({ project: data ? { ...data, name: data.title } : null })
 }
 
 export async function DELETE(req: NextRequest) {
