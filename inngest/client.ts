@@ -58,4 +58,19 @@ export type Events = {
   'build/research-loop': {
     data: { triggeredBy?: string }
   }
+  /** Slack war-room slash command fan-out (Mission Control Kit Pack 01). */
+  'slack/warroom.fanout': {
+    data: {
+      command:     'standup' | 'discuss' | 'ask'
+      text:        string
+      userId:      string
+      slackUserId: string
+      channelId:   string
+      responseUrl: string
+    }
+  }
+  /** Triggered nightly by /api/cron/agent-overload to file split-agent signals. */
+  'agents/overload-check': {
+    data: { triggeredBy?: string }
+  }
 }

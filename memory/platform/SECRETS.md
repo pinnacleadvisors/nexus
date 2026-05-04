@@ -69,6 +69,8 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `ENCRYPTION_KEY` | AES-256-GCM key for user-secret / OAuth token encryption (generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Required in production — `lib/crypto.ts` throws on import if missing. **Rotation:** see `rotateKey()` in `lib/crypto.ts` — set old + new keys simultaneously, re-encrypt every row, then drop the old. |
 | `UPSTASH_REDIS_REST_URL` | Rate limiter (in-memory fallback if unset — do NOT rely on fallback in production, cross-lambda counters won't work) |
 | `UPSTASH_REDIS_REST_TOKEN` | Rate limiter |
+| `EXFIL_GUARD_ENABLED` | Optional. Set to `false` in development to bypass `lib/security/exfil-guard.ts` for local debugging. Production always scans regardless of this flag. |
+| `EXFIL_PATTERNS_EXTRA` | Optional. Comma-separated `regex::label` pairs to extend the built-in API-key/token patterns. Example: `corp-[A-Z]{4}-\d{8}::corp-id,api/v1/key/[a-z0-9]{32}::vendor-x`. |
 
 ## Storage (Phase 7)
 

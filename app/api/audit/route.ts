@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { getAuditLog } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { createServerClient } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
 
@@ -54,4 +55,40 @@ export async function GET(req: NextRequest) {
   })
 
   return NextResponse.json({ entries })
+}
+
+/**
+ * POST /api/audit — toggle the `pinned` flag on an audit_log row.
+ *
+ * Body: { id: string, pinned: boolean }
+ *
+ * Owner-only (ALLOWED_USER_IDS). Pinned rows survive the 90-day prune
+ * cron at /api/cron/audit-prune.
+ */
+export async function POST(req: NextRequest) {
+  const { userId } = await auth()
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isOwner(userId)) return NextResponse.json({ error: 'owner only' }, { status: 403 })
+
+  const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'audit:pin', identifier: userId })
+  if (!rl.success) return rateLimitResponse(rl)
+
+  const body = await req.json().catch(() => ({})) as { id?: string; pinned?: boolean }
+  if (!body.id || typeof body.pinned !== 'boolean') {
+    return NextResponse.json({ error: 'body must be { id, pinned: bool }' }, { status: 400 })
+  }
+  const db = createServerClient()
+  if (!db) return NextResponse.json({ error: 'no database configured' }, { status: 500 })
+
+  // `pinned` column lands in migration 030 — until lib/database.types.ts is
+  // regenerated we use the same escape hatch as lib/business/db.ts.
+  type LooseUpdate = {
+    update: (patch: Record<string, unknown>) => LooseUpdate
+    eq:     (k: string, v: unknown) => Promise<{ error: { message: string } | null }>
+  }
+  const { error } = await (db.from('audit_log' as never) as unknown as LooseUpdate)
+    .update({ pinned: body.pinned })
+    .eq('id', body.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
 }

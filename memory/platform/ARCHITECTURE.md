@@ -132,6 +132,10 @@ lib/
   - **024 business_operators** — Phase A autonomous orchestrator config (slug PK, money_model JSONB, slack_webhook_url, current_run_id FK)
   - **025 tasks_lineage** — adds `idea_id`/`run_id` (FK ON DELETE SET NULL) + `business_slug` to `tasks`. Closes the orphan-card detection gap. Existing rows stay NULL (legacy-keep)
   - **026 encrypt_slack_webhook** — adds `slack_webhook_url_enc` (AES-256-GCM via `lib/crypto.ts`); plaintext column kept for back-compat until owner re-saves
+  - **027 idempotency_and_dedup** — generic `webhook_events` idempotency table + dedup constraints (retry-storm audit follow-up)
+  - **028 kill_switches** — six hot-reloadable feature gates (`llm_dispatch`, `auto_assign`, `scheduler`, `dashboard_mutations`, `slack_warroom`, `swarm_consensus`). Read via `lib/kill-switches.ts` with 60s cache; toggled at `/manage-platform → Switches`. Mission Control Kit Pack 02.
+  - **029 molecular_salience** — adds `salience`, `pinned`, `last_used_at`, `superseded_by` to `mol_atoms` + RPCs `mol_atoms_fts_search` / `mol_atoms_vec_search`. Backs `lib/molecular/hybrid-search.ts` (RRF) and the relevance-feedback loop. Mission Control Kit Pack 06.
+  - **030 audit_pinning** — adds `pinned` boolean to `audit_log`; daily `/api/cron/audit-prune` deletes rows older than 90 days where `pinned=false`. Mission Control Kit Pack 03.
 - Realtime: enabled on agents, tasks, projects, milestones, businesses, swarm tables
 
 ## Key Contracts

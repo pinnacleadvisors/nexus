@@ -23,6 +23,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifySlackSignature, getSlackConfig } from '@/lib/slack/client'
 import { advancePhase, getRun, listEvents, nextPhase, setStatus } from '@/lib/runs/controller'
 import { audit } from '@/lib/audit'
+import { isEnabled as isKillSwitchEnabled } from '@/lib/kill-switches'
+import { inngest } from '@/inngest/client'
 
 export const runtime = 'nodejs'
 
@@ -63,6 +65,44 @@ export async function POST(req: NextRequest) {
 
   const command = (params.get('command') ?? '').trim()
   const text    = (params.get('text')    ?? '').trim()
+  const responseUrl = (params.get('response_url') ?? '').trim()
+  const channelId   = (params.get('channel_id')   ?? '').trim()
+
+  // ── War-room slash commands (Mission Control Kit Pack 01) ────────────────
+  // Slack expects an ack within 3s; the multi-agent fan-out runs async via
+  // Inngest and posts back through response_url (or chat.postMessage).
+  if (command === '/standup' || command === '/discuss' || command === '/ask') {
+    if (!(await isKillSwitchEnabled('slack_warroom'))) {
+      return reply(':no_entry: slack_warroom kill switch is disabled')
+    }
+    audit(req, {
+      action:   `slack.${command.replace(/^\//, '')}`,
+      resource: 'warroom',
+      userId:   nexusUserId,
+      metadata: { command, text, channelId, slackUserId },
+    })
+    await inngest.send({
+      name: 'slack/warroom.fanout',
+      data: {
+        command:        command.replace(/^\//, ''),
+        text,
+        userId:         nexusUserId,
+        slackUserId,
+        channelId,
+        responseUrl,
+      },
+    }).catch(err => {
+      if (process.env.NODE_ENV !== 'production') console.warn('[warroom] inngest send failed:', err)
+    })
+    const usage =
+      command === '/standup'
+        ? 'standup queued — agents will report in this channel within ~30 seconds.'
+        : command === '/discuss'
+          ? `discussion queued for: ${text.slice(0, 100)}\nagents will weigh in, then a consolidator will summarise.`
+          : `ask queued: ${text.slice(0, 100)}\nthe lead operator will reply within ~20 seconds.`
+    return reply(`:thought_balloon: ${usage}`, 'ephemeral')
+  }
+
   const [arg, ...rest] = text.split(/\s+/)
   const runId  = arg
   const reason = rest.join(' ').trim()

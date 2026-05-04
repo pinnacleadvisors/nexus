@@ -97,3 +97,18 @@ export async function getAuditLog(options: {
   const { data } = await query
   return data ?? []
 }
+
+/** Convenience: row count of pinned entries. Used by the Audit panel. */
+export async function getPinnedCount(): Promise<number> {
+  const supabase = createServerClient()
+  if (!supabase) return 0
+  // `pinned` column added in migration 030; database.types.ts not yet regen'd.
+  type LooseSelect = {
+    select: (cols: string, opts: { count: 'exact'; head: boolean }) => LooseSelect
+    eq:     (k: string, v: unknown) => Promise<{ count: number | null }>
+  }
+  const { count } = await (supabase.from('audit_log' as never) as unknown as LooseSelect)
+    .select('id', { count: 'exact', head: true })
+    .eq('pinned', true)
+  return count ?? 0
+}

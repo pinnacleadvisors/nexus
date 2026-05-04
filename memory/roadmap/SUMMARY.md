@@ -31,6 +31,7 @@
 | **A** | **Autonomous Business Operator** | **🔧** | `business_operators` table (migration 024) + Inngest daily cron + Slack approve/reject. Webhook health check, slack URL encryption, board "connected" card on URL save: 2026-05-03 |
 | **SOE** | **Self-Optimising Ecosystem** | **🔧** | See below — Pillars A/B/C from `task_plan.md` |
 | **PI** | **Platform Improvements** | **🔧** | `task_plan-platform-improvements.md` — onboarding doc, orphan sweep, webhook verify, /learn sync button, /manage-platform health panel, security pass |
+| **MCK** | **Mission Control Kit imports** | **✅** | Six features ported from the ClaudeClaw V3 kit: exfil guard at every outbound path, hot-reloadable kill switches (6, ~60s cache), Slack war-room slash commands (`/standup`, `/discuss`, `/ask`), molecular memory hybrid scoring (RRF over FTS5+pgvector+salience) + ADD-only atoms, agent-overload analyzer, 90-day audit-log retention with pinning. See migrations 028–030; Switches/Audit tabs on `/manage-platform`. |
 
 ## Self-Optimising Ecosystem (SOE) — cross-cutting phase
 

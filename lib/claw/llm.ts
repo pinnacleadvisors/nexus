@@ -32,6 +32,7 @@ import type { LanguageModelUsage } from 'ai'
 import { resolveClaudeCodeConfig } from './business-client'
 import { callGateway } from './gateway-call'
 import { isGatewayHealthy } from './health'
+import { isEnabled as isKillSwitchEnabled } from '@/lib/kill-switches'
 
 export interface CallClaudeOpts {
   /** Clerk user ID — required for both gateway gate (X-Nexus-User-Id) and cost telemetry. */
@@ -69,6 +70,18 @@ const DEFAULT_TIMEOUT  = 55_000
 
 export async function callClaude(opts: CallClaudeOpts): Promise<CallClaudeResult> {
   const started = Date.now()
+
+  // ── 0. Kill switch — refuse all LLM traffic when llm_dispatch is off ────
+  // Hot-reloadable; cached for ~60s in lib/kill-switches.ts. Cloud equivalent
+  // of Mission Control Kit Pack 02's .env-mtime guard.
+  if (!(await isKillSwitchEnabled('llm_dispatch'))) {
+    return {
+      text:       '',
+      via:        'gateway',
+      error:      'llm_dispatch kill switch is disabled — flip it back on at /manage-platform',
+      durationMs: Date.now() - started,
+    }
+  }
 
   // ── 1. Gateway (plan-billed) ────────────────────────────────────────────
   if (!opts.forceApi) {

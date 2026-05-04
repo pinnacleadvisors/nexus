@@ -10,6 +10,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { appendBlocks, resolveNotionToken, type NotionBlock } from '@/lib/notion'
+import { scanForLeaks } from '@/lib/security/exfil-guard'
+import { audit } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 
@@ -48,6 +50,18 @@ export async function POST(req: NextRequest) {
 
   if (!blocks.length) {
     return NextResponse.json({ error: 'No content to append' }, { status: 400 })
+  }
+
+  // Exfil guard — refuse to write API keys or tokens into a Notion page.
+  const scanInput = [body.heading ?? '', body.text ?? '', JSON.stringify(body.blocks ?? '')].join('\n')
+  const scan = scanForLeaks(scanInput)
+  if (!scan.safe) {
+    audit(req, {
+      action:   'exfil_blocked',
+      resource: 'notion.append',
+      metadata: { pageId: body.pageId, matches: scan.matches },
+    })
+    return NextResponse.json({ error: 'exfiltration guard blocked Notion append', matches: scan.matches }, { status: 403 })
   }
 
   const ok = await appendBlocks(token, body.pageId, blocks)
