@@ -204,9 +204,47 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
 
 ### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors
+- [ ] `npm run check:retry-storm` passes (or any new finding has a `// retry-storm-check: ignore` comment with a one-line justification)
 - [ ] All interactive components have `'use client'`
 - [ ] No browser globals (`window`, `document`) in Server Components
 - [ ] Icons verified to exist in lucide-react
 - [ ] No secrets committed (check with `git diff --staged`)
 - [ ] `ROADMAP.md` updated if a feature was completed or added
+
+### Retry-storm vulnerability checklist (run mentally for every change)
+
+Lightweight version of `docs/RETRY_STORM_AUDIT.md` — if your change touches any of the surfaces below, walk the corresponding question. The static check (`npm run check:retry-storm`) catches the patterns mechanically, but these contextual judgement calls only show up here.
+
+**If you added or modified an API route…**
+- [ ] Will any external service call this route AND auto-retry on 5xx? (n8n: 3×, claw: 5×, Stripe: until 4xx for 3 days, Slack: rare). If yes → return **200 + `{ok: false, error}`** instead of 5xx, OR call `claimEvent('source', eventId)` from `lib/webhooks/idempotency.ts` BEFORE any side effects so replays are no-ops.
+- [ ] Does the route make any paid LLM / search / video API call? Did you wire `lib/cost-guard.ts` so the call counts against `USER_DAILY_USD_LIMIT`?
+
+**If you added or modified an Inngest function…**
+- [ ] Did you set an explicit `retries:` on `createFunction`? Default is 3 — multiplies paid-call cost by 4× on flaky upstreams.
+- [ ] Are individual `step.run` blocks wrapped in try/catch where appropriate, returning `{error}` instead of throwing? One throw triggers function-level retry of EVERY step before it.
+
+**If you added or modified a Vercel cron route…**
+- [ ] Is the route idempotent? A failed cron re-fires next slot — does the side effect (insert / external call) gracefully handle "I already did this"?
+- [ ] Does it return 200 even on partial failure? 5xx prompts Vercel to log failure but does NOT re-fire (which is correct), but unhandled exceptions DO show up in alerts.
+
+**If you added a `setInterval` / WebSocket reconnect / polling pattern in a Client Component…**
+- [ ] Replace `setInterval(fetcher, N)` with `usePollWithBackoff(fetcher, { intervalMs: N })` from `lib/hooks/usePollWithBackoff.ts`. Bare `setInterval` keeps hammering a 5xx endpoint forever.
+
+**If you added an outbound `fetch` to a paid or rate-limited service…**
+- [ ] Did you add `signal: AbortSignal.timeout(15_000)` (or appropriate timeout)? A hung fetch holds the function open until Vercel's 60s platform timeout fires.
+- [ ] Does the parent caller retry on failure? If yes, does the per-call cost matter? Use `lib/health/circuit-breaker.ts` `withBreaker()` wrapper to skip calls when the breaker is tripped.
+
+**If you added a `tasks` table insert…**
+- [ ] Use `insertTask(db, row)` from `lib/board/insert-task.ts` instead of raw `db.from('tasks').insert(...)`. The helper falls back to lineage-free inserts if migration 025 isn't applied — prevents the 2026-05-03 incident class.
+- [ ] Exception: chained `.insert(...).select('id').single()` (because the helper doesn't expose the row id) — add a `// retry-storm-check: ignore` comment with a one-line justification.
+
+**If you wrote a new SQL migration…**
+- [ ] Is the migration idempotent? Use `IF NOT EXISTS` / `DROP POLICY IF EXISTS` / `ON CONFLICT` so re-running it is safe.
+- [ ] Does it add any column that existing app code might INSERT into before the migration is applied in production? If yes, the existing `lib/board/insert-task.ts` fail-soft pattern is your model — write a similar runtime detection.
+
+**General — for any change touching shared infrastructure…**
+- [ ] If a new external integration was added, append a row to `docs/SPEND_CAPS.md` Tier 1 or 2.
+- [ ] If a new pattern was discovered, add a row to `docs/RETRY_STORM_AUDIT.md`.
+
+The mechanical check (`npm run check:retry-storm`) takes ~1s and catches the 6 grep-detectable patterns. The contextual checklist above takes ~30s of mental effort and catches the patterns that need human judgement. Run both before every commit that touches the surfaces above.
 

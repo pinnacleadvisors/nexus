@@ -12,12 +12,17 @@ import { inngest } from '@/inngest/client'
 import { createServerClient } from '@/lib/supabase'
 import { isR2Configured, uploadUrlToR2 } from '@/lib/r2'
 import { appendToPage, isMemoryConfigured } from '@/lib/memory/github'
+import { insertTask } from '@/lib/board/insert-task'
 
 // ── 1. Milestone completed ─────────────────────────────────────────────────────
 export const onMilestoneCompleted = inngest.createFunction(
   {
     id: 'milestone-completed',
     name: 'Milestone Completed Handler',
+    // retries: 1 — the dispatch-next-milestone step calls /api/claw which can
+    // fan out into paid LLM calls. Default 3 retries × every milestone × LLM
+    // tokens compounds quickly. See docs/RETRY_STORM_AUDIT.md.
+    retries: 1,
     triggers: [{ event: 'milestone/completed' }],
   },
   async ({ event, step }: { event: { data: Record<string, string | undefined> }; step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
@@ -95,6 +100,9 @@ export const onAssetCreated = inngest.createFunction(
   {
     id: 'asset-created',
     name: 'Asset Created Handler',
+    // retries: 1 — R2 upload + DB insert. Bounded to one retry so a flaky R2
+    // doesn't trigger 3× upload-from-URL re-fetches.
+    retries: 1,
     triggers: [{ event: 'asset/created' }],
   },
   async ({ event, step }: { event: { data: Record<string, string | undefined> }; step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
@@ -114,11 +122,14 @@ export const onAssetCreated = inngest.createFunction(
       }
     })
 
-    // Step 2: Create Kanban card in Review column
+    // Step 2: Create Kanban card in Review column.
+    // Uses insertTask so a missing migration 025 doesn't block the asset/created
+    // event handler (Inngest auto-retries failed steps; the helper falls back
+    // to a lineage-free insert and returns OK).
     await step['run']('create-kanban-card', async () => {
       const supabase = createServerClient()
       if (!supabase) return 'skipped'
-      await supabase.from('tasks').insert({
+      await insertTask(supabase, {
         title,
         description: `Agent-generated ${assetType ?? 'asset'}.${r2Key ? ` R2: ${r2Key}` : ''}`,
         column_id: 'review',
@@ -140,6 +151,9 @@ export const dailyCostCheck = inngest.createFunction(
   {
     id: 'daily-cost-check',
     name: 'Daily Cost Alert Check',
+    // retries: 0 — daily cron, idempotent. If the alert evaluation fails today
+    // we'd rather wait 24h than 3× retry and risk firing the alert thrice.
+    retries: 0,
     triggers: [{ cron: '0 8 * * *' }],
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
@@ -157,6 +171,8 @@ export const onAgentStatusChanged = inngest.createFunction(
   {
     id: 'agent-status-changed',
     name: 'Agent Status Change Handler',
+    // retries: 1 — sends an alert; better to send once than 3× on a flake.
+    retries: 1,
     triggers: [{ event: 'agent/status-changed' }],
   },
   async ({ event, step }: { event: { data: Record<string, string | undefined> }; step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {

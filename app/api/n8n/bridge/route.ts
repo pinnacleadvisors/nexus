@@ -34,6 +34,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
+import { insertTask } from '@/lib/board/insert-task'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { analyzeDescription } from '@/lib/n8n/gap-detector'
@@ -301,23 +302,18 @@ export async function POST(req: NextRequest) {
           : '',
     ].filter(Boolean).join('\n')
 
-    await (db as unknown as {
-      from: (t: string) => {
-        insert: (row: object) => Promise<{ error: { message: string } | null }>
-      }
+    // Use insertTask so a missing migration 025 doesn't 5xx this endpoint
+    // (n8n bridge routes can be invoked from auto-retried workflow steps).
+    await insertTask(db, {
+      title:       cardTitle,
+      description: details,
+      column_id:   'backlog',
+      priority:    plan.hybridRequired ? 'high' : 'medium',
+      project_id:  body.projectId ?? null,
+      position:    0,
+    }).then(({ error }) => {
+      if (error) console.error('[n8n/bridge] board card:', error.message)
     })
-      .from('tasks')
-      .insert({
-        title:       cardTitle,
-        description: details,
-        column_id:   'backlog',
-        priority:    plan.hybridRequired ? 'high' : 'medium',
-        project_id:  body.projectId ?? null,
-        position:    0,
-      })
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) console.error('[n8n/bridge] board card:', error.message)
-      })
   }
 
   // ── Step 4: Build n8n import URL ──────────────────────────────────────────

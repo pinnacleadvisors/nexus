@@ -35,6 +35,7 @@ async function refreshYouTubeAccessToken(credentials: Record<string, string>): P
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    signal:  AbortSignal.timeout(15_000),
   })
   if (!res.ok) return null
   const data = await res.json() as { access_token?: string }
@@ -50,6 +51,7 @@ export async function fetchYouTubeStats(
 
   const res = await fetch(`${YT_STATS_URL}${encodeURIComponent(videoId)}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal:  AbortSignal.timeout(15_000),
   })
   if (!res.ok) return null
   const data = await res.json() as {

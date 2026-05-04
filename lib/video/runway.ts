@@ -66,6 +66,7 @@ export async function generateClip(opts: RunwayGenerateOptions): Promise<string 
       method:  'POST',
       headers: headers(),
       body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {
@@ -103,6 +104,7 @@ export async function getTask(taskId: string): Promise<RunwayTask> {
   try {
     const res = await fetch(`${BASE}/tasks/${taskId}`, {
       headers: headers(),
+      signal:  AbortSignal.timeout(15_000),
     })
     if (!res.ok) return { taskId, status: 'FAILED', error: `HTTP ${res.status}` }
 

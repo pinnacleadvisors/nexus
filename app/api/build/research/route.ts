@@ -11,6 +11,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
+import { insertTask } from '@/lib/board/insert-task'
 import { inngest } from '@/inngest/client'
 import {
   getDigestsFromMemory,
@@ -203,6 +204,9 @@ export async function POST(req: NextRequest) {
       .slice(0, 5)
 
     for (const s of toCreate) {
+      // retry-storm-check: ignore — chained .insert().select('id').single()
+      // because the caller stores boardCardId. Manually-triggered route, not
+      // auto-retried, so amplification risk is bounded.
       const { data: card } = await db
         .from('tasks')
         .insert({
@@ -219,7 +223,7 @@ export async function POST(req: NextRequest) {
     }
 
     for (const issue of stackIssues.filter(i => i.severity === 'critical' || i.severity === 'high').slice(0, 3)) {
-      await db.from('tasks').insert({
+      await insertTask(db, {
         title:       `[Security] ${issue.package}: ${issue.severity}`,
         description: `${issue.description}\n\nFix available: ${issue.fixAvailable ? 'Yes' : 'No'}\nRun: npm audit fix`,
         column_id:   'backlog',

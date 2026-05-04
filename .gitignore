@@ -49,3 +49,4 @@ memory/*/molecular/.graph.json
 
 # Sentry Config File
 .env.sentry-build-plugin
+.env*.local

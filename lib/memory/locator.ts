@@ -53,6 +53,7 @@ async function resolveGitHub(loc: Extract<Locator, { kind: 'github' }>): Promise
   const apiUrl = `https://api.github.com/repos/${loc.repo}/contents/${encodeURIComponent(loc.path).replace(/%2F/g, '/')}?ref=${encodeURIComponent(ref)}`
   const res = await fetch(apiUrl, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw' },
+    signal: AbortSignal.timeout(15_000),
   })
   if (!res.ok) return { url, content: null, error: `github ${res.status}` }
   const text = await res.text()
@@ -82,7 +83,7 @@ async function resolveS3(loc: Extract<Locator, { kind: 's3' }>): Promise<Resolve
 
 async function resolveUrl(loc: Extract<Locator, { kind: 'url' }>): Promise<ResolvedLocator> {
   try {
-    const res = await fetch(loc.href, { method: 'HEAD' })
+    const res = await fetch(loc.href, { method: 'HEAD', signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { url: loc.href, content: null, error: `HEAD ${res.status}` }
     return {
       url: loc.href,

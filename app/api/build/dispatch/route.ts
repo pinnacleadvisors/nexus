@@ -105,6 +105,9 @@ export async function POST(req: NextRequest) {
   let boardCardId: string | null = null
   const db = createServerClient()
   if (db) {
+    // retry-storm-check: ignore — chained .insert().select('id').single() so
+    // we can stamp boardCardId on the dispatch result. Manually triggered by
+    // the user clicking Dispatch in the dev console; not auto-retried.
     const { data: card } = await db
       .from('tasks')
       .insert({

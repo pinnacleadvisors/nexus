@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:retry-storm": "node scripts/check-retry-storm.mjs",
+    "check:all": "npm run lint && npx tsc --noEmit && npm run check:retry-storm",
     "migrate": "doppler run -- node scripts/migrate.mjs",
     "migrate:local": "node scripts/migrate.mjs",
     "populate-memory": "doppler run -- node scripts/populate-memory.mjs",

@@ -89,6 +89,7 @@ export async function postSlackNotification(
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
+      signal:  AbortSignal.timeout(10_000),
     })
     if (!res.ok && process.env.NODE_ENV !== 'production') {
       console.warn(`[slack] webhook returned ${res.status}`)
@@ -179,6 +180,7 @@ export async function postVerification(
         text: `Nexus connected to ${name}. Approvals and run summaries will arrive here.`,
         blocks,
       }),
+      signal:  AbortSignal.timeout(10_000),
     })
     const body = (await res.text().catch(() => '')).trim()
 
