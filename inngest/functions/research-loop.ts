@@ -11,6 +11,7 @@ import { inngest } from '@/inngest/client'
 import { callClaude } from '@/lib/claw/llm'
 import { createServerClient } from '@/lib/supabase'
 import { searchWebMulti } from '@/lib/tools/tavily'
+import { insertTask } from '@/lib/board/insert-task'
 import {
   RESEARCH_QUERIES,
   storeDigestInMemory,
@@ -182,6 +183,9 @@ export const weeklyResearchLoop = inngest.createFunction(
         .slice(0, 5) // max 5 cards per run
 
       for (const s of toCreate) {
+        // retry-storm-check: ignore — chained .insert().select('id').single()
+        // because the caller needs the row id for boardCardId. insertTask
+        // doesn't expose that. Function-level retries:0 caps amplification.
         const { data: card } = await db
           .from('tasks')
           .insert({
@@ -203,7 +207,7 @@ export const weeklyResearchLoop = inngest.createFunction(
 
       // Also create high-priority cards for critical/high security issues
       for (const issue of stackHealth.issues.filter(i => i.severity === 'critical' || i.severity === 'high').slice(0, 3)) {
-        await db.from('tasks').insert({
+        await insertTask(db, {
           title:       `[Security] ${issue.package}: ${issue.severity} vulnerability`,
           description: `${issue.description}\n\nFix available: ${issue.fixAvailable ? 'Yes' : 'No'}\n\nRun: npm audit fix`,
           column_id:   'backlog',

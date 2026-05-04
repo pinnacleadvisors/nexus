@@ -52,6 +52,9 @@ async function executeAction({ action, connectedAccountId, arguments: args }: Ex
       'x-api-key': apiKey,
     },
     body: JSON.stringify({ connectedAccountId, arguments: args }),
+    // 20s — Composio may take a few seconds to round-trip to a connected
+    // service (Doppler, etc.); cap to prevent function-second pile-up.
+    signal: AbortSignal.timeout(20_000),
   })
 
   if (!res.ok) {

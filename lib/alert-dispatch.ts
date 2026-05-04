@@ -8,6 +8,7 @@ export async function sendSlackAlert(webhookUrl: string, message: string): Promi
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ text: `🚨 *Nexus Alert*\n${message}` }),
+    signal:  AbortSignal.timeout(10_000),
   })
 }
 
@@ -29,6 +30,7 @@ export async function sendEmailAlert(to: string, subject: string, body: string):
       subject,
       text:    body,
     }),
+    signal:  AbortSignal.timeout(10_000),
   })
 }
 

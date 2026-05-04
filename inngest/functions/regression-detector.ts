@@ -15,6 +15,9 @@ export const regressionSweepDaily = inngest.createFunction(
   {
     id:   'regression-sweep-daily',
     name: 'Perf-regression detector (daily)',
+    // retries: 0 — daily cron, read-only analysis. If today's run failed,
+    // tomorrow's picks up the same window. No retry-on-failure benefit.
+    retries: 0,
     triggers: [{ cron: '30 9 * * *' }],
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {

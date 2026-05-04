@@ -56,6 +56,9 @@ export async function uploadFile(
           'Content-Type': `multipart/related; boundary="${boundary}"`,
         },
         body,
+        // 60s — multipart uploads of large generated docs can be slow but not
+        // infinite. Cap to prevent function-second exhaustion.
+        signal:  AbortSignal.timeout(60_000),
       },
     )
     if (!res.ok) return null
@@ -103,7 +106,10 @@ export async function listFiles(token: string, folderId?: string, limit = 20): P
   try {
     const res = await fetch(
       `${DRIVE_BASE}/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,mimeType)&pageSize=${limit}&orderBy=modifiedTime desc`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal:  AbortSignal.timeout(15_000),
+      },
     )
     if (!res.ok) return []
     const data = await res.json() as { files?: DriveFile[] }

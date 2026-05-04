@@ -75,6 +75,9 @@ export async function generateClip(opts: KlingGenerateOptions): Promise<string |
       method:  'POST',
       headers: headers(),
       body:    JSON.stringify(body),
+      // 30s — generation kickoff returns a task_id quickly; longer means
+      // upstream is wedged. Polling happens via getTask() below.
+      signal:  AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {
@@ -110,6 +113,7 @@ export async function getTask(taskId: string): Promise<KlingTask> {
   try {
     const res = await fetch(`${BASE}/videos/text2video/${taskId}`, {
       headers: headers(),
+      signal:  AbortSignal.timeout(15_000),
     })
     if (!res.ok) return { taskId, status: 'failed', error: `HTTP ${res.status}` }
 

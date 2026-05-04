@@ -18,6 +18,9 @@ export const metricOptimiserHourly = inngest.createFunction(
   {
     id:   'metric-optimiser-hourly',
     name: 'Metric-triggered optimiser sweep',
+    // retries: 0 — hourly cron, idempotent. The next slot picks up where this
+    // left off. Auto-retry would just delay the next slot for no benefit.
+    retries: 0,
     triggers: [{ cron: '0 * * * *' }],
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {

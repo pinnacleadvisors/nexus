@@ -114,7 +114,9 @@ export async function fetchGuarded(
     const validation = await validateUrl(current)
     if (!validation.ok) return { ok: false, error: validation.error, status: 400 }
 
-    const res = await fetch(current, { redirect: 'manual' })
+    // 10s — URL validation runs on every R2 egress; a hung remote shouldn't
+    // hold the function open. Manual redirect mode means we never follow.
+    const res = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
 
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location')

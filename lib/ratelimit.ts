@@ -90,6 +90,10 @@ export async function rateLimit(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(pipeline),
+        // 5s timeout — rate-limit checks fire on every request; a hung Upstash
+        // would block all traffic. Better to fail-open (handled below) than
+        // exhaust function-seconds.
+        signal: AbortSignal.timeout(5_000),
       })
 
       if (res.ok) {

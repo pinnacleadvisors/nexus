@@ -67,6 +67,7 @@ async function ghFetch<T>(path: string, opts: GhOptions & { method?: string; bod
       ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
+    signal: AbortSignal.timeout(15_000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

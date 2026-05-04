@@ -70,6 +70,7 @@ export async function writeMemoryEvent(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(input),
+    signal: AbortSignal.timeout(15_000),
   })
   const json = (await res.json()) as MemoryEventResult | MemoryEventError
   if (!res.ok || (json as MemoryEventError).error) {

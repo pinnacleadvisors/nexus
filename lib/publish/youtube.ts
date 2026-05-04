@@ -45,6 +45,7 @@ async function refreshAccessToken(credentials: Record<string, string>): Promise<
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    signal:  AbortSignal.timeout(15_000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -58,7 +59,9 @@ async function refreshAccessToken(credentials: Record<string, string>): Promise<
 }
 
 async function fetchVideoBytes(videoUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
-  const res = await fetch(videoUrl)
+  // 60s — pulling video bytes from R2 / external host. Larger than typical
+  // because video assets can be 30-60 MB.
+  const res = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) })
   if (!res.ok) {
     throw new PublishFailure('youtube-shorts', 'upload-failed', `Could not fetch video asset: ${res.status}`)
   }
@@ -117,6 +120,7 @@ export async function publishYouTubeShort(
       'X-Upload-Content-Type': 'video/*',
     },
     body: JSON.stringify(meta),
+    signal: AbortSignal.timeout(15_000),
   })
   if (!initRes.ok) {
     const text = await initRes.text().catch(() => '')
@@ -134,6 +138,7 @@ export async function publishYouTubeShort(
   const { buffer, contentType } = await fetchVideoBytes(asset.videoUrl)
   // Convert Buffer → Uint8Array so fetch's BodyInit typing is satisfied.
   const bodyBytes = new Uint8Array(buffer)
+  // 90s — single-PUT upload of a video; cap is generous but bounded.
   const uploadRes = await fetch(resumableUrl, {
     method: 'PUT',
     headers: {
@@ -141,6 +146,7 @@ export async function publishYouTubeShort(
       'Content-Length': String(bodyBytes.byteLength),
     },
     body: bodyBytes,
+    signal: AbortSignal.timeout(90_000),
   })
   if (!uploadRes.ok) {
     const text = await uploadRes.text().catch(() => '')
