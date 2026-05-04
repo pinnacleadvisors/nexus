@@ -21,19 +21,34 @@ export const runtime = 'nodejs'
 
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
+// memory_cache is defined in migration 031 but lib/database.types.ts may not
+// include it yet (the types file is regenerated manually). Same escape-hatch
+// pattern used by lib/business/db.ts and lib/memory/supabase-reader.ts.
+interface MemoryCacheRow { path: string; content: string; sha: string; cached_at: string }
+type LooseMemoryCache = {
+  select: (cols: string) => LooseMemoryCache
+  eq:     (k: string, v: unknown) => LooseMemoryCache
+  single: () => Promise<{ data: MemoryCacheRow | null }>
+  upsert: (row: Record<string, unknown>, opts?: { onConflict?: string }) => Promise<{ error: { message: string } | null }>
+  delete: () => LooseMemoryCache
+  then:   <T>(onfulfilled: (v: { error: { message: string } | null }) => T) => Promise<T>
+}
+function memoryCache(db: ReturnType<typeof createServerClient>): LooseMemoryCache {
+  return (db as unknown as { from: (t: string) => LooseMemoryCache }).from('memory_cache')
+}
+
 async function getCached(path: string): Promise<{ content: string; sha: string } | null> {
   try {
     const db = createServerClient()
     if (!db) return null
-    const { data } = await db
-      .from('memory_cache')
+    const { data } = await memoryCache(db)
       .select('content, sha, cached_at')
       .eq('path', path)
       .single()
     if (!data) return null
-    const age = Date.now() - new Date(data.cached_at as string).getTime()
+    const age = Date.now() - new Date(data.cached_at).getTime()
     if (age > CACHE_TTL_MS) return null
-    return { content: data.content as string, sha: data.sha as string }
+    return { content: data.content, sha: data.sha }
   } catch {
     return null
   }
@@ -43,7 +58,7 @@ async function setCache(path: string, content: string, sha: string): Promise<voi
   try {
     const db = createServerClient()
     if (!db) return
-    await db.from('memory_cache').upsert(
+    await memoryCache(db).upsert(
       { path, content, sha, cached_at: new Date().toISOString() },
       { onConflict: 'path' },
     )
@@ -54,7 +69,7 @@ async function invalidateCache(path: string): Promise<void> {
   try {
     const db = createServerClient()
     if (!db) return
-    await db.from('memory_cache').delete().eq('path', path)
+    await memoryCache(db).delete().eq('path', path)
   } catch { /* non-fatal */ }
 }
 

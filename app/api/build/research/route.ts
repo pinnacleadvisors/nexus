@@ -11,6 +11,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
+import type { Json } from '@/lib/database.types'
 import { insertTask } from '@/lib/board/insert-task'
 import { inngest } from '@/inngest/client'
 import {
@@ -138,12 +139,15 @@ export async function GET(req: NextRequest) {
         .limit(limit)
 
       if (data && data.length > 0) {
+        // Json columns ({queries_run, suggestions, stack_issues}) require an
+        // `as unknown` step before narrowing — Supabase's Json union doesn't
+        // overlap directly with our typed shapes.
         const digests: ResearchDigest[] = data.map(row => ({
           id:             String(row.id),
           runAt:          String(row.run_at),
-          queriesRun:     (row.queries_run as string[]) ?? [],
-          suggestions:    (row.suggestions as ResearchSuggestion[]) ?? [],
-          stackIssues:    (row.stack_issues as StackIssue[]) ?? [],
+          queriesRun:     (row.queries_run as unknown as string[]) ?? [],
+          suggestions:    (row.suggestions as unknown as ResearchSuggestion[]) ?? [],
+          stackIssues:    (row.stack_issues as unknown as StackIssue[]) ?? [],
           rawSearchCount: Number(row.raw_search_count) || 0,
           durationMs:     Number(row.duration_ms) || 0,
         }))
@@ -246,11 +250,15 @@ export async function POST(req: NextRequest) {
 
   if (db) {
     try {
+      // The typed Insert shape requires Json-compatible values for the JSONB
+      // columns; cast through `unknown` to satisfy the literal-object excess-
+      // property check (otherwise overload resolution falls back to `never`
+      // and reports the first key as unknown).
       await db.from('build_research').insert({
         run_at:           digest.runAt,
-        queries_run:      digest.queriesRun,
-        suggestions:      digest.suggestions as unknown,
-        stack_issues:     digest.stackIssues as unknown,
+        queries_run:      digest.queriesRun as unknown as Json,
+        suggestions:      digest.suggestions as unknown as Json,
+        stack_issues:     digest.stackIssues as unknown as Json,
         raw_search_count: digest.rawSearchCount,
         duration_ms:      digest.durationMs,
       })
