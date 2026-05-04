@@ -66,9 +66,12 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
-    '/(api|trpc)(.*)',
+    // Skip Next.js internals, all static files, AND the Vercel log drain.
+    // The drain is a high-volume HMAC-authenticated webhook (see route.ts);
+    // Clerk does nothing for it and adds ~338MB middleware memory per call.
+    // See AGENTS.md "Webhook self-amplification checklist".
+    '/((?!_next|api/vercel/log-drain|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes EXCEPT the Vercel log drain (HMAC-auth, no Clerk).
+    '/(?!api/vercel/log-drain)(api|trpc)(.*)',
   ],
 }
