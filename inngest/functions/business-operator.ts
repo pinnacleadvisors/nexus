@@ -14,6 +14,7 @@
 import { inngest } from '@/inngest/client'
 import { listActiveBusinesses } from '@/lib/business/db'
 import { callGateway } from '@/lib/claw/gateway-call'
+import { isEnabled as isKillSwitchEnabled } from '@/lib/kill-switches'
 import type { BusinessRow } from '@/lib/business/types'
 
 interface OperatorAction {
@@ -266,6 +267,11 @@ export const businessOperatorDaily = inngest.createFunction(
     triggers: [{ cron: '0 4 * * *' }],   // 04:00 UTC = 11:00 ICT
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
+    // Scheduler kill switch — refuse to claim any work when off (~60s lag).
+    if (!(await isKillSwitchEnabled('scheduler'))) {
+      return { ranAt: new Date().toISOString(), skipped: 'scheduler kill switch disabled' }
+    }
+
     const businesses = await step['run']('list-active-businesses', async () => {
       return listActiveBusinesses()
     }) as BusinessRow[]

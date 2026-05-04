@@ -18,6 +18,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getSecrets } from '@/lib/user-secrets'
+import { checkExfilSafe } from '@/lib/security/exfil-guard'
 
 export interface SlackConfig {
   webhookUrl?:     string
@@ -83,6 +84,10 @@ export async function postSlackNotification(
     }
     return false
   }
+  // Exfil guard — refuse to transmit when payload contains API keys or tokens.
+  // Soft check: returns false on block, audits the event, never throws.
+  const scanText = [payload.text, JSON.stringify(payload.blocks ?? '')].join('\n')
+  if (!checkExfilSafe(scanText, { surface: 'slack.notify' })) return false
   const body = JSON.stringify({ text: payload.text, blocks: payload.blocks })
   try {
     const res = await fetch(cfg.webhookUrl, {

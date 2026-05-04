@@ -199,6 +199,8 @@ import { metricOptimiserHourly as _metricOptimiserHourly } from './metric-optimi
 import { ingestMetricsHourly as _ingestMetricsHourly } from './ingest-metrics'
 import { regressionSweepDaily as _regressionSweepDaily } from './regression-detector'
 import { businessOperatorDaily as _businessOperatorDaily } from './business-operator'
+import { slackWarroomFanout as _slackWarroomFanout } from './slack-warroom'
+import { agentOverloadDaily as _agentOverloadDaily } from './agent-overload'
 
 export const functions = [
   onMilestoneCompleted,
@@ -210,4 +212,6 @@ export const functions = [
   _ingestMetricsHourly,
   _regressionSweepDaily,
   _businessOperatorDaily,
+  _slackWarroomFanout,
+  _agentOverloadDaily,
 ]

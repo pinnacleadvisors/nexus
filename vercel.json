@@ -26,6 +26,10 @@
     {
       "path": "/api/cron/sweep-orphan-cards",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/audit-prune",
+      "schedule": "0 6 * * *"
     }
   ]
 }
