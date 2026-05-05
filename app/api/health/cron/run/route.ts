@@ -26,15 +26,23 @@ import { auth } from '@clerk/nextjs/server'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-// Whitelist mirrors the CRONS array in /api/health/cron/route.ts. Adding a
-// new cron requires updating BOTH places.
-const ALLOWED_PATHS = new Set<string>([
-  '/api/cron/signal-review',
-  '/api/cron/rebuild-graph-hq',
-  '/api/cron/sync-memory?reconcile=1',
-  '/api/cron/post-deploy-smoke',
-  '/api/cron/sync-learning-cards',
-  '/api/cron/sweep-orphan-cards',
+// Whitelist mirrors the CRONS array in /api/health/cron/route.ts. Each cron's
+// route exposes either GET, POST, or both, and some require a query string —
+// we map the bare path the UI sends to the right method+query here so a single
+// "Run now" button works for every cron without the UI knowing the schemes.
+//
+// Adding a new cron requires updating BOTH this map AND the CRONS list in
+// /api/health/cron/route.ts.
+interface PathConfig { method: 'POST' | 'GET'; query?: string }
+const PATH_CONFIG = new Map<string, PathConfig>([
+  ['/api/cron/signal-review',       { method: 'POST' }],
+  ['/api/cron/rebuild-graph-hq',    { method: 'POST' }],
+  // sync-memory's POST is a GitHub webhook (HMAC-signed); the manual reconcile
+  // path is GET ?reconcile=1 with bearer auth.
+  ['/api/cron/sync-memory',         { method: 'GET', query: 'reconcile=1' }],
+  ['/api/cron/post-deploy-smoke',   { method: 'POST' }],
+  ['/api/cron/sync-learning-cards', { method: 'POST' }],
+  ['/api/cron/sweep-orphan-cards',  { method: 'POST' }],
 ])
 
 interface RunBody {
@@ -61,11 +69,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const body = (await req.json().catch(() => ({}))) as RunBody
     const path = body.path?.trim()
-    if (!path || !ALLOWED_PATHS.has(path)) {
+    const config = path ? PATH_CONFIG.get(path) : undefined
+    if (!path || !config) {
       return NextResponse.json({
         ok:    false,
         error: 'invalid path; pick one from the whitelist',
-        whitelist: Array.from(ALLOWED_PATHS),
+        whitelist: Array.from(PATH_CONFIG.keys()),
       }, { status: 400 })
     }
 
@@ -80,18 +89,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Internal call to the target cron. `req.nextUrl.origin` resolves to the
     // current deploy's origin (preview URL or production), so this works on
     // every deployment without baking in a hostname.
-    const targetUrl = `${req.nextUrl.origin}${path}`
+    const targetUrl = `${req.nextUrl.origin}${path}${config.query ? `?${config.query}` : ''}`
     const start = Date.now()
+    const init: RequestInit = {
+      method:  config.method,
+      headers: {
+        'Authorization': `Bearer ${cronSecret}`,
+        'Content-Type':  'application/json',
+      },
+    }
+    // Only POST routes get a body. GET routes (sync-memory reconcile) must
+    // omit it — fetch with method GET + a body is invalid in undici.
+    if (config.method === 'POST') init.body = '{}'
+
     let upstream: Response
     try {
-      upstream = await fetch(targetUrl, {
-        method:  'POST',
-        headers: {
-          'Authorization': `Bearer ${cronSecret}`,
-          'Content-Type':  'application/json',
-        },
-        body: '{}',
-      })
+      upstream = await fetch(targetUrl, init)
     } catch (err) {
       return NextResponse.json({
         ok:    false,
@@ -105,13 +118,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let parsed: unknown = text
     try { parsed = JSON.parse(text) } catch { /* leave as text */ }
 
+    // Always return 200 from the meta-route when the inner request completed,
+    // even if the cron itself returned a 4xx/5xx. The upstream HTTP code is
+    // surfaced in the body so the UI can render a precise error message
+    // ("upstream returned 503: qa_runner_not_configured") without the browser
+    // flooding the console with network errors. The meta-route only returns
+    // !2xx for its own failures (auth, missing CRON_SECRET, fetch threw).
     return NextResponse.json({
       ok:           upstream.ok,
       status:       upstream.status,
       duration_ms:  duration,
       response:     parsed,
       targetPath:   path,
-    }, { status: upstream.ok ? 200 : 502 })
+      method:       config.method,
+    })
   } catch (err) {
     return NextResponse.json({
       ok:    false,
