@@ -265,3 +265,55 @@ Cousin of retry-storm: a webhook receiver whose own output is fed back into itse
 - [ ] Does the destination route's path appear in the drain's own filter / exclusion config in the upstream dashboard? Vercel drains have an exclusion list — set it as defense-in-depth on top of the receiver-side filter.
 - [ ] Document the drain in `memory/platform/SECRETS.md` so future ops work knows the loop topology.
 
+### Post-incident memory protocol
+
+When you finish a debugging session, root-cause investigation, or non-trivial fix that produced a generalisable lesson, write the lesson to memory-hq before ending the session. This is the mechanism that prevents the same incident class from being re-discovered cold by a future Claude session — the molecular memory atoms in `pinnacleadvisors/memory-hq` are queryable from any repo, by any model, at any time.
+
+**Default — MCP `memory-hq` server (preferred when available):**
+
+```json
+memory_atom({
+  scope:    { repo: "pinnacleadvisors/nexus" },
+  payload:  {
+    title:      "<short indexable phrase, include date if recurring class>",
+    body:       "<symptom · root cause · fix (commit SHA) · forward-looking prevention>",
+    kind:       "incident",
+    importance: "high"
+  },
+  locators: [
+    { kind: "github", repo: "pinnacleadvisors/nexus", path: "<file/route/migration>" }
+  ],
+  links: ["[[mocs/memory-and-cost-incidents]]"]
+})
+```
+
+The MCP server is registered in `~/.claude/settings.json` (Claude Code) and `~/Library/Application Support/Claude/claude_desktop_config.json` (Claude Desktop). If `memory_atom` isn't in your tool list, the server failed to start — see fallback below.
+
+**Fallback — CLI with explicit `--backend=github`:**
+
+```bash
+node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom \
+  "<title>" --fact="<one-line summary>" --source=<commit-sha-or-file>
+```
+
+`MOLECULAR_BACKEND=github` is set in Doppler so `--backend=github` is also the default — but state it explicitly when invoking from a script so the intent is reviewable.
+
+**When to write an atom:**
+- A bug whose root cause wasn't obvious from the surface (webhook self-amplification, missing migration cascade, eager SDK init, retry storm).
+- A non-obvious config / secret / infra interaction the next session would re-discover (Coolify quirks, Cloudflare Tunnel topology, MCP path resolution).
+- A pattern that should also become a checklist row in `AGENTS.md` or `docs/RETRY_STORM_AUDIT.md` — the atom is the case study, the checklist is the prevention.
+- A new entity (person, company, vendor product, internal service) the codebase now depends on — write an `entity` instead of an `atom`.
+
+**When to skip:**
+- Trivial fixes (typo, one-line config, filename rename, dependency bump). Atom spam dilutes the signal.
+- The lesson is already covered by an existing atom — extend the atom's body or its MOC instead of duplicating.
+- The user explicitly said "don't record" or the work is private to the session.
+- The "fix" hasn't been verified yet — write the atom AFTER the fix lands and is confirmed working, not before.
+
+**Linking and discoverability:**
+- Always link to the relevant MOC (`mocs/memory-and-cost-incidents`, `mocs/claude-code-gateway`, etc.). Atoms without a MOC link become orphans on the next `cli.mjs lint` run.
+- If no MOC exists for the lesson's category, create one with `cli.mjs moc`. A 3-atom MOC is more valuable than 3 orphan atoms.
+- After writing, verify with `memory_search` (MCP) or by reading `pinnacleadvisors/memory-hq/atoms/55bedf46-nexus/<slug>.md` — the canonical scope-id for this repo is `55bedf46-nexus`.
+
+**Source-of-truth note:** memory-hq is the canonical store; `memory/molecular/` in this repo is a development cache. After a successful MCP write, you do NOT need to also write to local. The Supabase mirror webhook on `pinnacleadvisors/memory-hq` propagates the atom to `mol_*` tables within seconds.
+
