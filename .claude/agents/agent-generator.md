@@ -41,7 +41,9 @@ When activated, confirm the task back to the user in one sentence, then proceed 
      -d "$(jq -nc --arg s "<slug>" ...)"
    ```
    If the app URL / auth cookie isn't available, note in the response that the user should run `POST /api/agents` manually from the browser — the spec file is the source of truth regardless.
-8. **Seed molecular memory** using `cli.mjs entity` + `atom` (see protocol step 3).
+8. **Seed molecular memory** in memory-hq (NOT the local cache). Two paths, in order of preference:
+   - **MCP (preferred):** call `memory_entity` for the new agent, then `memory_atom` for each behaviour fact, with `scope: { repo: 'pinnacleadvisors/nexus' }` and `source: 'claude-agent:agent-generator'`.
+   - **CLI fallback:** `node .claude/skills/molecularmemory_local/cli.mjs --backend=github entity ...` and `... --backend=github atom ...`. The `--backend=github` flag is required — the default `local` backend writes only to `memory/molecular/` (dev cache, won't appear in `/graph` or `memory_search`). See protocol step 3.
 9. **Document env vars** — append to `memory/platform/SECRETS.md` if the agent needs any. Only names, never values.
 10. **Run the transferability checklist** (protocol step 5). Fix any failures before declaring done.
 

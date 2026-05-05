@@ -107,11 +107,15 @@ Every gateway dispatch you generate **must** include `businessSlug: inputs.busin
 
 ## Memory writes
 
-After a successful run, append to molecular memory:
+After a successful run, append to memory-hq (NOT the local `memory/molecular/` cache):
 - One atom per non-trivial action shipped (link to artifact URL)
 - An MOC update for the business slug if any milestone was hit (first sale, first 100 subs, etc.)
 
-Use the `/molecularmemory_local` skill for this. Keep atoms ≤500 chars.
+Two paths, in order of preference:
+- **MCP (preferred):** call `memory_atom` / `memory_moc` with `scope: { repo: 'pinnacleadvisors/nexus', business_slug: inputs.business.slug }` and `source: 'claude-agent:business-operator'`.
+- **CLI fallback:** `node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom ...`. The `--backend=github` flag is required — the default `local` backend writes only to the dev cache and won't appear in cross-project queries.
+
+Keep atoms ≤500 chars. Hand off to `/supermemory` for any larger structured archival.
 
 ## Handoffs
 
