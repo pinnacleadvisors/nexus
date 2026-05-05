@@ -72,6 +72,9 @@ export const config = {
     // See AGENTS.md "Webhook self-amplification checklist".
     '/((?!_next|api/vercel/log-drain|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     // Always run for API routes EXCEPT the Vercel log drain (HMAC-auth, no Clerk).
-    '/(?!api/vercel/log-drain)(api|trpc)(.*)',
+    // Two parser quirks: (a) `(?!` immediately after `/(` is rejected — wrap
+    // it in an outer group; (b) inner capturing groups inside that outer group
+    // are also rejected, so `(api|trpc)` and `(.*)` must be non-capturing.
+    '/((?!api/vercel/log-drain)(?:api|trpc).*)',
   ],
 }
