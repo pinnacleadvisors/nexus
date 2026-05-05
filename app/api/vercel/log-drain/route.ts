@@ -49,6 +49,59 @@ export async function HEAD(): Promise<NextResponse> {
 
 const DEFAULT_REDACT_HEADERS = ['authorization', 'cookie', '__session', 'x-clerk-session-token']
 
+// ── Sampling ────────────────────────────────────────────────────────────────
+// Vercel ships every function invocation through the drain — on a busy app
+// that's 70-100 batches/sec, with each batch holding a handful of lines.
+// Most of that is `info`-level routing noise the QA runner never queries.
+// We keep R2 archive complete (cheap blob storage, useful for forensics) but
+// only insert events into `log_events` if they're actionable: errors, HTTP
+// failures, or messages tagged for the agent loop. Aligns with the filters
+// `lib/logs/vercel.ts::searchLogs` actually uses (`level=error|warn` + 4xx/5xx).
+//
+// Override knobs:
+//   VERCEL_LOG_DRAIN_KEEP_ALL=1              → disable filtering (debug)
+//   VERCEL_LOG_DRAIN_KEEP_TAGS=qa-bot,swarm  → keep any line whose message
+//                                              contains one of these tags
+//                                              (case-insensitive substring)
+const DEFAULT_KEEP_TAGS = ['qa-bot', 'agent', 'swarm', 'runs', 'business-operator']
+
+let keepTagsCache: string[] | null = null
+function keepTags(): string[] {
+  if (keepTagsCache) return keepTagsCache
+  const fromEnv = (process.env.VERCEL_LOG_DRAIN_KEEP_TAGS ?? '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+  keepTagsCache = fromEnv.length ? fromEnv : DEFAULT_KEEP_TAGS
+  return keepTagsCache
+}
+
+function shouldIndex(line: VercelLogLine): boolean {
+  if (process.env.VERCEL_LOG_DRAIN_KEEP_ALL === '1') return true
+
+  const level = (line.level ?? line.type ?? '').toLowerCase()
+  if (level === 'error' || level === 'warn' || level === 'warning' || level === 'fatal') return true
+
+  const status = line.statusCode ?? line.proxy?.statusCode
+  if (typeof status === 'number' && status >= 400) return true
+
+  const msg = (line.message ?? '').toLowerCase()
+  if (msg.length > 0) {
+    for (const tag of keepTags()) {
+      if (msg.includes(tag)) return true
+    }
+  }
+  return false
+}
+
+// Module-scope counters for an occasional summary line — every Nth batch we
+// emit `[log-drain] sampled` so the operator can see filter health without
+// re-flooding the very logs we're trying to thin out. Resets on cold start.
+const SAMPLE_LOG_EVERY_N_BATCHES = 1000
+let batchCounter = 0
+let droppedCounter = 0
+let keptCounter = 0
+
 // Per-process cache for R2 health. R2 misconfiguration (rotated key, wrong
 // account ID, etc.) returns the same SignatureDoesNotMatch / InvalidAccessKeyId
 // error on every batch — and the drain receives one batch per Vercel function
@@ -166,6 +219,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const hourShard    = new Date().toISOString().slice(0, 13).replace('T', '/') // YYYY-MM-DD/HH
   const r2Key        = `logs/${deploymentId}/${hourShard}.jsonl`
 
+  // Filter the lines we'll actually index. R2 archive (background block below)
+  // keeps everything for forensics; Supabase only gets the actionable ones —
+  // what the QA loop and agent log-search tools actually query. Computed
+  // synchronously so the response can report `indexed` + `dropped` without
+  // waiting on after().
+  const indexable = parsed.filter(shouldIndex)
+  const dropped   = parsed.length - indexable.length
+
   // Background the slow writes — the response returns 200 within ~30ms while
   // R2 + Supabase finish behind it. Vercel doesn't retry log drains on 5xx,
   // so a background failure is logged but not re-delivered (matches the
@@ -212,8 +273,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // log_events RLS denies all by default. Cast past the typed client until
     // `npm run gen:types` picks up migration 022.
     const supabase = createServerClient()
-    if (supabase) {
-      const rows = parsed.map(line => ({
+    if (supabase && indexable.length > 0) {
+      const rows = indexable.map(line => ({
         deployment_id: line.deploymentId ?? null,
         request_id:    line.requestId    ?? null,
         route:         line.proxy?.path  ?? null,
@@ -234,7 +295,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   })
 
-  return NextResponse.json({ ok: true, lines: parsed.length, droppedSelf, r2Key })
+  // Periodic visibility — emit one summary line every N batches so the
+  // operator can confirm the sampler isn't dropping events it shouldn't.
+  // Synchronous so the counter advances deterministically per request, even
+  // when after() is still draining from a previous batch.
+  batchCounter++
+  droppedCounter += dropped
+  keptCounter    += indexable.length
+  if (batchCounter % SAMPLE_LOG_EVERY_N_BATCHES === 0) {
+    const total = droppedCounter + keptCounter
+    const keepPct = total > 0 ? ((keptCounter / total) * 100).toFixed(1) : '0.0'
+    console.log(
+      `[log-drain] sampled batch=${batchCounter} kept=${keptCounter} dropped=${droppedCounter} keep_rate=${keepPct}%`,
+    )
+    // Reset counters so we measure rolling windows instead of unbounded growth.
+    droppedCounter = 0
+    keptCounter    = 0
+  }
+
+  return NextResponse.json({
+    ok:          true,
+    lines:       parsed.length,
+    indexed:     indexable.length,
+    dropped,
+    droppedSelf,
+    r2Key,
+  })
 }
 
 function buildRedactList(): string[] {
