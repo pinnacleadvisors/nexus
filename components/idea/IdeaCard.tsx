@@ -240,20 +240,52 @@ function verdictFg(v: IdeaCardType['profitableVerdict']) {
 }
 
 interface GenerateResponse {
-  workflow: { name?: string } & Record<string, unknown>
+  workflow: { name?: string; nodes?: unknown[] } & Record<string, unknown>
   workflowType: 'build' | 'maintain'
   checklist: string[]
   explanation: string
   importedId?: string
   importError?: string
   automation?: SavedAutomation
+  fallbackUsed?: boolean
+  fallbackReason?: string
+}
+
+/** Single event in the live progress log shown under the Generate button. */
+type ProgressKind = 'info' | 'success' | 'warn' | 'error'
+interface ProgressEvent {
+  at:   number
+  text: string
+  kind: ProgressKind
+}
+
+type EmitProgress = (text: string, kind?: ProgressKind) => void
+
+/** Summarise a finalised generate response into 1-3 progress lines. */
+function summariseGenerated(label: string, data: GenerateResponse, emit: EmitProgress) {
+  const nodeCount = Array.isArray(data.workflow?.nodes) ? data.workflow.nodes.length : 0
+  const name = data.workflow?.name ?? '(unnamed)'
+  if (data.fallbackUsed) {
+    emit(
+      `${label} used deterministic scaffold (${nodeCount} nodes) — reason: ${data.fallbackReason ?? 'unknown'}`,
+      'warn',
+    )
+  } else {
+    emit(`${label} workflow drafted by Claude — "${name}" (${nodeCount} nodes)`, 'success')
+  }
+  if (data.importedId) {
+    emit(`${label} imported into n8n (id ${data.importedId})`, 'success')
+  } else if (data.importError) {
+    emit(`${label} n8n import failed — ${data.importError}`, 'warn')
+  }
 }
 
 async function generateWorkflow(
   card: IdeaCardType,
   executeInput: string,
   workflowType: 'build' | 'maintain',
-  runId?: string,
+  runId: string | undefined,
+  emit: EmitProgress,
 ): Promise<GenerateResponse> {
   const steps = card.steps.filter(s => s.phase === workflowType)
   const description = workflowType === 'build'
@@ -292,6 +324,7 @@ async function generateWorkflow(
     })),
   }
 
+  emit(`Sending ${workflowType.toUpperCase()} request to backend…`)
   const res = await fetch('/api/n8n/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -303,7 +336,11 @@ async function generateWorkflow(
     throw new Error(j.error ?? `Request failed (${res.status})`)
   }
 
-  const data = await res.json() as GenerateResponse & { async?: boolean; jobId?: string }
+  const data = await res.json() as GenerateResponse & {
+    async?: boolean
+    jobId?: string
+    gatewayConfigured?: boolean
+  }
 
   // Async path — poll /status until done. Bounded to 5 min so a wedged
   // gateway can't keep the caller hung forever.
@@ -312,6 +349,8 @@ async function generateWorkflow(
     const startMs = Date.now()
     const POLL_MS = 3000
     const MAX_MS  = 5 * 60_000
+    emit(`Job queued on Claude gateway (id ${jobId.slice(0, 8)}…) — polling for progress`)
+    let lastPhase: string | null = null
     await new Promise(r => setTimeout(r, POLL_MS))
     while (Date.now() - startMs < MAX_MS) {
       const sr = await fetch('/api/n8n/generate/status', {
@@ -323,33 +362,56 @@ async function generateWorkflow(
         const j = await sr.json().catch(() => ({})) as { error?: string }
         throw new Error(j.error ?? `Status ${sr.status}`)
       }
-      const sd = await sr.json() as GenerateResponse & { async?: boolean }
-      if (sd?.async === false) return sd
-      await new Promise(r => setTimeout(r, POLL_MS))
+      const sd = await sr.json() as GenerateResponse & {
+        async?: boolean
+        phase?: string
+        phaseLabel?: string
+        elapsedMs?: number
+      }
+      // Only emit when the phase changes — avoid one log line every 3s.
+      if (sd?.async === true) {
+        const phase = sd.phase ?? sd.phaseLabel ?? 'running'
+        if (phase !== lastPhase && sd.phaseLabel) {
+          emit(sd.phaseLabel)
+          lastPhase = phase
+        }
+        await new Promise(r => setTimeout(r, POLL_MS))
+        continue
+      }
+      // sd.async === false → finished. Surface the finalisation result.
+      emit('Claude returned — finalising workflow JSON', 'info')
+      return sd
     }
     throw new Error('Generation timed out after 5 minutes — try again')
   }
 
+  // Sync path — immediately final.
+  emit(`${workflowType.toUpperCase()} generated synchronously (no gateway)`)
   return data
 }
 
 function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => void }) {
   const [executeInput, setExecuteInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [progress, setProgress] = useState<string | null>(null)
+  const [progress, setProgress] = useState<ProgressEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ build: SavedAutomation; maintain: SavedAutomation } | null>(null)
+
+  function emit(text: string, kind: ProgressKind = 'info') {
+    setProgress(prev => [...prev, { at: Date.now(), text, kind }])
+  }
 
   async function run() {
     setSubmitting(true)
     setError(null)
+    setProgress([])
 
     try {
       // A5 — persistent Run. Start (or resume) one for this idea so every
       // workflow dispatch downstream can thread `runId` through to the Run
       // event log. Non-blocking: if /api/runs is unavailable we still build
       // the workflows, just without the run linkage.
-      setProgress('Starting Run…')
+      emit('Starting Run…')
       let runId: string | undefined
       try {
         const runRes = await fetch('/api/runs', {
@@ -360,31 +422,49 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
         if (runRes.ok) {
           const { run } = await runRes.json() as { run?: { id: string } }
           runId = run?.id
+          if (runId) emit(`Run created (${runId.slice(0, 8)}…)`, 'success')
+        } else {
+          emit(`Skipped Run linkage (HTTP ${runRes.status}) — workflow generation continues`, 'warn')
         }
       } catch {
         // Swallow — run creation is best-effort during the transition window
+        emit('Skipped Run linkage (network) — workflow generation continues', 'warn')
       }
 
-      setProgress('Generating BUILD workflow…')
-      const build = await generateWorkflow(card, executeInput, 'build', runId)
+      emit('Phase 1/2 — generating BUILD workflow', 'info')
+      const build = await generateWorkflow(card, executeInput, 'build', runId, emit)
+      summariseGenerated('BUILD', build, emit)
 
-      setProgress('Generating MAINTAIN & PROFIT workflow…')
-      const maintain = await generateWorkflow(card, executeInput, 'maintain', runId)
+      emit('Phase 2/2 — generating MAINTAIN & PROFIT workflow', 'info')
+      const maintain = await generateWorkflow(card, executeInput, 'maintain', runId, emit)
+      summariseGenerated('MAINTAIN', maintain, emit)
 
       // Prefer server-persisted row (has DB id + createdAt); fall back to
       // localStorage when Supabase is unconfigured.
       const buildAuto = build.automation ?? toSaved(card, build)
       const maintainAuto = maintain.automation ?? toSaved(card, maintain)
 
-      if (!build.automation) saveAutomation(buildAuto)
-      if (!maintain.automation) saveAutomation(maintainAuto)
+      if (!build.automation) {
+        saveAutomation(buildAuto)
+        emit('BUILD saved to local Automation Library (no Supabase row)', 'warn')
+      } else {
+        emit('BUILD persisted to Supabase Automation Library', 'success')
+      }
+      if (!maintain.automation) {
+        saveAutomation(maintainAuto)
+        emit('MAINTAIN saved to local Automation Library (no Supabase row)', 'warn')
+      } else {
+        emit('MAINTAIN persisted to Supabase Automation Library', 'success')
+      }
 
+      emit('Done — both workflows are in your library', 'success')
       setDone({ build: buildAuto, maintain: maintainAuto })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed')
+      const msg = err instanceof Error ? err.message : 'Generation failed'
+      emit(`Error: ${msg}`, 'error')
+      setError(msg)
     } finally {
       setSubmitting(false)
-      setProgress(null)
     }
   }
 
@@ -419,14 +499,8 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
               style={{ backgroundColor: '#050508', color: '#e8e8f0', border: '1px solid #24243e' }}
             />
 
-            {progress && (
-              <div
-                className="mt-3 p-2.5 rounded-lg flex items-center gap-2 text-xs"
-                style={{ backgroundColor: '#12121e', color: '#c0c0d0' }}
-              >
-                <Loader2 size={12} className="animate-spin shrink-0" />
-                {progress}
-              </div>
+            {progress.length > 0 && (
+              <ProgressLog events={progress} active={submitting} />
             )}
 
             {error && (
@@ -491,6 +565,9 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
                 )}
               </div>
             ))}
+            {progress.length > 0 && (
+              <ProgressLog events={progress} active={false} />
+            )}
             <div className="flex items-center gap-2 justify-end">
               <button
                 onClick={onClose}
@@ -510,6 +587,55 @@ function ExecuteModal({ card, onClose }: { card: IdeaCardType; onClose: () => vo
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function ProgressLog({ events, active }: { events: ProgressEvent[]; active: boolean }) {
+  // Render a chronological log of generation events under the Generate button.
+  // The most recent line carries the spinner when active, so the user can see
+  // exactly which step is in flight (e.g. "Claude is generating workflow… 14s").
+  return (
+    <div
+      className="mt-3 rounded-lg overflow-hidden"
+      style={{ backgroundColor: '#08080f', border: '1px solid #1a1a2e' }}
+    >
+      <div
+        className="px-3 py-1.5 text-xs uppercase tracking-wide"
+        style={{ color: '#7c7c95', borderBottom: '1px solid #1a1a2e', backgroundColor: '#0d0d18' }}
+      >
+        Workflow generation log
+      </div>
+      <ul className="max-h-56 overflow-auto py-1">
+        {events.map((ev, i) => {
+          const last = i === events.length - 1
+          const showSpinner = active && last && ev.kind === 'info'
+          const color = ev.kind === 'success' ? '#4ade80'
+            : ev.kind === 'warn'  ? '#ffba5c'
+            : ev.kind === 'error' ? '#ff7a90'
+            : '#c0c0d0'
+          return (
+            <li
+              key={`${ev.at}-${i}`}
+              className="px-3 py-1 flex items-start gap-2 text-xs"
+              style={{ color }}
+            >
+              <span className="shrink-0 mt-0.5" style={{ color: '#5a5a78', minWidth: 12 }}>
+                {showSpinner
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : ev.kind === 'success' ? <Check size={11} />
+                  : ev.kind === 'warn' ? <AlertCircle size={11} />
+                  : ev.kind === 'error' ? <X size={11} />
+                  : <span style={{ color: '#5a5a78' }}>›</span>}
+              </span>
+              <span className="flex-1 break-words">{ev.text}</span>
+              <span className="shrink-0 text-[10px] tabular-nums" style={{ color: '#5a5a78' }}>
+                {new Date(ev.at).toLocaleTimeString(undefined, { hour12: false })}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

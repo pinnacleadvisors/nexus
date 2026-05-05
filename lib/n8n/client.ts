@@ -95,11 +95,38 @@ export async function getWorkflow(id: string): Promise<N8nWorkflow> {
   return n8nFetch<N8nWorkflow>(`/workflows/${id}`)
 }
 
+/**
+ * The n8n public REST API rejects most read-only / managed fields on POST
+ * /workflows ("request/body must NOT have additional properties"). Strip them
+ * so a workflow that round-tripped through Claude or our scaffold (both of
+ * which include id/active/tags/meta for the n8n UI export shape) imports
+ * cleanly via the API.
+ *
+ * Allowed fields per the v1 OpenAPI spec: name, nodes, connections, settings,
+ * staticData. Everything else is set by the server or via dedicated endpoints
+ * (/activate, /tags).
+ */
+function sanitiseForCreate(workflow: N8nWorkflow): Record<string, unknown> {
+  return {
+    name:        workflow.name,
+    nodes:       workflow.nodes,
+    connections: workflow.connections,
+    // n8n requires settings to be an object — empty object is fine.
+    settings:    workflow.settings ?? {},
+  }
+}
+
 export async function createWorkflow(workflow: N8nWorkflow): Promise<N8nWorkflow> {
-  return n8nFetch<N8nWorkflow>('/workflows', {
+  const created = await n8nFetch<N8nWorkflow>('/workflows', {
     method: 'POST',
-    body:   JSON.stringify(workflow),
+    body:   JSON.stringify(sanitiseForCreate(workflow)),
   })
+  // The original workflow may have requested `active: true`. The public API
+  // never lets you set active on create — toggle via the dedicated endpoint.
+  if (workflow.active && created.id) {
+    try { await activateWorkflow(created.id) } catch { /* non-fatal */ }
+  }
+  return created
 }
 
 export async function activateWorkflow(id: string): Promise<void> {

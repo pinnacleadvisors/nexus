@@ -122,13 +122,35 @@ export default function HealthPanel() {
       })
       let data: RunResponse | null = null
       try { data = (await res.json()) as RunResponse } catch { /* response wasn't JSON */ }
+
+      // Distinguish meta-route failure from upstream-cron failure:
+      //   - !res.ok          → meta-route itself errored (auth, fetch threw)
+      //   - res.ok && !data.ok → meta-route worked, but the cron returned non-2xx
+      const metaFailed     = !res.ok
+      const upstreamFailed = res.ok && data && !data.ok
+
+      // Best-effort error string. Upstream errors expose the cron's structured
+      // body (`response.error` / `response.detail`) when available so the
+      // operator sees "qa_runner_not_configured" instead of a flat "HTTP 502".
+      let errorText: string | undefined
+      if (metaFailed) {
+        errorText = data?.error ?? `HTTP ${res.status}`
+      } else if (upstreamFailed) {
+        const r = (data?.response ?? {}) as { error?: unknown; detail?: unknown }
+        const upstreamMsg =
+          typeof r.error === 'string'  ? r.error  :
+          typeof r.detail === 'string' ? r.detail :
+          ''
+        errorText = `upstream HTTP ${data?.status ?? '?'}${upstreamMsg ? `: ${upstreamMsg}` : ''}`
+      }
+
       setRunResults(prev => ({
         ...prev,
         [path]: {
-          ok:     res.ok && (data?.ok ?? false),
+          ok:     !metaFailed && !upstreamFailed,
           status: data?.status ?? res.status,
           ms:     data?.duration_ms,
-          error:  res.ok && data?.ok ? undefined : (data?.error ?? `HTTP ${res.status}`),
+          error:  errorText,
           at:     Date.now(),
         },
       }))

@@ -83,15 +83,23 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Still running — tell the client to keep polling.
+  // Still running — tell the client to keep polling. Include a human-readable
+  // phase hint so the UI can show "Queued — waiting for Claude to start" vs
+  // "Claude is generating your workflow…" instead of a single generic spinner.
   if (status.status === 'pending' || status.status === 'running') {
     const elapsedMs = status.startedAt
       ? Date.now() - status.startedAt
       : status.createdAt ? Date.now() - status.createdAt : 0
+    const phase: 'queued' | 'generating' = status.status === 'pending' ? 'queued' : 'generating'
+    const phaseLabel = phase === 'queued'
+      ? 'Queued — waiting for Claude to start'
+      : `Claude is generating your workflow… (${Math.round(elapsedMs / 1000)}s)`
     return Response.json({
       async:     true,
       jobId:     body.jobId,
       status:    status.status,
+      phase,
+      phaseLabel,
       elapsedMs,
     })
   }
