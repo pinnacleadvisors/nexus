@@ -10,6 +10,13 @@
 !.yarn/releases
 !.yarn/versions
 
+# nested service deps + build output (e.g. services/mcp-memory)
+# Each service has its own package.json and is built locally — node_modules
+# and dist/ should never be committed. package-lock.json IS committed for
+# reproducibility across machines.
+services/*/node_modules/
+services/*/dist/
+
 # testing
 /coverage
 
