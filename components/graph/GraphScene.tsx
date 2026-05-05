@@ -15,11 +15,13 @@ function NodeMesh({
   selected,
   dimmed,
   onClick,
+  onHover,
 }: {
   node:     GraphNode
   selected: boolean
   dimmed:   boolean
   onClick:  (n: GraphNode) => void
+  onHover?: (n: GraphNode | null) => void
 }) {
   const meshRef     = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
@@ -40,8 +42,10 @@ function NodeMesh({
     meshRef.current.rotation.y += delta * 0.3
   })
 
-  // Larger / brighter label when the node is hovered or selected.
-  const labelFontSize   = hovered || selected ? '12px' : '10px'
+  // Smaller floating label — the readable detail card is rendered by the
+  // parent page in a fixed bottom-right position so distance-from-camera
+  // can't shrink the text into illegibility.
+  const labelFontSize   = hovered || selected ? '11px' : '10px'
   const labelFontWeight = hovered || selected ? 600 : 500
   const labelColor      = selected ? '#ffffff' : hovered ? '#ffffff' : '#9090b0'
   const labelBackground = selected
@@ -59,10 +63,12 @@ function NodeMesh({
         onPointerOver={e => {
           e.stopPropagation()
           setHovered(true)
+          onHover?.(node)
           document.body.style.cursor = 'pointer'
         }}
         onPointerOut={() => {
           setHovered(false)
+          onHover?.(null)
           document.body.style.cursor = 'auto'
         }}
       >
@@ -172,12 +178,14 @@ function Scene({
   filteredTypes,
   searchQuery,
   onNodeClick,
+  onNodeHover,
 }: {
   data:          GraphData
   selectedId:    string | null
   filteredTypes: Set<string>
   searchQuery:   string
   onNodeClick:   (n: GraphNode) => void
+  onNodeHover?:  (n: GraphNode | null) => void
 }) {
   // Build position map for edges
   const posMap = useMemo(() => {
@@ -259,6 +267,7 @@ function Scene({
           selected={node.id === selectedId}
           dimmed={isDimmed(node.id)}
           onClick={onNodeClick}
+          onHover={onNodeHover}
         />
       ))}
     </>
@@ -311,6 +320,7 @@ export interface GraphSceneProps {
   filteredTypes: Set<string>
   searchQuery:   string
   onNodeClick:   (n: GraphNode) => void
+  onNodeHover?:  (n: GraphNode | null) => void
 }
 
 export default function GraphScene(props: GraphSceneProps) {

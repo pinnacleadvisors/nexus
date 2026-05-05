@@ -185,12 +185,86 @@ interface MemoryFile {
   body:    string
 }
 
+/**
+ * Pull molecular content (atoms / entities / mocs / sources / synthesis) from
+ * the memory-hq Supabase mirror and shape it as MemoryFile records that the
+ * graph builder can consume the same way it consumes filesystem reads.
+ *
+ * Why mirror, not GitHub: the mirror is local Supabase + already indexed by
+ * scope/slug, so 1000+ atoms is one query. GitHub contents API would be N
+ * requests and burns the 5K/hr rate limit. The mirror is updated by a webhook
+ * on every push to memory-hq (see /api/memory/event), so it lags by seconds.
+ *
+ * Returns [] if the mirror isn't configured (offline dev, missing env).
+ */
+async function loadMemoryHqMolecular(): Promise<MemoryFile[]> {
+  // Lazy import — keeps the cold-start cheap when the graph runs without
+  // memory-hq (e.g. local dev with no Supabase). Same lazy-import pattern
+  // used elsewhere in the repo (see lib/observability.ts).
+  let listByScope: typeof import('@/lib/memory/supabase-reader').listByScope
+  let isSupabaseMirrorConfigured: typeof import('@/lib/memory/supabase-reader').isSupabaseMirrorConfigured
+  try {
+    const mod = await import('@/lib/memory/supabase-reader')
+    listByScope = mod.listByScope
+    isSupabaseMirrorConfigured = mod.isSupabaseMirrorConfigured
+  } catch {
+    return []
+  }
+  if (!isSupabaseMirrorConfigured()) return []
+
+  const KINDS = ['atoms', 'entities', 'mocs', 'sources', 'synthesis'] as const
+  const SCOPE = { repo: 'pinnacleadvisors/nexus' as const }
+  const out: MemoryFile[] = []
+
+  for (const kind of KINDS) {
+    let rows: Awaited<ReturnType<typeof listByScope>>
+    try {
+      rows = await listByScope(kind, SCOPE, 500)
+    } catch (err) {
+      console.error(`[memory-builder] memory-hq mirror read failed for ${kind}:`, err)
+      continue
+    }
+    for (const r of rows) {
+      // Map the molecular kind onto the same relPath shape the local walker
+      // produced ("molecular/<kind>/<slug>.md"), so existing alias-resolution
+      // logic and toNodeType() heuristic light up unchanged.
+      const relPath = `molecular/${kind}/${r.slug}.md`
+      const fmTitle = (r.frontmatter as Record<string, unknown> | null)?.title
+      const fmId    = (r.frontmatter as Record<string, unknown> | null)?.id
+      const links   = (r.frontmatter as Record<string, unknown> | null)?.links
+      const sources = (r.frontmatter as Record<string, unknown> | null)?.sources
+      const meta: Frontmatter = {
+        type:    kind === 'atoms' ? 'atom' : kind === 'entities' ? 'entity' : kind === 'mocs' ? 'moc' : kind,
+        title:   typeof fmTitle === 'string' ? fmTitle : r.title,
+        id:      typeof fmId === 'string' ? fmId : r.slug,
+        created: r.updated_at,
+        ...(Array.isArray(links)   ? { links:   links   as string[] } : {}),
+        ...(Array.isArray(sources) ? { sources: sources as string[] } : {}),
+      }
+      out.push({
+        absPath: `memory-hq:${r.scope_id}/${kind}/${r.slug}.md`,
+        relPath,
+        meta,
+        body: r.body_md ?? '',
+      })
+    }
+  }
+  return out
+}
+
 export async function buildMemoryGraph(): Promise<GraphData | null> {
   const root = path.join(process.cwd(), 'memory')
   const files = await walkMarkdown(root)
-  if (files.length === 0) return null
 
-  const parsed: MemoryFile[] = await Promise.all(
+  // Pull molecular content from memory-hq when the mirror is configured. The
+  // local memory/molecular/ folder is treated as a development cache only —
+  // memory-hq is canonical (see CLAUDE.md "Memory architecture").
+  const memoryHqFiles = await loadMemoryHqMolecular()
+  const useMemoryHq   = memoryHqFiles.length > 0
+
+  if (files.length === 0 && memoryHqFiles.length === 0) return null
+
+  const localParsed: MemoryFile[] = await Promise.all(
     files.map(async absPath => {
       const raw = await fs.readFile(absPath, 'utf8')
       const { meta, body } = parseFrontmatter(raw)
@@ -198,6 +272,13 @@ export async function buildMemoryGraph(): Promise<GraphData | null> {
       return { absPath, relPath, meta, body }
     }),
   )
+
+  // When memory-hq is the source of truth, drop the local molecular files so
+  // we don't end up with duplicated nodes pointing at stale dev-cache copies.
+  const nonMolecularLocal = useMemoryHq
+    ? localParsed.filter(f => !f.relPath.startsWith('molecular/'))
+    : localParsed
+  const parsed: MemoryFile[] = [...nonMolecularLocal, ...memoryHqFiles]
 
   // Build nodes + alias map for link resolution.
   const nodes: GraphNode[] = []

@@ -81,14 +81,27 @@ function applyLayout(nodes: GraphNode[], mode: LayoutMode): GraphNode[] {
 }
 
 // ── Node detail panel ─────────────────────────────────────────────────────────
-function NodeDetail({ node, onClose }: { node: GraphNode; onClose: () => void }) {
+// `placement` controls fixed position + omits the close button when the panel
+// represents a transient hover (no click needed to dismiss). Bottom-right is
+// used for hover-only display so it doesn't collide with the top-right
+// selected-node panel.
+function NodeDetail({
+  node,
+  placement = 'top-right',
+  onClose,
+}: {
+  node:       GraphNode
+  placement?: 'top-right' | 'bottom-right'
+  onClose?:   () => void
+}) {
   const color = NODE_COLORS[node.type] ?? '#6b7280'
   const label = NODE_TYPE_LABELS[node.type] ?? node.type
   const metaEntries = Object.entries(node.metadata).slice(0, 8)
+  const positionClass = placement === 'bottom-right' ? 'bottom-4 right-4' : 'top-4 right-4'
 
   return (
     <div
-      className="absolute top-4 right-4 w-72 rounded-xl p-4 z-10 space-y-3"
+      className={`absolute ${positionClass} w-72 rounded-xl p-4 z-10 space-y-3`}
       style={{ backgroundColor: '#0d0d14', border: `1px solid ${color}40` }}
     >
       {/* Header */}
@@ -107,9 +120,11 @@ function NodeDetail({ node, onClose }: { node: GraphNode; onClose: () => void })
             {label}
           </p>
         </div>
-        <button onClick={onClose} style={{ color: '#55556a' }}>
-          <X size={14} />
-        </button>
+        {onClose && (
+          <button onClick={onClose} style={{ color: '#55556a' }}>
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -174,6 +189,7 @@ export default function GraphPage() {
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState('')
   const [selectedNode,    setSelectedNode]    = useState<GraphNode | null>(null)
+  const [hoveredNode,     setHoveredNode]     = useState<GraphNode | null>(null)
   const [searchQuery,     setSearchQuery]     = useState('')
   const [filteredTypes,   setFilteredTypes]   = useState<Set<NodeType>>(new Set())
   const [layoutMode,      setLayoutMode]      = useState<LayoutMode>('force')
@@ -464,10 +480,11 @@ export default function GraphPage() {
           <Legend />
         </div>
 
-        {/* Built-at timestamp */}
-        {graph && (
+        {/* Built-at timestamp — moved to top-right corner so the hover detail
+            card can own the bottom-right slot without overlap. */}
+        {graph && !selectedNode && (
           <div
-            className="absolute bottom-3 right-3 z-10 text-[10px] px-2 py-1 rounded"
+            className="absolute top-3 right-3 z-10 text-[10px] px-2 py-1 rounded"
             style={{ backgroundColor: 'rgba(13,13,20,0.7)', color: '#3d3d60' }}
           >
             Built {new Date(graph.builtAt).toLocaleTimeString()}
@@ -499,12 +516,24 @@ export default function GraphPage() {
             filteredTypes={filteredTypes}
             searchQuery={searchQuery}
             onNodeClick={n => setSelectedNode(prev => prev?.id === n.id ? null : n)}
+            onNodeHover={setHoveredNode}
           />
         )}
 
-        {/* Node detail panel */}
+        {/* Selected node panel (top-right) — sticky until dismissed. */}
         {selectedNode && (
-          <NodeDetail node={selectedNode} onClose={() => setSelectedNode(null)} />
+          <NodeDetail
+            node={selectedNode}
+            placement="top-right"
+            onClose={() => setSelectedNode(null)}
+          />
+        )}
+
+        {/* Hover detail card (bottom-right) — fixed-size readable detail for
+            the node currently under the cursor. Hidden when the same node is
+            already selected (top-right card carries the same info). */}
+        {hoveredNode && hoveredNode.id !== selectedNode?.id && (
+          <NodeDetail node={hoveredNode} placement="bottom-right" />
         )}
       </div>
     </div>
