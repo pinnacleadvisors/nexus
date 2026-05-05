@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
   const rl = await rateLimit(req, { limit: 20, window: '1 m', prefix: 'businesses-upsert' })
   if (!rl.success) return rateLimitResponse(rl)
 
-  let body: Partial<BusinessUpsert>
+  let body: Partial<BusinessUpsert> & { force_slack_verify?: boolean }
   try {
-    body = (await req.json()) as Partial<BusinessUpsert>
+    body = (await req.json()) as Partial<BusinessUpsert> & { force_slack_verify?: boolean }
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
+
+  const forceVerify = body.force_slack_verify === true
 
   const row: BusinessUpsert = {
     slug:                  body.slug,
@@ -74,33 +76,43 @@ export async function POST(req: NextRequest) {
   const slackChanged =
     !!row.slack_webhook_url &&
     row.slack_webhook_url !== previous?.slack_webhook_url
+  // Verification fires either when the URL just changed OR when the UI
+  // explicitly asked for a re-test ("Send test" button on a stable URL).
+  const shouldVerify = !!row.slack_webhook_url && (slackChanged || forceVerify)
 
   const saved = await upsertBusiness(row)
   if (!saved) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
 
-  // Verify the freshly-pasted webhook by sending a one-shot Block Kit message.
+  // Verify the webhook by sending a one-shot Block Kit message.
   // Failures are returned as a warning so the UI can prompt the owner to retry.
-  let slackWarning: string | undefined
-  if (slackChanged && row.slack_webhook_url) {
+  // Successes set slack_verified=true so the UI knows the green tick is honest
+  // — previously the tick showed whenever a URL was stored, regardless of
+  // whether anything had actually been delivered.
+  let slackWarning:  string | undefined
+  let slackVerified = false
+  if (shouldVerify && row.slack_webhook_url) {
     const result = await postVerification(row.slack_webhook_url, {
       businessName: row.name,
       channel:      row.slack_channel ?? undefined,
     })
     if (result.ok) {
-      // Drop a "Slack connected" card on the board so the owner sees a visible
-      // confirmation alongside the Slack message itself.
-      const db = createServerClient()
-      if (db) {
-        await insertTask(db, {
-          title:         `🔌 Slack connected: ${row.name}`,
-          description:   `Verification message delivered to ${row.slack_channel ?? 'the pinned channel'}. Approvals and run summaries will land here.`,
-          column_id:     'review',
-          priority:      'low',
-          business_slug: row.slug,
-          position:      0,
-        }).then(({ error }) => {
-          if (error) console.error('[businesses] slack-connected card insert:', error.message)
-        })
+      slackVerified = true
+      // Drop a "Slack connected" card on the board only when the URL was new —
+      // re-verifying an existing webhook shouldn't spawn a duplicate card.
+      if (slackChanged) {
+        const db = createServerClient()
+        if (db) {
+          await insertTask(db, {
+            title:         `🔌 Slack connected: ${row.name}`,
+            description:   `Verification message delivered to ${row.slack_channel ?? 'the pinned channel'}. Approvals and run summaries will land here.`,
+            column_id:     'review',
+            priority:      'low',
+            business_slug: row.slug,
+            position:      0,
+          }).then(({ error }) => {
+            if (error) console.error('[businesses] slack-connected card insert:', error.message)
+          })
+        }
       }
     } else if (result.silent) {
       // 200 OK from Slack but the message never reached a channel
@@ -113,8 +125,9 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    ok:            true,
-    business:      saved,
-    slack_warning: slackWarning,
+    ok:             true,
+    business:       saved,
+    slack_warning:  slackWarning,
+    slack_verified: slackVerified,
   })
 }

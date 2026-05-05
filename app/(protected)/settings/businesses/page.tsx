@@ -20,7 +20,7 @@ import type { BusinessRow, BusinessStatus } from '@/lib/business/types'
 import SettingsTabs from '@/components/settings/SettingsTabs'
 
 interface ApiList { ok: boolean; businesses: BusinessRow[] }
-interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string; slack_warning?: string }
+interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string; slack_warning?: string; slack_verified?: boolean }
 
 export default function BusinessesPage() {
   const [rows, setRows]     = useState<BusinessRow[]>([])
@@ -28,6 +28,11 @@ export default function BusinessesPage() {
   const [err, setErr]       = useState<string | null>(null)
   // Per-business warnings (e.g. failed Slack webhook verification). Keyed by slug.
   const [slackWarnings, setSlackWarnings] = useState<Record<string, string>>({})
+  // Per-business "verified just now" flag. Honesty check: the green tick
+  // only appears after the API confirms a real successful POST to Slack
+  // during this session, not just because a URL is stored in the row.
+  const [slackVerified, setSlackVerified] = useState<Record<string, number>>({})
+  const [verifyingSlug, setVerifyingSlug] = useState<string | null>(null)
 
   async function refresh() {
     setLoad(true)
@@ -62,15 +67,25 @@ export default function BusinessesPage() {
     await refresh()
   }
 
-  async function patchBusiness(slug: string, patch: Partial<BusinessRow>) {
+  async function patchBusiness(
+    slug:   string,
+    patch:  Partial<BusinessRow>,
+    opts?: { forceSlackVerify?: boolean },
+  ) {
     const current = rows.find(r => r.slug === slug)
     if (!current) return
+    if (opts?.forceSlackVerify) setVerifyingSlug(slug)
     const res = await fetch('/api/businesses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...current, ...patch }),
+      body: JSON.stringify({
+        ...current,
+        ...patch,
+        ...(opts?.forceSlackVerify ? { force_slack_verify: true } : {}),
+      }),
     })
     const data = (await res.json()) as ApiUpsert
+    if (opts?.forceSlackVerify) setVerifyingSlug(null)
     if (!data.ok) {
       setErr(data.error ?? 'update failed')
       return
@@ -81,6 +96,9 @@ export default function BusinessesPage() {
       else delete next[slug]
       return next
     })
+    if (data.slack_verified) {
+      setSlackVerified(prev => ({ ...prev, [slug]: Date.now() }))
+    }
     await refresh()
   }
 
@@ -187,7 +205,11 @@ export default function BusinessesPage() {
                       {slackWarnings[r.slug]}{' '}
                       <button
                         type="button"
-                        onClick={() => void patchBusiness(r.slug, { slack_webhook_url: r.slack_webhook_url })}
+                        onClick={() => void patchBusiness(
+                          r.slug,
+                          { slack_webhook_url: r.slack_webhook_url },
+                          { forceSlackVerify: true },
+                        )}
                         className="underline hover:no-underline"
                       >
                         Retry
@@ -196,9 +218,29 @@ export default function BusinessesPage() {
                   </p>
                 )}
                 {!slackWarnings[r.slug] && r.slack_webhook_url && (
-                  <p className="mt-1 text-xs text-emerald-600">
-                    ✓ Verification message sent on save. Check the channel.
-                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                    {slackVerified[r.slug] ? (
+                      <span className="text-emerald-600">
+                        ✓ Verification message delivered to Slack. Check the channel.
+                      </span>
+                    ) : (
+                      <span className="text-zinc-500">
+                        Webhook saved. Press <strong>Send test</strong> to confirm a real message lands.
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={verifyingSlug === r.slug}
+                      onClick={() => void patchBusiness(
+                        r.slug,
+                        { slack_webhook_url: r.slack_webhook_url },
+                        { forceSlackVerify: true },
+                      )}
+                      className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] hover:bg-zinc-50 disabled:opacity-50"
+                    >
+                      {verifyingSlug === r.slug ? 'Sending…' : 'Send test'}
+                    </button>
+                  </div>
                 )}
               </label>
             </div>

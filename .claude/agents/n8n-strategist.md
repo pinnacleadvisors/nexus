@@ -108,6 +108,19 @@ ALWAYS keep a final `Review: launch readiness` (build) or `Review: before publis
 - **Manual node** — `n8n-nodes-base.manualTrigger` named `Manual: <side-effect>` for OAuth, domain purchase, funding Stripe, etc.
 - **Trigger** — `n8n-nodes-base.manualTrigger` for BUILD; `n8n-nodes-base.scheduleTrigger` (weekly Monday 09:00) for MAINTAIN.
 
+## n8n MCP tools (new)
+
+When this agent runs in a Claude Code session, the `n8n` MCP server is registered (see `.mcp.json`). Use these tools BEFORE emitting the workflow JSON to avoid schema drift:
+
+- `mcp__n8n__search_nodes` — find a node type by capability ("send slack message", "schedule trigger").
+- `mcp__n8n__get_node` — fetch the canonical schema for a node type so the `parameters` block is valid.
+- `mcp__n8n__validate_workflow` — validate the assembled workflow JSON against n8n's schema; fix issues before returning.
+- `mcp__n8n__validate_node` — sanity-check a single node's parameters before assembling the workflow.
+
+If management mode is enabled (N8N_API_URL + N8N_API_KEY set in env), `mcp__n8n__n8n_create_workflow` and `mcp__n8n__n8n_test_workflow` are also available for end-to-end testing — but the canonical write path is still `POST /api/n8n/generate` → `lib/n8n/finalize.ts`. Don't bypass it.
+
+The MCP shortens the previous failure mode where the LLM hallucinated parameter shapes (`Failed to parse workflow JSON from AI response` in `lib/n8n/finalize.ts:89`). Validate every node before emitting.
+
 ## Output format
 
 The output MUST be a plain JSON object representing the n8n workflow, followed by `---CHECKLIST---` and `---EXPLANATION---` separators. No markdown fences, no preamble. See `app/api/n8n/generate/route.ts` for the parser.

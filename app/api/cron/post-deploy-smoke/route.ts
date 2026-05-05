@@ -43,7 +43,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookUrl = process.env.QA_RUNNER_WEBHOOK_URL
   const hmacSecret = process.env.QA_RUNNER_HMAC_SECRET
   if (!webhookUrl || !hmacSecret) {
-    return NextResponse.json({ ok: false, error: 'qa_runner_not_configured' }, { status: 503 })
+    // qa-runner service is optional. When it isn't deployed yet (no
+    // QA_RUNNER_WEBHOOK_URL in Doppler) the cron should no-op rather than
+    // log a recurring 503. Health panel + Vercel cron treat 200 as healthy;
+    // the `skipped` flag tells operators why nothing happened.
+    return NextResponse.json({
+      ok:      true,
+      skipped: true,
+      reason:  'qa_runner_not_configured',
+      hint:    'Set QA_RUNNER_WEBHOOK_URL + QA_RUNNER_HMAC_SECRET in Doppler to enable post-deploy smoke. See services/qa-runner/README.md.',
+    })
   }
 
   let payload: CronBody = {}

@@ -3,6 +3,17 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=nircnhhnkbigdiqoiyjr"
+    },
+    "n8n": {
+      "command": "npx",
+      "args": ["-y", "n8n-mcp"],
+      "env": {
+        "MCP_MODE": "stdio",
+        "LOG_LEVEL": "error",
+        "DISABLE_CONSOLE_OUTPUT": "true",
+        "N8N_API_URL": "${N8N_BASE_URL}",
+        "N8N_API_KEY": "${N8N_API_KEY}"
+      }
     }
   }
 }
