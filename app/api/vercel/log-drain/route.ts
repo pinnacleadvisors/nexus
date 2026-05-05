@@ -24,7 +24,7 @@
  *   against a future Vercel algorithm migration.
  */
 
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, after, type NextRequest } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 import { createServerClient } from '@/lib/supabase'
@@ -191,17 +191,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawLines = bodyText.split('\n').map(s => s.trim()).filter(Boolean)
   const redactList = buildRedactList()
 
+  // Drop the drain's own log lines before any side effect. Vercel ships every
+  // log-drain function invocation back to this endpoint, so an unfiltered
+  // receiver builds a feedback loop that scaled traffic into the 70-100/s
+  // range. Filter at the boundary — every batch we drop also removes the next
+  // batch its R2 + Supabase writes would have generated.
+  let droppedSelf = 0
   const parsed: VercelLogLine[] = []
   const sanitisedLines: string[] = []
   for (const raw of rawLines) {
     let obj: VercelLogLine
     try { obj = JSON.parse(raw) as VercelLogLine } catch { continue }
+    if (obj.proxy?.path === '/api/vercel/log-drain') { droppedSelf++; continue }
     const cleaned = redactHeaders(obj, redactList)
     parsed.push(cleaned)
     sanitisedLines.push(JSON.stringify(cleaned))
   }
   if (parsed.length === 0) {
-    return NextResponse.json({ ok: true, lines: 0 })
+    return NextResponse.json({ ok: true, lines: 0, droppedSelf })
   }
 
   // Pick a deployment_id from the first line to shard the R2 object. If a
@@ -212,75 +219,86 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const hourShard    = new Date().toISOString().slice(0, 13).replace('T', '/') // YYYY-MM-DD/HH
   const r2Key        = `logs/${deploymentId}/${hourShard}.jsonl`
 
-  let rawUrl: string | null = null
-  // Skip if we already proved R2 is misconfigured this process — prevents log
-  // spam at request rate when creds are stale.
-  if (isR2Configured() && !r2DisabledReason) {
-    try {
-      const existing  = sanitisedLines.join('\n')
-      // Append-mode is unavailable on R2; the hour shard granularity is small
-      // enough that overwriting per-batch is fine for archival use. If you
-      // need per-line ordering across batches, switch the key to include the
-      // batch id (`<hour>/<requestId>.jsonl`).
-      const result = await uploadToR2({
-        key:         r2Key,
-        body:        existing + '\n',
-        contentType: 'application/x-ndjson',
-        metadata:    { deploymentId, lines: String(parsed.length) },
-      })
-      rawUrl = result.url
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (isR2AuthError(err)) {
-        // Auth errors won't self-heal — disable R2 for this process and log
-        // ONCE so the operator sees the actionable instruction without
-        // their logs being flooded.
-        r2DisabledReason = message
-        console.error(
-          '[log-drain] R2 credentials are invalid — disabling R2 archive for this process. Fix: regenerate the R2 API token in Cloudflare → R2 → Manage R2 API Tokens, then update R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY in Doppler. Redeploy resets the cache. Last error:',
-          message,
-        )
-      } else {
-        // Transient — log and continue. Supabase indexing still works so the
-        // batch isn't lost.
-        console.warn('[log-drain] R2 upload failed:', message)
-      }
-    }
-  }
-
-  // Filter the lines we'll actually index. R2 archive (above) keeps everything
-  // for forensics; Supabase only gets the actionable ones — what the QA loop
-  // and agent log-search tools actually query.
+  // Filter the lines we'll actually index. R2 archive (background block below)
+  // keeps everything for forensics; Supabase only gets the actionable ones —
+  // what the QA loop and agent log-search tools actually query. Computed
+  // synchronously so the response can report `indexed` + `dropped` without
+  // waiting on after().
   const indexable = parsed.filter(shouldIndex)
   const dropped   = parsed.length - indexable.length
 
-  // Index hot fields in Supabase. We use the service-role client because
-  // log_events RLS denies all by default. Cast past the typed client until
-  // `npm run gen:types` picks up migration 022.
-  const supabase = createServerClient()
-  if (supabase && indexable.length > 0) {
-    const rows = indexable.map(line => ({
-      deployment_id: line.deploymentId ?? null,
-      request_id:    line.requestId    ?? null,
-      route:         line.proxy?.path  ?? null,
-      level:         line.level        ?? line.type ?? null,
-      status:        line.statusCode   ?? line.proxy?.statusCode ?? null,
-      duration_ms:   line.proxy?.duration ?? null,
-      message:       (line.message ?? '').slice(0, 8_000),
-      raw_url:       rawUrl,
-      created_at:    line.timestamp ? new Date(line.timestamp).toISOString() : new Date().toISOString(),
-    }))
-    const insert = (supabase.from('log_events' as never) as unknown as {
-      insert: (rows: unknown) => Promise<{ error: { message: string } | null }>
-    }).insert(rows)
-    const { error } = await insert
-    if (error) {
-      console.warn('[log-drain] supabase insert failed:', error.message)
+  // Background the slow writes — the response returns 200 within ~30ms while
+  // R2 + Supabase finish behind it. Vercel doesn't retry log drains on 5xx,
+  // so a background failure is logged but not re-delivered (matches the
+  // synchronous version's behavior, which also only logged R2 / Supabase
+  // errors). after() keeps the function instance alive up to maxDuration.
+  after(async () => {
+    let rawUrl: string | null = null
+    // Skip if we already proved R2 is misconfigured this process — prevents log
+    // spam at request rate when creds are stale.
+    if (isR2Configured() && !r2DisabledReason) {
+      try {
+        const existing = sanitisedLines.join('\n')
+        // Append-mode is unavailable on R2; the hour shard granularity is small
+        // enough that overwriting per-batch is fine for archival use. If you
+        // need per-line ordering across batches, switch the key to include the
+        // batch id (`<hour>/<requestId>.jsonl`).
+        const result = await uploadToR2({
+          key:         r2Key,
+          body:        existing + '\n',
+          contentType: 'application/x-ndjson',
+          metadata:    { deploymentId, lines: String(parsed.length) },
+        })
+        rawUrl = result.url
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (isR2AuthError(err)) {
+          // Auth errors won't self-heal — disable R2 for this process and log
+          // ONCE so the operator sees the actionable instruction without
+          // their logs being flooded.
+          r2DisabledReason = message
+          console.error(
+            '[log-drain] R2 credentials are invalid — disabling R2 archive for this process. Fix: regenerate the R2 API token in Cloudflare → R2 → Manage R2 API Tokens, then update R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY in Doppler. Redeploy resets the cache. Last error:',
+            message,
+          )
+        } else {
+          // Transient — log and continue. Supabase indexing still works so the
+          // batch isn't lost.
+          console.warn('[log-drain] R2 upload failed:', message)
+        }
+      }
     }
-  }
+
+    // Index hot fields in Supabase. We use the service-role client because
+    // log_events RLS denies all by default. Cast past the typed client until
+    // `npm run gen:types` picks up migration 022.
+    const supabase = createServerClient()
+    if (supabase && indexable.length > 0) {
+      const rows = indexable.map(line => ({
+        deployment_id: line.deploymentId ?? null,
+        request_id:    line.requestId    ?? null,
+        route:         line.proxy?.path  ?? null,
+        level:         line.level        ?? line.type ?? null,
+        status:        line.statusCode   ?? line.proxy?.statusCode ?? null,
+        duration_ms:   line.proxy?.duration ?? null,
+        message:       (line.message ?? '').slice(0, 8_000),
+        raw_url:       rawUrl,
+        created_at:    line.timestamp ? new Date(line.timestamp).toISOString() : new Date().toISOString(),
+      }))
+      const insert = (supabase.from('log_events' as never) as unknown as {
+        insert: (rows: unknown) => Promise<{ error: { message: string } | null }>
+      }).insert(rows)
+      const { error } = await insert
+      if (error) {
+        console.warn('[log-drain] supabase insert failed:', error.message)
+      }
+    }
+  })
 
   // Periodic visibility — emit one summary line every N batches so the
   // operator can confirm the sampler isn't dropping events it shouldn't.
+  // Synchronous so the counter advances deterministically per request, even
+  // when after() is still draining from a previous batch.
   batchCounter++
   droppedCounter += dropped
   keptCounter    += indexable.length
@@ -295,7 +313,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     keptCounter    = 0
   }
 
-  return NextResponse.json({ ok: true, lines: parsed.length, indexed: indexable.length, dropped, r2Key })
+  return NextResponse.json({
+    ok:          true,
+    lines:       parsed.length,
+    indexed:     indexable.length,
+    dropped,
+    droppedSelf,
+    r2Key,
+  })
 }
 
 function buildRedactList(): string[] {

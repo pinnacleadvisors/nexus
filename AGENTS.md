@@ -248,3 +248,20 @@ Lightweight version of `docs/RETRY_STORM_AUDIT.md` — if your change touches an
 
 The mechanical check (`npm run check:retry-storm`) takes ~1s and catches the 6 grep-detectable patterns. The contextual checklist above takes ~30s of mental effort and catches the patterns that need human judgement. Run both before every commit that touches the surfaces above.
 
+### Webhook self-amplification checklist (log feedback loops)
+
+Cousin of retry-storm: a webhook receiver whose own output is fed back into itself by the same upstream that triggered it. Common shapes — Vercel log drains ingesting their own function logs, Sentry breadcrumbs hitting an endpoint that emits more breadcrumbs, an analytics POST handler that calls `console.log()` which the runtime ships to a drain pointing back at it. Cost grows superlinearly with rate; memory + invocation count both inflate even though no single call is expensive. We hit this on 2026-05-04 with `/api/vercel/log-drain` running at 70-100 req/s and 338MB middleware memory. Fix pattern is always: (1) drop the matcher / auth that doesn't apply, (2) filter self-traffic at the receiver before any side effect.
+
+**If you added a webhook receiver that the platform also logs/observes…**
+- [ ] Does the upstream observe its own function invocations? (Vercel log drains, Datadog log forwarders, Axiom drains, anything wired to a "send all logs" sink). If yes, filter lines where `proxy.path === '<this route>'` BEFORE writing anything downstream — the existing pattern is `/api/vercel/log-drain` which drops self-traffic at [route.ts](app/api/vercel/log-drain/route.ts).
+- [ ] Are you `console.log`ing inside the handler? Each log line is one more event the upstream will deliver back. Demote to `console.warn` only on real errors, and keep them short — long messages mean larger NDJSON batches when they loop.
+- [ ] Is the receiver returning 5xx on transient failure? Most observability platforms retry. Combine with the retry-storm rule: return **200 + `{ok: false}`** for non-fatal errors.
+
+**If you added an HMAC- or signature-authenticated webhook route…**
+- [ ] Confirm the middleware matcher in [proxy.ts](proxy.ts) excludes the route. Clerk auth on a route that's already auth'd by HMAC adds ~300MB middleware memory per invocation and gives zero security benefit. Use the negative-lookahead pattern in the existing matcher (`(?!api/vercel/log-drain)...`).
+- [ ] Are heavy SDKs (AWS S3, Supabase service-role, Stripe) imported at module scope inside the route? At 70+ req/s these cold-start every container instance. Lazy-import inside the handler so the import cost is per-instance, not per-bundle.
+
+**If you wired a third-party drain pointing at a Nexus route…**
+- [ ] Does the destination route's path appear in the drain's own filter / exclusion config in the upstream dashboard? Vercel drains have an exclusion list — set it as defense-in-depth on top of the receiver-side filter.
+- [ ] Document the drain in `memory/platform/SECRETS.md` so future ops work knows the loop topology.
+

@@ -14,3 +14,4 @@ _Initialized: 2026-04-26_
 ## [2026-05-03] atom | business_operators is the orchestrator config; businesses is the legacy workspace — [`atoms/business-operators-table-rename.md`](atoms/business-operators-table-rename.md)
 ## [2026-05-03] atom | /manage-platform Health tab is the visible-failure surface — [`atoms/manage-platform-health-panel.md`](atoms/manage-platform-health-panel.md)
 ## [2026-05-03] atom | /learn cron runs at 05:00 UTC; page has a manual Sync now button — [`atoms/learn-page-cron-runs-at-05-utc-with-manual-button.md`](atoms/learn-page-cron-runs-at-05-utc-with-manual-button.md)
+## [2026-05-04] lint | 1 issues — [`log.md`](log.md)
