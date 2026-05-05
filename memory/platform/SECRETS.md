@@ -332,4 +332,6 @@ where the secret must be present.
 |-----|-------|---------|
 | `VERCEL_LOG_DRAIN_SECRET`     | Doppler | HMAC secret configured on the Vercel JSON log drain (`Project Settings → Log Drains`). The `/api/vercel/log-drain` route verifies `x-vercel-signature` against the body before indexing. |
 | `VERCEL_LOG_REDACT_HEADERS`   | Doppler (optional) | Comma-separated header names to scrub from `proxy.headers` before persistence. Defaults to `authorization,cookie,__session,x-clerk-session-token`. Add custom auth headers here. |
+| `VERCEL_LOG_DRAIN_KEEP_ALL`   | Doppler (optional) | Set to `1` to disable the `error/warn/4xx-5xx/tagged` Supabase sampler and persist every line. Use only for short-window debugging — drives `log_events` writes at full firehose rate. |
+| `VERCEL_LOG_DRAIN_KEEP_TAGS`  | Doppler (optional) | Comma-separated case-insensitive substrings. Any log message containing one is indexed even when its level is `info`. Defaults to `qa-bot,agent,swarm,runs,business-operator`. R2 archive keeps every line regardless. |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | Doppler | Already required for Phase 17/18 assets. The drain reuses the same bucket — raw NDJSON shards land at `logs/<deployment_id>/YYYY-MM-DD/HH.jsonl`. |
