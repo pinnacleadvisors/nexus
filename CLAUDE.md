@@ -39,6 +39,52 @@ Write dense summaries — never duplicate full source docs.
 
 ---
 
+# Branch Sync Protocol — keep `main` as the moving target
+
+**Always sync with `origin/main` before AND after a unit of work.** Stale branches cause merge conflicts that surface only at PR time, when the diff is large and the reviewer is already engaged. This is non-negotiable for any change that lands as a PR.
+
+## Before making changes — pull `main` first
+
+Run these as the very first commands of any task that will edit code:
+```bash
+git fetch origin main
+git log --oneline HEAD..origin/main          # what's new on main since I last looked?
+git rebase origin/main                       # OR git merge origin/main, repo policy is rebase
+```
+
+Reasons:
+- Another PR may have just shipped a fix in the same area you're about to touch — read those commits before writing your own.
+- Memory files (`memory/`, `docs/adr/`, `CLAUDE.md`, `AGENTS.md`) are mutated frequently. Working from a stale copy means writing rules that contradict what already shipped.
+- A worktree branch that's behind by 20 commits is a conflict trap, not a feature branch.
+
+If you're already on a feature branch from a previous session, rebase it onto `origin/main` before resuming — don't trust that yesterday's branch is still a clean base.
+
+## After changes — re-sync, then open the PR
+
+When your commits are ready and tests pass:
+
+```bash
+git fetch origin main
+git rebase origin/main                       # one more time, mainline may have moved
+npx tsc --noEmit && npm run check:retry-storm
+git push -u origin <branch>
+gh pr create --base main ...
+```
+
+If the rebase introduces conflicts: resolve them locally, re-run typecheck and the retry-storm guard, force-push (`git push --force-with-lease`), and only then open the PR. Never open a PR with `mergeable: CONFLICTING` — GitHub UI conflict resolution loses signing and skips hooks.
+
+If the previous PR for this branch was already merged (check with `gh pr view <branch> --json state`) and you have new commits on top, open a **new PR from a fresh branch** off the latest `main`. Pushing more commits to a merged-PR branch leaves them stranded and unreviewed.
+
+## When the rebase conflicts on memory files
+
+`memory/molecular/`, `memory/roadmap/`, and `task_plan.md` are written by many sessions. If they conflict on rebase, prefer the version that captures the union of facts (don't blow away the other side). For generated indexes (`memory/molecular/INDEX.md`, `memory/molecular/.graph.json`), regenerate from source after the rebase rather than hand-resolving:
+```bash
+node .claude/skills/molecularmemory_local/cli.mjs reindex
+node .claude/skills/molecularmemory_local/cli.mjs graph
+```
+
+---
+
 # Long-Horizon Task Protocol
 
 Long-running or multi-session tasks on this brownfield codebase follow a strict 4-step workflow. **Never jump straight to implementation.**
