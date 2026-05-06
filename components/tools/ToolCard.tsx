@@ -26,6 +26,7 @@ import {
   FileText,
   Code2,
   Wrench,
+  ExternalLink,
 } from 'lucide-react'
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -67,6 +68,7 @@ interface Props {
 export default function ToolCard({ tool }: Props) {
   const Icon = (ICON_MAP[tool.icon] ?? Bot) as React.ComponentType<{ size?: number; style?: React.CSSProperties }>
   const s = STATUS_STYLE[tool.status]
+  const isExternal = !!tool.href && !tool.href.startsWith('/')
 
   const card = (
     <div
@@ -94,9 +96,19 @@ export default function ToolCard({ tool }: Props) {
 
       {/* Name + description */}
       <div className="flex-1">
-        <p className="font-semibold text-sm mb-1" style={{ color: '#e8e8f0' }}>
-          {tool.name}
-        </p>
+        <div className="flex items-start gap-1.5 mb-1">
+          <p className="font-semibold text-sm" style={{ color: '#e8e8f0' }}>
+            {tool.name}
+          </p>
+          {isExternal && (
+            <ExternalLink
+              size={11}
+              className="mt-0.5 shrink-0"
+              style={{ color: '#55556a' }}
+              aria-label="Opens in a new tab"
+            />
+          )}
+        </div>
         <p className="text-xs leading-relaxed" style={{ color: '#9090b0' }}>
           {tool.description}
         </p>

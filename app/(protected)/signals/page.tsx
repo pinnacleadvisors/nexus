@@ -55,6 +55,19 @@ const FILTER_ORDER: (SignalStatus | 'all')[] = [
   'all', 'new', 'triaging', 'accepted', 'deferred', 'rejected', 'implemented',
 ]
 
+// Plain-English explanation per filter so users don't think "New 0" means
+// "your submission failed" — the council moves signals out of New within
+// minutes, so most accounts see 0 here even after a fresh submission.
+const FILTER_DESCRIPTION: Record<SignalStatus | 'all', string> = {
+  all:         'Every signal you have ever captured, regardless of status.',
+  new:         'Captured but not yet triaged. Usually empties out within a minute as the council picks it up.',
+  triaging:    'Council is running its 4-pass evaluation (Memory → Architect → Tester → Judge).',
+  accepted:    'Council judged this is worth doing — promoted to the roadmap.',
+  deferred:    'Council judged this is worth doing but not now. Re-evaluated periodically.',
+  rejected:    'Council judged this is not worth doing. See the verdict for the reason.',
+  implemented: 'Accepted signal that has been built — closed out.',
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function SignalsPage() {
   const [kind, setKind]                 = useState<SignalKind>('idea')
@@ -325,7 +338,8 @@ export default function SignalsPage() {
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+                    title={FILTER_DESCRIPTION[f]}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-all cursor-help"
                     style={active && meta
                       ? { backgroundColor: meta.bg, color: meta.color, border: `1px solid ${meta.color}44` }
                       : active
@@ -416,8 +430,11 @@ export default function SignalsPage() {
                       {expanded && (
                         <div className="px-4 pb-4 border-t" style={{ borderColor: '#1a1a2e' }}>
                           {detailLoading ? (
-                            <div className="flex items-center gap-2 text-xs py-3" style={{ color: '#6c6c88' }}>
-                              <Loader2 size={12} className="animate-spin" />Loading evaluations…
+                            <div className="py-3 space-y-2" aria-busy="true" aria-label="Loading evaluations">
+                              <div className="h-3 w-1/3 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-3/4 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-2/3 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-4/5 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
                             </div>
                           ) : detail && detail.id === s.id ? (
                             <DetailPanel

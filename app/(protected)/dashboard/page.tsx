@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import KpiGrid from '@/components/dashboard/KpiGrid'
 import AgentTable from '@/components/dashboard/AgentTable'
@@ -33,16 +33,47 @@ interface DashboardData {
   source: 'supabase' | 'mock'
 }
 
+// Cache key for the most-recently-fetched real dashboard payload — restored
+// on mount to kill the "Demo data → real data" flicker on browser back-nav.
+const DASHBOARD_CACHE_KEY = 'nexus:dashboard:last-supabase'
+
+function readCachedDashboard(): DashboardData | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DashboardData
+    // Only restore if it was real data (not a cached mock)
+    if (parsed.source !== 'supabase') return null
+    return parsed
+  } catch { return null }
+}
+
 export default function DashboardPage() {
   const [range, setRange]       = useState<DateRange>('30d')
-  const [data, setData]         = useState<DashboardData>({
-    agents: AGENT_ROWS,
-    revenue: REVENUE_DATA,
-    kpis: KPI_DATA,
-    source: 'mock',
-  })
+  // On mount, hydrate from sessionStorage if we have a recent real payload —
+  // skips the mock-data render path entirely on back-nav. First-ever visits
+  // still fall through to mock until the fetch completes.
+  const [data, setData]         = useState<DashboardData>(() =>
+    readCachedDashboard() ?? {
+      agents: AGENT_ROWS,
+      revenue: REVENUE_DATA,
+      kpis: KPI_DATA,
+      source: 'mock',
+    },
+  )
   const [loading, setLoading]   = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
+  const alertsRef = useRef<HTMLDivElement | null>(null)
+
+  // Scroll the alerts panel into view when toggled on — it lives at the
+  // bottom of the dashboard, below the fold, so without this the click
+  // produces no visible feedback (audit finding #5).
+  useEffect(() => {
+    if (showAlerts && alertsRef.current) {
+      alertsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showAlerts])
 
   const fetchData = useCallback(async (r: DateRange) => {
     setLoading(true)
@@ -51,6 +82,12 @@ export default function DashboardPage() {
       if (res.ok) {
         const json = await res.json() as DashboardData
         setData(json)
+        // Cache real payloads only — skips mock so we don't accidentally
+        // restore "Demo data" mode on next mount.
+        if (json.source === 'supabase' && typeof window !== 'undefined') {
+          try { sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(json)) }
+          catch { /* quota exceeded — non-fatal */ }
+        }
       }
     } catch {
       // Keep existing data on error
@@ -121,7 +158,7 @@ export default function DashboardPage() {
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-sm" style={{ color: '#9090b0' }}>
-              What the Hive is doing right now, what needs your attention, and what it&apos;s costing.
+              What your platform is doing right now, what needs your attention, and what it&apos;s costing.
             </p>
             {/* Data source indicator */}
             <span
@@ -186,7 +223,11 @@ export default function DashboardPage() {
       <WorstOffendersWidget windowHours={range === '7d' ? 168 : range === '30d' ? 720 : 720} />
 
       {/* ── Alerts panel (toggle) ───────────────────────────────────────── */}
-      {showAlerts && <AlertsPanel />}
+      {showAlerts && (
+        <div ref={alertsRef} className="scroll-mt-4">
+          <AlertsPanel />
+        </div>
+      )}
     </div>
   )
 }

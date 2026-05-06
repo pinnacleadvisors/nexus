@@ -24,12 +24,12 @@ export const REVENUE_DATA: RevenueDataPoint[] = [
 
 // ── KPI cards ─────────────────────────────────────────────────────────────────
 export const KPI_DATA: KpiCard[] = [
-  { label: 'Total Revenue', value: '$31,200', delta: 22.4, color: 'green' },
-  { label: 'Total Cost', value: '$4,600', delta: 9.5, color: 'red' },
-  { label: 'Net Profit', value: '$26,600', delta: 24.1, color: 'purple' },
-  { label: 'Active Agents', value: '7', delta: 2, color: 'default' },
-  { label: 'Tokens Used', value: '4.2M', delta: 18.3, color: 'default' },
-  { label: 'Tasks Completed', value: '143', delta: 31, color: 'default' },
+  { label: 'Total Revenue',   value: '$31,200', delta: 22.4, color: 'green',   description: 'Sum of confirmed payments / sales attributed to Nexus-driven outputs in the selected window.' },
+  { label: 'Total Cost',      value: '$4,600',  delta: 9.5,  color: 'red',     description: 'AI inference + third-party APIs + infra spend in the window.' },
+  { label: 'Net Profit',      value: '$26,600', delta: 24.1, color: 'purple',  description: 'Total Revenue minus Total Cost. Negative means the platform is a net cost centre this window.' },
+  { label: 'Active Agents',   value: '7',       delta: 2,    color: 'default', description: 'Distinct managed agents that ran at least one task in the window.' },
+  { label: 'Tokens Used',     value: '4.2M',    delta: 18.3, color: 'default', description: 'Combined input + output tokens across every LLM call in the window. ~$3 per million on Sonnet, ~$15 per million on Opus.' },
+  { label: 'Tasks Completed', value: '143',     delta: 31,   color: 'default', description: 'Kanban cards moved to the Completed column in the window.' },
 ]
 
 // ── Agent rows ────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
@@ -21,6 +21,41 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
+
+// Poll cadence for the Dev Console health badge. Long enough to not spam the
+// route, short enough that a red cron failure surfaces within a few minutes.
+// usePollWithBackoff layers exponential backoff on top so a transient 5xx /
+// auth failure doesn't keep hammering the endpoint at constant rate.
+const HEALTH_POLL_MS = 5 * 60_000
+
+type HealthBadge = 'red' | 'amber' | null
+
+interface HealthSummary {
+  summary?: { red?: number; amber?: number; unknown?: number; green?: number }
+}
+
+function useHealthBadge(): HealthBadge {
+  const [badge, setBadge] = useState<HealthBadge>(null)
+
+  const fetcher = useCallback(async () => {
+    const res = await fetch('/api/health/cron', { cache: 'no-store' })
+    if (res.status === 401 || res.status === 403) {
+      // Non-owner — endpoint is owner-gated. Don't badge, don't retry.
+      setBadge(null)
+      return
+    }
+    if (!res.ok) throw new Error(`health/cron HTTP ${res.status}`)
+    const json = await res.json() as HealthSummary
+    const r = json.summary?.red   ?? 0
+    const a = json.summary?.amber ?? 0
+    setBadge(r > 0 ? 'red' : a > 0 ? 'amber' : null)
+  }, [])
+
+  usePollWithBackoff(fetcher, { intervalMs: HEALTH_POLL_MS })
+
+  return badge
+}
 
 interface NavLink {
   type: 'link'
@@ -75,6 +110,7 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const pathname = usePathname() ?? ''
+  const healthBadge = useHealthBadge()
 
   function toggleGroup(id: string) {
     setOpenGroups(g => ({ ...g, [id]: !g[id] }))
@@ -118,6 +154,11 @@ export default function Sidebar() {
               link={item}
               collapsed={collapsed}
               active={isActive(pathname, item.href)}
+              // Surface a red/amber dot on Dev Console when /api/health/cron
+              // reports failing or overdue jobs — the operator notices a
+              // problem in the sidebar instead of having to open the Health
+              // tab proactively.
+              badge={item.href === '/manage-platform' ? healthBadge : null}
             />
           ) : (
             <SidebarGroup
@@ -136,15 +177,23 @@ export default function Sidebar() {
       <div className="px-2 pb-4 space-y-2 shrink-0 border-t pt-3" style={{ borderColor: '#24243e' }}>
         <div
           className={cn(
-            'flex items-center px-3 py-2',
-            collapsed && 'justify-center px-0'
+            'flex items-center gap-3 rounded-lg px-3 py-2 transition-colors',
+            collapsed && 'justify-center gap-0 px-0'
           )}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#12121e' }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+          title="Account — click your avatar for sign-out, profile, and security"
         >
           <UserButton />
           {!collapsed && (
-            <span className="ml-3 text-sm" style={{ color: '#9090b0' }}>
-              Account
-            </span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
+                Account
+              </span>
+              <span className="text-[10px] uppercase tracking-wide" style={{ color: '#55556a' }}>
+                Click avatar
+              </span>
+            </div>
           )}
         </div>
 
@@ -177,16 +226,29 @@ function SidebarLink({
   collapsed,
   active,
   indent,
+  badge,
 }: {
   link: NavLink
   collapsed: boolean
   active: boolean
   indent?: boolean
+  badge?: HealthBadge
 }) {
   const Icon = link.icon
+  const badgeColor = badge === 'red'
+    ? '#ef4444'
+    : badge === 'amber'
+      ? '#f59e0b'
+      : null
+  const badgeTitle = badge === 'red'
+    ? 'One or more cron jobs are failing — open Dev Console → Health'
+    : badge === 'amber'
+      ? 'A cron job is overdue or returned a 4xx — open Dev Console → Health'
+      : undefined
   return (
     <Link
       href={link.href}
+      title={badgeTitle}
       className={cn(
         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
         collapsed && 'justify-center px-0',
@@ -204,7 +266,16 @@ function SidebarLink({
         if (!active) e.currentTarget.style.backgroundColor = 'transparent'
       }}
     >
-      <Icon size={18} className="shrink-0" />
+      <span className="relative shrink-0">
+        <Icon size={18} className="shrink-0" />
+        {badgeColor && (
+          <span
+            className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+            style={{ backgroundColor: badgeColor, boxShadow: `0 0 0 2px #0d0d14` }}
+            aria-hidden
+          />
+        )}
+      </span>
       {!collapsed && link.label}
     </Link>
   )

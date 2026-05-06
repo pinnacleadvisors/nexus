@@ -42,10 +42,25 @@ export default function TodaySpendWidget() {
   if (!snap) {
     return (
       <div
-        className="rounded-xl px-4 py-3"
+        className="rounded-xl p-4"
         style={{ backgroundColor: '#0d0d14', border: '1px solid #24243e' }}
+        aria-busy="true"
+        aria-label="Loading today's AI spend"
       >
-        <span className="text-xs" style={{ color: '#9090b0' }}>Loading…</span>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <DollarSign size={14} style={{ color: '#6c63ff' }} />
+            <span className="text-xs uppercase tracking-wide font-medium" style={{ color: '#9090b0' }}>
+              Today&apos;s AI spend
+            </span>
+          </div>
+        </div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <div className="h-7 w-20 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+          <div className="h-4 w-16 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+        <div className="mt-2 h-3 w-3/4 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
       </div>
     )
   }

@@ -43,6 +43,8 @@ export interface KpiCard {
   delta?: number
   unit?: string
   color?: 'default' | 'green' | 'red' | 'purple'
+  /** Optional plain-language hint shown as a tooltip on the label. */
+  description?: string
 }
 
 export interface AgentRow {

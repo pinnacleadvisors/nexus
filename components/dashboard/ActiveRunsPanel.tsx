@@ -13,9 +13,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Activity, ArrowRight, Loader2 } from 'lucide-react'
-import type { Run, RunPhase } from '@/lib/types'
+import type { IdeaCard, Run, RunPhase } from '@/lib/types'
 
 const POLL_MS = 15_000
+const TITLE_MAX_CHARS = 60
 
 const ACTIVE_PHASES: RunPhase[] = [
   'ideate', 'spec', 'decompose', 'build', 'review', 'launch', 'measure', 'optimise',
@@ -27,6 +28,13 @@ function timeAgo(iso: string): string {
   if (seconds < 3600)  return `${Math.floor(seconds / 60)}m`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
   return `${Math.floor(seconds / 86400)}d`
+}
+
+function ideaTitle(idea: IdeaCard | undefined, fallbackId: string): string {
+  if (!idea) return `idea:${fallbackId.slice(0, 8)}`
+  const raw = (idea.description || '').trim().split(/[.!?\n]/)[0]
+  if (!raw) return `idea:${fallbackId.slice(0, 8)}`
+  return raw.length > TITLE_MAX_CHARS ? raw.slice(0, TITLE_MAX_CHARS - 1).trimEnd() + '…' : raw
 }
 
 const PHASE_COLOR: Record<RunPhase, { bg: string; fg: string }> = {
@@ -43,28 +51,38 @@ const PHASE_COLOR: Record<RunPhase, { bg: string; fg: string }> = {
 
 export default function ActiveRunsPanel() {
   const [runs, setRuns] = useState<Run[] | null>(null)
+  const [ideaTitles, setIdeaTitles] = useState<Map<string, IdeaCard>>(new Map())
 
   useEffect(() => {
     let cancelled = false
     async function tick() {
       try {
+        // Phase queries + ideas list in parallel — ideas are cached so the
+        // poll doesn't keep refetching them while the row count is stable.
+        const [results, ideas] = await Promise.all([
+          Promise.all(
+            ACTIVE_PHASES.map(p =>
+              fetch(`/api/runs?phase=${p}`, { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : { runs: [] })
+                .then((j: { runs?: Run[] }) => j.runs ?? [])
+                .catch(() => [] as Run[])
+            )
+          ),
+          fetch('/api/ideas', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : { ideas: [] })
+            .then((j: { ideas?: IdeaCard[] }) => j.ideas ?? [])
+            .catch(() => [] as IdeaCard[]),
+        ])
         const all: Run[] = []
-        // Fetch all active phases in parallel — one call per phase keeps the
-        // /api/runs query simple and aligns with how the controller indexes.
-        const results = await Promise.all(
-          ACTIVE_PHASES.map(p =>
-            fetch(`/api/runs?phase=${p}`, { cache: 'no-store' })
-              .then(r => r.ok ? r.json() : { runs: [] })
-              .then((j: { runs?: Run[] }) => j.runs ?? [])
-              .catch(() => [] as Run[])
-          )
-        )
         for (const r of results) all.push(...r)
         // De-dupe + sort newest first
         const seen = new Set<string>()
         const unique = all.filter(r => seen.has(r.id) ? false : (seen.add(r.id), true))
         unique.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        if (!cancelled) setRuns(unique.slice(0, 8))
+        if (!cancelled) {
+          setRuns(unique.slice(0, 8))
+          setIdeaTitles(new Map(ideas.map(i => [i.id, i])))
+        }
       } catch { /* keep last */ }
     }
     tick()
@@ -96,7 +114,7 @@ export default function ActiveRunsPanel() {
 
       {runs !== null && runs.length === 0 && (
         <p className="text-xs" style={{ color: '#55556a' }}>
-          Hive idle. Pick an idea from the library and hit ▶ to spin one up.
+          No runs in flight. Pick an idea from the library and hit ▶ to spin one up.
         </p>
       )}
 
@@ -119,8 +137,14 @@ export default function ActiveRunsPanel() {
                 >
                   {run.phase}
                 </span>
-                <span className="text-xs flex-1 truncate" style={{ color: '#e8e8f0' }}>
-                  {run.ideaId ? `idea:${run.ideaId.slice(0, 8)}` : `run:${run.id.slice(0, 8)}`}
+                <span
+                  className="text-xs flex-1 truncate"
+                  style={{ color: '#e8e8f0' }}
+                  title={run.ideaId ? ideaTitle(ideaTitles.get(run.ideaId), run.ideaId) : `run:${run.id}`}
+                >
+                  {run.ideaId
+                    ? ideaTitle(ideaTitles.get(run.ideaId), run.ideaId)
+                    : `run:${run.id.slice(0, 8)}`}
                 </span>
                 <span className="text-xs tabular-nums" style={{ color: '#55556a' }}>
                   {timeAgo(run.updatedAt)} ago
