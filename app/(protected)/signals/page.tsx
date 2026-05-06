@@ -55,6 +55,19 @@ const FILTER_ORDER: (SignalStatus | 'all')[] = [
   'all', 'new', 'triaging', 'accepted', 'deferred', 'rejected', 'implemented',
 ]
 
+// Plain-English explanation per filter so users don't think "New 0" means
+// "your submission failed" — the council moves signals out of New within
+// minutes, so most accounts see 0 here even after a fresh submission.
+const FILTER_DESCRIPTION: Record<SignalStatus | 'all', string> = {
+  all:         'Every signal you have ever captured, regardless of status.',
+  new:         'Captured but not yet triaged. Usually empties out within a minute as the council picks it up.',
+  triaging:    'Council is running its 4-pass evaluation (Memory → Architect → Tester → Judge).',
+  accepted:    'Council judged this is worth doing — promoted to the roadmap.',
+  deferred:    'Council judged this is worth doing but not now. Re-evaluated periodically.',
+  rejected:    'Council judged this is not worth doing. See the verdict for the reason.',
+  implemented: 'Accepted signal that has been built — closed out.',
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function SignalsPage() {
   const [kind, setKind]                 = useState<SignalKind>('idea')
@@ -325,7 +338,8 @@ export default function SignalsPage() {
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className="px-3 py-1 rounded-full text-xs font-medium transition-all"
+                    title={FILTER_DESCRIPTION[f]}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-all cursor-help"
                     style={active && meta
                       ? { backgroundColor: meta.bg, color: meta.color, border: `1px solid ${meta.color}44` }
                       : active

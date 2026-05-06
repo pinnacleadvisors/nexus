@@ -33,14 +33,35 @@ interface DashboardData {
   source: 'supabase' | 'mock'
 }
 
+// Cache key for the most-recently-fetched real dashboard payload — restored
+// on mount to kill the "Demo data → real data" flicker on browser back-nav.
+const DASHBOARD_CACHE_KEY = 'nexus:dashboard:last-supabase'
+
+function readCachedDashboard(): DashboardData | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DashboardData
+    // Only restore if it was real data (not a cached mock)
+    if (parsed.source !== 'supabase') return null
+    return parsed
+  } catch { return null }
+}
+
 export default function DashboardPage() {
   const [range, setRange]       = useState<DateRange>('30d')
-  const [data, setData]         = useState<DashboardData>({
-    agents: AGENT_ROWS,
-    revenue: REVENUE_DATA,
-    kpis: KPI_DATA,
-    source: 'mock',
-  })
+  // On mount, hydrate from sessionStorage if we have a recent real payload —
+  // skips the mock-data render path entirely on back-nav. First-ever visits
+  // still fall through to mock until the fetch completes.
+  const [data, setData]         = useState<DashboardData>(() =>
+    readCachedDashboard() ?? {
+      agents: AGENT_ROWS,
+      revenue: REVENUE_DATA,
+      kpis: KPI_DATA,
+      source: 'mock',
+    },
+  )
   const [loading, setLoading]   = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
   const alertsRef = useRef<HTMLDivElement | null>(null)
@@ -61,6 +82,12 @@ export default function DashboardPage() {
       if (res.ok) {
         const json = await res.json() as DashboardData
         setData(json)
+        // Cache real payloads only — skips mock so we don't accidentally
+        // restore "Demo data" mode on next mount.
+        if (json.source === 'supabase' && typeof window !== 'undefined') {
+          try { sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(json)) }
+          catch { /* quota exceeded — non-fatal */ }
+        }
       }
     } catch {
       // Keep existing data on error
