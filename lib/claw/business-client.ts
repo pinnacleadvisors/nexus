@@ -96,11 +96,32 @@ export async function resolveClaudeCodeConfig(
   return null
 }
 
+/**
+ * Phase 6 — feature flag escape hatches for the per-business container rollout.
+ *
+ * `DISABLE_PER_BUSINESS_GATEWAY=1` globally disables business-scoped lookups
+ * (force-falls-through to user defaults). For emergency rollback.
+ *
+ * `BUSINESS_GATEWAY_BYPASS_SLUGS=foo,bar` skips business secrets only for
+ * the listed slugs — used during pilot rollouts to keep specific businesses
+ * on the shared gateway while others are migrated.
+ *
+ * Both default OFF — when no business secrets exist for a slug, the resolver
+ * already falls through to user defaults, so this matters only when a slug
+ * HAS been provisioned and we want to ignore it temporarily.
+ */
+function shouldBypassBusinessGateway(slug: string): boolean {
+  if (process.env.DISABLE_PER_BUSINESS_GATEWAY === '1') return true
+  const list = process.env.BUSINESS_GATEWAY_BYPASS_SLUGS
+  if (!list) return false
+  return list.split(',').map(s => s.trim()).filter(Boolean).includes(slug)
+}
+
 export async function resolveClawConfig(
   userId: string,
   businessSlug?: string | null,
 ): Promise<BusinessClawConfig | null> {
-  if (businessSlug && isBusinessSlug(businessSlug)) {
+  if (businessSlug && isBusinessSlug(businessSlug) && !shouldBypassBusinessGateway(businessSlug)) {
     const cfg = await getBusinessClawConfig(userId, businessSlug)
     if (cfg) return cfg
   }
