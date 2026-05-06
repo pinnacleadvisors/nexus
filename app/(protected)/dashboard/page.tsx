@@ -121,7 +121,7 @@ export default function DashboardPage() {
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-sm" style={{ color: '#9090b0' }}>
-              What the Hive is doing right now, what needs your attention, and what it&apos;s costing.
+              What your platform is doing right now, what needs your attention, and what it&apos;s costing.
             </p>
             {/* Data source indicator */}
             <span
