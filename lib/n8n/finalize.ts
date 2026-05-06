@@ -19,6 +19,7 @@ import { analyzeWorkflow } from './gap-detector'
 import type { N8nWorkflow } from './types'
 import { parseGeneratedOutput } from './parse-output'
 import { buildFallbackWorkflow } from './scaffold'
+import { validateWorkflow } from './validate'
 import { createServerClient } from '@/lib/supabase'
 import { automationToRow, rowToAutomation, type AutomationRow } from '@/lib/idea-db'
 import type { SavedAutomation } from '@/lib/types'
@@ -81,9 +82,23 @@ export async function finaliseGeneration(args: FinaliseArgs): Promise<FinalisedR
     aiRaw = aiText
     const parsed = parseGeneratedOutput(aiText)
     if (parsed.workflow) {
-      workflow    = parsed.workflow
-      checklist   = parsed.checklist
-      explanation = parsed.explanation
+      // Structural validation gate (Phase 3c). If the AI emits something
+      // shaped wrong — duplicate node names, dangling connections, no
+      // trigger — we fall through to the scaffold rather than trying to
+      // import a broken workflow into n8n. Warnings (e.g. dispatch node
+      // missing a tool budget) are logged but non-fatal.
+      const validation = validateWorkflow(parsed.workflow)
+      if (validation.ok) {
+        workflow    = parsed.workflow
+        checklist   = parsed.checklist
+        explanation = parsed.explanation
+        if (validation.warnings.length > 0) {
+          console.warn('[n8n/finalize] workflow warnings:', validation.warnings.slice(0, 5))
+        }
+      } else {
+        fallbackUsed   = true
+        fallbackReason = fallbackReason ?? `Workflow failed structural validation: ${validation.errors.slice(0, 3).join('; ')}`
+      }
     } else {
       fallbackUsed   = true
       fallbackReason = fallbackReason ?? 'Failed to parse workflow JSON from AI response'

@@ -294,7 +294,9 @@ function buildAgentBrief(body: DispatchBody, env: Record<string, string>): strin
   ]
   if (inputs.description)     parts.push(`\nIdea description: ${inputs.description}`)
   if (inputs.howItMakesMoney) parts.push(`\nMoney model: ${inputs.howItMakesMoney}`)
-  if (inputs.tools?.length)   parts.push(`\nSuggested tools: ${inputs.tools.join(', ')}`)
+  if (inputs.tools?.length) {
+    parts.push(`\nTool budget — pick the most appropriate from this list based on what's installed in your runtime (MCPs / skills / Composio actions). The list is ranked most-likely-fit first; you may also use any other tool you have if none of these fit:\n  - ${inputs.tools.join('\n  - ')}`)
+  }
   if (body.asset)             parts.push(`\nExpected asset type: ${body.asset}`)
   if (body.swarm) {
     parts.push(
