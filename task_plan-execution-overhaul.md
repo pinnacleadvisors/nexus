@@ -214,6 +214,26 @@ User reviews 0.1–0.5 before Phase 1 starts.
 
 ---
 
-## Progress
+## Progress (as of 2026-05-07)
 
-(empty — fill in as tasks complete)
+### Completed
+- [x] **Phase 0** — locked: per-business container model, Composio for OAuth, Coolify API for provisioning, feature-flagged parallel rollout, self-hosted n8n on Coolify
+- [x] **Phase 1** — Composio split into `client.ts` + `doppler.ts`; migration 033 `connected_accounts`; `lib/oauth/providers.ts` registry (15 platforms across social/email/productivity/comms/dev/commerce/design/analytics); frontend-design skill installed at `.claude/skills/frontend-design/`; ADR 004 documents skipping GSD
+- [x] **Phase 2** — `/api/connected-accounts/{init,callback,[id]}` + list endpoint; `/settings/accounts` page + `AccountList` component (categorised provider grid + connect/disconnect); SettingsTabs gains "Accounts" tab; `lib/composio/actions.executeBusinessAction()` with `ConnectedAccountMissingError`
+- [x] **Phase 3** — Strategist spec gains "Tool budget" section + responsibility #5 (≥2 tools per dispatch); dispatch route's brief reframes "Suggested tools" → "Tool budget — pick the most appropriate"; `lib/n8n/validate.ts` structural validator gates the AI-parsed workflow in `finalize.ts`
+- [x] **Phase 4** — `n8n-debugger` agent spec (3-iteration cap); `lib/n8n/execute-test.ts` (static + n8n schema dry-run); `POST /api/n8n/debug` dispatches debugger via the user's gateway and verifies the patched output
+- [x] **Phase 5** — `lib/businesses/mcp-manifest.ts` (foundational + 6 niche profiles); `services/claude-gateway/Dockerfile.business`; `lib/coolify/client.ts` (createApp/start/stop/delete/list); `POST /api/businesses/:slug/provision` (deferred activation); `/api/cron/scale-down-businesses` every 30 min idle-pause
+- [x] **Phase 6** — `shouldBypassBusinessGateway()` reads `DISABLE_PER_BUSINESS_GATEWAY` + `BUSINESS_GATEWAY_BYPASS_SLUGS`; rollout runbook at `docs/runbooks/per-business-container-rollout.md` (Phases A–H)
+- [x] **Phase 7** — AGENTS.md updated with n8n-debugger row + tool-budget + per-business-container + connected-accounts sections; deprecation warning on env-only OPENCLAW fallback; 4 memory atoms + 1 MOC (`workflow-execution-overhaul`) written to local cache
+
+### Remaining (manual / pilot)
+- [ ] Push memory-hq atoms via `cli.mjs --backend=github` once `MEMORY_HQ_TOKEN` is in shell env (atoms are currently local-only)
+- [ ] Build + push the per-business image to GHCR (`docker build -f Dockerfile.business …`) — Phase A of the runbook
+- [ ] Pilot: pick one low-stakes business, run the full Phase A→F migration, gather ≥7 days of stable telemetry
+- [ ] Phase 6b — actual pilot rollout (manual; runbook owns the procedure)
+- [ ] After pilot: migrate remaining businesses; remove env-only `OPENCLAW_GATEWAY_URL` fallback
+
+### Blockers / Open Questions
+- None blocking — pilot rollout requires Coolify access + Doppler secret population (operator task per runbook).
+- Connected-account UI uses `Plug` icon — verify it renders correctly in the existing lucide-react version.
+- The Coolify API shape (Phase 5b `lib/coolify/client.ts`) is modelled from v4 docs; confirm against the live instance during pilot Phase C.

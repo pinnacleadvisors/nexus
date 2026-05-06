@@ -139,6 +139,17 @@ export async function resolveClawConfig(
   const envUrl    = process.env.OPENCLAW_GATEWAY_URL
   const envBearer = process.env.OPENCLAW_BEARER_TOKEN
   if (envUrl && envBearer) {
+    // Phase 7c — env-only fallback is deprecated. Once every business has its
+    // own provisioned container, this branch should be unreachable. Logging
+    // here lets us spot lingering env-only callers before the env fallback
+    // is removed.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[business-client] resolveClawConfig falling through to env-only OPENCLAW_GATEWAY_URL — ' +
+        'deprecated. Provision a per-business container or set business:<slug> secrets. ' +
+        'See docs/runbooks/per-business-container-rollout.md.',
+      )
+    }
     return { gatewayUrl: envUrl, bearerToken: envBearer }
   }
   return null

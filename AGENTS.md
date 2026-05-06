@@ -161,7 +161,8 @@ Specialist subagents in `.claude/agents/` — Claude Code auto-discovers and del
 | **Firecrawl** | `.claude/agents/firecrawl.md` | Any agent needs web scrape / crawl / search |
 | **Supermemory** | `.claude/agents/supermemory.md` | Every agent calls this after a run to record changes + promote facts |
 | **Workflow Optimizer** | `.claude/agents/workflow-optimizer.md` | Review-node feedback triggers a minimal diff to the producing agent |
-| **n8n Strategist** | `.claude/agents/n8n-strategist.md` | Designing an n8n workflow for an idea card (build or maintain). Classifies each step — managed agent? swarm? asset-gated review? — and emits importable JSON. |
+| **n8n Strategist** | `.claude/agents/n8n-strategist.md` | Designing an n8n workflow for an idea card (build or maintain). Classifies each step — managed agent? swarm? asset-gated review? — and emits importable JSON. Now emits **tool budgets** instead of single tool choices (see "Tool budget" below). |
+| **n8n Debugger** | `.claude/agents/n8n-debugger.md` | Repair-only: takes a malformed workflow + error list, looks up canonical schemas via the n8n MCP, returns a patched workflow JSON. Called by `POST /api/n8n/debug`. Caps internal iterations at 3. |
 | **Doppler Broker** | `.claude/agents/doppler-broker.md` | Mid-session secret-gated action. Parent supplies a `secret` name + `command`; broker fetches via `/api/composio/doppler`, runs the command with the secret in env, returns scrubbed output. The secret value never enters the parent's context. See ADR 001. |
 
 These agents are spawned automatically by Claude Code when tasks match their description. They share the Doppler-injected environment and have access to the tools listed in their frontmatter.
@@ -183,6 +184,35 @@ When the user says "create an agent that…" (or any paraphrase), follow `docs/a
 1. Delegate to the `agent-generator` managed agent.
 2. It emits a `.claude/agents/<slug>.md` spec, upserts an `agent_library` row via `POST /api/agents`, seeds molecular memory with an entity + atoms + MOC linkage, and updates `memory/platform/SECRETS.md` if new env vars are introduced.
 3. Runs the transferability checklist so the agent is reusable outside Claude.
+
+### Tool budget — runtime tool selection
+
+Every managed-agent dispatch carries an `inputs.tools: string[]` budget — at least 2 plausible tools the agent can pick from for that step. The dispatch route prepends a "Tool budget — pick the most appropriate" instruction to the agent's brief so the runtime CLI selects based on what's installed in its container's MCP/skill set.
+
+Anti-pattern: `tools: ['canva']` (single choice) — the whole point of dispatch is letting the agent react to the brief. Strategist enforces ≥2 options; `lib/n8n/validate.ts` warns on any node that violates this.
+
+### Per-business containers (Phase 5+)
+
+Each business gets its own Coolify Docker container running the Claude Code gateway. The container has the business's MCP set baked in (resolved from `lib/businesses/mcp-manifest.ts` by niche/money_model) and Composio connected-account IDs scoped to that business.
+
+Provisioning: `POST /api/businesses/:slug/provision` — resolves manifest, creates the Coolify app via `lib/coolify/client.ts`, persists `business:<slug>` gateway secrets so `resolveClawConfig()` picks up the new container automatically. Activation is deferred (operator clicks Start in Coolify after review).
+
+Idle scale-down: `app/api/cron/scale-down-businesses` runs every 30 min, stops containers idle > 1h based on `connected_accounts.last_used_at`. Never-used containers get a 24h grace period.
+
+Feature-flag escape hatches:
+- `DISABLE_PER_BUSINESS_GATEWAY=1` — globally bypass (emergency rollback).
+- `BUSINESS_GATEWAY_BYPASS_SLUGS=foo,bar` — bypass listed slugs only.
+
+Rollout playbook: `docs/runbooks/per-business-container-rollout.md`.
+
+### Connected accounts (OAuth via Composio)
+
+OAuth-authenticated platform integrations (Twitter/X, LinkedIn, Gmail, Slack, Notion, Stripe, Shopify, Canva, GA, etc.) are brokered through Composio. Tokens never touch our database — Composio holds them, we store only the `connected_account_id`.
+
+- `lib/oauth/providers.ts` — registry of supported platforms + per-platform Composio action ids.
+- `lib/composio/actions.ts` `executeBusinessAction()` — workflow-side helper. Looks up `connected_account_id` for `(user, business, platform)`, calls Composio, bumps `last_used_at`. Throws `ConnectedAccountMissingError` so workflow agents can surface a "connect <platform>" prompt rather than failing the whole run.
+- `/settings/accounts` — owner UI (lists connections, connect via Composio OAuth, disconnect).
+- `connected_accounts` table — `(user_id, business_slug, platform) → composio_account_id`. Migration 033.
 
 ### Review-node feedback loop
 
