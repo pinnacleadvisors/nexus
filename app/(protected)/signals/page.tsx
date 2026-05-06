@@ -416,8 +416,11 @@ export default function SignalsPage() {
                       {expanded && (
                         <div className="px-4 pb-4 border-t" style={{ borderColor: '#1a1a2e' }}>
                           {detailLoading ? (
-                            <div className="flex items-center gap-2 text-xs py-3" style={{ color: '#6c6c88' }}>
-                              <Loader2 size={12} className="animate-spin" />Loading evaluations…
+                            <div className="py-3 space-y-2" aria-busy="true" aria-label="Loading evaluations">
+                              <div className="h-3 w-1/3 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-3/4 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-2/3 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
+                              <div className="h-3 w-4/5 rounded animate-pulse" style={{ backgroundColor: '#1a1a2e' }} />
                             </div>
                           ) : detail && detail.id === s.id ? (
                             <DetailPanel

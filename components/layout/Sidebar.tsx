@@ -136,15 +136,23 @@ export default function Sidebar() {
       <div className="px-2 pb-4 space-y-2 shrink-0 border-t pt-3" style={{ borderColor: '#24243e' }}>
         <div
           className={cn(
-            'flex items-center px-3 py-2',
-            collapsed && 'justify-center px-0'
+            'flex items-center gap-3 rounded-lg px-3 py-2 transition-colors',
+            collapsed && 'justify-center gap-0 px-0'
           )}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#12121e' }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+          title="Account — click your avatar for sign-out, profile, and security"
         >
           <UserButton />
           {!collapsed && (
-            <span className="ml-3 text-sm" style={{ color: '#9090b0' }}>
-              Account
-            </span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
+                Account
+              </span>
+              <span className="text-[10px] uppercase tracking-wide" style={{ color: '#55556a' }}>
+                Click avatar
+              </span>
+            </div>
           )}
         </div>
 
