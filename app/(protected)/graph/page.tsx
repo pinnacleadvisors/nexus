@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Loader2,
   GitBranch,
+  Maximize2,
 } from 'lucide-react'
 import type { GraphData, GraphNode, NodeType } from '@/lib/graph/types'
 import { NODE_COLORS, NODE_TYPE_LABELS } from '@/lib/graph/types'
@@ -194,6 +195,10 @@ export default function GraphPage() {
   const [filteredTypes,   setFilteredTypes]   = useState<Set<NodeType>>(new Set())
   const [layoutMode,      setLayoutMode]      = useState<LayoutMode>('force')
   const [sidebarOpen,     setSidebarOpen]     = useState(true)
+  // Bump to ask GraphScene to re-run its camera-fit calculation.
+  // Incremented on Fit View button click + whenever the layout mode changes
+  // (positions move, the previous fit is now wrong).
+  const [fitToken,        setFitToken]        = useState(0)
   // Temporal replay state
   const [replayEnabled,   setReplayEnabled]   = useState(false)
   const [replayValue,     setReplayValue]     = useState(100)   // 0–100 = oldest–newest
@@ -220,6 +225,11 @@ export default function GraphPage() {
   }, [])
 
   useEffect(() => { fetchGraph() }, [fetchGraph])
+
+  // Re-fit the camera whenever the layout mode flips — node positions change
+  // and the previous fit is now wrong (the user expects the new layout to
+  // fill the viewport, not preserve the prior camera angle).
+  useEffect(() => { setFitToken(t => t + 1) }, [layoutMode])
 
   // Derive displayable graph (layout + temporal filter)
   const displayGraph: GraphData | null = (() => {
@@ -451,10 +461,20 @@ export default function GraphPage() {
 
           <div className="ml-auto flex items-center gap-2">
             <button
+              onClick={() => setFitToken(t => t + 1)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
+              style={{ backgroundColor: 'rgba(13,13,20,0.85)', border: '1px solid #1a1a2e', color: '#9090b0' }}
+              title="Re-fit camera to all visible nodes"
+            >
+              <Maximize2 size={11} />
+              Fit view
+            </button>
+            <button
               onClick={() => fetchGraph(true)}
               disabled={loading}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
               style={{ backgroundColor: 'rgba(13,13,20,0.85)', border: '1px solid #1a1a2e', color: '#9090b0' }}
+              title="Re-build the graph from the latest data — non-destructive, just refreshes the snapshot"
             >
               <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
               Rebuild
@@ -515,6 +535,7 @@ export default function GraphPage() {
             selectedId={selectedNode?.id ?? null}
             filteredTypes={filteredTypes}
             searchQuery={searchQuery}
+            fitToken={fitToken}
             onNodeClick={n => setSelectedNode(prev => prev?.id === n.id ? null : n)}
             onNodeHover={setHoveredNode}
           />

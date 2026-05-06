@@ -26,7 +26,10 @@ function NodeMesh({
   const meshRef     = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
   const color       = NODE_COLORS[node.type] ?? '#6b7280'
-  const baseSize    = 0.8 + node.pageRank * 1.6 + Math.min(node.connections, 8) * 0.15
+  // Node radius. Floor of 1.6 keeps 0-edge / 0-pagerank graphs visible —
+  // previously these rendered as 0.8-radius dots that looked like 1px specks
+  // once CameraFit pulled the camera 90+ units back.
+  const baseSize    = 1.6 + node.pageRank * 1.6 + Math.min(node.connections, 8) * 0.15
   const emissiveInt = selected ? 1.2 : hovered ? 0.9 : dimmed ? 0.05 : 0.4
 
   useFrame((_, delta) => {
@@ -148,22 +151,31 @@ function EdgeLine({
 
 // ── Camera auto-fit ───────────────────────────────────────────────────────────
 
-function CameraFit({ nodes }: { nodes: GraphNode[] }) {
+// fitToken: any time the parent wants to refit (button click, layout change),
+// it bumps this counter and we re-run the fit calculation. The internal `seen`
+// ref tracks the last token we processed so the work happens once per request.
+function CameraFit({ nodes, fitToken }: { nodes: GraphNode[]; fitToken: number }) {
   const { camera } = useThree()
-  const fitted = useRef(false)
+  const seen = useRef(-1)
 
   useFrame(() => {
-    if (fitted.current || nodes.length === 0) return
-    fitted.current = true
-    // Find bounding sphere
+    if (seen.current === fitToken || nodes.length === 0) return
+    seen.current = fitToken
+    // Find bounding sphere of node positions, then move the camera back along
+    // +Z far enough that the longest box edge fills ~70% of the FOV. Min
+    // distance keeps single-node / collapsed graphs from going inside the
+    // sphere (which made nodes look invisible because the camera was past them).
     const positions = nodes.map(n =>
       new THREE.Vector3(n.position3d.x, n.position3d.y, n.position3d.z),
     )
     const box = new THREE.Box3().setFromPoints(positions)
     const center = new THREE.Vector3()
     box.getCenter(center)
-    const size = box.getSize(new THREE.Vector3()).length()
-    camera.position.set(center.x, center.y + size * 0.3, center.z + size * 0.9)
+    const sizeVec = box.getSize(new THREE.Vector3())
+    const longestEdge = Math.max(sizeVec.x, sizeVec.y, sizeVec.z, 20)
+    // Fit longestEdge into ~70% of vertical FOV (60°) → distance = (edge/2) / tan(21°)
+    const distance = Math.max(40, (longestEdge / 2) / Math.tan((Math.PI / 180) * 21))
+    camera.position.set(center.x, center.y + distance * 0.25, center.z + distance)
     camera.lookAt(center)
   })
 
@@ -177,6 +189,7 @@ function Scene({
   selectedId,
   filteredTypes,
   searchQuery,
+  fitToken,
   onNodeClick,
   onNodeHover,
 }: {
@@ -184,6 +197,7 @@ function Scene({
   selectedId:    string | null
   filteredTypes: Set<string>
   searchQuery:   string
+  fitToken:      number
   onNodeClick:   (n: GraphNode) => void
   onNodeHover?:  (n: GraphNode | null) => void
 }) {
@@ -239,7 +253,7 @@ function Scene({
       <pointLight position={[100, 100, 100]} intensity={1.2} />
       <pointLight position={[-100, -100, -100]} intensity={0.6} color="#6c63ff" />
 
-      <CameraFit nodes={visibleNodes} />
+      <CameraFit nodes={visibleNodes} fitToken={fitToken} />
       <OrbitControls enablePan enableZoom enableRotate dampingFactor={0.1} />
 
       {/* Edges */}
@@ -319,6 +333,8 @@ export interface GraphSceneProps {
   selectedId:    string | null
   filteredTypes: Set<string>
   searchQuery:   string
+  /** Bump this number to force a camera re-fit (Fit View button). */
+  fitToken?:     number
   onNodeClick:   (n: GraphNode) => void
   onNodeHover?:  (n: GraphNode | null) => void
 }
@@ -331,7 +347,7 @@ export default function GraphScene(props: GraphSceneProps) {
         style={{ background: '#050508' }}
         gl={{ antialias: true, alpha: false }}
       >
-        <Scene {...props} />
+        <Scene {...props} fitToken={props.fitToken ?? 0} />
       </Canvas>
     </CanvasErrorBoundary>
   )

@@ -101,12 +101,14 @@ export default function BoardPage() {
 
   // ── Active Run banner (A5 — forge "Build this" → /board?runId=...) ───────
   const [activeRun,    setActiveRun]    = useState<Run | null>(null)
+  const [activeRunId,  setActiveRunId]  = useState<string | null>(null)
   const [runBannerErr, setRunBannerErr] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const runId = new URLSearchParams(window.location.search).get('runId')
     if (!runId) return
+    setActiveRunId(runId)
 
     let cancelled = false
     ;(async () => {
@@ -128,6 +130,7 @@ export default function BoardPage() {
 
   function dismissRunBanner() {
     setActiveRun(null)
+    setActiveRunId(null)
     setRunBannerErr(null)
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href)
@@ -137,10 +140,15 @@ export default function BoardPage() {
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
-  const loadCards = useCallback(async (projectId?: string, type?: TaskTypeFilter) => {
+  const loadCards = useCallback(async (
+    projectId?: string,
+    type?: TaskTypeFilter,
+    runId?: string | null,
+  ) => {
     const params = new URLSearchParams()
     if (projectId && projectId !== 'all') params.set('project_id', projectId)
     if (type && type !== 'all')           params.set('type', type)
+    if (runId)                             params.set('run_id', runId)
     const qs = params.toString()
     const url = qs ? `/api/board?${qs}` : '/api/board'
 
@@ -175,15 +183,21 @@ export default function BoardPage() {
   useEffect(() => {
     // Load projects from localStorage (synced with Forge)
     setProjects(loadLocalProjects())
-    loadCards()
+    // Read runId from URL so the very first fetch is already filtered when
+    // the user landed via /board?runId=… (otherwise we'd render the full
+    // board, then re-render filtered, which flickers).
+    const initialRunId = typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('runId')
+    loadCards(undefined, undefined, initialRunId)
   }, [loadCards])
 
-  // Re-fetch when project or type filter changes
+  // Re-fetch when project / type / active-run filter changes
   useEffect(() => {
     if (source === 'loading') return
-    loadCards(activeProjectId, typeFilter)
+    loadCards(activeProjectId, typeFilter, activeRunId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId, typeFilter])
+  }, [activeProjectId, typeFilter, activeRunId])
 
   // ── Supabase Realtime ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -537,7 +551,7 @@ export default function BoardPage() {
 
           {/* Refresh */}
           <button
-            onClick={() => loadCards(activeProjectId, typeFilter)}
+            onClick={() => loadCards(activeProjectId, typeFilter, activeRunId)}
             className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
             style={{ backgroundColor: '#12121e', color: '#55556a', border: '1px solid #24243e' }}
             onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#e8e8f0')}
@@ -564,10 +578,10 @@ export default function BoardPage() {
                 className="px-1.5 py-0.5 rounded font-semibold"
                 style={{ backgroundColor: '#6c63ff', color: '#fff' }}
               >
-                Run
+                Run filter
               </span>
               <span style={{ color: '#9090b0' }}>
-                <code style={{ color: '#e8e8f0' }}>{activeRun.id.slice(0, 8)}</code>
+                Showing only cards from run <code style={{ color: '#e8e8f0' }}>{activeRun.id.slice(0, 8)}</code>
                 {' · '}phase <code style={{ color: '#22c55e' }}>{activeRun.phase}</code>
                 {' · '}status <code style={{ color: '#e8e8f0' }}>{activeRun.status}</code>
                 {activeRun.ideaId ? <>{' · '}idea <code>{activeRun.ideaId.slice(0, 8)}</code></> : null}
@@ -602,7 +616,7 @@ export default function BoardPage() {
             </p>
           </div>
           <button
-            onClick={() => void loadCards(activeProjectId, typeFilter)}
+            onClick={() => void loadCards(activeProjectId, typeFilter, activeRunId)}
             className="text-xs px-2 py-1 rounded transition-colors"
             style={{ color: '#fff', backgroundColor: '#ef4444', border: '1px solid #ef444466' }}
           >

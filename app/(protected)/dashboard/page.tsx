@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import KpiGrid from '@/components/dashboard/KpiGrid'
 import AgentTable from '@/components/dashboard/AgentTable'
@@ -43,6 +43,16 @@ export default function DashboardPage() {
   })
   const [loading, setLoading]   = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
+  const alertsRef = useRef<HTMLDivElement | null>(null)
+
+  // Scroll the alerts panel into view when toggled on — it lives at the
+  // bottom of the dashboard, below the fold, so without this the click
+  // produces no visible feedback (audit finding #5).
+  useEffect(() => {
+    if (showAlerts && alertsRef.current) {
+      alertsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showAlerts])
 
   const fetchData = useCallback(async (r: DateRange) => {
     setLoading(true)
@@ -186,7 +196,11 @@ export default function DashboardPage() {
       <WorstOffendersWidget windowHours={range === '7d' ? 168 : range === '30d' ? 720 : 720} />
 
       {/* ── Alerts panel (toggle) ───────────────────────────────────────── */}
-      {showAlerts && <AlertsPanel />}
+      {showAlerts && (
+        <div ref={alertsRef} className="scroll-mt-4">
+          <AlertsPanel />
+        </div>
+      )}
     </div>
   )
 }

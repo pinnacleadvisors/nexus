@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
   try {
     const projectId = req.nextUrl.searchParams.get('project_id')
     const typeParam = req.nextUrl.searchParams.get('type') // 'manual' | 'automated' | null
+    const runId     = req.nextUrl.searchParams.get('run_id')
 
     const db = createServerClient()
     if (!db) {
@@ -116,6 +117,11 @@ export async function GET(req: NextRequest) {
 
     if (projectId) {
       query = query.eq('project_id', projectId)
+    }
+    if (runId) {
+      // Filter to cards emitted by a specific run (migration 025 added the
+      // run_id FK). Driven by Active Runs → /board?runId=… click-through.
+      query = query.eq('run_id', runId)
     }
 
     const { data, error } = await query
