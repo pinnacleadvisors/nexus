@@ -20,7 +20,7 @@ import { createServerClient } from '@/lib/supabase'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const BASE = 'https://api.github.com'
 
@@ -94,36 +94,103 @@ async function getFile(path: string): Promise<{ content: string; sha: string } |
 }
 
 interface ChangedPath { path: string; removed: boolean }
+interface PathStats { upserted: number; deleted: number; skipped: number; unchanged: number }
 
-async function applyPaths(paths: ChangedPath[]): Promise<{ upserted: number; deleted: number; skipped: number }> {
+type Sb = ReturnType<typeof createServerClient>
+
+async function processOne(
+  sb: NonNullable<Sb>,
+  { path, removed }: ChangedPath,
+  existingShas?: Map<string, string>,
+  treeSha?: string,
+): Promise<'upserted' | 'deleted' | 'skipped' | 'unchanged'> {
+  const parts = path.split('/')
+  if (parts.length < 3 || !parts[2].endsWith('.md')) return 'skipped'
+  const kind = parts[0]
+  const table = KIND_TO_TABLE[kind]
+  if (!table) return 'skipped'
+  const scope_id = parts[1]
+  const slug = parts[2].replace(/\.md$/, '')
+  if (removed) {
+    await sb.from(table as never).delete().eq('scope_id', scope_id).eq('slug', slug)
+    return 'deleted'
+  }
+  // Fast path: tree-supplied SHA matches the mirror's stored SHA → skip the file fetch.
+  if (treeSha && existingShas?.get(path) === treeSha) return 'unchanged'
+  const f = await getFile(path)
+  if (!f) return 'skipped'
+  const { frontmatter, body } = parseFrontmatter(f.content)
+  const title = (frontmatter.title as string) || slug
+  const row: Record<string, unknown> = {
+    slug, scope_id, title, body_md: body, frontmatter, sha: f.sha, path,
+  }
+  if (kind === 'entities') row.entity_kind = (frontmatter.kind as string) || null
+  await sb.from(table as never).upsert(row as never, { onConflict: 'scope_id,slug' })
+  return 'upserted'
+}
+
+async function applyPaths(paths: ChangedPath[]): Promise<PathStats> {
   const sb = createServerClient()
   if (!sb) throw new Error('Supabase not configured')
-  let upserted = 0, deleted = 0, skipped = 0
-  for (const { path, removed } of paths) {
-    const parts = path.split('/')
-    if (parts.length < 3 || !parts[2].endsWith('.md')) { skipped += 1; continue }
-    const kind = parts[0]
-    const table = KIND_TO_TABLE[kind]
-    if (!table) { skipped += 1; continue }
-    const scope_id = parts[1]
-    const slug = parts[2].replace(/\.md$/, '')
-    if (removed) {
-      await sb.from(table as never).delete().eq('scope_id', scope_id).eq('slug', slug)
-      deleted += 1
-      continue
-    }
-    const f = await getFile(path)
-    if (!f) { skipped += 1; continue }
-    const { frontmatter, body } = parseFrontmatter(f.content)
-    const title = (frontmatter.title as string) || slug
-    const row: Record<string, unknown> = {
-      slug, scope_id, title, body_md: body, frontmatter, sha: f.sha, path,
-    }
-    if (kind === 'entities') row.entity_kind = (frontmatter.kind as string) || null
-    await sb.from(table as never).upsert(row as never, { onConflict: 'scope_id,slug' })
-    upserted += 1
+  const stats: PathStats = { upserted: 0, deleted: 0, skipped: 0, unchanged: 0 }
+  // Webhook path: usually 1–5 paths per push, no need to batch.
+  for (const cp of paths) {
+    const r = await processOne(sb, cp)
+    stats[r] += 1
   }
-  return { upserted, deleted, skipped }
+  return stats
+}
+
+async function loadExistingShas(sb: NonNullable<Sb>): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  await Promise.all(
+    Object.entries(KIND_TO_TABLE).map(async ([, table]) => {
+      // No filter on scope/slug — paged fetch in case any table is large.
+      let from = 0
+      const pageSize = 1000
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await sb
+          .from(table as never)
+          .select('path, sha')
+          .range(from, from + pageSize - 1)
+        if (error) throw error
+        const rows = (data || []) as Array<{ path: string; sha: string }>
+        for (const r of rows) if (r.path && r.sha) map.set(r.path, r.sha)
+        if (rows.length < pageSize) break
+        from += pageSize
+      }
+    }),
+  )
+  return map
+}
+
+async function reconcileTree(scopePrefix?: string): Promise<PathStats & { total: number; fetched: number }> {
+  const sb = createServerClient()
+  if (!sb) throw new Error('Supabase not configured')
+  const treeRes = await fetch(`${BASE}/repos/${repo()}/git/trees/main?recursive=1`, { headers: ghHeaders() })
+  if (!treeRes.ok) throw new Error(`tree ${treeRes.status}`)
+  const tree = (await treeRes.json()) as { tree: { path: string; type: string; sha: string }[] }
+  const filter = (p: string) =>
+    /\.md$/.test(p) &&
+    /^(atoms|entities|mocs|sources|synthesis)\//.test(p) &&
+    (!scopePrefix || p.split('/')[1] === scopePrefix)
+  const blobs = (tree.tree || []).filter((t) => t.type === 'blob' && filter(t.path))
+  const existingShas = await loadExistingShas(sb)
+  const stats: PathStats = { upserted: 0, deleted: 0, skipped: 0, unchanged: 0 }
+  const BATCH = 10
+  let fetched = 0
+  for (let i = 0; i < blobs.length; i += BATCH) {
+    const slice = blobs.slice(i, i + BATCH)
+    const results = await Promise.all(
+      slice.map((b) => processOne(sb, { path: b.path, removed: false }, existingShas, b.sha)),
+    )
+    for (const r of results) {
+      stats[r] += 1
+      if (r === 'upserted') fetched += 1
+    }
+  }
+  return { ...stats, total: blobs.length, fetched }
 }
 
 export async function POST(req: NextRequest) {
@@ -164,13 +231,14 @@ export async function GET(req: NextRequest) {
     if (allowed.length && !allowed.includes(userId)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  // Walk full tree and upsert everything. Slow but rare.
-  const treeRes = await fetch(`${BASE}/repos/${repo()}/git/trees/main?recursive=1`, { headers: ghHeaders() })
-  if (!treeRes.ok) return NextResponse.json({ error: `tree ${treeRes.status}` }, { status: 502 })
-  const tree = (await treeRes.json()) as { tree: { path: string; type: string }[] }
-  const paths: ChangedPath[] = (tree.tree || [])
-    .filter((t) => t.type === 'blob' && /\.md$/.test(t.path) && /^(atoms|entities|mocs|sources|synthesis)\//.test(t.path))
-    .map((t) => ({ path: t.path, removed: false }))
-  const stats = await applyPaths(paths)
-  return NextResponse.json({ ok: true, mode: 'reconcile', ...stats, total: paths.length })
+  // Walk full tree, skip paths whose tree-SHA already matches the mirror,
+  // and process the rest in parallel batches. Optional ?scope=<id> narrows
+  // to one scope (e.g. ?scope=55bedf46-nexus) when full reconcile is too big.
+  const scopePrefix = req.nextUrl.searchParams.get('scope') || undefined
+  try {
+    const stats = await reconcileTree(scopePrefix)
+    return NextResponse.json({ ok: true, mode: 'reconcile', scopePrefix: scopePrefix || null, ...stats })
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 })
+  }
 }
