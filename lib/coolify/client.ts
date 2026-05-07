@@ -11,10 +11,14 @@
  *   - stopApp(id)                               — `POST /applications/:id/stop`
  *
  * Required env:
- *   COOLIFY_BASE_URL    e.g. https://coolify.nexus.example.com
- *   COOLIFY_API_TOKEN   personal access token from Coolify settings
- *   COOLIFY_PROJECT_ID  uuid of the Coolify project that holds Nexus apps
- *   COOLIFY_SERVER_UUID uuid of the Coolify server the apps run on
+ *   COOLIFY_BASE_URL                   e.g. https://coolify.coolifycloudtunnel.uk
+ *   COOLIFY_API_TOKEN                  personal access token from Coolify settings
+ *   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES uuid of the Coolify project that holds per-business apps
+ *   COOLIFY_KVM4_SERVER_UUID           uuid of the Coolify server the apps run on (KVM4 in our setup)
+ *
+ * Naming reflects the multi-instance + multi-project Coolify setup: KVM2 and
+ * KVM4 each have their own project for non-business apps; this code path
+ * targets the dedicated "Nexus Businesses" project on KVM4 specifically.
  *
  * The wrapper throws CoolifyError on any non-2xx; callers should wrap in
  * try/catch and log to audit_log via lib/audit.
@@ -43,12 +47,12 @@ interface CoolifyConfig {
 function getConfig(): CoolifyConfig {
   const baseUrl    = process.env.COOLIFY_BASE_URL
   const token      = process.env.COOLIFY_API_TOKEN
-  const projectId  = process.env.COOLIFY_PROJECT_ID
-  const serverUuid = process.env.COOLIFY_SERVER_UUID
+  const projectId  = process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES
+  const serverUuid = process.env.COOLIFY_KVM4_SERVER_UUID
   if (!baseUrl)    throw new CoolifyError('COOLIFY_BASE_URL not configured', 500)
   if (!token)      throw new CoolifyError('COOLIFY_API_TOKEN not configured', 500)
-  if (!projectId)  throw new CoolifyError('COOLIFY_PROJECT_ID not configured', 500)
-  if (!serverUuid) throw new CoolifyError('COOLIFY_SERVER_UUID not configured', 500)
+  if (!projectId)  throw new CoolifyError('COOLIFY_PROJECT_ID_NEXUS_BUSINESSES not configured', 500)
+  if (!serverUuid) throw new CoolifyError('COOLIFY_KVM4_SERVER_UUID not configured', 500)
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
     token,
@@ -61,8 +65,8 @@ export function isConfigured(): boolean {
   return Boolean(
     process.env.COOLIFY_BASE_URL &&
     process.env.COOLIFY_API_TOKEN &&
-    process.env.COOLIFY_PROJECT_ID &&
-    process.env.COOLIFY_SERVER_UUID,
+    process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES &&
+    process.env.COOLIFY_KVM4_SERVER_UUID,
   )
 }
 
