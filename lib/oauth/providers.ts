@@ -94,6 +94,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'LINKEDIN_GET_COMPANY_INFO',
     ],
     featuredFor: ['b2b', 'saas', 'agency'],
+    sharePolicy: 'per-business',
   },
   {
     id: 'instagram',
@@ -107,6 +108,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'INSTAGRAM_GET_USER_MEDIA',
     ],
     featuredFor: ['ecommerce', 'creator', 'agency'],
+    sharePolicy: 'per-business',
   },
   {
     id: 'tiktok',
@@ -137,6 +139,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'YOUTUBE_VIDEOS_LIST',
     ],
     featuredFor: ['creator', 'content'],
+    sharePolicy: 'per-business',
   },
 
   // ── Email ───────────────────────────────────────────────────────────────
@@ -152,6 +155,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GMAIL_FETCH_EMAILS',
       'GMAIL_CREATE_EMAIL_DRAFT',
     ],
+    sharePolicy: 'per-business',
   },
   {
     id: 'outlook',
@@ -164,6 +168,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'OUTLOOK_OUTLOOK_LIST_MESSAGES',
       'OUTLOOK_OUTLOOK_CREATE_DRAFT',
     ],
+    sharePolicy: 'per-business',
   },
 
   // ── Communication ───────────────────────────────────────────────────────
@@ -178,6 +183,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'SLACK_CREATE_A_NEW_CONVERSATION',
       'SLACK_LIST_ALL_CHANNELS',
     ],
+    sharePolicy: 'per-business',
   },
   {
     id: 'discord',
@@ -190,6 +196,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'DISCORD_CREATE_THREAD',
     ],
     featuredFor: ['creator', 'community'],
+    sharePolicy: 'per-business',
   },
 
   // ── Productivity ────────────────────────────────────────────────────────
@@ -204,6 +211,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'NOTION_UPDATE_PAGE',
       'NOTION_QUERY_DATABASE',
     ],
+    sharePolicy: 'per-business',
   },
   {
     id: 'google_docs',
@@ -216,6 +224,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLEDOCS_GET_DOCUMENT_BY_ID',
       'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
     ],
+    sharePolicy: 'per-business',
   },
   {
     id: 'google_sheets',
@@ -228,6 +237,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLESHEETS_GET_SPREADSHEET_INFO',
       'GOOGLESHEETS_INSERT_DIMENSION',
     ],
+    sharePolicy: 'per-business',
   },
 
   // ── Developer ───────────────────────────────────────────────────────────
@@ -243,6 +253,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER',
     ],
     featuredFor: ['saas', 'developer'],
+    sharePolicy: 'per-business',
   },
   {
     id: 'linear',
@@ -256,6 +267,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'LINEAR_LIST_LINEAR_ISSUES',
     ],
     featuredFor: ['saas', 'developer'],
+    sharePolicy: 'per-business',
   },
 
   // ── Commerce ────────────────────────────────────────────────────────────
@@ -271,6 +283,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'STRIPE_LIST_ALL_INVOICES',
     ],
     featuredFor: ['saas', 'ecommerce'],
+    sharePolicy: 'per-business',
   },
   {
     id: 'shopify',
