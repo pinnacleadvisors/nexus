@@ -243,7 +243,19 @@ If a slug is wrong, edit the registry and re-deploy. The MCP / agent code reads 
 
 Each toolkit you intend to support needs an **Auth Config** created once in your Composio account. The Auth Config tells Composio what OAuth credentials to use (your dev app keys) and produces an `auth_config_id` that Nexus passes when initiating a connection.
 
-**For each platform you want to enable** (start with one — e.g. Gmail — for the pilot):
+> **Automation available.** [`scripts/sync-composio-auth-configs.ts`](../../scripts/sync-composio-auth-configs.ts) creates all the Composio-managed Auth Configs for you and pushes their ids back to Doppler. Skips toolkits flagged with `manualSetup` in `lib/oauth/providers.ts` (currently Twitter, Shopify, TikTok — they need your own developer app credentials so Composio can't auto-broker them).
+>
+> Local one-off:
+> ```bash
+> doppler run -- npx --yes tsx scripts/sync-composio-auth-configs.ts --dry-run   # preview
+> doppler run -- npx --yes tsx scripts/sync-composio-auth-configs.ts             # apply
+> ```
+>
+> Monthly cron via [`.github/workflows/sync-composio-auth-configs.yml`](../../.github/workflows/sync-composio-auth-configs.yml) — runs the 1st of every month and on-demand. Picks up any new providers you add to `lib/oauth/providers.ts` and creates them automatically. Required GitHub Actions secrets: `COMPOSIO_API_KEY`, `DOPPLER_SERVICE_TOKEN`, `DOPPLER_PROJECT`, `DOPPLER_CONFIG`.
+>
+> The deferred toolkits below still need the manual flow.
+
+**For each manual-setup platform** (Twitter, Shopify, TikTok, plus any toolkit not Composio-managed in your case):
 
 1. Open https://app.composio.dev (sign in).
 2. Left sidebar → **Auth Configs** (or **Integrations** in some UI versions).
@@ -272,6 +284,8 @@ COMPOSIO_AUTH_CONFIG_LINKEDIN = ac_ghi789…
 ```
 
 The slug must be the **uppercase canonical** value from `lib/oauth/providers.ts:OAuthProvider.toolkitSlug` (e.g. `TWITTER`, `GMAIL`, `GOOGLEDOCS`). The init route reads exactly `process.env[\`COMPOSIO_AUTH_CONFIG_${slug}\`]`.
+
+> **Sharing strategy:** see [`connected-accounts-sharing.md`](connected-accounts-sharing.md). Quick version: connect at `/settings/accounts` (no businessSlug) for shared services like Canva, Higgsfield, Tavily; connect at `/settings/accounts?businessSlug=<slug>` for tenant-data services like Gmail, Stripe, Shopify.
 
 ### 5d. Connect end-to-end via /settings/accounts
 
