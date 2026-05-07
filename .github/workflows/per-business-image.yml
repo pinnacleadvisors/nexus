@@ -10,15 +10,19 @@ name: Build per-business gateway image
 #
 # Why CI instead of `docker build` on a laptop:
 #   - No local Docker / Docker Desktop install required
-#   - Free build minutes on GitHub-hosted runners (2000/month for orgs)
+#   - Free build minutes on GitHub-hosted runners
 #   - Push uses GITHUB_TOKEN — no PAT to manage, no rotation needed
 #   - Same artifact every time regardless of who triggered it
 #
 # Operator workflow:
 #   1. GitHub UI → Actions tab → "Build per-business gateway image" → Run workflow
 #   2. Pick slug (e.g. "pilot-creator") and niche (e.g. "creator")
-#   3. Wait ~3-5 min, image lands at ghcr.io/<org>/nexus-business:<slug>
-#   4. Coolify pulls the image to deploy (see step 4e of pilot-rollout-walkthrough.md)
+#   3. mcp_override:
+#        - leave empty  → resolve from niche
+#        - "none"       → install no MCPs (Claude CLI base only — first pilot)
+#        - "<pkgs>"     → use this exact space-separated list
+#   4. Wait ~3-5 min, image lands at ghcr.io/<org>/nexus-business:<slug>
+#   5. Coolify pulls the image to deploy (see step 4e of pilot-rollout-walkthrough.md)
 
 on:
   workflow_dispatch:
@@ -32,7 +36,7 @@ on:
         required: true
         type: string
       mcp_override:
-        description: 'Optional. Override MCP_PACKAGES (space-separated). Set to " " (one space) to install nothing beyond Claude CLI base.'
+        description: 'Optional. Leave empty to resolve from niche. Type "none" to install no MCPs. Otherwise space-separated package list.'
         required: false
         type: string
         default: ''
@@ -44,43 +48,49 @@ on:
       - 'lib/businesses/mcp-manifest.ts'
 
 jobs:
-  resolve-manifest:
-    runs-on: ubuntu-latest
-    outputs:
-      mcp_packages: ${{ steps.manifest.outputs.mcp_packages }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with: { node-version: '22' }
-
-      - name: Resolve MCP manifest from niche
-        id: manifest
-        run: |
-          if [ -n "${{ inputs.mcp_override }}" ] && [ "${{ inputs.mcp_override }}" != " " ]; then
-            echo "mcp_packages=${{ inputs.mcp_override }}" >> "$GITHUB_OUTPUT"
-            echo "Using override: ${{ inputs.mcp_override }}"
-          elif [ "${{ inputs.mcp_override }}" = " " ]; then
-            echo "mcp_packages=" >> "$GITHUB_OUTPUT"
-            echo "Override blank — installing no MCPs (Claude CLI base only)"
-          else
-            PKGS=$(node -e "
-              const m = require('./lib/businesses/mcp-manifest');
-              const r = m.resolveManifest({ niche: '${{ inputs.niche }}' });
-              console.log(r.mcps.map(p => p.pkg).join(' '));
-            ")
-            echo "mcp_packages=$PKGS" >> "$GITHUB_OUTPUT"
-            echo "Resolved for niche='${{ inputs.niche }}': $PKGS"
-          fi
-
   build-and-push:
-    needs: resolve-manifest
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      # ── Resolve MCP packages ─────────────────────────────────────────────
+      # Inputs flow through env vars (NOT inline ${{ }} substitution into the
+      # script body) so quoting in the user-supplied value can never break
+      # the shell parser. Three branches:
+      #   - empty input  → resolve from niche via tsx (TS file imported directly)
+      #   - "none"       → install nothing (sentinel for the very first pilot)
+      #   - anything else → use as-is
+      - name: Resolve MCP packages
+        id: manifest
+        env:
+          MCP_OVERRIDE: ${{ inputs.mcp_override }}
+          NICHE:        ${{ inputs.niche }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MCP_OVERRIDE" ]; then
+            # No override — resolve from niche. Use npx tsx to import the TS
+            # source directly without a build step. The --yes flag auto-installs
+            # tsx if it's not in node_modules.
+            PKGS="$(npx --yes tsx -e '
+              import { resolveManifest } from "./lib/businesses/mcp-manifest";
+              const r = resolveManifest({ niche: process.env.NICHE });
+              console.log(r.mcps.map(p => p.pkg).join(" "));
+            ')"
+            echo "Resolved for niche=\"$NICHE\": $PKGS"
+          elif [ "$MCP_OVERRIDE" = "none" ]; then
+            PKGS=""
+            echo "Override 'none' — installing only the Claude CLI base"
+          else
+            PKGS="$MCP_OVERRIDE"
+            echo "Override: $PKGS"
+          fi
+          echo "mcp_packages=$PKGS" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -105,7 +115,7 @@ jobs:
             ghcr.io/${{ steps.lc.outputs.owner }}/nexus-business:${{ inputs.slug }}
           build-args: |
             BUSINESS_SLUG=${{ inputs.slug }}
-            MCP_PACKAGES=${{ needs.resolve-manifest.outputs.mcp_packages }}
+            MCP_PACKAGES=${{ steps.manifest.outputs.mcp_packages }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -120,6 +130,6 @@ jobs:
             echo "## Image pushed"
             echo ""
             echo "- **Tag**: \`ghcr.io/${{ steps.lc.outputs.owner }}/nexus-business:${{ inputs.slug }}\`"
-            echo "- **MCP packages**: \`${{ needs.resolve-manifest.outputs.mcp_packages || '(none)' }}\`"
+            echo "- **MCP packages**: \`${{ steps.manifest.outputs.mcp_packages || '(none)' }}\`"
             echo "- **Next step**: provision via \`POST /api/businesses/${{ inputs.slug }}/provision\` (see Step 6b of pilot-rollout-walkthrough.md)"
           } >> "$GITHUB_STEP_SUMMARY"
