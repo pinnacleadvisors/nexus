@@ -41,6 +41,23 @@ export interface OAuthProvider {
   actions: readonly string[]
   /** Optional. When set, only businesses with these niches will see it featured. */
   featuredFor?: readonly string[]
+  /**
+   * When set, the auth-config-sync script SKIPS this toolkit. The operator must
+   * create the Auth Config manually in app.composio.dev because the toolkit
+   * needs credentials Composio can't broker (own OAuth app, API key, …).
+   */
+  manualSetup?: {
+    /** Why automation can't handle this. Surfaced in script output + UI. */
+    reason: string
+    /** Where the operator gets the credentials they'll paste into Composio. */
+    credentialsUrl?: string
+  }
+  /**
+   * Sharing policy for connected_accounts. Drives UI guidance + helps reviewers
+   * spot bad ideas (sharing a Stripe account commingles funds, sharing a
+   * Higgsfield API key just shares quota).
+   */
+  sharePolicy?: 'shareable' | 'per-business'
 }
 
 export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
@@ -59,6 +76,11 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'TWITTER_FOLLOW_USER',
     ],
     featuredFor: ['marketing', 'content', 'agency'],
+    sharePolicy: 'per-business',
+    manualSetup: {
+      reason: 'Composio managed credentials for Twitter were removed 2026-02-12. Provide your own OAuth client_id + client_secret + bearer token from developer.twitter.com.',
+      credentialsUrl: 'https://developer.twitter.com/en/portal/dashboard',
+    },
   },
   {
     id: 'linkedin',
@@ -97,6 +119,11 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'TIKTOK_GET_VIDEO_LIST',
     ],
     featuredFor: ['creator', 'ecommerce'],
+    sharePolicy: 'per-business',
+    manualSetup: {
+      reason: 'TikTok requires your own developer app + client_key + client_secret in Composio.',
+      credentialsUrl: 'https://developers.tiktok.com/apps',
+    },
   },
   {
     id: 'youtube',
@@ -257,6 +284,11 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'SHOPIFY_UPDATE_AN_EXISTING_PRODUCT',
     ],
     featuredFor: ['ecommerce'],
+    sharePolicy: 'per-business',
+    manualSetup: {
+      reason: 'Shopify auth needs the shop subdomain + your custom app credentials (admin API access token).',
+      credentialsUrl: 'https://help.shopify.com/en/manual/apps/app-types/custom-apps',
+    },
   },
 
   // ── Design / Creative ───────────────────────────────────────────────────
@@ -272,6 +304,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'CANVA_LIST_DESIGNS',
     ],
     featuredFor: ['marketing', 'agency', 'creator'],
+    sharePolicy: 'shareable',
   },
 
   // ── Analytics ───────────────────────────────────────────────────────────
@@ -285,6 +318,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLEANALYTICS_RUN_REPORT',
       'GOOGLEANALYTICS_RUN_REALTIME_REPORT',
     ],
+    sharePolicy: 'per-business',
   },
 ] as const
 

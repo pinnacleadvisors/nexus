@@ -1,0 +1,69 @@
+name: Sync Composio Auth Configs
+
+# Monthly job that keeps Composio Auth Configs in sync with
+# `lib/oauth/providers.ts`. For each provider not marked `manualSetup`:
+#   1. Lists existing Auth Configs via the Composio v3 API
+#   2. Creates a new managed-OAuth Auth Config for any missing toolkit
+#   3. Pushes the resulting auth_config_id back to Doppler as
+#      COMPOSIO_AUTH_CONFIG_<TOOLKIT_SLUG>
+#
+# Manual platforms (Twitter, Shopify, TikTok at the time of writing) are
+# listed in the run summary so you know which to set up by hand.
+#
+# Triggers:
+#   - schedule: 1st of every month at 06:00 UTC
+#   - workflow_dispatch: run on demand (e.g. after adding a new provider)
+#
+# Required GitHub Actions secrets (Settings → Secrets → Actions):
+#   COMPOSIO_API_KEY   — same value as in Doppler
+#   DOPPLER_SERVICE_TOKEN — Doppler service token scoped to the target config
+#   DOPPLER_PROJECT     — e.g. nexus
+#   DOPPLER_CONFIG      — e.g. prd
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run: list what would change, do not call Composio'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Run sync script
+        env:
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          DOPPLER_TOKEN:    ${{ secrets.DOPPLER_SERVICE_TOKEN }}
+          DOPPLER_PROJECT:  ${{ secrets.DOPPLER_PROJECT }}
+          DOPPLER_CONFIG:   ${{ secrets.DOPPLER_CONFIG }}
+          DRY_RUN:          ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            FLAG="--dry-run"
+          else
+            FLAG=""
+          fi
+          npx --yes tsx scripts/sync-composio-auth-configs.ts $FLAG | tee sync-output.txt
+
+      - name: Append summary
+        if: always()
+        run: |
+          {
+            echo "## Composio Auth Config sync"
+            echo ""
+            echo '```'
+            cat sync-output.txt 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
