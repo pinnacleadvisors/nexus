@@ -1,13 +1,20 @@
 /**
  * Per-business MCP manifest.
  *
- * Defines which MCP servers + Composio integrations get pre-installed in each
- * business's Coolify container. Selected by niche / money-model so an ad-agency
- * container ships with Higgsfield + Canva preinstalled, a SaaS container with
- * Linear + GitHub, etc.
+ * Defines which MCP servers get pre-installed in each business's Coolify
+ * container. Selected by niche / money-model so an ad-agency container ships
+ * with Higgsfield + Runway preinstalled, a SaaS container with Sentry, etc.
+ *
+ * **Composio MCP covers most OAuth platforms.** The `composio` foundational
+ * entry uses Composio's Rube MCP server which exposes 500+ toolkits (Twitter,
+ * LinkedIn, Gmail, Slack, Notion, GitHub, Linear, Stripe, Shopify, Canva,
+ * Google Analytics, etc.) through a single managed endpoint. Per-platform MCPs
+ * are only needed for services Composio doesn't cover — which is mostly the
+ * generative-media space (Higgsfield, Runway, Kling, MuAPI, ElevenLabs,
+ * HeyGen) plus a handful of dev/observability tools.
  *
  * Used by:
- *   - services/claude-gateway/Dockerfile.business — reads MCP_MANIFEST_JSON at
+ *   - services/claude-gateway/Dockerfile.business — reads MCP_PACKAGES at
  *     build time to choose which tarballs to npm-install
  *   - lib/coolify/client.ts — sends the resolved manifest as an env var when
  *     creating the per-business app
@@ -25,41 +32,112 @@ export interface McpEntry {
   env:   readonly string[]
   /** One-line summary used in the agent's tool budget. */
   summary: string
+  /**
+   * `verified` — package exists on npm and the env-var contract is confirmed.
+   * `placeholder` — package name + env vars are best-guess; the operator must
+   * verify and patch when first publishing.
+   */
+  status?: 'verified' | 'placeholder'
 }
 
 export const MCP_CATALOG: readonly McpEntry[] = [
-  // Foundational — every container ships these.
-  { id: 'memory-hq',    name: 'Memory HQ',     pkg: '@nexus/mcp-memory-hq',    env: ['MEMORY_HQ_TOKEN', 'MEMORY_HQ_REPO'], summary: 'Atoms / entities / MOCs in pinnacleadvisors/memory-hq' },
-  { id: 'firecrawl',    name: 'Firecrawl',     pkg: '@nexus/mcp-firecrawl',    env: ['FIRECRAWL_API_KEY'],                summary: 'Token-free web scrape / map / crawl' },
-  { id: 'n8n',          name: 'n8n',           pkg: '@nexus/mcp-n8n',          env: ['N8N_BASE_URL', 'N8N_API_KEY'],      summary: 'n8n workflow CRUD + node schema lookup' },
+  // ── Foundational — every container ships these ─────────────────────────
+  {
+    id: 'memory-hq',  name: 'Memory HQ',  pkg: '@nexus/mcp-memory-hq',
+    env: ['MEMORY_HQ_TOKEN', 'MEMORY_HQ_REPO'],
+    summary: 'Atoms / entities / MOCs in pinnacleadvisors/memory-hq',
+    status: 'placeholder',
+  },
+  {
+    id: 'firecrawl', name: 'Firecrawl', pkg: '@nexus/mcp-firecrawl',
+    env: ['FIRECRAWL_API_KEY'],
+    summary: 'Token-free web scrape / map / crawl',
+    status: 'placeholder',
+  },
+  {
+    id: 'n8n', name: 'n8n', pkg: 'n8n-mcp',
+    env: ['N8N_BASE_URL', 'N8N_API_KEY'],
+    summary: 'n8n workflow CRUD + node schema lookup',
+    status: 'verified',
+  },
+  {
+    // Single MCP that covers every OAuth platform in lib/oauth/providers.ts.
+    // Auth Configs created by scripts/sync-composio-auth-configs.ts; per-user
+    // connections live in connected_accounts.composio_account_id. The agent
+    // calls these through Rube without each platform needing its own MCP.
+    id: 'composio', name: 'Composio (Rube)', pkg: '@composio/rube-mcp',
+    env: ['COMPOSIO_API_KEY', 'COMPOSIO_USER_ID'],
+    summary: '500+ OAuth apps via Composio — Twitter, LinkedIn, Gmail, Slack, Notion, GitHub, Linear, Stripe, Shopify, Canva, Google Analytics, …',
+    status: 'verified',
+  },
 
-  // Creative / design
-  { id: 'canva',        name: 'Canva',         pkg: '@nexus/mcp-canva',        env: ['CANVA_API_KEY'],                    summary: 'Canva design create / export' },
-  { id: 'higgsfield',   name: 'Higgsfield',    pkg: '@nexus/mcp-higgsfield',   env: ['HIGGSFIELD_API_KEY'],               summary: 'Cinematic AI video generation' },
-  { id: 'runway',       name: 'Runway',        pkg: '@nexus/mcp-runway',       env: ['RUNWAY_API_KEY'],                   summary: 'Stylised AI video generation' },
-  { id: 'kling',        name: 'Kling',         pkg: '@nexus/mcp-kling',        env: ['KLING_API_KEY'],                    summary: 'Cinematic AI video generation (alt)' },
-  { id: 'muapi-ai',     name: 'MuAPI.ai',      pkg: '@nexus/mcp-muapi-ai',     env: ['MUAPI_AI_KEY'],                     summary: 'AI scene image generation' },
-  { id: 'elevenlabs',   name: 'ElevenLabs',    pkg: '@nexus/mcp-elevenlabs',   env: ['ELEVENLABS_API_KEY'],               summary: 'AI voiceover synthesis' },
-  { id: 'heygen',       name: 'HeyGen',        pkg: '@nexus/mcp-heygen',       env: ['HEYGEN_API_KEY'],                   summary: 'UGC / avatar video' },
+  // ── Generative media (Composio doesn't cover these) ────────────────────
+  {
+    id: 'higgsfield', name: 'Higgsfield', pkg: '@nexus/mcp-higgsfield',
+    env: ['HIGGSFIELD_API_KEY'],
+    summary: 'Cinematic AI video generation',
+    status: 'placeholder',
+  },
+  {
+    id: 'runway', name: 'Runway', pkg: '@nexus/mcp-runway',
+    env: ['RUNWAY_API_KEY'],
+    summary: 'Stylised AI video generation',
+    status: 'placeholder',
+  },
+  {
+    id: 'kling', name: 'Kling', pkg: '@nexus/mcp-kling',
+    env: ['KLING_API_KEY'],
+    summary: 'Cinematic AI video generation (alt)',
+    status: 'placeholder',
+  },
+  {
+    id: 'muapi-ai', name: 'MuAPI.ai', pkg: '@nexus/mcp-muapi-ai',
+    env: ['MUAPI_AI_KEY'],
+    summary: 'AI scene image generation',
+    status: 'placeholder',
+  },
+  {
+    id: 'elevenlabs', name: 'ElevenLabs', pkg: '@nexus/mcp-elevenlabs',
+    env: ['ELEVENLABS_API_KEY'],
+    summary: 'AI voiceover synthesis',
+    status: 'placeholder',
+  },
+  {
+    id: 'heygen', name: 'HeyGen', pkg: '@nexus/mcp-heygen',
+    env: ['HEYGEN_API_KEY'],
+    summary: 'UGC / avatar video',
+    status: 'placeholder',
+  },
 
-  // Developer
-  { id: 'github',       name: 'GitHub',        pkg: '@modelcontextprotocol/server-github',  env: ['GITHUB_PERSONAL_ACCESS_TOKEN'], summary: 'Repos, issues, PRs, files' },
-  { id: 'linear',       name: 'Linear',        pkg: '@modelcontextprotocol/server-linear',  env: ['LINEAR_API_KEY'],               summary: 'Issues, projects, cycles' },
-  { id: 'sentry',       name: 'Sentry',        pkg: '@nexus/mcp-sentry',                    env: ['SENTRY_AUTH_TOKEN'],            summary: 'Error tracking + performance' },
-
-  // Commerce
-  { id: 'stripe',       name: 'Stripe',        pkg: '@nexus/mcp-stripe',       env: ['STRIPE_SECRET_KEY'],                summary: 'Customers, payments, invoices' },
-  { id: 'shopify',      name: 'Shopify',       pkg: '@nexus/mcp-shopify',      env: ['SHOPIFY_API_KEY', 'SHOPIFY_STORE'], summary: 'Products, orders, fulfilment' },
-
-  // Analytics
-  { id: 'tavily',       name: 'Tavily',        pkg: '@nexus/mcp-tavily',       env: ['TAVILY_API_KEY'],                   summary: 'Live web search' },
-  { id: 'google-analytics', name: 'GA',        pkg: '@nexus/mcp-ga',           env: ['GA_SERVICE_ACCOUNT_JSON'],          summary: 'Property reports + realtime' },
+  // ── Specialised non-Composio tools ─────────────────────────────────────
+  {
+    id: 'sentry', name: 'Sentry', pkg: '@sentry/mcp-server',
+    env: ['SENTRY_AUTH_TOKEN'],
+    summary: 'Error tracking + performance',
+    status: 'placeholder',
+  },
+  {
+    id: 'tavily', name: 'Tavily', pkg: '@nexus/mcp-tavily',
+    env: ['TAVILY_API_KEY'],
+    summary: 'Live web search (deeper than Composio coverage)',
+    status: 'placeholder',
+  },
+  {
+    id: 'supabase', name: 'Supabase', pkg: '@supabase/mcp-server-supabase',
+    env: ['SUPABASE_ACCESS_TOKEN'],
+    summary: 'Project CRUD, schema introspection, edge functions',
+    status: 'placeholder',
+  },
 ] as const
 
 /**
  * Niche profiles map a business's `niche` field to a curated MCP set.
- * Catch-all is "default". Niches are matched case-insensitively and may
- * be substrings ("ad-agency" matches "agency").
+ * Profiles only need to list the SPECIALISED add-ons — every container also
+ * gets the FOUNDATIONAL set (which already includes Composio for all OAuth
+ * platforms).
+ *
+ * Niches are matched case-insensitively and may be substrings ("agency"
+ * matches "ad agency").
  */
 export interface NicheProfile {
   niche:   string
@@ -67,29 +145,37 @@ export interface NicheProfile {
   mcps:    readonly string[]  // MCP IDs to install (in addition to foundational)
 }
 
-const FOUNDATIONAL = ['memory-hq', 'firecrawl', 'n8n']
+const FOUNDATIONAL = ['memory-hq', 'firecrawl', 'n8n', 'composio']
 
 export const NICHE_PROFILES: readonly NicheProfile[] = [
-  { niche: 'ad-agency',     match: ['ad agency', 'advertising', 'marketing agency'],
-    mcps: ['canva', 'higgsfield', 'runway', 'muapi-ai', 'elevenlabs', 'tavily'] },
+  // Heavy creative output — video + image generation
+  { niche: 'ad-agency',         match: ['ad agency', 'advertising', 'marketing agency'],
+    mcps: ['higgsfield', 'runway', 'muapi-ai', 'elevenlabs', 'tavily'] },
 
-  { niche: 'creator',       match: ['creator', 'influencer', 'youtuber', 'streamer'],
-    mcps: ['canva', 'higgsfield', 'kling', 'elevenlabs', 'heygen'] },
+  { niche: 'creator',           match: ['creator', 'influencer', 'youtuber', 'streamer'],
+    mcps: ['higgsfield', 'kling', 'elevenlabs', 'heygen'] },
 
-  { niche: 'ecommerce',     match: ['ecommerce', 'e-commerce', 'shop', 'store', 'dropshipping'],
-    mcps: ['shopify', 'stripe', 'canva', 'muapi-ai', 'google-analytics'] },
+  // Digital products + ecommerce — rely heavily on product imagery + research
+  { niche: 'ecommerce',         match: ['ecommerce', 'e-commerce', 'shop', 'store', 'dropshipping'],
+    mcps: ['muapi-ai', 'tavily'] },
 
-  { niche: 'saas',          match: ['saas', 'software', 'b2b'],
-    mcps: ['github', 'linear', 'stripe', 'sentry', 'tavily', 'google-analytics'] },
+  { niche: 'digital-products',  match: ['etsy', 'printable', 'template', 'organizer', 'contract bundle', 'digital product'],
+    mcps: ['muapi-ai', 'tavily'] },
 
-  { niche: 'content',       match: ['content', 'blog', 'newsletter', 'media'],
-    mcps: ['canva', 'tavily', 'elevenlabs'] },
+  // SaaS — needs deep observability + research
+  { niche: 'saas',              match: ['saas', 'software', 'b2b'],
+    mcps: ['sentry', 'tavily', 'supabase'] },
 
-  { niche: 'developer',     match: ['developer', 'dev tools', 'open source'],
-    mcps: ['github', 'linear', 'sentry'] },
+  // Content-heavy (blogs, newsletters)
+  { niche: 'content',           match: ['content', 'blog', 'newsletter', 'media'],
+    mcps: ['tavily', 'elevenlabs'] },
+
+  // Pure dev tooling
+  { niche: 'developer',         match: ['developer', 'dev tools', 'open source'],
+    mcps: ['sentry', 'supabase'] },
 ] as const
 
-const DEFAULT_PROFILE = ['canva', 'tavily']
+const DEFAULT_PROFILE = ['tavily']
 
 export interface ResolvedManifest {
   profile:    string

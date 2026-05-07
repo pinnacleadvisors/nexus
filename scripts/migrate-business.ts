@@ -84,11 +84,10 @@ function triggerBuild(slug: string, niche: string): void {
 }
 
 function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string }) {
-  // The seed niches are descriptive ("Tax organizers for solo accountants…")
-  // but resolveManifest matches against a small set of profile slugs. Operator
-  // can override with --niche=ecommerce. Default fallback for these is the
-  // small "default" profile (canva + tavily).
-  const niche = opts.niche ?? 'ecommerce' // best fit for inkbound + ledger-lane (digital products on Etsy)
+  // resolveManifest matches the seed's niche string against profile substring
+  // patterns (e.g. "organizer" / "contract bundle" → digital-products). Pass
+  // --niche=<profile> to override (e.g. force ecommerce or saas).
+  const niche = opts.niche ?? seed.niche
   const manifest = resolveManifest({ niche })
 
   const bar = '═'.repeat(60)
@@ -102,12 +101,15 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string })
   console.log('')
 
   console.log('── Step 1: Build the per-business image ──')
+  // Pass the resolved profile name to the workflow (shell-safe) instead of
+  // the raw seed niche string (which may contain parens / commas / spaces).
+  const workflowNiche = manifest.profile
   if (opts.build) {
-    triggerBuild(seed.slug, niche)
+    triggerBuild(seed.slug, workflowNiche)
   } else {
     console.log(`  gh workflow run per-business-image.yml \\`)
     console.log(`    -f slug=${seed.slug} \\`)
-    console.log(`    -f niche=${niche} \\`)
+    console.log(`    -f niche=${workflowNiche} \\`)
     console.log(`    -f mcp_override=none`)
     console.log('')
     console.log(`  Or pass --build to this script to trigger it.`)
