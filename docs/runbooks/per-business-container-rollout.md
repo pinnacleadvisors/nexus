@@ -19,22 +19,29 @@ If any fail, stop and remediate — the runbook assumes Phase 1–5 have shipped
 
 ## Phase A — Build and push the per-business image
 
-The image is built once per business (or once per niche profile, if shared). Build args are resolved from `lib/businesses/mcp-manifest.ts`.
+**Primary path: GitHub Actions** (`.github/workflows/per-business-image.yml`). One click, no local Docker, no PAT to manage:
+
+> Actions → **Build per-business gateway image** → Run workflow → fill `slug`, `niche`, and `mcp_override` (`none` for first pilots, blank to resolve from niche, or a space-separated package list).
+
+See [pilot-rollout-walkthrough.md § Step 4 — Path 1](pilot-rollout-walkthrough.md#step-4--build--push-the-per-business-image-runbook-phase-a) for full instructions.
+
+**Fallback: local Docker.** Only use this when iterating on the Dockerfile itself. Note `node -e` cannot import the TS manifest directly — use `npx tsx -e` instead:
 
 ```bash
 SLUG=acme-ads
 NICHE="ad agency"
-MANIFEST=$(node -e "
-  const { resolveManifest } = require('./lib/businesses/mcp-manifest');
-  const r = resolveManifest({ niche: '$NICHE' });
-  console.log(r.mcps.map(m => m.pkg).join(' '));
-")
+MANIFEST=$(npx --yes tsx -e '
+  import { resolveManifest } from "./lib/businesses/mcp-manifest";
+  const r = resolveManifest({ niche: process.env.NICHE });
+  console.log(r.mcps.map(m => m.pkg).join(" "));
+' )
 
 docker build \
   --build-arg BUSINESS_SLUG=$SLUG \
   --build-arg "MCP_PACKAGES=$MANIFEST" \
   -f services/claude-gateway/Dockerfile.business \
   -t ghcr.io/pinnacleadvisors/nexus-business:$SLUG \
+  --label "org.opencontainers.image.source=https://github.com/pinnacleadvisors/nexus" \
   services/claude-gateway/
 
 docker push ghcr.io/pinnacleadvisors/nexus-business:$SLUG
