@@ -8,7 +8,7 @@ Migrating a business from the **shared Claude gateway** to its **own Coolify con
 
 ```bash
 # 1. Coolify is configured
-echo "$COOLIFY_BASE_URL $COOLIFY_PROJECT_ID $COOLIFY_SERVER_UUID"
+echo "$COOLIFY_BASE_URL $COOLIFY_PROJECT_ID_NEXUS_BUSINESSES $COOLIFY_KVM4_SERVER_UUID"
 # 2. Connected accounts schema migrated
 psql -c "\d connected_accounts"
 # 3. Frontend-design + composio MCP packages reachable from npm
@@ -148,7 +148,7 @@ Move the next business through Phases A–G. Repeat until all businesses are mig
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Coolify create returns 422 | FQDN already in use OR project_uuid mismatch | Pick a unique FQDN; verify `COOLIFY_PROJECT_ID` |
+| Coolify create returns 422 | FQDN already in use OR project_uuid mismatch | Pick a unique FQDN; verify `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES` |
 | Dispatch hangs at 30s timeout | Container not started OR `claude login` not completed | Check Coolify logs; complete login interactively |
 | Connected-account action throws `ConnectedAccountMissingError` | Phase B not complete OR business_slug mismatch | Re-run Phase B; verify the row in `connected_accounts` |
 | Workflow validation fails repeatedly even after debugger pass | Stale n8n MCP version OR new node type the catalog doesn't know | Update `@nexus/mcp-n8n` in the manifest; rebuild image |
