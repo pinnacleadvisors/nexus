@@ -25,15 +25,15 @@ The script reads `lib/business/seeds.ts`, resolves the MCP manifest from the bus
 |---|---|---|
 | Slug | `inkbound` | `ledger-lane` |
 | Niche text | Freelancer contract bundles (designer, dev, copywriter) | Tax organizers for solo accountants / bookkeepers / EAs |
-| Suggested manifest profile | `ecommerce` | `ecommerce` |
+| Suggested manifest profile | `digital-products` (auto-resolves) | `digital-products` (auto-resolves) |
 | Image tag | `ghcr.io/pinnacleadvisors/nexus-business:inkbound` | `ghcr.io/pinnacleadvisors/nexus-business:ledger-lane` |
 | Coolify FQDN | `inkbound.gateway.<your-domain>` | `ledger-lane.gateway.<your-domain>` |
 | Slack channel | `#nexus-inkbound` | `#nexus-ledger-lane` |
 | Seasonality | None — evergreen | Peak Jan–Apr (US tax season) |
 
-> **Why `ecommerce` for both?** Neither niche string matches a profile substring directly (`creator`, `ad-agency`, etc.), so the default profile (`[canva, tavily]`) would resolve. `ecommerce` is the closest fit since both businesses sell digital products via Etsy/Payhip + Pinterest/Instagram traffic. The resolved MCP set is `[memory-hq, firecrawl, n8n, shopify, stripe, canva, muapi-ai, google-analytics]`. `shopify` is unused (they use Etsy/Payhip) but installing the MCP doesn't cost anything beyond image size.
+> **Why `digital-products`?** Both seed niche strings match the profile's substrings (ledger-lane → "organizer", inkbound → "contract bundle"). Resolved MCP set: `[memory-hq, firecrawl, n8n, composio, muapi-ai, tavily]`. The single `composio` (Rube) entry covers Stripe, Canva, Gmail, Twitter, etc. — every OAuth platform in `lib/oauth/providers.ts` — through one managed MCP server, so we don't need per-platform packages.
 >
-> First build for the pilot: pass `mcp_override=none` regardless. The `@nexus/mcp-*` packages are placeholders not yet on npm — the manifest only matters once those publish.
+> First build for the pilot: pass `mcp_override=none` regardless. Only `n8n-mcp` exists on npm today; the foundational `composio` and the `@nexus/mcp-*` placeholders need to be published or installed before the manifest's defaults will work in a real build.
 
 ## Running both, in order
 
@@ -57,7 +57,7 @@ gh workflow run per-business-image.yml \
 curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
   -H "content-type: application/json" \
   -H "cookie: __session=<paste>" \
-  -d '{"niche":"ecommerce"}'
+  -d '{"niche":"digital-products"}'
 
 # 4. Coolify dashboard → Projects → Nexus Businesses → nexus-business-inkbound
 #    → Deploy → Terminal → `claude login` → paste OAuth code back
