@@ -67,8 +67,12 @@ export async function GET(req: NextRequest) {
   if (!rl.success) return rateLimitResponse(rl)
 
   const url                = new URL(req.url)
-  const stateParam         = url.searchParams.get('state')
-  const connectedAccountId = url.searchParams.get('connectedAccountId') ?? url.searchParams.get('connected_account_id')
+  // We round-trip the nonce through Composio's `callback_url` query param,
+  // so it appears here as `nonce`. (Composio's v3 link flow doesn't have a
+  // dedicated `state` field — older docs called it `state` but the new API
+  // doesn't accept it; embedding in callback_url is the canonical workaround.)
+  const stateParam         = url.searchParams.get('nonce') ?? url.searchParams.get('state')
+  const connectedAccountId = url.searchParams.get('connected_account_id') ?? url.searchParams.get('connectedAccountId') ?? url.searchParams.get('connection_id')
   const status             = url.searchParams.get('status') ?? 'success'
   const errorParam         = url.searchParams.get('error')
 

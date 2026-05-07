@@ -11,9 +11,12 @@
  *
  * Behaviour:
  *   - Validates platform against lib/oauth/providers.ts
- *   - Calls Composio's initiateConnection
+ *   - Resolves COMPOSIO_AUTH_CONFIG_<TOOLKIT_SLUG> env var (each toolkit
+ *     needs an Auth Config created once in the Composio dashboard).
+ *   - Calls Composio's POST /api/v3/connected_accounts/link
  *   - Sets an HTTP-only `caconnect_state` cookie carrying
- *     { userId, businessSlug, platform, nonce } for the callback to verify
+ *     { userId, businessSlug, platform, nonce, connectedAccountId } for the
+ *     callback to verify
  *   - Returns the Composio-hosted redirect URL
  */
 
@@ -21,7 +24,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
-import { initiateConnection, ComposioError } from '@/lib/composio/client'
+import { createConnectionLink, getAuthConfigId, ComposioError } from '@/lib/composio/client'
 import { getProvider } from '@/lib/oauth/providers'
 import { isBusinessSlug } from '@/lib/claw/business-client'
 
@@ -61,25 +64,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
 
+  const authConfigId = getAuthConfigId(provider.toolkitSlug)
+  if (!authConfigId) {
+    return NextResponse.json({
+      error: `No Composio Auth Config for ${provider.name}. Create one at app.composio.dev → Auth Configs → New, choose toolkit "${provider.toolkitSlug}", then set env COMPOSIO_AUTH_CONFIG_${provider.toolkitSlug}=<auth_config_id>.`,
+    }, { status: 503 })
+  }
+
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
-  const redirectUri = `${appUrl}/api/connected-accounts/callback`
-  const nonce = crypto.randomUUID()
+  const nonce  = crypto.randomUUID()
+  // Embed the nonce in callback_url so Composio passes it back via query.
+  // The callback verifies it against the cookie value below.
+  const callbackUrl = new URL('/api/connected-accounts/callback', appUrl)
+  callbackUrl.searchParams.set('nonce', nonce)
 
   let result
   try {
-    result = await initiateConnection({
-      integrationId: provider.integrationId,
-      state: nonce,
-      redirectUri,
-      metadata: {
-        nexusUserId:     session.userId,
-        nexusPlatform:   provider.id,
-        nexusBusiness:   businessSlug,
-      },
+    result = await createConnectionLink({
+      authConfigId,
+      userId:        session.userId,
+      callbackUrl:   callbackUrl.toString(),
     })
   } catch (err) {
     const status  = err instanceof ComposioError ? err.status  : 502
-    const message = err instanceof Error          ? err.message : 'composio init failed'
+    const message = err instanceof Error          ? err.message : 'composio link create failed'
     audit(req, {
       action:   'connected_accounts.init',
       resource: 'composio_connection',
@@ -93,16 +101,16 @@ export async function POST(req: NextRequest) {
     action:    'connected_accounts.init',
     resource:  'composio_connection',
     userId:    session.userId,
-    metadata:  { platform: provider.id, businessSlug, connectionId: result.connectionId },
+    metadata:  { platform: provider.id, businessSlug, connectedAccountId: result.connectedAccountId, linkToken: result.linkToken.slice(0, 8) + '…' },
   })
 
   const res = NextResponse.json({ redirectUrl: result.redirectUrl })
   res.cookies.set(STATE_COOKIE, JSON.stringify({
-    userId:       session.userId,
+    userId:             session.userId,
     businessSlug,
-    platform:     provider.id,
+    platform:           provider.id,
     nonce,
-    connectionId: result.connectionId,
+    connectedAccountId: result.connectedAccountId,
   }), {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',

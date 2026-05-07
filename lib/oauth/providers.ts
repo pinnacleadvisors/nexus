@@ -3,15 +3,16 @@
  *
  * Single source of truth for which third-party platforms Nexus can connect to
  * via Composio. To add a new platform:
- *   1. Verify Composio supports it (https://composio.dev/integrations)
- *   2. Add a row below
- *   3. The Settings → Accounts page will automatically render a "Connect
- *      <platform>" button
- *   4. Workflow agents can call `executeBusinessAction(slug, platform, action, args)`
- *      with any of the listed actions
+ *   1. Verify Composio supports it (https://app.composio.dev/toolkits)
+ *   2. Add a row below using the canonical `toolkitSlug` from Composio's catalog
+ *      (uppercase, snake_case — what shows in `composio toolkits list`)
+ *   3. Create an Auth Config in the Composio dashboard for that toolkit
+ *   4. Set env var `COMPOSIO_AUTH_CONFIG_<TOOLKIT_SLUG>` with the auth_config_id
+ *   5. Settings → Accounts UI lights up automatically
  *
- * No per-platform code is required — Composio handles the OAuth dance,
- * token refresh, and rate limits.
+ * Action enum names follow Composio's APP_VERB_NOUN convention. They were
+ * renamed across 1545 tools in 2026 — verify each against the live toolkit
+ * page (https://docs.composio.dev/toolkits/<slug>) when adding new actions.
  */
 
 export type OAuthCategory =
@@ -31,12 +32,12 @@ export interface OAuthProvider {
   id: string
   /** Display name in the UI. */
   name: string
-  /** Composio integration id (e.g. "twitter_v2"). */
-  integrationId: string
+  /** Composio toolkit slug — uppercase canonical (e.g. TWITTER, LINKEDIN, GMAIL). */
+  toolkitSlug: string
   category: OAuthCategory
   /** Path to a logo asset under /public, or an emoji fallback. */
   logo: string
-  /** Composio action ids the agent layer can invoke once connected. */
+  /** Composio action slugs the agent layer can invoke once connected. */
   actions: readonly string[]
   /** Optional. When set, only businesses with these niches will see it featured. */
   featuredFor?: readonly string[]
@@ -47,46 +48,67 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'twitter',
     name: 'X (Twitter)',
-    integrationId: 'twitter_v2',
+    toolkitSlug: 'TWITTER',
     category: 'social',
     logo: '/logos/twitter.svg',
-    actions: ['TWITTER_CREATE_TWEET', 'TWITTER_CREATE_THREAD', 'TWITTER_DELETE_TWEET', 'TWITTER_GET_USER_TWEETS'],
+    actions: [
+      'TWITTER_CREATION_OF_A_POST',
+      'TWITTER_POST_DELETE_BY_POST_ID',
+      'TWITTER_POST_LOOKUP_BY_POST_ID',
+      'TWITTER_RECENT_SEARCH',
+      'TWITTER_FOLLOW_USER',
+    ],
     featuredFor: ['marketing', 'content', 'agency'],
   },
   {
     id: 'linkedin',
     name: 'LinkedIn',
-    integrationId: 'linkedin',
+    toolkitSlug: 'LINKEDIN',
     category: 'social',
     logo: '/logos/linkedin.svg',
-    actions: ['LINKEDIN_CREATE_POST', 'LINKEDIN_CREATE_ARTICLE', 'LINKEDIN_GET_PROFILE'],
+    actions: [
+      'LINKEDIN_CREATE_LINKED_IN_POST',
+      'LINKEDIN_GET_MY_INFO',
+      'LINKEDIN_GET_COMPANY_INFO',
+    ],
     featuredFor: ['b2b', 'saas', 'agency'],
   },
   {
     id: 'instagram',
     name: 'Instagram',
-    integrationId: 'instagram',
+    toolkitSlug: 'INSTAGRAM',
     category: 'social',
     logo: '/logos/instagram.svg',
-    actions: ['INSTAGRAM_CREATE_POST', 'INSTAGRAM_CREATE_REEL', 'INSTAGRAM_GET_INSIGHTS'],
+    actions: [
+      'INSTAGRAM_CREATE_MEDIA_OBJECT',
+      'INSTAGRAM_PUBLISH_MEDIA',
+      'INSTAGRAM_GET_USER_MEDIA',
+    ],
     featuredFor: ['ecommerce', 'creator', 'agency'],
   },
   {
     id: 'tiktok',
     name: 'TikTok',
-    integrationId: 'tiktok',
+    toolkitSlug: 'TIKTOK',
     category: 'social',
     logo: '/logos/tiktok.svg',
-    actions: ['TIKTOK_UPLOAD_VIDEO', 'TIKTOK_GET_VIDEO_ANALYTICS'],
+    actions: [
+      'TIKTOK_VIDEO_PUBLISH_INIT',
+      'TIKTOK_GET_VIDEO_LIST',
+    ],
     featuredFor: ['creator', 'ecommerce'],
   },
   {
     id: 'youtube',
     name: 'YouTube',
-    integrationId: 'youtube',
+    toolkitSlug: 'YOUTUBE',
     category: 'social',
     logo: '/logos/youtube.svg',
-    actions: ['YOUTUBE_UPLOAD_VIDEO', 'YOUTUBE_UPDATE_VIDEO_METADATA', 'YOUTUBE_GET_VIDEO_STATS'],
+    actions: [
+      'YOUTUBE_VIDEOS_INSERT',
+      'YOUTUBE_VIDEOS_UPDATE',
+      'YOUTUBE_VIDEOS_LIST',
+    ],
     featuredFor: ['creator', 'content'],
   },
 
@@ -94,36 +116,52 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'gmail',
     name: 'Gmail',
-    integrationId: 'gmail',
+    toolkitSlug: 'GMAIL',
     category: 'email',
     logo: '/logos/gmail.svg',
-    actions: ['GMAIL_SEND_EMAIL', 'GMAIL_REPLY_TO_THREAD', 'GMAIL_LIST_MESSAGES', 'GMAIL_CREATE_DRAFT'],
+    actions: [
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_REPLY_TO_THREAD',
+      'GMAIL_FETCH_EMAILS',
+      'GMAIL_CREATE_EMAIL_DRAFT',
+    ],
   },
   {
     id: 'outlook',
     name: 'Outlook',
-    integrationId: 'outlook',
+    toolkitSlug: 'OUTLOOK',
     category: 'email',
     logo: '/logos/outlook.svg',
-    actions: ['OUTLOOK_SEND_EMAIL', 'OUTLOOK_LIST_MESSAGES', 'OUTLOOK_CREATE_DRAFT'],
+    actions: [
+      'OUTLOOK_OUTLOOK_SEND_EMAIL',
+      'OUTLOOK_OUTLOOK_LIST_MESSAGES',
+      'OUTLOOK_OUTLOOK_CREATE_DRAFT',
+    ],
   },
 
   // ── Communication ───────────────────────────────────────────────────────
   {
     id: 'slack',
     name: 'Slack',
-    integrationId: 'slack',
+    toolkitSlug: 'SLACK',
     category: 'communication',
     logo: '/logos/slack.svg',
-    actions: ['SLACK_SEND_MESSAGE', 'SLACK_CREATE_CHANNEL', 'SLACK_LIST_CHANNELS'],
+    actions: [
+      'SLACK_SEND_MESSAGE_TO_A_CHANNEL',
+      'SLACK_CREATE_A_NEW_CONVERSATION',
+      'SLACK_LIST_ALL_CHANNELS',
+    ],
   },
   {
     id: 'discord',
     name: 'Discord',
-    integrationId: 'discord',
+    toolkitSlug: 'DISCORD',
     category: 'communication',
     logo: '/logos/discord.svg',
-    actions: ['DISCORD_SEND_MESSAGE', 'DISCORD_CREATE_THREAD'],
+    actions: [
+      'DISCORD_SEND_MESSAGE_TO_CHANNEL',
+      'DISCORD_CREATE_THREAD',
+    ],
     featuredFor: ['creator', 'community'],
   },
 
@@ -131,45 +169,65 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'notion',
     name: 'Notion',
-    integrationId: 'notion',
+    toolkitSlug: 'NOTION',
     category: 'productivity',
     logo: '/logos/notion.svg',
-    actions: ['NOTION_CREATE_PAGE', 'NOTION_UPDATE_PAGE', 'NOTION_QUERY_DATABASE'],
+    actions: [
+      'NOTION_CREATE_NOTION_PAGE',
+      'NOTION_UPDATE_PAGE',
+      'NOTION_QUERY_DATABASE',
+    ],
   },
   {
     id: 'google_docs',
     name: 'Google Docs',
-    integrationId: 'googledocs',
+    toolkitSlug: 'GOOGLEDOCS',
     category: 'productivity',
     logo: '/logos/google-docs.svg',
-    actions: ['GOOGLEDOCS_CREATE_DOCUMENT', 'GOOGLEDOCS_GET_DOCUMENT', 'GOOGLEDOCS_UPDATE_DOCUMENT'],
+    actions: [
+      'GOOGLEDOCS_CREATE_DOCUMENT',
+      'GOOGLEDOCS_GET_DOCUMENT_BY_ID',
+      'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
+    ],
   },
   {
     id: 'google_sheets',
     name: 'Google Sheets',
-    integrationId: 'googlesheets',
+    toolkitSlug: 'GOOGLESHEETS',
     category: 'productivity',
     logo: '/logos/google-sheets.svg',
-    actions: ['GOOGLESHEETS_APPEND_ROWS', 'GOOGLESHEETS_GET_VALUES', 'GOOGLESHEETS_UPDATE_VALUES'],
+    actions: [
+      'GOOGLESHEETS_BATCH_UPDATE',
+      'GOOGLESHEETS_GET_SPREADSHEET_INFO',
+      'GOOGLESHEETS_INSERT_DIMENSION',
+    ],
   },
 
   // ── Developer ───────────────────────────────────────────────────────────
   {
     id: 'github',
     name: 'GitHub',
-    integrationId: 'github',
+    toolkitSlug: 'GITHUB',
     category: 'developer',
     logo: '/logos/github.svg',
-    actions: ['GITHUB_CREATE_ISSUE', 'GITHUB_CREATE_PR', 'GITHUB_LIST_REPOS'],
+    actions: [
+      'GITHUB_CREATE_AN_ISSUE',
+      'GITHUB_CREATE_A_PULL_REQUEST',
+      'GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER',
+    ],
     featuredFor: ['saas', 'developer'],
   },
   {
     id: 'linear',
     name: 'Linear',
-    integrationId: 'linear',
+    toolkitSlug: 'LINEAR',
     category: 'developer',
     logo: '/logos/linear.svg',
-    actions: ['LINEAR_CREATE_ISSUE', 'LINEAR_UPDATE_ISSUE', 'LINEAR_LIST_ISSUES'],
+    actions: [
+      'LINEAR_CREATE_LINEAR_ISSUE',
+      'LINEAR_UPDATE_AN_EXISTING_ISSUE',
+      'LINEAR_LIST_LINEAR_ISSUES',
+    ],
     featuredFor: ['saas', 'developer'],
   },
 
@@ -177,19 +235,27 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'stripe',
     name: 'Stripe',
-    integrationId: 'stripe',
+    toolkitSlug: 'STRIPE',
     category: 'commerce',
     logo: '/logos/stripe.svg',
-    actions: ['STRIPE_LIST_CUSTOMERS', 'STRIPE_CREATE_PAYMENT_LINK', 'STRIPE_LIST_INVOICES'],
+    actions: [
+      'STRIPE_LIST_ALL_CUSTOMERS',
+      'STRIPE_CREATE_A_PAYMENT_LINK',
+      'STRIPE_LIST_ALL_INVOICES',
+    ],
     featuredFor: ['saas', 'ecommerce'],
   },
   {
     id: 'shopify',
     name: 'Shopify',
-    integrationId: 'shopify',
+    toolkitSlug: 'SHOPIFY',
     category: 'commerce',
     logo: '/logos/shopify.svg',
-    actions: ['SHOPIFY_CREATE_PRODUCT', 'SHOPIFY_LIST_ORDERS', 'SHOPIFY_UPDATE_PRODUCT'],
+    actions: [
+      'SHOPIFY_CREATE_A_NEW_PRODUCT',
+      'SHOPIFY_RETRIEVE_A_LIST_OF_ORDERS',
+      'SHOPIFY_UPDATE_AN_EXISTING_PRODUCT',
+    ],
     featuredFor: ['ecommerce'],
   },
 
@@ -197,10 +263,14 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'canva',
     name: 'Canva',
-    integrationId: 'canva',
+    toolkitSlug: 'CANVA',
     category: 'design',
     logo: '/logos/canva.svg',
-    actions: ['CANVA_CREATE_DESIGN', 'CANVA_EXPORT_DESIGN', 'CANVA_LIST_DESIGNS'],
+    actions: [
+      'CANVA_CREATE_DESIGN',
+      'CANVA_EXPORT_DESIGN',
+      'CANVA_LIST_DESIGNS',
+    ],
     featuredFor: ['marketing', 'agency', 'creator'],
   },
 
@@ -208,10 +278,13 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'google_analytics',
     name: 'Google Analytics',
-    integrationId: 'googleanalytics',
+    toolkitSlug: 'GOOGLEANALYTICS',
     category: 'analytics',
     logo: '/logos/google-analytics.svg',
-    actions: ['GA_RUN_REPORT', 'GA_GET_REALTIME'],
+    actions: [
+      'GOOGLEANALYTICS_RUN_REPORT',
+      'GOOGLEANALYTICS_RUN_REALTIME_REPORT',
+    ],
   },
 ] as const
 
