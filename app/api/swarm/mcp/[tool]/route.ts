@@ -20,7 +20,7 @@ export async function GET(
   // Manifest endpoint
   if (tool === 'manifest') {
     const { getMcpManifest } = await import('@/lib/swarm/mcp')
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const baseUrl = process.env.NEXUS_BASE_URL ?? 'http://localhost:3000'
     return new Response(JSON.stringify(getMcpManifest(baseUrl)), {
       headers: { 'Content-Type': 'application/json' },
     })

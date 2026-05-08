@@ -77,7 +77,7 @@ export const onMilestoneCompleted = inngest.createFunction(
       if (!data?.length) return 'no pending milestones'
 
       const next = data[0]
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const baseUrl = process.env.NEXUS_BASE_URL ?? 'http://localhost:3000'
       await fetch(`${baseUrl}/api/claw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -158,7 +158,7 @@ export const dailyCostCheck = inngest.createFunction(
   },
   async ({ step }: { step: Record<string, (id: string, fn: () => Promise<unknown>) => Promise<unknown>> }) => {
     const summary = await step['run']('check-cost', async () => {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const baseUrl = process.env.NEXUS_BASE_URL ?? 'http://localhost:3000'
       const res = await fetch(`${baseUrl}/api/alerts`, { method: 'POST' })
       return res.ok ? 'alerts evaluated' : `failed: ${res.status}`
     })
@@ -180,7 +180,7 @@ export const onAgentStatusChanged = inngest.createFunction(
     if (newStatus !== 'error') return { skipped: true }
 
     await step['run']('fire-agent-down-alert', async () => {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+      const baseUrl = process.env.NEXUS_BASE_URL ?? 'http://localhost:3000'
       await fetch(`${baseUrl}/api/alerts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

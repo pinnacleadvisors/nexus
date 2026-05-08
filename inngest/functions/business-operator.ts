@@ -162,7 +162,7 @@ function buildDigestBlocks(biz: BusinessRow, plan: OperatorPlan): SlackBlock[] {
     }
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const baseUrl = process.env.NEXUS_BASE_URL ?? ''
   blocks.push({
     type: 'actions',
     elements: [

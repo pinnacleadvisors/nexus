@@ -282,7 +282,7 @@ export async function POST(req: NextRequest) {
 
   if (plan.hybridRequired && openClawTask) {
     const sessionId    = `nexus-bridge-${Date.now()}`
-    const origin       = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const origin       = req.headers.get('origin') ?? process.env.NEXUS_BASE_URL ?? ''
     const callbackUrl  = `${origin}/api/webhooks/n8n`
 
     openClawDispatched = await dispatchToOpenClaw(openClawTask, sessionId, callbackUrl)

@@ -143,13 +143,9 @@ function buildAndWait(slug: string, niche: string): string | null {
 
 /** Hit /api/businesses/:slug/provision with the bearer token. */
 async function provision(slug: string, niche: string): Promise<boolean> {
-  // Codebase reads NEXT_PUBLIC_APP_URL in many places but Doppler stores the
-  // value under NEXUS_BASE_URL (and 13 routes have a silent ?? '' fallback
-  // masking the mismatch). Accept either to unblock; long-term fix is the
-  // Doppler alias `NEXT_PUBLIC_APP_URL = ${NEXUS_BASE_URL}`.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXUS_BASE_URL
+  const appUrl = process.env.NEXUS_BASE_URL
   const token  = process.env.NEXUS_OPS_TOKEN
-  if (!appUrl) { console.error('  ✗ NEXUS_BASE_URL / NEXT_PUBLIC_APP_URL missing — run via `doppler run --`.'); return false }
+  if (!appUrl) { console.error('  ✗ NEXUS_BASE_URL missing — run via `doppler run --`.'); return false }
   if (!token)  { console.error('  ✗ NEXUS_OPS_TOKEN missing — run via `doppler run --`.'); return false }
 
   console.log(`▶ Provisioning Coolify app for ${slug} (niche=${niche}) …`)
@@ -214,7 +210,7 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; auto?: boolean; n
   console.log(`  Easiest: bearer-token (no Clerk session needed). NEXUS_OPS_TOKEN must be set in Doppler:`)
   console.log(``)
   console.log(`  doppler run -- bash -c 'curl -i -X POST \\`)
-  console.log(`    "$NEXT_PUBLIC_APP_URL/api/businesses/${seed.slug}/provision" \\`)
+  console.log(`    "$NEXUS_BASE_URL/api/businesses/${seed.slug}/provision" \\`)
   console.log(`    -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \\`)
   console.log(`    -H "content-type: application/json" \\`)
   console.log(`    -d "{\\"niche\\":\\"${workflowNiche}\\"}"'`)
@@ -222,7 +218,7 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; auto?: boolean; n
   console.log(`  Or via Clerk session — open Nexus in browser, DevTools → Application →`)
   console.log(`  Cookies → copy __session value, then:`)
   console.log(``)
-  console.log(`  curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/${seed.slug}/provision" \\`)
+  console.log(`  curl -i -X POST "$NEXUS_BASE_URL/api/businesses/${seed.slug}/provision" \\`)
   console.log(`    -H "content-type: application/json" \\`)
   console.log(`    -H "cookie: __session=<paste>" \\`)
   console.log(`    -d '{"niche":"${workflowNiche}"}'`)

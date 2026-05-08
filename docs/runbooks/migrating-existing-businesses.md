@@ -79,13 +79,13 @@ npm run deploy -- --vercel
 
 # 3c. Provision (bearer-token mode — works from any terminal)
 doppler run -- bash -c 'curl -i -X POST \
-  "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+  "$NEXUS_BASE_URL/api/businesses/inkbound/provision" \
   -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \
   -H "content-type: application/json" \
   -d "{\"niche\":\"digital-products\"}"'
 
 # Or via Clerk session cookie (browser DevTools → Application → Cookies → __session)
-# curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+# curl -i -X POST "$NEXUS_BASE_URL/api/businesses/inkbound/provision" \
 #   -H "content-type: application/json" \
 #   -H "cookie: __session=<paste>" \
 #   -d '{"niche":"digital-products"}'

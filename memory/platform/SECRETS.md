@@ -97,7 +97,7 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `NOTION_API_KEY` | 6 | Notion internal integration (server-side writes) |
 | `INNGEST_EVENT_KEY` | 7 | Inngest background jobs |
 | `INNGEST_SIGNING_KEY` | 7 | Inngest webhook verification |
-| `NEXT_PUBLIC_APP_URL` | 7 | Vercel deployment URL |
+| `NEXUS_BASE_URL` | 7 | Vercel deployment URL |
 | `N8N_BASE_URL` | 13 | n8n instance URL |
 | `N8N_API_KEY` | 13 | n8n API key |
 | `N8N_WEBHOOK_SECRET` | 13 | n8n webhook HMAC verification |
@@ -320,7 +320,7 @@ where the secret must be present.
 | `BOT_ISSUER_SECRET`        | Doppler **and** qa-runner | HMAC secret for `POST /api/admin/issue-bot-session`. Binds the request body to the signature so the bearer alone can't replay with a different `userId`. Rotate quarterly. |
 | `QA_RUNNER_WEBHOOK_URL`    | Doppler                   | Public URL of the qa-runner `/run` endpoint (Cloudflare Tunnel → `qa-runner:3001`). Cron POSTs here. |
 | `QA_RUNNER_HMAC_SECRET`    | Doppler **and** qa-runner | HMAC secret signing the cron → qa-runner webhook. Same `X-Nexus-Signature` shape as the gateway. |
-| `QA_RUNNER_BASE_URL`       | Doppler (optional)        | Default `BASE_URL` the runner targets when the cron sends an empty body. Falls back to `NEXT_PUBLIC_APP_URL`. |
+| `QA_RUNNER_BASE_URL`       | Doppler (optional)        | Default `BASE_URL` the runner targets when the cron sends an empty body. Falls back to `NEXUS_BASE_URL`. |
 | `BASE_URL`                 | qa-runner only            | Live deployment URL (e.g. `https://nexus.example.com`). Required by `playwright.config.ts`. |
 | `NEXUS_BASE_URL`           | qa-runner only            | Base URL for outbound calls back into Nexus (issue-bot-session, log slice, workflow feedback). Usually equals `BASE_URL`. |
 | `CLAUDE_GATEWAY_URL`       | qa-runner only            | Internal gateway URL used by the runner for fix-attempt dispatch. Default `http://claude-gateway:3000` over the `coolify` network. |

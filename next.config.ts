@@ -35,7 +35,7 @@ const CSP = [
     'https://api.us-1.inngest.com',
     'https://*.upstash.io',
     'https://api.notion.com',
-    process.env.NEXT_PUBLIC_APP_URL ?? '',
+    process.env.NEXUS_BASE_URL ?? '',
   ]
     .filter(Boolean)
     .join(' '),

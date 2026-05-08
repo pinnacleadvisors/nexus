@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   try { actionTitle = Buffer.from(actionTitleB64, 'base64').toString('utf8') } catch { /* leave empty */ }
 
   const decision = action.action_id === 'biz_op_approve' ? 'approved' : 'rejected'
-  const baseUrl  = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const baseUrl  = process.env.NEXUS_BASE_URL ?? ''
   const boardUrl = `${baseUrl}/board?business=${encodeURIComponent(businessSlug)}`
 
   console.log(

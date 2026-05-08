@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     }, { status: 503 })
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
+  const appUrl = process.env.NEXUS_BASE_URL ?? new URL(req.url).origin
   const nonce  = crypto.randomUUID()
   // Embed the nonce in callback_url so Composio passes it back via query.
   // The callback verifies it against the cookie value below.

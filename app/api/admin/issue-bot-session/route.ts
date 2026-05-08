@@ -100,7 +100,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<IssueResponse
   // never have to. The redirect target is the dashboard root — change via
   // ?redirect_url=… when needed.
   const url = ticket.url
-    ?? `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/sign-in?__clerk_ticket=${encodeURIComponent(ticket.token)}`
+    ?? `${process.env.NEXUS_BASE_URL ?? ''}/sign-in?__clerk_ticket=${encodeURIComponent(ticket.token)}`
 
   return NextResponse.json({
     ok:      true,

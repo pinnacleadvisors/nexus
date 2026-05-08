@@ -30,7 +30,7 @@ export async function GET(
 
   // Generate a cryptographically random state for CSRF protection
   const state = crypto.randomUUID()
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
+  const appUrl = process.env.NEXUS_BASE_URL ?? new URL(req.url).origin
   const redirectUri = `${appUrl}/api/oauth/callback/${providerId}`
 
   const authUrl = new URL(provider.authUrl)

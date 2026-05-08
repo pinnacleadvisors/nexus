@@ -23,7 +23,7 @@ export async function wake(opts: WakeOpts): Promise<{ posted: boolean }> {
   try {
     const cfg = await getSlackConfig(opts.userId)
     if (!cfg.webhookUrl) return { posted: false }
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const baseUrl = process.env.NEXUS_BASE_URL ?? ''
     const path = opts.dashboardPath ?? (opts.runId ? `/board?runId=${encodeURIComponent(opts.runId)}` : '/board')
     const dashboardUrl = `${baseUrl}${path}`
     const blocks = opts.runId
