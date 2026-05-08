@@ -231,3 +231,16 @@ export async function stopApp(uuid: string): Promise<void> {
 export async function listApps(): Promise<CoolifyAppRow[]> {
   return call<CoolifyAppRow[]>('/applications')
 }
+
+/**
+ * Find a single existing app by exact name match. Used by the provision
+ * route to avoid creating duplicate apps when re-run after a partial
+ * failure (post-create work threw but app was already created).
+ *
+ * Returns null when no match. Returns the FIRST match if Coolify already
+ * has duplicates (which it allows — names aren't unique-constrained).
+ */
+export async function findAppByName(name: string): Promise<CoolifyAppRow | null> {
+  const all = await listApps()
+  return all.find(a => a.name === name) ?? null
+}
