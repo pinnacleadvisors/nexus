@@ -125,6 +125,13 @@ export async function POST(
   for (const v of manifest.envVars) {
     if (v in process.env) env[v] = process.env[v] as string
   }
+  // Always-injected platform env: Claude CLI auth (covers headless containers
+  // where 'claude login' isn't possible because no terminal access). The
+  // entrypoint prefers CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive)
+  // and falls back to ANTHROPIC_API_KEY when present.
+  for (const v of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) {
+    if (v in process.env) env[v] = process.env[v] as string
+  }
 
   // ── Idempotency: skip create if an app with this name already exists ──
   // Coolify allows duplicates by name; without this check, every retry after
