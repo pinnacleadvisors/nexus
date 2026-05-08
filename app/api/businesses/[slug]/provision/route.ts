@@ -135,16 +135,21 @@ export async function POST(
       env,
     })
   } catch (err) {
-    const status = err instanceof CoolifyError ? err.status : 502
+    const status      = err instanceof CoolifyError ? err.status : 502
+    const coolifyBody = err instanceof CoolifyError ? err.body   : undefined
+    const message     = err instanceof Error        ? err.message : 'coolify create failed'
     audit(req, {
       action:     'businesses.provision',
       resource:   'business',
       resourceId: slug,
       userId:     a.userId,
-      metadata:   { authMode: a.mode, error: err instanceof Error ? err.message : 'coolify create failed', status, profile: manifest.profile },
+      metadata:   { authMode: a.mode, error: message, status, profile: manifest.profile, coolifyBody: coolifyBody?.slice(0, 500) },
     })
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'coolify create failed' },
+      // Surface Coolify's actual response body alongside the status — the
+      // shape is { message: "Validation failed.", errors: { field: [...] } }
+      // and the operator needs to see the field name to fix it.
+      { error: message, coolifyResponse: coolifyBody?.slice(0, 800) },
       { status: status >= 400 && status < 600 ? status : 502 },
     )
   }
