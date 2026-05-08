@@ -109,56 +109,102 @@ export interface CoolifyAppRow {
 
 export interface CreateAppInput {
   businessSlug:   string
-  /** Docker image registry path (e.g. ghcr.io/pinnacleadvisors/nexus-business:acme-ads). */
+  /** Docker image registry path including tag (e.g. ghcr.io/pinnacleadvisors/nexus-business:acme-ads). */
   image:          string
-  /** Env vars to inject. NEVER pass secret values directly — use a Coolify
-   *  shared variable name reference; this wrapper stamps `{ key, value, isShared: true }`. */
+  /** Env vars to inject. Posted to /applications/{uuid}/envs after create — the
+   *  create endpoint itself doesn't accept env vars. */
   env:            Record<string, string>
-  /** Public hostname Coolify routes to this app. */
+  /** Public hostname Coolify routes to this app. Pass bare hostname; we'll
+   *  prepend https://. Omit to let Coolify auto-generate a *.sslip.io domain. */
   fqdn?:          string
   /** Optional: override the default 3000 if the image listens elsewhere. */
   port?:          number
+  /** Coolify environment within the project. Defaults to 'production' which is
+   *  the default Coolify creates per project. */
+  environmentName?: string
 }
 
 export interface CreateAppResult {
   uuid:    string
   name:    string
   fqdn?:   string
+  /** Coolify v4's create response field is `domains` (not `fqdn`); kept for
+   *  back-compat — same value. */
+  domains?: string
 }
 
 /**
  * Create a Docker-image-backed application in the configured Coolify project.
  * Coolify v4 separates the resource creation from the start; the caller must
  * call `startApp(uuid)` to bring it up.
+ *
+ * Coolify v4 quirks this wrapper smooths over:
+ *   - The `image` arg gets split into `docker_registry_image_name` +
+ *     `docker_registry_image_tag` on the wire (the `docker_image` field is
+ *     rejected).
+ *   - `custom_labels` MUST be base64 encoded ("The custom_labels should be
+ *     base64 encoded.").
+ *   - `environment_name` is required ("provide at least one of
+ *     environment_name or environment_uuid").
+ *   - `environment_variables` is NOT a valid field on create — env vars go
+ *     to /applications/{uuid}/envs after the app exists.
+ *   - `domains` (not `fqdn`) and must be a full URL with protocol.
  */
 export async function createApp(input: CreateAppInput): Promise<CreateAppResult> {
   const cfg = getConfig()
-  const body = {
-    project_uuid:    cfg.projectId,
-    server_uuid:     cfg.serverUuid,
-    name:            `nexus-business-${input.businessSlug}`,
-    description:     `Per-business Claude Code gateway for ${input.businessSlug}`,
-    docker_image:    input.image,
-    ports_exposes:   String(input.port ?? 3000),
-    fqdn:            input.fqdn,
-    instant_deploy:  false,
-    environment_variables: Object.entries(input.env).map(([key, value]) => ({
-      key,
-      value,
-      is_preview:  false,
-      is_build_time: false,
-      is_literal:  true,
-    })),
-    labels: [
-      `nexus.business.slug=${input.businessSlug}`,
-      'nexus.app.kind=per-business-claude-gateway',
-    ].join('\n'),
+
+  // Split image into name + tag at the LAST colon. Tags can't contain `:`,
+  // and registry hosts can include a port (e.g. `localhost:5000/foo:tag`).
+  const lastColon = input.image.lastIndexOf(':')
+  const slashAfterColon = lastColon > 0 ? input.image.indexOf('/', lastColon) : -1
+  const hasTag = lastColon > 0 && slashAfterColon === -1
+  const imageName = hasTag ? input.image.slice(0, lastColon) : input.image
+  const imageTag  = hasTag ? input.image.slice(lastColon + 1) : 'latest'
+
+  const labelLines = [
+    `nexus.business.slug=${input.businessSlug}`,
+    'nexus.app.kind=per-business-claude-gateway',
+  ].join('\n')
+
+  const body: Record<string, unknown> = {
+    project_uuid:               cfg.projectId,
+    server_uuid:                cfg.serverUuid,
+    environment_name:           input.environmentName ?? 'production',
+    name:                       `nexus-business-${input.businessSlug}`,
+    description:                `Per-business Claude Code gateway for ${input.businessSlug}`,
+    docker_registry_image_name: imageName,
+    docker_registry_image_tag:  imageTag,
+    ports_exposes:              String(input.port ?? 3000),
+    instant_deploy:             false,
+    custom_labels:              Buffer.from(labelLines, 'utf8').toString('base64'),
+  }
+  if (input.fqdn) {
+    body.domains = input.fqdn.startsWith('http') ? input.fqdn : `https://${input.fqdn}`
   }
 
-  return call<CreateAppResult>('/applications/dockerimage', {
+  const created = await call<CreateAppResult>('/applications/dockerimage', {
     method: 'POST',
     body:   JSON.stringify(body),
   })
+
+  // Env vars go in via a per-var endpoint after create. There's no documented
+  // bulk endpoint as of Coolify v4 (we tested /envs/bulk → 404). Failures on
+  // individual vars are logged but don't fail the whole create — the operator
+  // can fix in the Coolify UI rather than rolling back the whole app.
+  for (const [key, value] of Object.entries(input.env)) {
+    if (value === '') continue // skip empty values (Coolify rejects them)
+    try {
+      await call(`/applications/${encodeURIComponent(created.uuid)}/envs`, {
+        method: 'POST',
+        body:   JSON.stringify({ key, value, is_literal: true }),
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[coolify] env ${key} failed for app ${created.uuid}:`, err instanceof Error ? err.message : err)
+    }
+  }
+
+  return created
 }
 
 export async function getApp(uuid: string): Promise<CoolifyAppRow | null> {
