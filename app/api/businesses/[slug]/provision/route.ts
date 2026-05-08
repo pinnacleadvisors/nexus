@@ -100,7 +100,12 @@ export async function POST(
   // image must already be built + pushed; this provisioner doesn't trigger
   // CI. (Phase 5a's Dockerfile.business is the build recipe.)
   const image = body.image ?? `${DEFAULT_IMAGE_REPO}:${slug}`
-  const fqdn  = body.fqdn  ?? `${slug}.gateway.nexus.example.com`
+  // FQDN: if operator passes one, use it. Otherwise leave undefined and
+  // Coolify auto-generates a *.sslip.io domain (works fine for early testing,
+  // owner can swap to a real domain later via the Coolify UI).
+  const fqdn  = body.fqdn ?? (process.env.NEXUS_BUSINESS_DOMAIN_TEMPLATE
+    ? process.env.NEXUS_BUSINESS_DOMAIN_TEMPLATE.replace(/\{slug\}/g, slug)
+    : undefined)
 
   const bearerToken = generateBearerToken()
 
@@ -144,12 +149,13 @@ export async function POST(
     )
   }
 
-  // Persist the gateway config so dispatch picks it up via resolveClawConfig.
-  // gatewayUrl uses https + the FQDN; if Coolify hasn't issued a cert yet,
-  // the operator can flip to http until one is ready.
-  const gatewayUrl  = `https://${created.fqdn ?? fqdn}`
-  const wroteUrl    = await setSecret(a.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl)
-  const wroteToken  = await setSecret(a.userId, businessKind(slug), 'bearerToken', bearerToken)
+  // Coolify v4 returns the resolved FQDN under `domains` (full URL with
+  // protocol, e.g. http://<uuid>.<ip>.sslip.io). Strip the scheme back off
+  // so downstream logic that uses `fqdn` keeps working.
+  const resolvedFqdn = (created.domains ?? created.fqdn ?? fqdn ?? '').replace(/^https?:\/\//, '')
+  const gatewayUrl   = resolvedFqdn ? `https://${resolvedFqdn}` : ''
+  const wroteUrl     = gatewayUrl ? await setSecret(a.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl) : false
+  const wroteToken   = await setSecret(a.userId, businessKind(slug), 'bearerToken', bearerToken)
 
   audit(req, {
     action:     'businesses.provision',
@@ -158,17 +164,17 @@ export async function POST(
     userId:     a.userId,
     metadata:   {
       authMode: a.mode,
-      uuid:    created.uuid,
-      fqdn:    created.fqdn ?? fqdn,
-      profile: manifest.profile,
-      mcps:    manifest.mcpIds.length,
+      uuid:     created.uuid,
+      fqdn:     resolvedFqdn,
+      profile:  manifest.profile,
+      mcps:     manifest.mcpIds.length,
     },
   })
 
   return NextResponse.json({
     ok:             true,
     uuid:           created.uuid,
-    fqdn:           created.fqdn ?? fqdn,
+    fqdn:           resolvedFqdn,
     gatewayUrl,
     secretsWritten: wroteUrl && wroteToken,
     manifest: {
