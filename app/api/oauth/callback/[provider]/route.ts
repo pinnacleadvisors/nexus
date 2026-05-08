@@ -48,7 +48,7 @@ export async function GET(
   // Exchange authorization code for access token
   const clientId = process.env[provider.envClientId] ?? ''
   const clientSecret = process.env[`${provider.envClientId.replace('CLIENT_ID', 'CLIENT_SECRET')}`] ?? ''
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
+  const appUrl = process.env.NEXUS_BASE_URL ?? new URL(req.url).origin
   const redirectUri = `${appUrl}/api/oauth/callback/${providerId}`
 
   try {

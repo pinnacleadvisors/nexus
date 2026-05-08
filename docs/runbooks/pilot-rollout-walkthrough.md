@@ -418,7 +418,7 @@ If 7 days are clean, repeat Steps 4–6 for the next business. Document anything
 | `503 No Composio Auth Config for Twitter` | Missing env var | Step 5c — add `COMPOSIO_AUTH_CONFIG_TWITTER` |
 | `Composio /connected_accounts/link failed: 401` | API key wrong/missing | Verify `COMPOSIO_API_KEY` in Doppler |
 | `Composio response missing redirect_url / connected_account_id` | Auth Config exists but is misconfigured (wrong scheme, missing scopes) | Open dashboard, edit Auth Config, re-save |
-| OAuth click loops back with `error: invalid state` | Cookie SameSite issue (Vercel preview deployments) | Test on production URL or your staging domain that matches `NEXT_PUBLIC_APP_URL` |
+| OAuth click loops back with `error: invalid state` | Cookie SameSite issue (Vercel preview deployments) | Test on production URL or your staging domain that matches `NEXUS_BASE_URL` |
 | Coolify create returns 422 `name already in use` | Already provisioned this slug | `curl DELETE /api/v1/applications/<uuid>` (lookup via list) and re-run provision |
 | Dispatch hangs 30s timeout to new gateway | Container running but `claude login` never done | Phase D step 5 — shell in and run `claude login` |
 | `connection_id` missing on callback | Composio's redirect query param name varies (`connected_account_id`, `connection_id`, `connectedAccountId`) | The callback already handles all three — if still failing, check Composio's redirect URL in the dashboard event log |

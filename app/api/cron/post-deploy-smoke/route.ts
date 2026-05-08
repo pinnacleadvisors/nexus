@@ -60,7 +60,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const baseUrl = payload.baseUrl
     ?? process.env.QA_RUNNER_BASE_URL
-    ?? process.env.NEXT_PUBLIC_APP_URL
+    ?? process.env.NEXUS_BASE_URL
     ?? ''
 
   if (!baseUrl) {

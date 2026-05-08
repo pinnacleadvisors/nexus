@@ -39,7 +39,7 @@ export function checkCsrf(req: NextRequest): NextResponse | null {
   if (!origin && !referer) return null
 
   const appHost = req.headers.get('host') ?? ''
-  const appUrl  = process.env.NEXT_PUBLIC_APP_URL
+  const appUrl  = process.env.NEXUS_BASE_URL
 
   // Build set of allowed origins
   const allowed = new Set<string>()

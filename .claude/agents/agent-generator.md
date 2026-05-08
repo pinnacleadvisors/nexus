@@ -36,7 +36,7 @@ When activated, confirm the task back to the user in one sentence, then proceed 
 6. **Write the spec** to `.claude/agents/<slug>.md` using the template in the protocol doc.
 7. **Register in Supabase:**
    ```bash
-   curl -s -X POST $NEXT_PUBLIC_APP_URL/api/agents \
+   curl -s -X POST $NEXUS_BASE_URL/api/agents \
      -H 'Content-Type: application/json' \
      -d "$(jq -nc --arg s "<slug>" ...)"
    ```

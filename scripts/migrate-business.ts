@@ -42,14 +42,16 @@ interface Args {
   slug?:    string
   all:      boolean
   build:    boolean
+  auto:     boolean
   niche?:   string
 }
 
 function parseArgs(): Args {
-  const a: Args = { all: false, build: false }
+  const a: Args = { all: false, build: false, auto: false }
   for (const arg of process.argv.slice(2)) {
     if (arg === '--all')   a.all = true
     else if (arg === '--build') a.build = true
+    else if (arg === '--auto')  a.auto = true
     else if (arg.startsWith('--niche=')) a.niche = arg.slice('--niche='.length)
     else if (!a.slug) a.slug = arg
   }
@@ -83,7 +85,91 @@ function triggerBuild(slug: string, niche: string): void {
   }
 }
 
-function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string }) {
+/**
+ * Trigger build, wait for it to finish, and return the workflow run id.
+ * Returns null on failure.
+ */
+function buildAndWait(slug: string, niche: string): string | null {
+  console.log(`▶ Triggering GHA build for ${slug} (niche=${niche}) …`)
+  const trigger = spawnSync('gh', [
+    'workflow', 'run', 'per-business-image.yml',
+    '-f', `slug=${slug}`,
+    '-f', `niche=${niche}`,
+    '-f', `mcp_override=none`,
+  ], { stdio: 'inherit' })
+  if (trigger.status !== 0) {
+    console.error('  ✗ gh workflow run failed — check `gh auth status`.')
+    return null
+  }
+
+  // gh workflow run is fire-and-forget — find the most recent run id by
+  // listing runs filtered to this workflow. Loop briefly because the run
+  // takes a moment to appear in the API after dispatch.
+  console.log('  Polling for the new run id …')
+  let runId: string | null = null
+  for (let i = 0; i < 10; i++) {
+    const list = spawnSync('gh', [
+      'run', 'list',
+      '--workflow', 'per-business-image.yml',
+      '--limit', '1',
+      '--json', 'databaseId,status,headBranch',
+    ], { encoding: 'utf8' })
+    if (list.status === 0) {
+      try {
+        const rows = JSON.parse(list.stdout) as Array<{ databaseId: number; status: string }>
+        if (rows[0] && rows[0].status !== 'completed') {
+          runId = String(rows[0].databaseId)
+          break
+        }
+      } catch { /* keep polling */ }
+    }
+    spawnSync('sleep', ['2'])
+  }
+
+  if (!runId) {
+    console.error('  ✗ Could not locate the new run. Check the Actions tab manually.')
+    return null
+  }
+
+  console.log(`  Run id: ${runId}. Waiting for completion (typically 3-5 min) …`)
+  const watch = spawnSync('gh', ['run', 'watch', runId, '--exit-status'], { stdio: 'inherit' })
+  if (watch.status !== 0) {
+    console.error('  ✗ Build failed. See log: gh run view ' + runId + ' --log-failed')
+    return null
+  }
+  console.log(`  ✓ Build succeeded.`)
+  return runId
+}
+
+/** Hit /api/businesses/:slug/provision with the bearer token. */
+async function provision(slug: string, niche: string): Promise<boolean> {
+  const appUrl = process.env.NEXUS_BASE_URL
+  const token  = process.env.NEXUS_OPS_TOKEN
+  if (!appUrl) { console.error('  ✗ NEXUS_BASE_URL missing — run via `doppler run --`.'); return false }
+  if (!token)  { console.error('  ✗ NEXUS_OPS_TOKEN missing — run via `doppler run --`.'); return false }
+
+  console.log(`▶ Provisioning Coolify app for ${slug} (niche=${niche}) …`)
+  const res = await fetch(`${appUrl.replace(/\/$/, '')}/api/businesses/${encodeURIComponent(slug)}/provision`, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'content-type':  'application/json',
+    },
+    body: JSON.stringify({ niche }),
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    console.error(`  ✗ provision failed: ${res.status}`)
+    console.error(`    ${text.slice(0, 500)}`)
+    return false
+  }
+  console.log(`  ✓ Provisioned. Response:`)
+  console.log(text.split('\n').map(l => '    ' + l).join('\n'))
+  console.log('')
+  return true
+}
+
+function printPlan(seed: BusinessSeed, opts: { build: boolean; auto?: boolean; niche?: string }) {
   // resolveManifest matches the seed's niche string against profile substring
   // patterns (e.g. "organizer" / "contract bundle" → digital-products). Pass
   // --niche=<profile> to override (e.g. force ecommerce or saas).
@@ -104,7 +190,11 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string })
   // Pass the resolved profile name to the workflow (shell-safe) instead of
   // the raw seed niche string (which may contain parens / commas / spaces).
   const workflowNiche = manifest.profile
-  if (opts.build) {
+  if (opts.auto) {
+    // --auto handles steps 1+2 in one go; just print here.
+    console.log(`  Will trigger via gh workflow run + wait + provision (--auto mode).`)
+    console.log('')
+  } else if (opts.build) {
     triggerBuild(seed.slug, workflowNiche)
   } else {
     console.log(`  gh workflow run per-business-image.yml \\`)
@@ -120,7 +210,7 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string })
   console.log(`  Easiest: bearer-token (no Clerk session needed). NEXUS_OPS_TOKEN must be set in Doppler:`)
   console.log(``)
   console.log(`  doppler run -- bash -c 'curl -i -X POST \\`)
-  console.log(`    "$NEXT_PUBLIC_APP_URL/api/businesses/${seed.slug}/provision" \\`)
+  console.log(`    "$NEXUS_BASE_URL/api/businesses/${seed.slug}/provision" \\`)
   console.log(`    -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \\`)
   console.log(`    -H "content-type: application/json" \\`)
   console.log(`    -d "{\\"niche\\":\\"${workflowNiche}\\"}"'`)
@@ -128,7 +218,7 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string })
   console.log(`  Or via Clerk session — open Nexus in browser, DevTools → Application →`)
   console.log(`  Cookies → copy __session value, then:`)
   console.log(``)
-  console.log(`  curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/${seed.slug}/provision" \\`)
+  console.log(`  curl -i -X POST "$NEXUS_BASE_URL/api/businesses/${seed.slug}/provision" \\`)
   console.log(`    -H "content-type: application/json" \\`)
   console.log(`    -H "cookie: __session=<paste>" \\`)
   console.log(`    -d '{"niche":"${workflowNiche}"}'`)
@@ -186,7 +276,30 @@ function printPlan(seed: BusinessSeed, opts: { build: boolean; niche?: string })
   console.log(`When stable for ≥7 days, repeat for the next business or migrate the rest.`)
 }
 
-function main() {
+async function runAutoForSeed(seed: BusinessSeed, niche?: string): Promise<boolean> {
+  const profile = resolveManifest({ niche: niche ?? seed.niche }).profile
+  console.log(`\n══════════════════════════════════════════════════════════`)
+  console.log(`AUTO mode for ${seed.name} (${seed.slug}) — niche=${profile}`)
+  console.log(`══════════════════════════════════════════════════════════`)
+
+  const runId = buildAndWait(seed.slug, profile)
+  if (!runId) return false
+
+  const ok = await provision(seed.slug, profile)
+  if (!ok) return false
+
+  console.log(`──────────────────────────────────────────────────────────`)
+  console.log(`✓ ${seed.slug} build + provision complete.`)
+  console.log(`  Manual remaining steps:`)
+  console.log(`    1. Coolify → ${seed.slug.replace(/^/, 'nexus-business-')} → Deploy`)
+  console.log(`    2. Container Terminal → \`claude login\` → paste OAuth code`)
+  console.log(`    3. /settings/accounts?businessSlug=${seed.slug} — connect per-business OAuth platforms`)
+  console.log(`    4. Smoke-test the gateway, then run a low-stakes workflow`)
+  console.log('')
+  return true
+}
+
+async function main() {
   const args = parseArgs()
 
   let targets: BusinessSeed[]
@@ -200,9 +313,24 @@ function main() {
     }
     targets = [seed]
   } else {
-    console.error('Usage: migrate-business.ts <slug> | --all  [--build] [--niche=<profile>]')
+    console.error('Usage: migrate-business.ts <slug> | --all  [--build] [--auto] [--niche=<profile>]')
+    console.error(`  --build  Trigger the GHA build but don't wait/provision (returns immediately)`)
+    console.error(`  --auto   Build + wait for image + call /provision in one chain`)
     console.error(`Known slugs: ${BUSINESS_SEEDS.map(b => b.slug).join(', ')}`)
     process.exit(1)
+  }
+
+  if (args.auto) {
+    let failures = 0
+    for (const seed of targets) {
+      const ok = await runAutoForSeed(seed, args.niche)
+      if (!ok) failures++
+    }
+    if (failures > 0) {
+      console.error(`${failures}/${targets.length} business(es) failed. See output above.`)
+      process.exit(1)
+    }
+    return
   }
 
   for (const seed of targets) {
@@ -210,4 +338,4 @@ function main() {
   }
 }
 
-main()
+void main()

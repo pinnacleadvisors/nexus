@@ -7,17 +7,32 @@ The full step-by-step is in [`pilot-rollout-walkthrough.md`](pilot-rollout-walkt
 ## Helper script
 
 ```bash
-# Print the migration plan for one business
+# Print the migration plan for one business (no side effects)
 doppler run -- npx --yes tsx scripts/migrate-business.ts ledger-lane
 
-# Plan + auto-trigger the GHA image build
+# Trigger the GHA image build only — return immediately (don't wait, don't provision)
 doppler run -- npx --yes tsx scripts/migrate-business.ts ledger-lane --build
 
-# Run for both seeds at once
-doppler run -- npx --yes tsx scripts/migrate-business.ts --all
+# AUTO: build + wait for image + call /provision in one chain (recommended).
+# Takes ~3-5 min for the build to finish, then runs the provision call.
+doppler run -- npx --yes tsx scripts/migrate-business.ts ledger-lane --auto
+
+# All known seeds in auto mode (sequential — second business waits for first)
+doppler run -- npx --yes tsx scripts/migrate-business.ts --all --auto
 ```
 
-The script reads `lib/business/seeds.ts`, resolves the MCP manifest from the business niche, prints the provision curl, and lists which OAuth platforms are per-business vs shareable for that profile. It does NOT call the provision endpoint (needs a Clerk session cookie) and does NOT open the Coolify UI (deploy step is manual by design).
+The plan-only mode reads `lib/business/seeds.ts`, resolves the MCP manifest from the business niche, prints the provision curl + Coolify deploy steps, and lists which OAuth platforms are per-business vs shareable for that profile.
+
+`--auto` mode chains everything that doesn't require a human:
+1. `gh workflow run per-business-image.yml` to trigger the build
+2. Locates the new run id, then `gh run watch <id> --exit-status` to block until done
+3. POSTs to `/api/businesses/:slug/provision` with the bearer token
+4. Prints the manual steps that remain (Coolify Deploy click, `claude login`, OAuth account connections)
+
+What `--auto` deliberately does NOT do:
+- Click Deploy in Coolify (intentional — the operator should review the deployment first)
+- Run `claude login` inside the container (interactive OAuth, can't script)
+- Connect OAuth accounts at /settings/accounts (browser flow only)
 
 ## Per-business specifics
 
@@ -64,13 +79,13 @@ npm run deploy -- --vercel
 
 # 3c. Provision (bearer-token mode — works from any terminal)
 doppler run -- bash -c 'curl -i -X POST \
-  "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+  "$NEXUS_BASE_URL/api/businesses/inkbound/provision" \
   -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \
   -H "content-type: application/json" \
   -d "{\"niche\":\"digital-products\"}"'
 
 # Or via Clerk session cookie (browser DevTools → Application → Cookies → __session)
-# curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+# curl -i -X POST "$NEXUS_BASE_URL/api/businesses/inkbound/provision" \
 #   -H "content-type: application/json" \
 #   -H "cookie: __session=<paste>" \
 #   -d '{"niche":"digital-products"}'

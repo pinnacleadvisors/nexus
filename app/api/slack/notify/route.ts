@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (!body.title) return NextResponse.json({ error: 'title required' }, { status: 400 })
 
   const cfg = await getSlackConfig(userId)
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const baseUrl = process.env.NEXUS_BASE_URL ?? ''
   const path = body.dashboardPath ?? (body.runId ? `/board?runId=${encodeURIComponent(body.runId)}` : '/board')
   const dashboardUrl = `${baseUrl}${path}`
 
