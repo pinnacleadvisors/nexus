@@ -8,18 +8,11 @@ A more detailed companion to `per-business-container-rollout.md`. That file is t
 
 ## Step 3 — Coolify env (find project + server UUIDs)
 
-You already have `COOLIFY_BASE_URL` and `COOLIFY_API_TOKEN` for KVM2 and KVM4 in Doppler. The new per-business code reads four vars: `COOLIFY_BASE_URL`, `COOLIFY_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`. Pick **one** Coolify instance (KVM4 is the assumed host based on the env var naming — businesses scale-to-zero so cost is bounded by active count).
+The per-business container code reads KVM4-specific Doppler vars directly: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`. KVM4 hosts the per-business apps (KVM2 hosts the codex-gateway).
 
-### 3a. Pick the host instance and alias in Doppler
+### 3a. Verify the KVM4 vars exist in Doppler
 
-In Doppler, the cleanest pattern is to **alias** the chosen KVM-prefixed vars to the unprefixed ones the code expects, so you don't duplicate secrets:
-
-```
-COOLIFY_BASE_URL   = ${COOLIFY_KVM4_URL}
-COOLIFY_API_TOKEN  = ${COOLIFY_KVM4_TOKEN}
-```
-
-Doppler resolves these at inject time. (Replace `KVM4` with `KVM2` if you pick that instance.) Doppler dashboard → Project: `nexus` → Config: `prd` → click **+ Add Secret** → use the reference syntax above.
+You already have `COOLIFY_KVM4_URL` and `COOLIFY_KVM4_API_TOKEN` from the existing claude-gateway deploy. The two new ones we add below are project + server UUIDs.
 
 ### 3b. Find the project UUID
 

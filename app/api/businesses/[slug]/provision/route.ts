@@ -83,7 +83,7 @@ export async function POST(
 
   if (!isCoolifyConfigured()) {
     return NextResponse.json(
-      { error: 'Coolify not configured — set COOLIFY_BASE_URL, COOLIFY_API_TOKEN, COOLIFY_PROJECT_ID_NEXUS_BUSINESSES, COOLIFY_KVM4_SERVER_UUID' },
+      { error: 'Coolify not configured — set COOLIFY_KVM4_URL, COOLIFY_KVM4_API_TOKEN, COOLIFY_PROJECT_ID_NEXUS_BUSINESSES, COOLIFY_KVM4_SERVER_UUID' },
       { status: 503 },
     )
   }

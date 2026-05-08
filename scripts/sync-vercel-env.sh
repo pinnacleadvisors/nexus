@@ -8,7 +8,7 @@
 #
 # Usage:
 #   doppler run -- bash scripts/sync-vercel-env.sh           # push the curated list
-#   doppler run -- bash scripts/sync-vercel-env.sh COOLIFY_BASE_URL FOO  # push specific names
+#   doppler run -- bash scripts/sync-vercel-env.sh COOLIFY_KVM4_URL FOO  # push specific names
 #
 # Required env (from Doppler):
 #   VERCEL_TOKEN          — vercel.com/account/tokens (full-scope)
@@ -34,8 +34,8 @@ err()  { printf '%s✘%s %s\n' "$R" "$X" "$1" >&2; }
 # but that aren't part of the original Vercel-project env. Add to this list
 # as new env vars are introduced.
 DEFAULT_NAMES=(
-  COOLIFY_BASE_URL
-  COOLIFY_API_TOKEN
+  COOLIFY_KVM4_URL
+  COOLIFY_KVM4_API_TOKEN
   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES
   COOLIFY_KVM4_SERVER_UUID
   NEXUS_OPS_TOKEN
