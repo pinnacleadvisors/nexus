@@ -53,7 +53,16 @@ gh workflow run per-business-image.yml \
 #    then mark the package public if you went with that option (Step 4e of
 #    the walkthrough). Do this once per package.
 
-# 3. Provision (bearer-token mode — works from any terminal)
+# 3a. Sync the new Coolify + ops env vars from Doppler into Vercel's
+#     project env. Vercel functions don't read Doppler at runtime — they
+#     read whatever is stored in the Vercel project. Skip if you have the
+#     Doppler-Vercel integration configured to auto-sync.
+doppler run -- bash scripts/sync-vercel-env.sh
+
+# 3b. Redeploy Vercel so functions pick up the new env values
+npm run deploy -- --vercel
+
+# 3c. Provision (bearer-token mode — works from any terminal)
 doppler run -- bash -c 'curl -i -X POST \
   "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
   -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \
