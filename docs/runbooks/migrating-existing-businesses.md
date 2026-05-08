@@ -53,11 +53,18 @@ gh workflow run per-business-image.yml \
 #    then mark the package public if you went with that option (Step 4e of
 #    the walkthrough). Do this once per package.
 
-# 3. Provision (needs Clerk session cookie — run from browser DevTools)
-curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+# 3. Provision (bearer-token mode — works from any terminal)
+doppler run -- bash -c 'curl -i -X POST \
+  "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+  -H "Authorization: Bearer $NEXUS_OPS_TOKEN" \
   -H "content-type: application/json" \
-  -H "cookie: __session=<paste>" \
-  -d '{"niche":"digital-products"}'
+  -d "{\"niche\":\"digital-products\"}"'
+
+# Or via Clerk session cookie (browser DevTools → Application → Cookies → __session)
+# curl -i -X POST "$NEXT_PUBLIC_APP_URL/api/businesses/inkbound/provision" \
+#   -H "content-type: application/json" \
+#   -H "cookie: __session=<paste>" \
+#   -d '{"niche":"digital-products"}'
 
 # 4. Coolify dashboard → Projects → Nexus Businesses → nexus-business-inkbound
 #    → Deploy → Terminal → `claude login` → paste OAuth code back

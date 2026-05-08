@@ -17,21 +17,28 @@
  * clicks Start. This is intentional: a partially-built image shouldn't
  * silently start drawing money.
  *
+ * Auth (two modes — either is sufficient):
+ *   1. Clerk session + ALLOWED_USER_IDS owner gate (interactive)
+ *   2. Authorization: Bearer <NEXUS_OPS_TOKEN> (curl, scripts, GHA)
+ *      In bearer mode, target user defaults to ALLOWED_USER_IDS[0]; pass
+ *      `userId` in the body to override (must still be in ALLOWED_USER_IDS).
+ *
  * Body:
- *   { niche?: string, moneyModel?: string, image?: string, fqdn?: string }
+ *   { niche?: string, moneyModel?: string, image?: string, fqdn?: string,
+ *     userId?: string }
  *
  * Response 200:
  *   { ok: true, uuid, fqdn, manifest: { profile, mcpIds }, secretsWritten }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { setSecret } from '@/lib/user-secrets'
 import { createApp, isConfigured as isCoolifyConfigured, CoolifyError } from '@/lib/coolify/client'
 import { resolveManifest, MCP_CATALOG } from '@/lib/businesses/mcp-manifest'
 import { isBusinessSlug, businessKind } from '@/lib/claw/business-client'
+import { authenticateOps } from '@/lib/auth/ops-auth'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 60
@@ -41,6 +48,8 @@ interface ProvisionBody {
   moneyModel?: string
   image?:      string
   fqdn?:       string
+  /** Bearer-mode only: target this user id instead of the default ALLOWED_USER_IDS[0]. */
+  userId?:     string
 }
 
 const DEFAULT_IMAGE_REPO = process.env.NEXUS_BUSINESS_IMAGE_REPO ?? 'ghcr.io/pinnacleadvisors/nexus-business'
@@ -58,13 +67,19 @@ export async function POST(
   const rl = await rateLimit(req, { limit: 5, window: '5 m', prefix: 'businesses:provision' })
   if (!rl.success) return rateLimitResponse(rl)
 
-  const session = await auth()
-  if (!session.userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
   const { slug } = await context.params
   if (!isBusinessSlug(slug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
+
+  let body: ProvisionBody = {}
+  try { body = (await req.json()) as ProvisionBody } catch { /* empty body is fine */ }
+
+  // Two-mode auth — Clerk session (browser) OR Bearer NEXUS_OPS_TOKEN (curl,
+  // scripts). Bearer-mode falls back to ALLOWED_USER_IDS[0] for the userId
+  // unless body.userId is set. See lib/auth/ops-auth.ts.
+  const a = await authenticateOps(req, { bodyUserId: body.userId })
+  if ('response' in a) return a.response
 
   if (!isCoolifyConfigured()) {
     return NextResponse.json(
@@ -72,9 +87,6 @@ export async function POST(
       { status: 503 },
     )
   }
-
-  let body: ProvisionBody = {}
-  try { body = (await req.json()) as ProvisionBody } catch { /* empty body is fine */ }
 
   const manifest = resolveManifest({
     niche:      body.niche ?? null,
@@ -123,8 +135,8 @@ export async function POST(
       action:     'businesses.provision',
       resource:   'business',
       resourceId: slug,
-      userId:     session.userId,
-      metadata:   { error: err instanceof Error ? err.message : 'coolify create failed', status, profile: manifest.profile },
+      userId:     a.userId,
+      metadata:   { authMode: a.mode, error: err instanceof Error ? err.message : 'coolify create failed', status, profile: manifest.profile },
     })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'coolify create failed' },
@@ -136,15 +148,16 @@ export async function POST(
   // gatewayUrl uses https + the FQDN; if Coolify hasn't issued a cert yet,
   // the operator can flip to http until one is ready.
   const gatewayUrl  = `https://${created.fqdn ?? fqdn}`
-  const wroteUrl    = await setSecret(session.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl)
-  const wroteToken  = await setSecret(session.userId, businessKind(slug), 'bearerToken', bearerToken)
+  const wroteUrl    = await setSecret(a.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl)
+  const wroteToken  = await setSecret(a.userId, businessKind(slug), 'bearerToken', bearerToken)
 
   audit(req, {
     action:     'businesses.provision',
     resource:   'business',
     resourceId: slug,
-    userId:     session.userId,
+    userId:     a.userId,
     metadata:   {
+      authMode: a.mode,
       uuid:    created.uuid,
       fqdn:    created.fqdn ?? fqdn,
       profile: manifest.profile,
