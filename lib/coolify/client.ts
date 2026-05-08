@@ -10,15 +10,16 @@
  *   - startApp(id)                              — `POST /applications/:id/start`
  *   - stopApp(id)                               — `POST /applications/:id/stop`
  *
- * Required env:
- *   COOLIFY_BASE_URL                   e.g. https://coolify.coolifycloudtunnel.uk
- *   COOLIFY_API_TOKEN                  personal access token from Coolify settings
+ * Required env (matches Doppler names — KVM4-specific because per-business
+ * apps live on KVM4 in the current setup):
+ *   COOLIFY_KVM4_URL                    e.g. https://coolify.coolifycloudtunnel.uk
+ *   COOLIFY_KVM4_API_TOKEN              personal access token from Coolify settings
  *   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES uuid of the Coolify project that holds per-business apps
- *   COOLIFY_KVM4_SERVER_UUID           uuid of the Coolify server the apps run on (KVM4 in our setup)
+ *   COOLIFY_KVM4_SERVER_UUID            uuid of the Coolify server the apps run on
  *
- * Naming reflects the multi-instance + multi-project Coolify setup: KVM2 and
- * KVM4 each have their own project for non-business apps; this code path
- * targets the dedicated "Nexus Businesses" project on KVM4 specifically.
+ * Naming reflects the multi-instance setup: KVM2 hosts the codex-gateway,
+ * KVM4 hosts claude-gateway + per-business containers. Future KVM2-side
+ * provisioning would add a parallel `COOLIFY_KVM2_*` resolver.
  *
  * The wrapper throws CoolifyError on any non-2xx; callers should wrap in
  * try/catch and log to audit_log via lib/audit.
@@ -45,12 +46,12 @@ interface CoolifyConfig {
 }
 
 function getConfig(): CoolifyConfig {
-  const baseUrl    = process.env.COOLIFY_BASE_URL
-  const token      = process.env.COOLIFY_API_TOKEN
+  const baseUrl    = process.env.COOLIFY_KVM4_URL
+  const token      = process.env.COOLIFY_KVM4_API_TOKEN
   const projectId  = process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES
   const serverUuid = process.env.COOLIFY_KVM4_SERVER_UUID
-  if (!baseUrl)    throw new CoolifyError('COOLIFY_BASE_URL not configured', 500)
-  if (!token)      throw new CoolifyError('COOLIFY_API_TOKEN not configured', 500)
+  if (!baseUrl)    throw new CoolifyError('COOLIFY_KVM4_URL not configured', 500)
+  if (!token)      throw new CoolifyError('COOLIFY_KVM4_API_TOKEN not configured', 500)
   if (!projectId)  throw new CoolifyError('COOLIFY_PROJECT_ID_NEXUS_BUSINESSES not configured', 500)
   if (!serverUuid) throw new CoolifyError('COOLIFY_KVM4_SERVER_UUID not configured', 500)
   return {
@@ -63,8 +64,8 @@ function getConfig(): CoolifyConfig {
 
 export function isConfigured(): boolean {
   return Boolean(
-    process.env.COOLIFY_BASE_URL &&
-    process.env.COOLIFY_API_TOKEN &&
+    process.env.COOLIFY_KVM4_URL &&
+    process.env.COOLIFY_KVM4_API_TOKEN &&
     process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES &&
     process.env.COOLIFY_KVM4_SERVER_UUID,
   )

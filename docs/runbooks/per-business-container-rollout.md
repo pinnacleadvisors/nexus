@@ -8,7 +8,7 @@ Migrating a business from the **shared Claude gateway** to its **own Coolify con
 
 ```bash
 # 1. Coolify is configured
-echo "$COOLIFY_BASE_URL $COOLIFY_PROJECT_ID_NEXUS_BUSINESSES $COOLIFY_KVM4_SERVER_UUID"
+echo "$COOLIFY_KVM4_URL $COOLIFY_PROJECT_ID_NEXUS_BUSINESSES $COOLIFY_KVM4_SERVER_UUID"
 # 2. Connected accounts schema migrated
 psql -c "\d connected_accounts"
 # 3. Frontend-design + composio MCP packages reachable from npm
