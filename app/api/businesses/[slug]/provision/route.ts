@@ -35,7 +35,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { setSecret } from '@/lib/user-secrets'
-import { createApp, isConfigured as isCoolifyConfigured, CoolifyError } from '@/lib/coolify/client'
+import { createApp, findAppByName, isConfigured as isCoolifyConfigured, CoolifyError } from '@/lib/coolify/client'
 import { resolveManifest, MCP_CATALOG } from '@/lib/businesses/mcp-manifest'
 import { isBusinessSlug, businessKind } from '@/lib/claw/business-client'
 import { authenticateOps } from '@/lib/auth/ops-auth'
@@ -126,67 +126,120 @@ export async function POST(
     if (v in process.env) env[v] = process.env[v] as string
   }
 
-  let created
+  // ── Idempotency: skip create if an app with this name already exists ──
+  // Coolify allows duplicates by name; without this check, every retry after
+  // a post-create failure would leave another orphan app. Re-using the
+  // existing one means the operator can re-run safely until secrets land.
+  const expectedName = `nexus-business-${slug}`
+  let created: { uuid: string; name?: string; fqdn?: string; domains?: string } | null = null
+  let reusedExisting = false
   try {
-    created = await createApp({
-      businessSlug: slug,
-      image,
-      fqdn,
-      env,
-    })
+    const existing = await findAppByName(expectedName)
+    if (existing) {
+      created = existing
+      reusedExisting = true
+    }
   } catch (err) {
-    const status      = err instanceof CoolifyError ? err.status : 502
-    const coolifyBody = err instanceof CoolifyError ? err.body   : undefined
-    const message     = err instanceof Error        ? err.message : 'coolify create failed'
+    // Lookup failure isn't fatal — fall through to create. Logged in audit.
+    console.warn('[provision] findAppByName failed, will attempt create:', err instanceof Error ? err.message : err)
+  }
+
+  if (!created) {
+    try {
+      created = await createApp({
+        businessSlug: slug,
+        image,
+        fqdn,
+        env,
+      })
+    } catch (err) {
+      const status      = err instanceof CoolifyError ? err.status : 502
+      const coolifyBody = err instanceof CoolifyError ? err.body   : undefined
+      const message     = err instanceof Error        ? err.message : 'coolify create failed'
+      audit(req, {
+        action:     'businesses.provision',
+        resource:   'business',
+        resourceId: slug,
+        userId:     a.userId,
+        metadata:   { authMode: a.mode, error: message, status, profile: manifest.profile, coolifyBody: coolifyBody?.slice(0, 500) },
+      })
+      return NextResponse.json(
+        { error: message, coolifyResponse: coolifyBody?.slice(0, 800) },
+        { status: status >= 400 && status < 600 ? status : 502 },
+      )
+    }
+  }
+
+  // ── Post-create work — wrapped in try/catch so any throw returns JSON
+  //    instead of crashing into Vercel's empty 500. The Coolify app exists
+  //    by this point; we want the operator to see the orphan uuid so they
+  //    can decide whether to reuse it (next provision call will pick it up
+  //    via findAppByName) or delete it manually.
+  try {
+    const resolvedFqdn = (created.domains ?? created.fqdn ?? fqdn ?? '').replace(/^https?:\/\//, '')
+    const gatewayUrl   = resolvedFqdn ? `https://${resolvedFqdn}` : ''
+    const wroteUrl     = gatewayUrl ? await setSecret(a.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl) : false
+    const wroteToken   = await setSecret(a.userId, businessKind(slug), 'bearerToken', bearerToken)
+
     audit(req, {
       action:     'businesses.provision',
       resource:   'business',
       resourceId: slug,
       userId:     a.userId,
-      metadata:   { authMode: a.mode, error: message, status, profile: manifest.profile, coolifyBody: coolifyBody?.slice(0, 500) },
+      metadata:   {
+        authMode:       a.mode,
+        uuid:           created.uuid,
+        fqdn:           resolvedFqdn,
+        profile:        manifest.profile,
+        mcps:           manifest.mcpIds.length,
+        reusedExisting,
+      },
+    })
+
+    return NextResponse.json({
+      ok:             true,
+      uuid:           created.uuid,
+      fqdn:           resolvedFqdn,
+      gatewayUrl,
+      secretsWritten: wroteUrl && wroteToken,
+      reusedExisting,
+      manifest: {
+        profile: manifest.profile,
+        mcpIds:  manifest.mcpIds,
+        missingFromCatalog: manifest.mcpIds.filter(id => !MCP_CATALOG.find(m => m.id === id)),
+      },
+      note: reusedExisting
+        ? 'Reused existing Coolify app. Review configuration in Coolify, then click Deploy.'
+        : 'Container created in Coolify but not started. Review the deployment in Coolify, then click Start.',
+    })
+  } catch (err) {
+    // Coolify app exists, but post-create persistence failed. Surface the
+    // uuid so the operator can re-run (idempotent) or manually clean up.
+    const message = err instanceof Error ? err.message : 'post-create persistence failed'
+    audit(req, {
+      action:     'businesses.provision',
+      resource:   'business',
+      resourceId: slug,
+      userId:     a.userId,
+      metadata:   {
+        authMode:        a.mode,
+        error:           message,
+        status:          500,
+        stage:           'post-create',
+        coolifyAppUuid:  created.uuid,
+        profile:         manifest.profile,
+        reusedExisting,
+      },
     })
     return NextResponse.json(
-      // Surface Coolify's actual response body alongside the status — the
-      // shape is { message: "Validation failed.", errors: { field: [...] } }
-      // and the operator needs to see the field name to fix it.
-      { error: message, coolifyResponse: coolifyBody?.slice(0, 800) },
-      { status: status >= 400 && status < 600 ? status : 502 },
+      {
+        error:          'post-create persistence failed',
+        message,
+        coolifyAppUuid: created.uuid,
+        reusedExisting,
+        hint:           'The Coolify app exists. Re-running this endpoint will reuse it (idempotent). Persistence failed at setSecret/audit stage — check ENCRYPTION_KEY + SUPABASE_SERVICE_ROLE_KEY env.',
+      },
+      { status: 500 },
     )
   }
-
-  // Coolify v4 returns the resolved FQDN under `domains` (full URL with
-  // protocol, e.g. http://<uuid>.<ip>.sslip.io). Strip the scheme back off
-  // so downstream logic that uses `fqdn` keeps working.
-  const resolvedFqdn = (created.domains ?? created.fqdn ?? fqdn ?? '').replace(/^https?:\/\//, '')
-  const gatewayUrl   = resolvedFqdn ? `https://${resolvedFqdn}` : ''
-  const wroteUrl     = gatewayUrl ? await setSecret(a.userId, businessKind(slug), 'gatewayUrl',  gatewayUrl) : false
-  const wroteToken   = await setSecret(a.userId, businessKind(slug), 'bearerToken', bearerToken)
-
-  audit(req, {
-    action:     'businesses.provision',
-    resource:   'business',
-    resourceId: slug,
-    userId:     a.userId,
-    metadata:   {
-      authMode: a.mode,
-      uuid:     created.uuid,
-      fqdn:     resolvedFqdn,
-      profile:  manifest.profile,
-      mcps:     manifest.mcpIds.length,
-    },
-  })
-
-  return NextResponse.json({
-    ok:             true,
-    uuid:           created.uuid,
-    fqdn:           resolvedFqdn,
-    gatewayUrl,
-    secretsWritten: wroteUrl && wroteToken,
-    manifest: {
-      profile: manifest.profile,
-      mcpIds:  manifest.mcpIds,
-      missingFromCatalog: manifest.mcpIds.filter(id => !MCP_CATALOG.find(m => m.id === id)),
-    },
-    note: 'Container created in Coolify but not started. Review the deployment in Coolify, then click Start.',
-  })
 }
