@@ -143,9 +143,13 @@ function buildAndWait(slug: string, niche: string): string | null {
 
 /** Hit /api/businesses/:slug/provision with the bearer token. */
 async function provision(slug: string, niche: string): Promise<boolean> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  // Codebase reads NEXT_PUBLIC_APP_URL in many places but Doppler stores the
+  // value under NEXUS_BASE_URL (and 13 routes have a silent ?? '' fallback
+  // masking the mismatch). Accept either to unblock; long-term fix is the
+  // Doppler alias `NEXT_PUBLIC_APP_URL = ${NEXUS_BASE_URL}`.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXUS_BASE_URL
   const token  = process.env.NEXUS_OPS_TOKEN
-  if (!appUrl) { console.error('  ✗ NEXT_PUBLIC_APP_URL missing — run via `doppler run --`.'); return false }
+  if (!appUrl) { console.error('  ✗ NEXUS_BASE_URL / NEXT_PUBLIC_APP_URL missing — run via `doppler run --`.'); return false }
   if (!token)  { console.error('  ✗ NEXUS_OPS_TOKEN missing — run via `doppler run --`.'); return false }
 
   console.log(`▶ Provisioning Coolify app for ${slug} (niche=${niche}) …`)
