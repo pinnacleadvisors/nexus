@@ -346,19 +346,36 @@ If `secretsWritten: false`, the user-secrets table write failed — check Supaba
 
 ### 6c. Phase D — Start the container in Coolify
 
+> **Auth strategy:** the entrypoint reads three modes in order:
+> 1. **`CLAUDE_CODE_OAUTH_TOKEN`** (recommended) — Max plan, non-interactive. Generate once on a dev machine with `claude setup-token`, paste into Doppler. Container reads it on every boot. **No terminal access needed.**
+> 2. `ANTHROPIC_API_KEY` — pay-per-token API billing fallback.
+> 3. `/root/.claude/.credentials.json` — legacy interactive `claude login` exec'd into the container. Only works if the Coolify terminal can attach (often broken behind Cloudflare Tunnel due to WebSocket issues).
+>
+> **Use mode 1 for headless containers.** The provision route already injects `CLAUDE_CODE_OAUTH_TOKEN` + `ANTHROPIC_API_KEY` into the container env when those are present in Doppler.
+
+#### One-time: generate a Claude Code OAuth token
+
+On your Mac (where you can complete a browser OAuth flow):
+
+```bash
+claude setup-token
+# Opens a browser → sign in with your Anthropic account → returns a long-lived
+# OAuth token (string starting with `sk-ant-oat01-…` or similar).
+```
+
+Paste that token into Doppler under `CLAUDE_CODE_OAUTH_TOKEN`. The Doppler-Vercel integration will sync it to the Vercel function env, and the next time you provision a business the token gets baked into that container's env automatically.
+
+#### Deploy + verify
+
 1. Open Coolify → **Projects** → your project → find `nexus-business-$SLUG`.
 2. **Configuration** tab — verify:
    - Image: `ghcr.io/pinnacleadvisors/nexus-business:$SLUG`
-   - FQDN: `$SLUG.gateway.nexus.example.com` (or whatever you passed)
-   - Environment variables include `CLAUDE_GATEWAY_BEARER`, `MCP_PACKAGES`, and the per-MCP env (e.g. `MEMORY_HQ_TOKEN`, `FIRECRAWL_API_KEY`, etc.)
-3. **Storages** tab — check the persistent volume `/root/.claude` was created (this holds the `claude login` token across restarts).
-4. Top-right → **Deploy**. Watch the logs.
-5. Once **Status: Running**, open the **Terminal** tab (or shell into the container) and complete `claude login`:
-   ```
-   $ claude login
-   # follow the OAuth URL, paste the code back
-   ```
-   The token persists in `/root/.claude/.credentials.json` thanks to the volume.
+   - FQDN: shown in Coolify (auto-generated `*.sslip.io` if you didn't pass one)
+   - Environment variables include `CLAUDE_CODE_OAUTH_TOKEN` (the auth token), `CLAUDE_GATEWAY_BEARER`, `MCP_PACKAGES`, and the per-MCP env (`MEMORY_HQ_TOKEN`, `FIRECRAWL_API_KEY`, etc.)
+3. Top-right → **Deploy**. Watch the logs — you should see `[gateway] Using CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive).`
+4. **No further action needed.** The container is fully authenticated on first boot.
+
+> **If `CLAUDE_CODE_OAUTH_TOKEN` isn't set:** the entrypoint logs a warning and the gateway will fail to make Claude API calls. Set it in Doppler and redeploy. Don't fight the Coolify terminal — fix it via the env var path.
 
 ### 6d. Phase E — Smoke-test the gateway
 
@@ -420,7 +437,7 @@ If 7 days are clean, repeat Steps 4–6 for the next business. Document anything
 | `Composio response missing redirect_url / connected_account_id` | Auth Config exists but is misconfigured (wrong scheme, missing scopes) | Open dashboard, edit Auth Config, re-save |
 | OAuth click loops back with `error: invalid state` | Cookie SameSite issue (Vercel preview deployments) | Test on production URL or your staging domain that matches `NEXUS_BASE_URL` |
 | Coolify create returns 422 `name already in use` | Already provisioned this slug | `curl DELETE /api/v1/applications/<uuid>` (lookup via list) and re-run provision |
-| Dispatch hangs 30s timeout to new gateway | Container running but `claude login` never done | Phase D step 5 — shell in and run `claude login` |
+| Dispatch hangs 30s timeout to new gateway | Container running but Claude CLI not authenticated | Set `CLAUDE_CODE_OAUTH_TOKEN` in Doppler (generate with `claude setup-token` on dev machine), redeploy. Don't try the Coolify terminal — it's WebSocket-fragile through Cloudflare Tunnel. |
 | `connection_id` missing on callback | Composio's redirect query param name varies (`connected_account_id`, `connection_id`, `connectedAccountId`) | The callback already handles all three — if still failing, check Composio's redirect URL in the dashboard event log |
 | MCP package install fails during Docker build | Placeholder `@nexus/mcp-*` doesn't exist on npm | Path 1: set `mcp_override=none`. Path 2: set `MCP_PACKAGES=""`. Add real packages incrementally as they're published |
 | GHA workflow fails with `[: too many arguments` | Old workflow had inline `${{ }}` substitution into shell | Fixed in PR #106 — sync `main`. Inputs now flow through `env:` and the sentinel is `none` (not `" "`) |
