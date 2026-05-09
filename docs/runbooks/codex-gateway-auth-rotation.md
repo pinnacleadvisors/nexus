@@ -23,13 +23,16 @@ After any of those, you'd need to `docker exec -it codex-gateway codex login` to
 
 ## Architecture context
 
+> **Two Coolify instances — don't confuse them.** Each VPS runs its own Coolify; they are not one shared dashboard. KVM2 Coolify hosts the codex-gateway (the subject of this runbook). KVM4 Coolify hosts the claude-gateway and per-business containers (a different concern). The Cloudflare Tunnel root domain `coolifycloudtunnel.uk` is shared, but the subdomains route to different places — see below.
+
 | Piece | Where | What this runbook touches |
 |---|---|---|
 | Gateway server | KVM2 VPS at Hostinger, admin user **`nexus`** | One-line SSH-side check at the end |
-| Container orchestrator | Coolify v4 at `https://coolify.coolifycloudtunnel.uk` | Service env vars + redeploy |
-| Public ingress | Cloudflare Tunnel → `codex-gw.coolifycloudtunnel.uk` → `codex-gateway:3000` | Used only for `/health` smoke-test |
+| **Coolify dashboard for codex-gateway** | **KVM2 Coolify v4 at `http://72.62.244.75:8000`** (plain HTTP, direct IP — no Cloudflare Tunnel for the dashboard itself) | **Where steps 3–6 happen** — service env vars + redeploy |
+| _(unrelated — for reference)_ KVM4 Coolify dashboard | `https://coolify.coolifycloudtunnel.uk` | Hosts claude-gateway + per-business containers. **Do not put `CODEX_AUTH_JSON` here.** |
+| Codex-gateway public ingress | Cloudflare Tunnel → `https://codex-gw.coolifycloudtunnel.uk` → `codex-gateway:3000` (inside KVM2's Docker network) | Used only for `/health` smoke-test |
 | Persistent volume | `codex_home` → `/root/.codex` inside the container | Already populated by previous `codex login` — we leave it alone |
-| Secret store | Coolify service-level "Environment Variables" tab (NOT Doppler — Doppler is for the Vercel app, not this gateway) | Where `CODEX_AUTH_JSON` is set |
+| Secret store | KVM2 Coolify service-level "Environment Variables" tab (NOT Doppler — Doppler is for the Vercel app, not this gateway) | Where `CODEX_AUTH_JSON` is set |
 
 ## Prerequisites on your local laptop (the "dev machine")
 
@@ -66,12 +69,14 @@ Copy the **entire JSON output to clipboard** — including the outer braces. No 
 
 > **Token sensitivity.** This payload is equivalent to your ChatGPT password — it lets anyone holding it drain your plan. Don't paste it into chat, tickets, gists, or anywhere outside the destination secret store.
 
-## Step 3 — Set the env var in Coolify
+## Step 3 — Set the env var in the **KVM2** Coolify
+
+> **Make sure you're on the right dashboard.** The codex-gateway lives on **KVM2 Coolify** at `http://72.62.244.75:8000` — not the KVM4 dashboard at `coolify.coolifycloudtunnel.uk` (that one hosts claude-gateway + per-business containers, which is a different concern). Putting `CODEX_AUTH_JSON` on the wrong dashboard does nothing.
 
 The codex-gateway is deployed as a Coolify "Docker Compose" application, so service-level env vars live on the application page (NOT in a project-level shared variable):
 
-1. Open `https://coolify.coolifycloudtunnel.uk`.
-2. Navigate to: **Projects → Nexus → codex-gateway** (the application that points at `services/codex-gateway/docker-compose.yaml`).
+1. Open **`http://72.62.244.75:8000`** (KVM2 Coolify; plain HTTP — there's no Cloudflare Tunnel for the dashboard itself, only for the gateway service).
+2. Navigate to: **Projects → _(the project containing codex-gateway, currently "My first project" — recommended rename: "Nexus Sandbox")_ → Production → codex-gateway**. The application points at `services/codex-gateway/docker-compose.yaml`.
 3. Click the **Environment Variables** tab.
 4. Click **+ Add** (or the equivalent "New Variable" button on your Coolify version).
 5. Fill in:
@@ -185,7 +190,7 @@ If `auth.json` is missing or zero-byte, recover via the Coolify UI flow (steps 3
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `loggedIn:false` after redeploy | Coolify env var didn't reach the container | Confirm `CODEX_AUTH_JSON` is set on the **application's** Environment Variables tab (not a Project-level shared var). Multi-line OFF will truncate at the first `\n`. |
+| `loggedIn:false` after redeploy | Coolify env var didn't reach the container | Confirm `CODEX_AUTH_JSON` is set on the **application's** Environment Variables tab in **KVM2 Coolify** (`http://72.62.244.75:8000`) — not on KVM4's `coolify.coolifycloudtunnel.uk`, and not in a Project-level shared variable. Multi-line OFF will truncate at the first `\n`. |
 | `[codex-gw] Hydrated ...` log line never appears | Bootstrap-only check seeing an existing `auth.json` | Expected if the volume already had creds. To force-test, set `CODEX_AUTH_JSON_FORCE=1` for one redeploy. |
 | Smoke test 502 with `codex CLI failed` | Hydration succeeded but token is no longer valid (rotated, revoked) | Re-run `codex login`, paste new `auth.json`, set `CODEX_AUTH_JSON_FORCE=1`, redeploy. |
 | 401 `bad-signature` from `/api/sessions/.../messages` | Bearer mismatch between Vercel-side `CODEX_GATEWAY_BEARER_TOKEN` and gateway-side `CODEX_GATEWAY_BEARER` | Unrelated to this PR. See [services/codex-gateway/README.md §Debugging 401 bad-signature](../../services/codex-gateway/README.md#debugging-401-bad-signature-from-outside). |
