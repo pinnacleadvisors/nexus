@@ -7,3 +7,4 @@
 | [003](003-protected-route-matcher.md) | Widened middleware matcher for `(protected)/` route group | Accepted | 2026-05-03 |
 | [004](004-skip-gsd.md) | Skip GSD (Get-Shit-Done) skill — overlaps with claude-evolve + memory-hq | Accepted | 2026-05-06 |
 | — | Solopreneur autonomous experiment with strategic-irreversibles-only gating ([runbook](../runbooks/solopreneur-experiment.md)) | Accepted | 2026-05-09 |
+| — | Cloudflare DNS over Namecheap API for per-business DNS automation (no IP-allowlist friction) — see [`docs/runbooks/namecheap-to-cloudflare-dns.md`](../runbooks/namecheap-to-cloudflare-dns.md) | Accepted | 2026-05-09 |
