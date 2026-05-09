@@ -39,6 +39,9 @@ import { createApp, findAppByName, isConfigured as isCoolifyConfigured, CoolifyE
 import { resolveManifest, MCP_CATALOG } from '@/lib/businesses/mcp-manifest'
 import { isBusinessSlug, businessKind } from '@/lib/claw/business-client'
 import { authenticateOps } from '@/lib/auth/ops-auth'
+import { OAUTH_PROVIDERS } from '@/lib/oauth/providers'
+import { decrypt } from '@/lib/crypto'
+import { createServerClient } from '@/lib/supabase'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 60
@@ -58,6 +61,79 @@ function generateBearerToken(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Build a (envVar → platformId) reverse-lookup from the OAuth provider
+ * registry. Only providers flagged `apiKeySetup` with a populated
+ * `envVar` field participate — those are the non-Composio platforms
+ * whose decrypted key is injected at provision time.
+ */
+function envVarToPlatformMap(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const p of OAUTH_PROVIDERS) {
+    const ev = p.apiKeySetup?.envVar
+    if (ev) out[ev] = p.id
+  }
+  return out
+}
+
+/**
+ * Decode a bytea value returned by supabase-js. PostgREST serialises bytea as
+ * a `\x<hex>` string in JSON; node-postgres clients sometimes return a Buffer
+ * directly. A5's contract is that the bytes are the UTF-8 encoding of the
+ * canonical "<iv>:<tag>:<ciphertext>" string from lib/crypto encrypt().
+ *
+ * Returns null when the value isn't a recognisable shape.
+ */
+function decodeByteaToUtf8(value: unknown): string | null {
+  if (typeof value === 'string') {
+    if (value.startsWith('\\x')) {
+      try { return Buffer.from(value.slice(2), 'hex').toString('utf8') } catch { return null }
+    }
+    return value
+  }
+  if (Buffer.isBuffer(value)) return value.toString('utf8')
+  if (value && typeof value === 'object' && 'data' in (value as Record<string, unknown>)) {
+    const data = (value as { data: unknown }).data
+    if (Array.isArray(data))         return Buffer.from(data as number[]).toString('utf8')
+    if (data instanceof Uint8Array)  return Buffer.from(data).toString('utf8')
+  }
+  if (value instanceof Uint8Array) return Buffer.from(value).toString('utf8')
+  return null
+}
+
+interface KeyRow { encrypted_api_key: unknown }
+
+/**
+ * Fetch the active encrypted_api_key for (user, businessSlug, platform) and
+ * decrypt it. Returns null when no row exists, no key is stored, or
+ * decryption fails — caller logs + skips injection (non-blocking).
+ */
+async function fetchDecryptedApiKey(
+  userId: string,
+  businessSlug: string,
+  platform: string,
+): Promise<string | null> {
+  const db = createServerClient()
+  if (!db) return null
+
+  type Chain = { eq: (col: string, val: unknown) => Chain; limit: (n: number) => Promise<{ data: KeyRow[] | null }> }
+  const result = await ((db.from('connected_accounts' as never) as unknown as {
+    select: (cols: string) => Chain
+  }).select('encrypted_api_key')
+    .eq('user_id', userId)
+    .eq('business_slug', businessSlug)
+    .eq('platform', platform)
+    .eq('status', 'active') as Chain).limit(1)
+
+  const row = result.data?.[0]
+  if (!row || row.encrypted_api_key == null) return null
+
+  const ciphertext = decodeByteaToUtf8(row.encrypted_api_key)
+  if (!ciphertext) return null
+
+  return decrypt(ciphertext)
 }
 
 export async function POST(
@@ -118,11 +194,12 @@ export async function POST(
     MCP_PACKAGES:          mcpPackages,
     MCP_PROFILE:           manifest.profile,
   }
-  // Source every MCP env var from Coolify shared variables — operator must
-  // have populated them ahead of time. The provisioner just references the
-  // names so a missing secret surfaces as an empty env var in the container,
-  // not as a leaked value here.
-  for (const v of manifest.envVars) {
+  // Source every required env var (per-MCP `env` ∪ profile-level `env`) from
+  // Coolify shared variables. The provisioner just references the names so a
+  // missing secret surfaces as an empty env var in the container, not as a
+  // leaked value here. Walking `requiredEnv` (vs `envVars`) covers profile-
+  // level vars like CONVERTKIT_API_KEY that aren't owned by any single MCP.
+  for (const v of manifest.requiredEnv) {
     if (v in process.env) env[v] = process.env[v] as string
   }
   // Always-injected platform env: Claude CLI auth (covers headless containers
@@ -131,6 +208,27 @@ export async function POST(
   // and falls back to ANTHROPIC_API_KEY when present.
   for (const v of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) {
     if (v in process.env) env[v] = process.env[v] as string
+  }
+
+  // ── Per-business API-key injection (apiKeySetup pattern, A5 + C4) ─────
+  // For every env var the manifest declares, look up the corresponding
+  // `apiKeySetup` provider in the OAuth registry, fetch the active row
+  // from connected_accounts for (user, businessSlug, platform), decrypt
+  // encrypted_api_key, and inject under the env-var name. Missing rows /
+  // null keys log a warning and SKIP — the agent's call will 401 and
+  // that's the agent's problem to handle gracefully. Never log values.
+  const envVarPlatform = envVarToPlatformMap()
+  const apiKeysInjected: string[] = []
+  for (const envVar of manifest.requiredEnv) {
+    const platform = envVarPlatform[envVar]
+    if (!platform) continue // Composio-managed / build-time env — not an apiKeySetup target
+    const decrypted = await fetchDecryptedApiKey(a.userId, slug, platform)
+    if (!decrypted) {
+      console.warn(`[provision] missing api-key for env=${envVar} platform=${platform} business=${slug}`)
+      continue
+    }
+    env[envVar] = decrypted
+    apiKeysInjected.push(envVar)
   }
 
   // ── Idempotency: skip create if an app with this name already exists ──
@@ -194,12 +292,13 @@ export async function POST(
       resourceId: slug,
       userId:     a.userId,
       metadata:   {
-        authMode:       a.mode,
-        uuid:           created.uuid,
-        fqdn:           resolvedFqdn,
-        profile:        manifest.profile,
-        mcps:           manifest.mcpIds.length,
+        authMode:        a.mode,
+        uuid:            created.uuid,
+        fqdn:            resolvedFqdn,
+        profile:         manifest.profile,
+        mcps:            manifest.mcpIds.length,
         reusedExisting,
+        apiKeysInjected: apiKeysInjected.length,  // names only logged via console.warn on miss; values never logged
       },
     })
 
@@ -210,6 +309,7 @@ export async function POST(
       gatewayUrl,
       secretsWritten: wroteUrl && wroteToken,
       reusedExisting,
+      apiKeysInjected,
       manifest: {
         profile: manifest.profile,
         mcpIds:  manifest.mcpIds,
