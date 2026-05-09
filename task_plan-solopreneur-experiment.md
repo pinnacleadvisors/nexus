@@ -70,22 +70,22 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - Verify: `\d experiment_metrics` shows table; sample insert + select works.
 - Parallel: yes
 
-**A2 — Confirm/extend `digital-products` profile + add Beehiiv + Cloudflare native MCPs**
+**A2 — Confirm/extend `digital-products` profile + add ConvertKit + Cloudflare**
 - File: `lib/businesses/mcp-manifest.ts`
-- Change: `digital-products` profile likely auto-resolves from substrings — verify `resolveManifest({niche:'pdf-info-products'})` matches. Add two **non-Composio** MCPs to the profile (Beehiiv and Cloudflare aren't in Composio's catalog, so they go in alongside `composio` Rube, not under it):
-  - `beehiiv-mcp` (npm `beehiiv-mcp` — native MCP, March 2026 launch; auth via `BEEHIIV_API_KEY` env var; v1 read-only, write coming)
-  - `cloudflare-mcp` (Cloudflare's official DNS MCP; auth via `CLOUDFLARE_API_TOKEN` env var, zone-scoped — no IP allowlist)
-  Resulting set: `[memory-hq, firecrawl, n8n, composio, muapi-ai, tavily, beehiiv-mcp, cloudflare-mcp]`. The `composio` Rube entry still covers everything Composio brokers (Stripe, Gmail, X, LinkedIn, Vercel, Canva, etc.). Namecheap is intentionally **not** added — see G1 runbook.
-- Each new MCP entry declares `requiredEnv: ['BEEHIIV_API_KEY']` / `['CLOUDFLARE_API_TOKEN']` so the provision route knows which env vars to inject (consumed by A5).
-- Verify: unit test asserts `pdf-info-products` resolves to `digital-products` with the 8-MCP set; another asserts the `requiredEnv` arrays are present.
-- First-build caveat: pass `mcp_override=none` on initial `gh workflow run per-business-image.yml` — most `@nexus/mcp-*` packages are placeholders not yet on npm; once `beehiiv-mcp` and `cloudflare-mcp` are confirmed published, drop them into the build incrementally.
+- Change: `digital-products` profile likely auto-resolves from substrings — verify `resolveManifest({niche:'pdf-info-products'})` matches. Add to the profile:
+  - `cloudflare-mcp` as a new **non-Composio** MCP entry (Cloudflare's official DNS MCP; auth via `CLOUDFLARE_API_TOKEN`, zone-scoped, no IP allowlist)
+  - **Profile-level `requiredEnv: ['CONVERTKIT_API_KEY']`** — ConvertKit doesn't have a native MCP we'd adopt mid-experiment, so the agent calls its REST API directly with the env var; the apiKeySetup pattern (A5) handles per-business storage + injection without an MCP wrapper
+- Resulting MCP set: `[memory-hq, firecrawl, n8n, composio, muapi-ai, tavily, cloudflare-mcp]`. The `composio` Rube entry covers Stripe / Gmail / X / LinkedIn / Vercel / Canva. Namecheap is intentionally **not** added — see A6 runbook.
+- Migration path to Beehiiv: when business is validated and profit ≥ $200/mo, swap profile `requiredEnv` `CONVERTKIT_API_KEY` for an MCP entry `{ pkg: 'beehiiv-mcp', requiredEnv: ['BEEHIIV_API_KEY'] }` and migrate the subscriber list. The apiKeySetup row in `connected_accounts` is the only data layer that changes.
+- Verify: unit test asserts `pdf-info-products` resolves to `digital-products` with the 7-MCP set + profile `requiredEnv` includes `CONVERTKIT_API_KEY`.
+- First-build caveat: pass `mcp_override=none` on initial `gh workflow run per-business-image.yml` — most `@nexus/mcp-*` packages are placeholders; once `cloudflare-mcp` is confirmed published, drop it into the build incrementally.
 - Parallel: yes
 
-**A5 — `apiKeySetup` pattern for non-Composio MCPs**
+**A5 — `apiKeySetup` pattern for non-Composio API-key platforms**
 - File: `lib/oauth/providers.ts` + `app/(protected)/settings/accounts/page.tsx` + new `app/api/connected-accounts/api-key/route.ts`
-- Change: extend the `OAuthProvider` shape with `apiKeySetup: true` (parallel to existing `manualSetup`). Providers flagged this way show an **API-key paste form** at `/settings/accounts` instead of an OAuth-via-Composio button. Submitted keys are encrypted with `ENCRYPTION_KEY` (already in Doppler) and stored on `connected_accounts` — add a new `encrypted_api_key bytea` column via migration (or reuse `composio_account_id` with `apikey:` prefix; recommend the new column for clarity). The route enforces business-scope just like the existing OAuth callback. Add `beehiiv` and `cloudflare-dns` provider entries with `apiKeySetup: true`.
-- Scaling note: this is the canonical pattern for **any future non-Composio API-key platform**. New platform = (a) provider entry with `apiKeySetup: true`, (b) MCP entry in `mcp-manifest.ts` with `requiredEnv`, (c) operator pastes per business at `/settings/accounts?businessSlug=<slug>`. No code changes per business. Each business's key is independently encrypted and isolated.
-- Verify: paste a Beehiiv API key at `/settings/accounts?businessSlug=pdf-experiment-01` → `connected_accounts` row appears with `platform='beehiiv'`, `encrypted_api_key` non-null; decrypt round-trip via the same `ENCRYPTION_KEY` produces the original plaintext.
+- Change: extend the `OAuthProvider` shape with `apiKeySetup: true` (parallel to existing `manualSetup`). Providers flagged this way show an **API-key paste form** at `/settings/accounts` instead of an OAuth-via-Composio button. Submitted keys are encrypted with `ENCRYPTION_KEY` (already in Doppler) and stored on `connected_accounts` — add a new `encrypted_api_key bytea` column via migration (recommended over reusing `composio_account_id`). The route enforces business-scope just like the existing OAuth callback. Add `convertkit` and `cloudflare-dns` provider entries with `apiKeySetup: true` for now; `beehiiv` later if/when migrated.
+- Scaling note: this is the canonical pattern for **any future non-Composio API-key platform** — covers Cloudflare today, ConvertKit today, Beehiiv at validation, MailerLite, plus anything else without an OAuth flow or Composio toolkit. New platform = (a) provider entry with `apiKeySetup: true`, (b) declare in manifest's `requiredEnv` (profile-level OR MCP-level depending on whether a native MCP exists), (c) operator pastes per business at `/settings/accounts?businessSlug=<slug>`. No code changes per business. Each business's key independently encrypted, no shared state.
+- Verify: paste a ConvertKit API key at `/settings/accounts?businessSlug=pdf-experiment-01` → `connected_accounts` row appears with `platform='convertkit'`, `encrypted_api_key` non-null; decrypt round-trip via the same `ENCRYPTION_KEY` produces the original plaintext.
 - Parallel: yes (after A1 migration is in)
 
 **A3 — Gate matrix + runbook**
@@ -147,10 +147,10 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 
 **C4 — Provision the container (extended to inject API-key envs)**
 - Invocation: `doppler run -- npx --yes tsx scripts/migrate-business.ts pdf-experiment-01 --auto` (one command — chains GHA image build → wait for build → POST `/api/businesses/pdf-experiment-01/provision` with the bearer token).
-- Prereqs: A4 row exists; A5 `apiKeySetup` flow live + per-business Beehiiv + Cloudflare keys pasted (see F2); B1-B3 agents available; C1 kill-switch wired; `CLAUDE_CODE_OAUTH_TOKEN` set in Doppler (one-time generate via `claude setup-token` on dev machine — see F1); KVM4 Doppler vars present (`COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`); `NEXUS_OPS_TOKEN` set; Doppler→Vercel env synced (`scripts/sync-vercel-env.sh`).
-- Change to provision route (`app/api/businesses/[slug]/provision/route.ts`): when assembling the container env, **for every MCP in the resolved manifest with a `requiredEnv` entry**, look up the corresponding `connected_accounts` row for `(user, businessSlug, platform)`, decrypt `encrypted_api_key`, and inject under that env-var name. So `BEEHIIV_API_KEY` and `CLOUDFLARE_API_TOKEN` flow per-business with no shared key state. If a `requiredEnv` value is missing for a business, log a warning + skip injection (the MCP simply won't load) — don't block the provision.
+- Prereqs: A4 row exists; A5 `apiKeySetup` flow live + per-business ConvertKit + Cloudflare keys pasted (see F2); B1-B3 agents available; C1 kill-switch wired; `CLAUDE_CODE_OAUTH_TOKEN` set in Doppler (one-time generate via `claude setup-token` on dev machine — see F1); KVM4 Doppler vars present (`COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`); `NEXUS_OPS_TOKEN` set; Doppler→Vercel env synced (`scripts/sync-vercel-env.sh`).
+- Change to provision route (`app/api/businesses/[slug]/provision/route.ts`): when assembling the container env, walk **both** the manifest's profile-level `requiredEnv` array **and** every MCP entry's `requiredEnv` array. For each env-var name, look up the corresponding `connected_accounts` row for `(user, businessSlug, platform)`, decrypt `encrypted_api_key`, inject under that env-var name. So `CONVERTKIT_API_KEY` (profile-level) and `CLOUDFLARE_API_TOKEN` (MCP-level) flow per business with no shared key state. If a `requiredEnv` value is missing for a business, log a warning + skip injection (the agent's capability call simply 401s — the agent's job to handle gracefully) — don't block the provision.
 - First-build caveat: deliberately use `mcp_override=none` (placeholder `@nexus/mcp-*` packages aren't on npm). Provision response should include `reusedExisting: false` first run, `true` on any retry. Operator clicks Deploy in Coolify after reviewing the config — that step is intentionally manual.
-- Verify: Coolify dashboard shows `nexus-business-pdf-experiment-01` app on KVM4; deploy logs show `[gateway] Using CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive).`; container env contains `BEEHIIV_API_KEY` and `CLOUDFLARE_API_TOKEN` (verify via Coolify env panel — they should appear masked); `curl -i https://pdf-experiment-01.gateway.<your-domain>/health` returns `{ok:true, loggedIn:true, queueDepth:0}`; `business:pdf-experiment-01` gateway secret resolves in `resolveClawConfig()`.
+- Verify: Coolify dashboard shows `nexus-business-pdf-experiment-01` app on KVM4; deploy logs show `[gateway] Using CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive).`; container env contains `CONVERTKIT_API_KEY` and `CLOUDFLARE_API_TOKEN` (verify via Coolify env panel — they should appear masked); `curl -i https://pdf-experiment-01.gateway.<your-domain>/health` returns `{ok:true, loggedIn:true, queueDepth:0}`; `business:pdf-experiment-01` gateway secret resolves in `resolveClawConfig()`.
 - Parallel: no
 
 ### Group D — Observability (Parallel: yes)
@@ -207,10 +207,10 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 **F2 — Connect business-scoped accounts (dual-flow)**
 - Manual: navigate to `/settings/accounts?businessSlug=pdf-experiment-01` → connect each platform via the appropriate UI:
   - **OAuth (Composio Rube)**: click `Connect via Composio` for X, LinkedIn, Gmail, Stripe, Vercel (every platform Composio brokers per `lib/oauth/providers.ts`).
-  - **API-key paste (apiKeySetup pattern from A5)**: paste API key for Beehiiv and Cloudflare. For Beehiiv, get the key from Beehiiv dashboard → Account → Integrations → API. For Cloudflare, create a **zone-scoped API token** (Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit zone DNS" template) for each domain the business owns. Token stored encrypted in `connected_accounts.encrypted_api_key`.
-- Verify: `select platform, status, (encrypted_api_key is not null) as has_key from connected_accounts where business_slug='pdf-experiment-01' and status='active';` shows one row per platform; OAuth platforms have `composio_account_id` populated; API-key platforms have `has_key=true`. `executeBusinessAction({user, business:'pdf-experiment-01', platform:'stripe', action:'STRIPE_LIST_PRODUCTS'})` returns `[]` cleanly. After C4 provision: container can call Beehiiv `GET /v2/publications` and Cloudflare `GET /zones` from the MCP tools.
+  - **API-key paste (apiKeySetup pattern from A5)**: paste API key for ConvertKit and Cloudflare. ConvertKit free tier covers up to 10k subscribers — get the key from ConvertKit dashboard → Settings → Advanced → API & Webhooks (V4 keys recommended; the agent uses bearer auth). For Cloudflare, create a **zone-scoped API token** (Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit zone DNS" template) for each domain the business owns. Both stored encrypted in `connected_accounts.encrypted_api_key`.
+- Verify: `select platform, status, (encrypted_api_key is not null) as has_key from connected_accounts where business_slug='pdf-experiment-01' and status='active';` shows one row per platform; OAuth platforms have `composio_account_id` populated; API-key platforms have `has_key=true`. `executeBusinessAction({user, business:'pdf-experiment-01', platform:'stripe', action:'STRIPE_LIST_PRODUCTS'})` returns `[]` cleanly. After C4 provision: container can call `GET https://api.convertkit.com/v4/account` (200 with bearer token) and Cloudflare `GET /zones` from the agent's tool budget.
 
-> **Cost note** — Beehiiv MCP requires a paid plan (Launch tier ~$42/mo). Verify pricing on activation; if a free tier supports the endpoints we need, downgrade. ConvertKit / MailerLite are free-tier alternatives if Beehiiv-specific features aren't needed — would need a different MCP/integration.
+> **Email-platform progression** — start ConvertKit free tier (10k subs); migrate to Beehiiv once `experiment_metrics.revenue` exceeds $200/mo for 30 consecutive days OR list crosses 5k subs (whichever first). Migration adds a `beehiiv-mcp` MCP entry to A2's manifest, runs ConvertKit → Beehiiv subscriber export/import, swaps the `requiredEnv`. ApiKeySetup row in `connected_accounts` is the only data layer that changes. MailerLite is the alternative if ConvertKit's API doesn't fit the agent's needs (free tier 1k subs / 12k emails).
 
 **F3 — First niche-pick gate (kicks the loop)**
 - Activate cron via `vercel.json` deploy. First solopreneur-tick fires the niche-pick gate; user approves a niche via Slack inline button.
@@ -230,7 +230,16 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
-### 2026-05-09 — Codex auth + Beehiiv/Cloudflare integration
+### 2026-05-09 — ConvertKit-first email; Beehiiv deferred to validation
+
+**Completed (planning)**
+- [x] Email-platform decision: start ConvertKit free tier (10k subs, V4 REST API via direct fetch in agent tool budget), migrate to Beehiiv when `revenue ≥ $200/mo` for 30d OR list ≥ 5k subs.
+- [x] A2 manifest spec swapped: removed `beehiiv-mcp` entry; ConvertKit consumes profile-level `requiredEnv: ['CONVERTKIT_API_KEY']` (no MCP wrapper needed — agent calls REST directly with the env var).
+- [x] C4 provision route extended to walk **both** profile-level and MCP-level `requiredEnv` (was MCP-only) so non-MCP API-key platforms still get per-business env injection.
+- [x] A5 apiKeySetup pattern unchanged in shape — confirmed reusable for any non-Composio API-key platform (ConvertKit, Cloudflare, future Beehiiv, future MailerLite).
+- [x] Plan ready for Phase 3 implementation.
+
+### 2026-05-09 — Codex auth + Beehiiv/Cloudflare integration design
 
 **Completed (planning)**
 - [x] Rebased branch onto `origin/main` again (PR #112 force-pushed)
@@ -257,7 +266,7 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 ## Open questions / risks
 - **Codex gateway dispatch entrypoint** — codex-gateway is a shared Compose stack on KVM2 (one for all businesses), distinct from per-business claude-gateway containers on KVM4. The dispatch route C3 should route `codex-maintainer` ticks to the shared codex-gateway URL, not a per-business one. Verify the env var name carrying that URL (likely `CODEX_GATEWAY_URL` in Doppler) and that bearer auth uses `CODEX_GATEWAY_BEARER`.
 - **`digital-products` profile substring match for `pdf-info-products`** — likely matches existing keywords ("contract bundle", "organizer") but verify. A2 should preferentially broaden the keyword list rather than add a parallel `pdf-products` profile.
-- **Beehiiv pricing** — native MCP requires paid plan (Launch tier ~$42/mo per business). For 3 businesses next month, that's $126/mo just for Beehiiv. Validate on activation; consider ConvertKit (free up to 10k subs) or MailerLite (free up to 1k subs + 12k emails/mo) as alternatives if Beehiiv-specific features aren't critical — would require a different MCP/integration.
+- **Email platform progression** — starting ConvertKit free tier (10k subs, V4 API). Migrate to Beehiiv once business is validated (`revenue ≥ $200/mo` for 30d OR list ≥ 5k subs). Migration cost on trigger: $42/mo Beehiiv Launch + ~30 min import. The apiKeySetup pattern means swapping platforms doesn't require code changes per business — just provider entry + manifest `requiredEnv` swap + per-business key paste.
 - **Cloudflare account scope at scale** — recommend ONE Cloudflare account with multiple zones (one per business domain) and zone-scoped API tokens per business, rather than separate accounts. Cost: free tier covers many zones. Isolation: each business's API token can only edit DNS for its zone, not others. Trade-off: a single account compromise loses all zones — acceptable for the experiment, revisit at >5 businesses.
 - **Codex refresh-token rotation** — `CODEX_AUTH_JSON` token refreshes ~30 days after issuance; operator must regenerate via the runbook before that. If missed, codex-gateway stops auth'ing and codex-maintainer ticks fail until rotated. Set a calendar reminder when initially generating.
 - **Plan-billing token accounting** — Run events log token counts? If not, A1/D1 needs a token-emission shim before ledger ratio is meaningful.
