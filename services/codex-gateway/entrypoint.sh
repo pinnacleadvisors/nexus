@@ -24,9 +24,48 @@ else
   mkdir -p "$REPO_PATH/.claude/agents"
 fi
 
-if [ ! -d "/root/.codex" ] || [ -z "$(ls -A /root/.codex 2>/dev/null || true)" ]; then
-  echo "[codex-gw] WARNING: /root/.codex is empty — codex CLI is not logged in."
-  echo "[codex-gw] Run 'codex login' once with this volume mounted, then restart."
+# Codex CLI auth — three accepted modes, in order of preference:
+#   1. CODEX_AUTH_JSON           → Plan-billed (drains ChatGPT Pro/Plus plan),
+#                                   non-interactive. Generate once on a dev
+#                                   machine with `codex login`, then
+#                                   `cat ~/.codex/auth.json` and paste the file
+#                                   contents into Doppler/Coolify. This is the
+#                                   recommended path for headless containers
+#                                   (no `docker exec -it codex login` needed).
+#                                   Bootstrap-only: skipped if /root/.codex
+#                                   already has an auth.json — codex refreshes
+#                                   tokens in-place on the persistent volume,
+#                                   so we don't clobber the latest version on
+#                                   restart. Set CODEX_AUTH_JSON_FORCE=1 to
+#                                   overwrite (use after the env var is updated
+#                                   with a fresh `codex login` payload).
+#   2. CODEX_API_KEY             → Pay-per-token API billing fallback.
+#   3. /root/.codex/auth.json    → Persistent volume populated by
+#                                   `docker exec -it ... codex login`. Legacy
+#                                   approach — required terminal access.
+if [ -n "${CODEX_AUTH_JSON:-}" ]; then
+  if [ -f /root/.codex/auth.json ] && [ "${CODEX_AUTH_JSON_FORCE:-0}" != "1" ]; then
+    echo "[codex-gw] /root/.codex/auth.json already exists — keeping volume version (set CODEX_AUTH_JSON_FORCE=1 to overwrite)."
+  else
+    mkdir -p /root/.codex
+    printf '%s' "$CODEX_AUTH_JSON" > /root/.codex/auth.json
+    chmod 600 /root/.codex/auth.json
+    echo "[codex-gw] Hydrated /root/.codex/auth.json from CODEX_AUTH_JSON (plan-billed, non-interactive)."
+  fi
+  # Force plan-billed: drop API-key vars so the spawned codex CLI doesn't
+  # silently route to per-token billing once the OAuth token is in place.
+  unset CODEX_API_KEY OPENAI_API_KEY
+elif [ -n "${CODEX_API_KEY:-}" ]; then
+  echo "[codex-gw] Using CODEX_API_KEY (pay-per-token API billing)."
+elif [ -d "/root/.codex" ] && [ -n "$(ls -A /root/.codex 2>/dev/null || true)" ]; then
+  echo "[codex-gw] Using credentials from /root/.codex (persistent volume)."
+else
+  echo "[codex-gw] WARNING: codex CLI is not authenticated."
+  echo "[codex-gw] Best fix: set CODEX_AUTH_JSON in env. Generate on a dev machine:"
+  echo "[codex-gw]   1. codex login   (browser OAuth)"
+  echo "[codex-gw]   2. cat ~/.codex/auth.json   (paste contents into Doppler/Coolify as CODEX_AUTH_JSON)"
+  echo "[codex-gw] Alternative: set CODEX_API_KEY for pay-per-token API billing."
+  echo "[codex-gw] Legacy: 'docker exec -it <container> codex login' with /root/.codex mounted as a persistent volume."
 fi
 
 exec node /app/dist/index.js

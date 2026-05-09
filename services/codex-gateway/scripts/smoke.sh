@@ -96,7 +96,7 @@ cat "$health_body"; echo
 logged_in=$(grep -o '"loggedIn":[^,}]*' "$health_body" | head -1 | awk -F: '{print $2}')
 case "$logged_in" in
   *true*)  echo "✓ /health OK and Codex is logged in" ;;
-  *false*) echo "⚠ /health OK but codex CLI is NOT logged in. Run: docker exec -it \$CT codex login" ;;
+  *false*) echo "⚠ /health OK but codex CLI is NOT logged in. Set CODEX_AUTH_JSON in Coolify (see README) or fall back to: docker exec -it \$CT codex login" ;;
   *)       echo "⚠ /health returned an unexpected payload (no loggedIn field)" ;;
 esac
 
@@ -172,7 +172,8 @@ case "$signed_code" in
   502)
     echo "✘ 502 — gateway received the request but the codex CLI failed." >&2
     echo "  Common cause: codex CLI not logged in, or sandbox flagged the prompt." >&2
-    echo "  Fix:  docker exec -it \$CT codex login   (then redeploy)" >&2
+    echo "  Fix:  set CODEX_AUTH_JSON in Coolify env (see README) and redeploy." >&2
+    echo "        Legacy fallback: docker exec -it \$CT codex login   (then redeploy)" >&2
     exit 1
     ;;
   503)

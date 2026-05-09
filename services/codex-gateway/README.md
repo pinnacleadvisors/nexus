@@ -128,15 +128,47 @@ Single-machine setup:
    - `NEXUS_REPO_URL` — `https://github.com/pinnacleadvisors/nexus.git`.
    - `CODEX_GATEWAY_REPO_REF` — `main` (or a release tag).
 3. Mount a persistent volume at `/root/.codex` so the OAuth token survives
-   restarts. First boot will warn that no token is present.
-4. Ship a one-time `codex login` into the volume:
+   restarts (also lets codex's automatic in-place token refresh persist).
+4. Authenticate the CLI. Three modes; `CODEX_AUTH_JSON` is the recommended
+   default for headless containers (the Coolify terminal is unreliable behind
+   Cloudflare Tunnel — WebSocket upgrades get stripped, so `docker exec -it ...
+   codex login` often fails mid-flow):
+
+   **A. `CODEX_AUTH_JSON` (plan-billed, non-interactive).** Generate once on a
+   dev machine where you can complete the browser flow, then paste the file
+   contents into Doppler/Coolify:
 
    ```bash
-   # On the Hostinger box, after the container is up:
-   docker exec -it codex-gateway codex login
-   # Follow the OAuth flow in your browser.
-   docker exec -it codex-gateway codex --version
+   codex login                       # follow browser OAuth
+   cat ~/.codex/auth.json            # copy the entire JSON
+   # → paste as CODEX_AUTH_JSON in Doppler/Coolify (no transformation needed)
    ```
+
+   First boot writes the token to `/root/.codex/auth.json` inside the
+   persistent volume. **Bootstrap-only**: subsequent restarts keep the
+   volume's copy (codex refreshes its own access token in-place; clobbering
+   on every boot would invalidate that). To overwrite — for example after
+   re-running `codex login` and pasting a fresh payload — set
+   `CODEX_AUTH_JSON_FORCE=1` for the next boot, then unset.
+
+   **Token rotation caveat.** Codex's refresh token rotates (typically within
+   ~30 days); when that happens, the value in Doppler goes stale. Re-run
+   `codex login` on the dev machine, paste the new `auth.json`, set
+   `CODEX_AUTH_JSON_FORCE=1`, redeploy, then unset `CODEX_AUTH_JSON_FORCE`.
+   For automation that can't tolerate this churn, prefer mode B.
+
+   **B. `CODEX_API_KEY` (pay-per-token API billing fallback).** Set
+   `CODEX_API_KEY=sk-…` in Coolify env. No rotation pain, but it's API-billed
+   instead of plan-billed.
+
+   **C. Legacy `docker exec -it codex-gateway codex login`.** Only works if
+   the Coolify terminal websocket is healthy AND `/root/.codex` is empty
+   (otherwise the CLI thinks you're already logged in). Kept as a fallback —
+   not the recommended path.
+
+   Verify any mode succeeded by checking `/health` (`loggedIn:true`) or the
+   first lines of the deploy logs (the entrypoint prints which mode is
+   active).
 
 5. Add a Cloudflare Tunnel ingress mapping `codex-gw.<your-domain>` →
    `codex-gateway:3000`. The compose attaches the service to the shared
