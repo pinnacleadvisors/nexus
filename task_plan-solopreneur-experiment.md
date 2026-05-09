@@ -230,6 +230,19 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
+### 2026-05-09 — Phase 3 Group C complete (infra)
+
+**Completed (implementation)** — all 4 Group C tasks landed. C1 was implemented synchronously first since it blocks the others; C2 / C3 / C4 dispatched in parallel via subagents on `claude/group-c-experiment-infra` (off latest main after PR #129 merge).
+- [x] **C1** `df0d40a` — `lib/cost-guard.ts` extension. `checkKillSwitch(businessSlug)` async shell + `evaluateKillSwitch(inputs)` pure decision function. Kill on cumulative `cash_spend ≥ budget_usd`; kill on 7d stagnation when `pivot_history.length ≥ 1`; signal `auto_pivot_eligible` on first stagnation. Stagnation timer anchored at "first product live" (earliest `experiment_metrics.kind=content_published` row with `payload.live=true`), not creation. Fail-open if DB unreachable. Unit test (`__tests__/cost-guard.test.ts`) covers 8 cases. Same `as never` shim pattern the existing `assertUnderCostCap` uses for tables not yet in generated Supabase types.
+- [x] **C3** `1dec04c` — `app/api/cron/codex-maintainer-tick/route.ts`. 30-min cron via `dispatchToCodexGateway` (bypasses per-business resolver — codex-maintainer is shared on KVM2). `checkKillSwitch` preflight with no duplicate `kill_switch_check` row (solopreneur-tick handles that). `?dryRun=true` and `Authorization: Bearer ${CRON_SECRET}`. Always returns 200 (retry-storm rule). Soft-skips when `CODEX_GATEWAY_URL` unconfigured.
+- [x] **C4** `4213e89` — `app/api/businesses/[slug]/provision/route.ts` extension + `lib/oauth/providers.ts` `apiKeySetup.envVar` field populated for `convertkit` (→ `CONVERTKIT_API_KEY`) and `cloudflare-dns` (→ `CLOUDFLARE_API_TOKEN`). Mapping option (a) — registry-driven via the `apiKeySetup.envVar` field already declared in A5. Walks manifest's `requiredEnv` (profile-level + MCP-level union); decrypts `connected_accounts.encrypted_api_key` per `(user, slug, platform)` via `lib/crypto.ts decrypt()`; injects into the createApp env list. Missing keys → `console.warn` + skip (don't block provision). Response gains `apiKeysInjected: string[]` (env-var names only, never values).
+- [x] **C2** `edc1025` — `app/api/cron/solopreneur-tick/route.ts`. 4×/day cron via `callGateway` + `resolveClawConfig` (per-business KVM4 gateway preferred). `checkKillSwitch` preflight; `kill_switch_check` row ALWAYS written with full details payload; `tick` row records dispatched/skipped reason; `auto_pivot_eligible` signal passes through to agent input. `Authorization: Bearer ${CRON_SECRET}` (no dev fallthrough — real Max-plan spend possible). `?dryRun=true` and `?businessSlug=foo` for smoke tests. Always returns 200; errors[] in body; per-row `invocation_id` for idempotency.
+
+**Notes**
+- Group C had a real dependency: C1 had to land first because C2/C3 import `checkKillSwitch` and C4's behavior is defined alongside the same data model. The synchronous C1 + parallel C2/C3/C4 sequencing worked cleanly.
+- C2's route ended up at 462 lines (above the 300-line soft target). The agent built it via skeleton + 5 section edits per the write-size discipline (so each per-write-call stayed under cap). Worth a tightening pass later, not blocking.
+- Ready for **Group D** (observability — plan-billing ledger, dashboard page, Slack gate flow, vercel.json cron registration). D1 + D2 are sequential (D2 reads the ledger D1 emits); D3 + D4 parallelize after.
+
 ### 2026-05-09 — Phase 3 Group B complete (agent specs)
 
 **Completed (implementation)** — all 3 Group B atomic tasks dispatched in parallel via subagents on a fresh branch `claude/group-b-agent-specs` off latest main (after PR #112 merge). Each agent spec is a single new file under `.claude/agents/` — strictly disjoint file sets, no shared-doc edits, so the INDEX.md race from Group A doesn't repeat.
