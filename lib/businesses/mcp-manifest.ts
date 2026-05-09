@@ -128,6 +128,12 @@ export const MCP_CATALOG: readonly McpEntry[] = [
     summary: 'Project CRUD, schema introspection, edge functions',
     status: 'placeholder',
   },
+  {
+    id: 'cloudflare-mcp', name: 'Cloudflare DNS', pkg: '@cloudflare/mcp-server-cloudflare',
+    env: ['CLOUDFLARE_API_TOKEN'],
+    summary: 'DNS zone CRUD via zone-scoped API tokens (no IP allowlist)',
+    status: 'placeholder',
+  },
 ] as const
 
 /**
@@ -143,6 +149,14 @@ export interface NicheProfile {
   niche:   string
   match:   readonly string[]  // substrings to match in business.niche or money_model
   mcps:    readonly string[]  // MCP IDs to install (in addition to foundational)
+  /**
+   * Profile-level env vars — parallel to per-MCP `env` on McpEntry. Used for
+   * platforms that the agent calls directly (no MCP wrapper) but still need
+   * a per-business secret injected at provision time. Aggregated into
+   * `ResolvedManifest.requiredEnv` alongside every MCP-level `env` array so
+   * the provision route can walk a single list when injecting secrets.
+   */
+  env?:    readonly string[]
 }
 
 const FOUNDATIONAL = ['memory-hq', 'firecrawl', 'n8n', 'composio']
@@ -159,8 +173,9 @@ export const NICHE_PROFILES: readonly NicheProfile[] = [
   { niche: 'ecommerce',         match: ['ecommerce', 'e-commerce', 'shop', 'store', 'dropshipping'],
     mcps: ['muapi-ai', 'tavily'] },
 
-  { niche: 'digital-products',  match: ['etsy', 'printable', 'template', 'organizer', 'contract bundle', 'digital product'],
-    mcps: ['muapi-ai', 'tavily'] },
+  { niche: 'digital-products',  match: ['etsy', 'printable', 'template', 'organizer', 'contract bundle', 'digital product', 'info-product', 'pdf'],
+    mcps: ['muapi-ai', 'tavily', 'cloudflare-mcp'],
+    env: ['CONVERTKIT_API_KEY'] },
 
   // SaaS — needs deep observability + research
   { niche: 'saas',              match: ['saas', 'software', 'b2b'],
@@ -184,6 +199,13 @@ export interface ResolvedManifest {
   mcps:       McpEntry[]
   /** Union of every env var any of the resolved MCPs declare. Container build sources these from Doppler. */
   envVars:    string[]
+  /**
+   * Aggregate of every env var the container needs at runtime — union of each
+   * resolved MCP's `env` array PLUS the profile's own `env` (for platforms the
+   * agent calls directly without an MCP wrapper, e.g. ConvertKit). The
+   * provision route walks this list to inject per-business decrypted keys.
+   */
+  requiredEnv: readonly string[]
 }
 
 export function resolveManifest(input: { niche?: string | null; moneyModel?: string | null }): ResolvedManifest {
@@ -200,12 +222,14 @@ export function resolveManifest(input: { niche?: string | null; moneyModel?: str
     .filter((m): m is McpEntry => Boolean(m))
 
   const envVars = [...new Set(mcps.flatMap(m => m.env))].sort()
+  const requiredEnv = [...new Set([...envVars, ...(profile?.env ?? [])])].sort()
 
   return {
     profile:  profile?.niche ?? 'default',
     mcpIds:   allIds,
     mcps,
     envVars,
+    requiredEnv,
   }
 }
 

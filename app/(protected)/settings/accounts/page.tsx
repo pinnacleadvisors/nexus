@@ -28,7 +28,7 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
               Connected Accounts
             </h1>
             <p className="text-sm mt-0.5" style={{ color: '#9090b0' }}>
-              OAuth connections brokered through Composio. Tokens never touch this database — they live in Composio. Scope to a business with{' '}
+              OAuth connections brokered through Composio (tokens live in Composio) plus direct API-key platforms (key encrypted in DB with <code>ENCRYPTION_KEY</code>). Scope to a business with{' '}
               <Link href="/settings/businesses" className="underline" style={{ color: '#6c63ff' }}>?businessSlug=&lt;slug&gt;</Link>.
             </p>
           </div>
