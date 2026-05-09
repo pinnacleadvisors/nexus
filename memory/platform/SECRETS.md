@@ -229,6 +229,9 @@ Set on the Coolify service running the codex gateway on KVM2 (NOT on Nexus / Ver
 | `ALLOWED_USER_IDS` | Comma-separated Clerk user IDs. Same defence-in-depth gate as claude-gateway. Mirror the Vercel-side allowlist. |
 | `NEXUS_REPO_URL` | Git URL the entrypoint clones into `/repo` so spawned `codex` sessions can read `.claude/agents/`. |
 | `CODEX_GATEWAY_REPO_REF` | Branch / tag to check out (default `main`). |
+| `CODEX_AUTH_JSON` | **Recommended auth path** — full contents of `~/.codex/auth.json` after running `codex login` on a dev machine. Bootstraps `/root/.codex/auth.json` on first boot of a fresh volume; bypassed if the file already exists (codex refreshes its own access token in-place — clobbering on every boot would invalidate it). Set `CODEX_AUTH_JSON_FORCE=1` for one boot to override. Plan-billed (drains ChatGPT Pro/Plus). Refresh token rotates ~30d → re-paste periodically. See `services/codex-gateway/README.md` step 4. |
+| `CODEX_AUTH_JSON_FORCE` | Optional `0`/`1` (default `0`). When `1`, the entrypoint overwrites `/root/.codex/auth.json` even if it exists — use after rotating `CODEX_AUTH_JSON`, then unset. |
+| `CODEX_API_KEY` | Optional pay-per-token API-billing fallback. Used only if `CODEX_AUTH_JSON` is unset and `/root/.codex` is empty. No rotation pain but costs more than the plan. |
 | `CODEX_MODEL` | Optional pin (e.g. `gpt-5.5`) — forwarded as `--model` to the spawned `codex exec`. |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 4). Lower than claude-gateway because ChatGPT Pro is one identity per request. |
 | `REQUEST_TIMEOUT_MS` | Per-request timeout for the spawned `codex` CLI (default 180 000). |
