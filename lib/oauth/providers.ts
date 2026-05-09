@@ -69,6 +69,18 @@ export interface OAuthProvider {
     instructions?: string
     /** Direct link to the dashboard page where the key is generated. */
     credentialsUrl?: string
+    /**
+     * Container env-var name the decrypted key gets injected as at provision
+     * time. Must match the manifest's `requiredEnv` entry (profile-level OR
+     * MCP-level) so the per-business container starts with the right secret in
+     * env. The provision route walks `manifest.requiredEnv` and reverse-maps
+     * each name to its provider via this field.
+     *
+     * Example: `convertkit` → `CONVERTKIT_API_KEY`; `cloudflare-dns` →
+     * `CLOUDFLARE_API_TOKEN`. Without this field the provision route can't
+     * locate the per-business stored key for the env var.
+     */
+    envVar?: string
   }
   /**
    * Sharing policy for connected_accounts. Drives UI guidance + helps reviewers
@@ -204,6 +216,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     apiKeySetup: {
       instructions: 'ConvertKit dashboard → Settings → Advanced → API & Webhooks → V4 API Keys → Create new key. Paste the secret token below.',
       credentialsUrl: 'https://app.convertkit.com/account_settings/advanced_settings',
+      envVar: 'CONVERTKIT_API_KEY',
     },
   },
 
@@ -322,6 +335,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     apiKeySetup: {
       instructions: 'Cloudflare dashboard → My Profile → API Tokens → Create Token → use the "Edit zone DNS" template. Restrict to the specific zone(s) this business owns. Copy the secret token (only shown once) and paste below.',
       credentialsUrl: 'https://dash.cloudflare.com/profile/api-tokens',
+      envVar: 'CLOUDFLARE_API_TOKEN',
     },
   },
 
