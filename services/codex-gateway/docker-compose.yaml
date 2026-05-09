@@ -25,6 +25,12 @@ services:
       CODEX_MODEL:            "${CODEX_MODEL:-}"
       QUEUE_MAX_DEPTH:        "${QUEUE_MAX_DEPTH:-4}"
       REQUEST_TIMEOUT_MS:     "${REQUEST_TIMEOUT_MS:-180000}"
+      # Auth — see services/codex-gateway/README.md step 4. Defaults are empty
+      # so Coolify-side absence is tolerated; entrypoint.sh detects which path
+      # is active and falls back to the persistent volume when none are set.
+      CODEX_AUTH_JSON:        "${CODEX_AUTH_JSON:-}"
+      CODEX_AUTH_JSON_FORCE:  "${CODEX_AUTH_JSON_FORCE:-0}"
+      CODEX_API_KEY:          "${CODEX_API_KEY:-}"
     volumes:
       - codex_home:/root/.codex
       - nexus_repo:/repo
