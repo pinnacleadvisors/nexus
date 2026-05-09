@@ -1,6 +1,8 @@
 # Codex Gateway — non-interactive auth via `CODEX_AUTH_JSON`
 
-> **One-line summary.** Take `~/.codex/auth.json` from a dev machine where you ran `codex login`, paste it into the Coolify service env as `CODEX_AUTH_JSON`, redeploy. Future container recreates / volume wipes auto-reauth without needing a working terminal websocket.
+> **One-line summary.** Take `~/.codex/auth.json` from your **local laptop** (where you can complete the browser OAuth via `codex login`) and paste it into the Coolify service env as `CODEX_AUTH_JSON`, then redeploy. Future container recreates / volume wipes auto-reauth without needing a working terminal websocket.
+
+> **"Dev machine" terminology.** Throughout this runbook, "dev machine" / "your dev machine" / "your local machine" all mean **the laptop you're reading this on** (e.g. your Mac) — the only machine here with a browser. It is **not** KVM2 (the Hostinger VPS that hosts the codex-gateway container) or KVM4 (the VPS that hosts claude-gateway + per-business containers). Both KVMs are headless and that's exactly why we're shipping `auth.json` to them via env var.
 
 This runbook ships alongside [PR #124](https://github.com/pinnacleadvisors/nexus/pull/124). It assumes the codex-gateway already exists (Phase 8) and is currently logged in.
 
@@ -29,7 +31,7 @@ After any of those, you'd need to `docker exec -it codex-gateway codex login` to
 | Persistent volume | `codex_home` → `/root/.codex` inside the container | Already populated by previous `codex login` — we leave it alone |
 | Secret store | Coolify service-level "Environment Variables" tab (NOT Doppler — Doppler is for the Vercel app, not this gateway) | Where `CODEX_AUTH_JSON` is set |
 
-## Prerequisites on your dev machine
+## Prerequisites on your local laptop (the "dev machine")
 
 - `codex` CLI installed: `npm i -g @openai/codex` (or `npx --yes @openai/codex@latest`).
 - `gh` CLI authed (only for verifying the PR merged).
@@ -45,7 +47,7 @@ gh pr view 124 --json state,mergeCommit
 
 The change is already baked into `services/codex-gateway/entrypoint.sh` and `services/codex-gateway/docker-compose.yaml` on `main`. The gateway uses `CODEX_GATEWAY_REPO_REF=main` (default) so the next deploy pulls these changes automatically.
 
-## Step 2 — Generate `auth.json` on your dev machine
+## Step 2 — Generate `auth.json` on your local laptop
 
 ```bash
 # 1. Log in (browser opens — complete the ChatGPT OAuth flow).
@@ -103,7 +105,7 @@ In the Coolify UI, on the **codex-gateway** application page:
 
 ## Step 5 — Verify health
 
-From your dev machine:
+From your local laptop:
 
 ```bash
 curl -sS https://codex-gw.coolifycloudtunnel.uk/health
@@ -144,7 +146,7 @@ Codex's refresh token rotates periodically — usually within ~30 days, sometime
 Recovery:
 
 ```bash
-# On your dev machine:
+# On your local laptop (where you have a browser):
 codex login                                # browser flow again
 cat ~/.codex/auth.json                     # copy the new JSON
 ```
