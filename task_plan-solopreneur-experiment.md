@@ -230,6 +230,17 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
+### 2026-05-09 — Phase 3 Group B complete (agent specs)
+
+**Completed (implementation)** — all 3 Group B atomic tasks dispatched in parallel via subagents on a fresh branch `claude/group-b-agent-specs` off latest main (after PR #112 merge). Each agent spec is a single new file under `.claude/agents/` — strictly disjoint file sets, no shared-doc edits, so the INDEX.md race from Group A doesn't repeat.
+- [x] **B1** `ce9bd93` — `.claude/agents/solopreneur-loop.md` (205 lines, opus). Sense → decide → dispatch → evaluate → adapt loop; 5-gate enforcement (POST `/api/experiments/gate-request`, pause without polling, `first_n_posts` auto-disables after 3 approvals); auto-pivot trigger (`pivot_history` jsonb on `business.money_model`); strict JSON output mirroring `business-operator`'s contract.
+- [x] **B2** `7ef546a` — `.claude/agents/codex-maintainer.md` (123 lines, gpt-5.5-codex). Shared KVM2 sysadmin layer (one instance covers all experiment-flagged businesses). 30-min cron + on-demand. Three cyclic checks (Coolify health, Vercel build scan, codex auth rotation) emitting `experiment_metrics` heartbeat rows. Two on-demand modes (fresh-state SaaS research + adversarial niche/pricing/pivot grader). Explicit 7-bullet delta from `codex-operator`.
+- [x] **B3** `43ff0a4` — `.claude/agents/pdf-swarm-lead.md` (150 lines, sonnet). Claude Code Agent Teams orchestration lead. Six-member sub-agent roster (researcher, brand-builder, builder, content-writer, marketer, support) each with tool budget ≥ 2. Cost-guard preflight via `lib/cost-guard.ts checkKillSwitch()`. Non-blocking failure handling — `errors[]` aggregated, solopreneur-loop decides retry/skip/kill.
+
+**PR**: #129 (draft, off main). Contains 3 agent-spec commits + this Progress entry.
+
+**Next**: Group C (kill-switch extension, two cron routes, provision-route extension) — depends on Group A's `experiment_metrics` table + manifest `requiredEnv` + Group B's three agents to dispatch into.
+
 ### 2026-05-09 — Phase 3 Group A complete (foundation)
 
 **Completed (implementation)** — all 6 Group A atomic tasks dispatched in parallel via subagents, committed individually.
