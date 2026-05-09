@@ -230,6 +230,21 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
+### 2026-05-09 — Phase 3 Group A complete (foundation)
+
+**Completed (implementation)** — all 6 Group A atomic tasks dispatched in parallel via subagents, committed individually.
+- [x] **A1** `876fefb` — `supabase/migrations/034_experiment_metrics.sql` (table + indexes + RLS policy, idempotent)
+- [x] **A2** `ca4edf7` — `lib/businesses/mcp-manifest.ts` extended: `cloudflare-mcp` MCP entry added; `NicheProfile.env` profile-level field added; `digital-products` profile gains `cloudflare-mcp` + `env: ['CONVERTKIT_API_KEY']` + match keywords `pdf` / `info-product`; `ResolvedManifest.requiredEnv` aggregates both sources; unit test confirms `pdf-info-products` resolves to the 7-MCP set with both env vars
+- [x] **A3** `b91d829` — `docs/runbooks/solopreneur-experiment.md` (gate matrix, Slack approval, kill-switch, pivot, day 1/7/14/30 checkpoints) + ADR INDEX entry
+- [x] **A4** `ba4c225` — `scripts/seed-pdf-experiment.ts` (idempotent seed via service-role Supabase client; experiment-specific fields ride inside extensible JSONB columns since `business_operators` schema doesn't have them as direct columns)
+- [x] **A5** `fa1f2d8` — `apiKeySetup` pattern: migration 035 (encrypted_api_key bytea, CHECK one-of constraint), `OAuthProvider.apiKeySetup` field, ConvertKit + Cloudflare DNS provider entries, `/api/connected-accounts/api-key` route (POST encrypts via lib/crypto.ts, DELETE revokes), `AccountList.tsx` ApiKeyCard subcomponent (OAuth flow untouched)
+- [x] **A6** `b3ba36b` — `docs/runbooks/namecheap-to-cloudflare-dns.md` (per-domain DNS delegation steps + per-business zone-scoped token creation) + ADR INDEX entry
+- [x] **fixup** `c09367e` — restored A6 INDEX entry lost to a parallel write race during A5's run
+
+**Notes**
+- All 6 subagents reported zero new typecheck errors (256-261 errors are pre-existing environmental — missing `next`, `lucide-react` modules in the sandbox; the diff vs baseline is zero on the changed files)
+- Parallel-dispatch lesson: independent file-set planning still leaves a window for INDEX.md races when two tasks both append to the same shared doc. Future Group B should give each agent a unique file set with no shared-doc edits, OR have them write provisional changes that the parent merges.
+
 ### 2026-05-09 — ConvertKit-first email; Beehiiv deferred to validation
 
 **Completed (planning)**
