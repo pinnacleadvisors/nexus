@@ -53,6 +53,24 @@ export interface OAuthProvider {
     credentialsUrl?: string
   }
   /**
+   * When set, this platform is **not** brokered through Composio at all — it
+   * uses a static API key the operator pastes per business. Settings → Accounts
+   * renders an inline paste form (POST /api/connected-accounts/api-key) instead
+   * of the OAuth "Connect" button. The key is encrypted with ENCRYPTION_KEY
+   * (lib/crypto.ts) and stored on `connected_accounts.encrypted_api_key`.
+   *
+   * Use for any vendor that lacks OAuth / a Composio toolkit but exposes a
+   * REST API: ConvertKit, Cloudflare DNS, Beehiiv, MailerLite, etc. The
+   * provision route walks `requiredEnv` per manifest and injects the decrypted
+   * key into the per-business container as the named env var.
+   */
+  apiKeySetup?: {
+    /** Short human-readable steps for finding the key. */
+    instructions?: string
+    /** Direct link to the dashboard page where the key is generated. */
+    credentialsUrl?: string
+  }
+  /**
    * Sharing policy for connected_accounts. Drives UI guidance + helps reviewers
    * spot bad ideas (sharing a Stripe account commingles funds, sharing a
    * Higgsfield API key just shares quota).
@@ -170,6 +188,24 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     sharePolicy: 'per-business',
   },
+  {
+    // Non-Composio API-key platform. ConvertKit (recently rebranded "Kit") V4
+    // API uses a per-account bearer token; the agent calls REST directly. Key
+    // is stored encrypted on the connected_accounts row (apiKeySetup pattern)
+    // and injected as CONVERTKIT_API_KEY at provision time per business.
+    id: 'convertkit',
+    name: 'ConvertKit (Kit)',
+    toolkitSlug: 'CONVERTKIT', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'email',
+    logo: '/logos/convertkit.svg',
+    actions: [],
+    featuredFor: ['creator', 'content', 'marketing'],
+    sharePolicy: 'per-business',
+    apiKeySetup: {
+      instructions: 'ConvertKit dashboard → Settings → Advanced → API & Webhooks → V4 API Keys → Create new key. Paste the secret token below.',
+      credentialsUrl: 'https://app.convertkit.com/account_settings/advanced_settings',
+    },
+  },
 
   // ── Communication ───────────────────────────────────────────────────────
   {
@@ -268,6 +304,25 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['saas', 'developer'],
     sharePolicy: 'per-business',
+  },
+  {
+    // Non-Composio API-key platform. Cloudflare's official DNS MCP authenticates
+    // via a zone-scoped API token (no IP allowlist), making it usable from any
+    // per-business container. Key is injected as CLOUDFLARE_API_TOKEN at
+    // provision time. Per-domain tokens are recommended — one row per
+    // (business, zone) so revoking one domain doesn't bring down others.
+    id: 'cloudflare-dns',
+    name: 'Cloudflare DNS',
+    toolkitSlug: 'CLOUDFLARE', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'developer',
+    logo: '/logos/cloudflare.svg',
+    actions: [],
+    featuredFor: ['saas', 'ecommerce', 'creator', 'agency'],
+    sharePolicy: 'per-business',
+    apiKeySetup: {
+      instructions: 'Cloudflare dashboard → My Profile → API Tokens → Create Token → use the "Edit zone DNS" template. Restrict to the specific zone(s) this business owns. Copy the secret token (only shown once) and paste below.',
+      credentialsUrl: 'https://dash.cloudflare.com/profile/api-tokens',
+    },
   },
 
   // ── Commerce ────────────────────────────────────────────────────────────
