@@ -20,7 +20,7 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - All cash-spending actions go through Composio (`executeBusinessAction` → Composio Rube MCP); no raw API keys for Stripe / Namecheap / Cloudflare etc.
 - Cost-guard kill-switch is **inside the loop**, not a passive monitor — overspend hard-stops the next tick
 - Experiment scoped to its own `business_slug` — no leaks into existing Nexus business rows or shared Board state
-- KVM4 hosts per-business containers (KVM2 = codex-gateway). Use `COOLIFY_KVM4_*` Doppler vars and `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`
+- KVM4 hosts per-business **claude-gateway** containers (one per business, Coolify-API-managed). KVM2 hosts the **shared codex-gateway** (one Compose stack handles every business's codex maintenance ticks). Use `COOLIFY_KVM4_*` Doppler vars and `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES` for per-business; codex-gateway env declared in `services/codex-gateway/docker-compose.yaml`.
 - Canonical app URL is `NEXUS_BASE_URL` (not `NEXT_PUBLIC_APP_URL`); scripts and route-builders read this name
 - `npx tsc --noEmit` and `npm run check:retry-storm` pass before every commit
 - Long-horizon write-size discipline — every atomic task fits one tool call under 300 lines / 10 KB
@@ -36,6 +36,7 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - **One-shot provisioning chain** — `scripts/migrate-business.ts --auto` does build + wait + provision in one command (replaces the manual curl flow that was here last commit)
 - **Provision idempotency** — re-runs reuse existing Coolify app via `findAppByName` + `reusedExisting` flag in response; partial failures no longer leave orphan apps
 - **Non-interactive Claude auth** — `CLAUDE_CODE_OAUTH_TOKEN` (Max plan) auto-injected on provision; container's `entrypoint.sh` three-mode auth check (token → API key → legacy `claude login`). No Coolify terminal needed.
+- **Non-interactive Codex auth** — `CODEX_AUTH_JSON` is the codex-side equivalent (full `~/.codex/auth.json` contents). Bootstrap-only: skipped when the volume already has `/root/.codex/auth.json` so the CLI's auto-refresh on the persistent volume isn't clobbered. `CODEX_AUTH_JSON_FORCE=1` forces overwrite after manual rotation. ~30-day refresh-token rotation caveat — operator must regenerate via `docs/runbooks/codex-gateway-auth-rotation.md`.
 - MCP-manifest-by-niche — `lib/businesses/mcp-manifest.ts`. `digital-products` profile auto-resolves from niche substrings (e.g. "contract bundle", "organizer", "info-products")
 - **Composio Rube single-MCP** — one `composio` MCP entry covers all OAuth platforms in `lib/oauth/providers.ts` (Stripe, Gmail, X, LinkedIn, Canva, etc.) — no per-platform packages required
 - **Composio Auth Config sync** — `scripts/sync-composio-auth-configs.ts` + monthly GHA cron creates per-toolkit Auth Configs and pushes ids to Doppler. Manual setup still required for Twitter/Shopify/TikTok (their developer apps).
@@ -69,12 +70,23 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - Verify: `\d experiment_metrics` shows table; sample insert + select works.
 - Parallel: yes
 
-**A2 — Confirm/extend `digital-products` profile for PDF niche**
+**A2 — Confirm/extend `digital-products` profile + add Beehiiv + Cloudflare native MCPs**
 - File: `lib/businesses/mcp-manifest.ts`
-- Change: `digital-products` profile likely auto-resolves from substrings — verify `resolveManifest({niche:'pdf-info-products'})` matches and returns the canonical set: `[memory-hq, firecrawl, n8n, composio, muapi-ai, tavily]` (the single `composio` Rube entry covers Stripe / Gmail / X / LinkedIn / Beehiiv / Vercel / Cloudflare / Namecheap via `lib/oauth/providers.ts`). Only edit the manifest if the substring match fails — preferred fix is to broaden the niche-keyword list, not invent a parallel `pdf-products` profile.
-- Verify: unit test in `__tests__/businesses/mcp-manifest.test.ts` asserts `pdf-info-products` resolves to `digital-products` with the 6-MCP set.
-- First-build caveat: pass `mcp_override=none` on initial `gh workflow run per-business-image.yml` — most `@nexus/mcp-*` packages are placeholders not yet on npm. Add them incrementally as published.
+- Change: `digital-products` profile likely auto-resolves from substrings — verify `resolveManifest({niche:'pdf-info-products'})` matches. Add two **non-Composio** MCPs to the profile (Beehiiv and Cloudflare aren't in Composio's catalog, so they go in alongside `composio` Rube, not under it):
+  - `beehiiv-mcp` (npm `beehiiv-mcp` — native MCP, March 2026 launch; auth via `BEEHIIV_API_KEY` env var; v1 read-only, write coming)
+  - `cloudflare-mcp` (Cloudflare's official DNS MCP; auth via `CLOUDFLARE_API_TOKEN` env var, zone-scoped — no IP allowlist)
+  Resulting set: `[memory-hq, firecrawl, n8n, composio, muapi-ai, tavily, beehiiv-mcp, cloudflare-mcp]`. The `composio` Rube entry still covers everything Composio brokers (Stripe, Gmail, X, LinkedIn, Vercel, Canva, etc.). Namecheap is intentionally **not** added — see G1 runbook.
+- Each new MCP entry declares `requiredEnv: ['BEEHIIV_API_KEY']` / `['CLOUDFLARE_API_TOKEN']` so the provision route knows which env vars to inject (consumed by A5).
+- Verify: unit test asserts `pdf-info-products` resolves to `digital-products` with the 8-MCP set; another asserts the `requiredEnv` arrays are present.
+- First-build caveat: pass `mcp_override=none` on initial `gh workflow run per-business-image.yml` — most `@nexus/mcp-*` packages are placeholders not yet on npm; once `beehiiv-mcp` and `cloudflare-mcp` are confirmed published, drop them into the build incrementally.
 - Parallel: yes
+
+**A5 — `apiKeySetup` pattern for non-Composio MCPs**
+- File: `lib/oauth/providers.ts` + `app/(protected)/settings/accounts/page.tsx` + new `app/api/connected-accounts/api-key/route.ts`
+- Change: extend the `OAuthProvider` shape with `apiKeySetup: true` (parallel to existing `manualSetup`). Providers flagged this way show an **API-key paste form** at `/settings/accounts` instead of an OAuth-via-Composio button. Submitted keys are encrypted with `ENCRYPTION_KEY` (already in Doppler) and stored on `connected_accounts` — add a new `encrypted_api_key bytea` column via migration (or reuse `composio_account_id` with `apikey:` prefix; recommend the new column for clarity). The route enforces business-scope just like the existing OAuth callback. Add `beehiiv` and `cloudflare-dns` provider entries with `apiKeySetup: true`.
+- Scaling note: this is the canonical pattern for **any future non-Composio API-key platform**. New platform = (a) provider entry with `apiKeySetup: true`, (b) MCP entry in `mcp-manifest.ts` with `requiredEnv`, (c) operator pastes per business at `/settings/accounts?businessSlug=<slug>`. No code changes per business. Each business's key is independently encrypted and isolated.
+- Verify: paste a Beehiiv API key at `/settings/accounts?businessSlug=pdf-experiment-01` → `connected_accounts` row appears with `platform='beehiiv'`, `encrypted_api_key` non-null; decrypt round-trip via the same `ENCRYPTION_KEY` produces the original plaintext.
+- Parallel: yes (after A1 migration is in)
 
 **A3 — Gate matrix + runbook**
 - File: `docs/runbooks/solopreneur-experiment.md`
@@ -86,6 +98,13 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - File: `scripts/seed-pdf-experiment.ts`
 - Change: Idempotent script (check `slug` existence first); insert `business` row with success-criteria fields. Mirror the shape used by `lib/business/seeds.ts` so the row is compatible with `migrate-business.ts --auto` downstream.
 - Verify: `doppler run -- npx --yes tsx scripts/seed-pdf-experiment.ts` inserts; second run is no-op; row visible in Supabase; `npx --yes tsx scripts/migrate-business.ts pdf-experiment-01` (plan-only) prints a sensible plan with `digital-products` profile resolved.
+- Parallel: yes
+
+**A6 — Namecheap → Cloudflare DNS migration runbook**
+- File: `docs/runbooks/namecheap-to-cloudflare-dns.md`
+- Change: Document the per-domain steps for delegating DNS away from Namecheap to Cloudflare (so the per-business agent can manage DNS via the Cloudflare DNS MCP without hitting Namecheap's IP-allowlist incompatibility). Steps: (a) sign up Cloudflare → add zone for the domain; (b) Cloudflare provides 2 nameservers; (c) Namecheap dashboard → Domain List → Manage → Nameservers → Custom DNS → paste Cloudflare's NS; (d) wait propagation 15 min – 24 h; (e) verify `dig NS <domain>` shows Cloudflare; (f) create zone-scoped API token (`Edit zone DNS` template) and paste at `/settings/accounts?businessSlug=<slug>` per business that owns the domain. Cross-link from `docs/adr/INDEX.md` with a one-line ADR explaining the architectural decision (Cloudflare DNS over Namecheap API).
+- Why: Namecheap's API requires `(API key + username + IP allowlist)` and the IP allowlist is incompatible with per-business containers (each can have a different egress IP through Coolify-Cloudflare). Cloudflare uses zone-scoped API tokens with no IP allowlist.
+- Verify: doc renders; one domain successfully delegated as a smoke test.
 - Parallel: yes
 
 ### Group B — Agents (after A)
@@ -126,11 +145,12 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - Verify: manual invoke runs health check; `health_check` row written; no 5xx.
 - Parallel: yes (after C1)
 
-**C4 — Provision the container**
+**C4 — Provision the container (extended to inject API-key envs)**
 - Invocation: `doppler run -- npx --yes tsx scripts/migrate-business.ts pdf-experiment-01 --auto` (one command — chains GHA image build → wait for build → POST `/api/businesses/pdf-experiment-01/provision` with the bearer token).
-- Prereqs: A4 row exists; B1-B3 agents available; C1 kill-switch wired; `CLAUDE_CODE_OAUTH_TOKEN` set in Doppler (one-time generate via `claude setup-token` on dev machine — see F1); KVM4 Doppler vars present (`COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`); `NEXUS_OPS_TOKEN` set; Doppler→Vercel env synced (`scripts/sync-vercel-env.sh`).
-- Change: deliberately use `mcp_override=none` for the first build (placeholder `@nexus/mcp-*` packages aren't on npm). Provision response should include `reusedExisting: false` first run, `true` on any retry. Operator clicks Deploy in Coolify after reviewing the config — that step is intentionally manual.
-- Verify: Coolify dashboard shows `nexus-business-pdf-experiment-01` app on KVM4; deploy logs show `[gateway] Using CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive).`; `curl -i https://pdf-experiment-01.gateway.<your-domain>/health` returns `{ok:true, loggedIn:true, queueDepth:0}`; `business:pdf-experiment-01` gateway secret resolves in `resolveClawConfig()`.
+- Prereqs: A4 row exists; A5 `apiKeySetup` flow live + per-business Beehiiv + Cloudflare keys pasted (see F2); B1-B3 agents available; C1 kill-switch wired; `CLAUDE_CODE_OAUTH_TOKEN` set in Doppler (one-time generate via `claude setup-token` on dev machine — see F1); KVM4 Doppler vars present (`COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`, `COOLIFY_KVM4_SERVER_UUID`); `NEXUS_OPS_TOKEN` set; Doppler→Vercel env synced (`scripts/sync-vercel-env.sh`).
+- Change to provision route (`app/api/businesses/[slug]/provision/route.ts`): when assembling the container env, **for every MCP in the resolved manifest with a `requiredEnv` entry**, look up the corresponding `connected_accounts` row for `(user, businessSlug, platform)`, decrypt `encrypted_api_key`, and inject under that env-var name. So `BEEHIIV_API_KEY` and `CLOUDFLARE_API_TOKEN` flow per-business with no shared key state. If a `requiredEnv` value is missing for a business, log a warning + skip injection (the MCP simply won't load) — don't block the provision.
+- First-build caveat: deliberately use `mcp_override=none` (placeholder `@nexus/mcp-*` packages aren't on npm). Provision response should include `reusedExisting: false` first run, `true` on any retry. Operator clicks Deploy in Coolify after reviewing the config — that step is intentionally manual.
+- Verify: Coolify dashboard shows `nexus-business-pdf-experiment-01` app on KVM4; deploy logs show `[gateway] Using CLAUDE_CODE_OAUTH_TOKEN (Max plan, non-interactive).`; container env contains `BEEHIIV_API_KEY` and `CLOUDFLARE_API_TOKEN` (verify via Coolify env panel — they should appear masked); `curl -i https://pdf-experiment-01.gateway.<your-domain>/health` returns `{ok:true, loggedIn:true, queueDepth:0}`; `business:pdf-experiment-01` gateway secret resolves in `resolveClawConfig()`.
 - Parallel: no
 
 ### Group D — Observability (Parallel: yes)
@@ -176,13 +196,21 @@ Stand up a fully autonomous **Claude-led solopreneur loop** running a single PDF
 - Verify: Slack message lands with Approve/Reject; click Approve; subsequent tick reads gate as resolved and proceeds.
 
 ### Group F — Launch (Sequential, gated)
-**F1 — One-time setup (dev machine + Doppler)**
-- Manual: (a) on dev machine where browser OAuth works, run `claude setup-token` → paste resulting token into Doppler as `CLAUDE_CODE_OAUTH_TOKEN`; (b) ensure Composio Auth Configs exist for the platforms this business uses — run `doppler run -- npx --yes tsx scripts/sync-composio-auth-configs.ts` (creates the Composio-managed ones automatically and pushes ids to Doppler); for X/Shopify/TikTok create Auth Config manually in Composio dashboard and add `COMPOSIO_AUTH_CONFIG_<TOOLKIT>` to Doppler; (c) `doppler run -- bash scripts/sync-vercel-env.sh` to push the new env into Vercel; (d) redeploy Vercel.
-- Verify: `claude --version` works inside any per-business container after deploy (logs show `Using CLAUDE_CODE_OAUTH_TOKEN`); Doppler has `COMPOSIO_AUTH_CONFIG_GMAIL`, `COMPOSIO_AUTH_CONFIG_X`, `COMPOSIO_AUTH_CONFIG_STRIPE`, etc., for every platform the loop will use.
+**F1 — One-time setup (dev machine + Doppler — applies to all future businesses)**
+- Manual:
+  - **Claude auth**: on a dev machine where browser OAuth works, run `claude setup-token` → paste the resulting token into Doppler as `CLAUDE_CODE_OAUTH_TOKEN`.
+  - **Codex auth**: on the same dev machine, run `codex login` → copy the contents of `~/.codex/auth.json` (entire JSON) → paste into Doppler as `CODEX_AUTH_JSON`. Set `CODEX_AUTH_JSON_FORCE=1` once after rotation. Schedule a calendar reminder for ~25 days for the next refresh — see `docs/runbooks/codex-gateway-auth-rotation.md`.
+  - **Composio Auth Configs**: `doppler run -- npx --yes tsx scripts/sync-composio-auth-configs.ts` (creates Composio-managed configs automatically + pushes ids to Doppler). For X/Shopify/TikTok, create Auth Configs manually in Composio dashboard and add `COMPOSIO_AUTH_CONFIG_<TOOLKIT>` to Doppler.
+  - **Sync env**: `doppler run -- bash scripts/sync-vercel-env.sh` → push new env into Vercel project; redeploy Vercel.
+- Verify: `claude --version` works inside any per-business container after deploy (logs show `Using CLAUDE_CODE_OAUTH_TOKEN`); codex-gateway logs on KVM2 show `Using CODEX_AUTH_JSON` after redeploy; Doppler has every required `COMPOSIO_AUTH_CONFIG_<TOOLKIT>` for the platforms this business uses.
 
-**F2 — Connect business-scoped OAuth accounts**
-- Manual: navigate to `/settings/accounts?businessSlug=pdf-experiment-01` → click Connect for each platform (X, LinkedIn, Gmail, Stripe, Beehiiv; Vercel/Cloudflare/Namecheap if Composio supports them, else direct API key in Doppler scoped to this business).
-- Verify: `select platform, status from connected_accounts where business_slug='pdf-experiment-01' and status='active';` shows one row per platform; `executeBusinessAction({user, business:'pdf-experiment-01', platform:'stripe', action:'STRIPE_LIST_PRODUCTS'})` returns `[]` cleanly.
+**F2 — Connect business-scoped accounts (dual-flow)**
+- Manual: navigate to `/settings/accounts?businessSlug=pdf-experiment-01` → connect each platform via the appropriate UI:
+  - **OAuth (Composio Rube)**: click `Connect via Composio` for X, LinkedIn, Gmail, Stripe, Vercel (every platform Composio brokers per `lib/oauth/providers.ts`).
+  - **API-key paste (apiKeySetup pattern from A5)**: paste API key for Beehiiv and Cloudflare. For Beehiiv, get the key from Beehiiv dashboard → Account → Integrations → API. For Cloudflare, create a **zone-scoped API token** (Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit zone DNS" template) for each domain the business owns. Token stored encrypted in `connected_accounts.encrypted_api_key`.
+- Verify: `select platform, status, (encrypted_api_key is not null) as has_key from connected_accounts where business_slug='pdf-experiment-01' and status='active';` shows one row per platform; OAuth platforms have `composio_account_id` populated; API-key platforms have `has_key=true`. `executeBusinessAction({user, business:'pdf-experiment-01', platform:'stripe', action:'STRIPE_LIST_PRODUCTS'})` returns `[]` cleanly. After C4 provision: container can call Beehiiv `GET /v2/publications` and Cloudflare `GET /zones` from the MCP tools.
+
+> **Cost note** — Beehiiv MCP requires a paid plan (Launch tier ~$42/mo). Verify pricing on activation; if a free tier supports the endpoints we need, downgrade. ConvertKit / MailerLite are free-tier alternatives if Beehiiv-specific features aren't needed — would need a different MCP/integration.
 
 **F3 — First niche-pick gate (kicks the loop)**
 - Activate cron via `vercel.json` deploy. First solopreneur-tick fires the niche-pick gate; user approves a niche via Slack inline button.
@@ -202,15 +230,24 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
+### 2026-05-09 — Codex auth + Beehiiv/Cloudflare integration
+
+**Completed (planning)**
+- [x] Rebased branch onto `origin/main` again (PR #112 force-pushed)
+- [x] Absorbed codex-gateway changes: `CODEX_AUTH_JSON` non-interactive auth (bootstrap-only on persistent volume), `CODEX_AUTH_JSON_FORCE` for rotation, `docs/runbooks/codex-gateway-auth-rotation.md` operator guide. Codex-gateway is shared on KVM2 (Compose stack), distinct from per-business Claude containers on KVM4.
+- [x] Designed Beehiiv + Cloudflare integration via new `apiKeySetup` pattern (parallels existing `manualSetup` flag) — encrypted API keys per business in `connected_accounts.encrypted_api_key`, injected as env vars at provision time via the MCP's `requiredEnv` declaration.
+- [x] Decision: Namecheap is **not** integrated; DNS automation goes through Cloudflare (zone-scoped API tokens, no IP allowlist). Domain registration stays at Namecheap. New runbook A6 documents the per-domain delegation steps.
+- [x] Group A grew from 4 → 6 tasks (added A5 apiKeySetup pattern, A6 DNS migration runbook). Total atomic tasks now 25 across 6 groups.
+
 ### 2026-05-08 — Plan rebased onto `main`
 
 **Completed (planning)**
 - [x] Initial 14-task plan drafted across 6 groups (PR #112)
-- [x] Rebased branch onto `origin/main` (ahead by 1 commit, behind by 15 — clean rebase)
+- [x] Rebased branch onto `origin/main` (clean rebase)
 - [x] Plan updated to reflect main deltas: non-interactive `CLAUDE_CODE_OAUTH_TOKEN` auth path, `migrate-business.ts --auto` provisioning chain, provision idempotency, Composio Rube single-MCP entry, KVM4 host + `NEXUS_BASE_URL` canonical, sync-vercel-env script, sync-composio-auth-configs script
 
 **Remaining (implementation)**
-- [ ] Phase 3 still gated on user approval — start with Group A (4 parallel foundation tasks)
+- [ ] Phase 3 still gated on user approval — start with Group A (6 parallel foundation tasks)
 
 **Blockers / Open Questions**
 - See "Open questions / risks" section below.
@@ -218,12 +255,14 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 ---
 
 ## Open questions / risks
-- **Codex gateway entrypoint** — `/api/claude-session/dispatch` is the Claude path; verify the Codex dispatch entrypoint (separate route or `model:` switch on the same one). Affects C3.
+- **Codex gateway dispatch entrypoint** — codex-gateway is a shared Compose stack on KVM2 (one for all businesses), distinct from per-business claude-gateway containers on KVM4. The dispatch route C3 should route `codex-maintainer` ticks to the shared codex-gateway URL, not a per-business one. Verify the env var name carrying that URL (likely `CODEX_GATEWAY_URL` in Doppler) and that bearer auth uses `CODEX_GATEWAY_BEARER`.
 - **`digital-products` profile substring match for `pdf-info-products`** — likely matches existing keywords ("contract bundle", "organizer") but verify. A2 should preferentially broaden the keyword list rather than add a parallel `pdf-products` profile.
-- **Composio Auth Config gaps** — confirm Beehiiv toolkit exists in Composio (sync script runs against `lib/oauth/providers.ts`). Namecheap / Cloudflare may not be Composio-managed — if not, fall back to direct API keys scoped per business in Doppler, not raw env vars in the agent.
+- **Beehiiv pricing** — native MCP requires paid plan (Launch tier ~$42/mo per business). For 3 businesses next month, that's $126/mo just for Beehiiv. Validate on activation; consider ConvertKit (free up to 10k subs) or MailerLite (free up to 1k subs + 12k emails/mo) as alternatives if Beehiiv-specific features aren't critical — would require a different MCP/integration.
+- **Cloudflare account scope at scale** — recommend ONE Cloudflare account with multiple zones (one per business domain) and zone-scoped API tokens per business, rather than separate accounts. Cost: free tier covers many zones. Isolation: each business's API token can only edit DNS for its zone, not others. Trade-off: a single account compromise loses all zones — acceptable for the experiment, revisit at >5 businesses.
+- **Codex refresh-token rotation** — `CODEX_AUTH_JSON` token refreshes ~30 days after issuance; operator must regenerate via the runbook before that. If missed, codex-gateway stops auth'ing and codex-maintainer ticks fail until rotated. Set a calendar reminder when initially generating.
 - **Plan-billing token accounting** — Run events log token counts? If not, A1/D1 needs a token-emission shim before ledger ratio is meaningful.
 - **Auto-pivot mechanics** — in-place pivot on same `business_slug` (cheaper, mixed history) or spawn `pdf-experiment-01-v2` (cleaner audit). Recommend in-place with a `pivot_history jsonb` column on `business`.
-- **Multi-tenant readiness for next month** — replicating to `-02` / `-03` is just A4 + C4 + F1 per business; `migrate-business.ts --auto --all` already handles bulk in-order. Confirm crons iterate by `experiment_flag`, not hardcoded slug.
+- **Multi-tenant readiness for next month** — replicating to `-02` / `-03` is just A4 + A6 (per new domain) + C4 + F1 (already-done) + F2 per business; `migrate-business.ts --auto --all` already handles bulk in-order. Confirm crons iterate by `experiment_flag`, not hardcoded slug.
 - **Plan-amortization expectation timing** — a brand new niche won't earn for 7-14 days. Stagnation timer starts at "first product live", not "experiment created", so the day-7 kill-switch doesn't fire prematurely.
 - **Sub plan choice for next month (3 businesses)** — empirical-first: stay 1× Claude Max 20x + 1× Codex Pro until rate-limits hit, upgrade the bottlenecked side only. Codex's 30-min ticks are short; Claude's parallel swarm dispatches consume more.
 - **GHCR image visibility** — `ghcr.io/pinnacleadvisors/nexus-business:pdf-experiment-01` should be made public (or a Coolify Container Registry entry added) so Coolify can pull without GHCR auth. Image has no baked secrets; secrets injected at runtime by Coolify env vars.
@@ -234,15 +273,19 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 | Path | Purpose | Group |
 |---|---|---|
 | `supabase/migrations/03X_experiment_metrics.sql` | metrics table | A1 |
-| `lib/businesses/mcp-manifest.ts` | PDF money-model MCPs | A2 |
+| `lib/businesses/mcp-manifest.ts` | digital-products + Beehiiv + Cloudflare MCPs | A2 |
 | `docs/runbooks/solopreneur-experiment.md` | gate matrix runbook | A3 |
 | `scripts/seed-pdf-experiment.ts` | business row seed | A4 |
+| `lib/oauth/providers.ts` + `app/api/connected-accounts/api-key/route.ts` | apiKeySetup pattern | A5 |
+| `supabase/migrations/03Y_connected_accounts_api_key.sql` | encrypted_api_key column | A5 |
+| `docs/runbooks/namecheap-to-cloudflare-dns.md` | DNS migration runbook | A6 |
 | `.claude/agents/solopreneur-loop.md` | Claude strategist | B1 |
 | `.claude/agents/codex-maintainer.md` | GPT-5.5 maintainer | B2 |
 | `.claude/agents/pdf-swarm-lead.md` | Claude swarm lead | B3 |
 | `lib/cost-guard.ts` | kill-switch extension | C1 |
 | `app/api/cron/solopreneur-tick/route.ts` | 4×/day Claude cron | C2 |
 | `app/api/cron/codex-maintainer-tick/route.ts` | 30-min Codex cron | C3 |
+| `app/api/businesses/[slug]/provision/route.ts` | inject per-MCP `requiredEnv` keys | C4 |
 | `lib/experiments/plan-billing-ledger.ts` | ledger logic | D1 |
 | `app/(protected)/dashboard/experiments/[slug]/page.tsx` | dashboard | D2 |
 | `app/api/experiments/gate-{request,respond}/route.ts` | Slack gate flow | D3 |
