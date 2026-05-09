@@ -230,6 +230,20 @@ Empty until user approves Phase 2. Per protocol, do not start implementation bef
 
 ## Progress
 
+### 2026-05-09 — Phase 3 Group D complete (observability)
+
+**Completed (implementation)** — all 4 Group D tasks landed on `claude/group-d-experiment-observability` (off latest main after PR #130 merge). D1 implemented synchronously since D2 depends on its `estimatePlanBillingUsage` output shape; D2/D3/D4 dispatched in parallel.
+- [x] **D1** `3d2d5b2` — `lib/experiments/plan-billing-ledger.ts`. `aggregatePlanBilling` (pure, testable) + `estimatePlanBillingUsage` (async shell reading `token_events` + `experiment_metrics(kind=revenue)`). Pricing table covers Opus/Sonnet/Haiku + GPT-5.5(-codex). Returns `{claudeUsd, codexUsd, totalUsd, revenueUsd, ratioVsRevenue, rowsAnalyzed, unmatchedModels, computedAt}`. 5-case unit test.
+- [x] **D4** `ef25093` — `vercel.json` appended with `solopreneur-tick` (`0 9,12,15,21 * * *`) and `codex-maintainer-tick` (`*/30 * * * *`). Pure schedule registration; the route handlers landed in Group C.
+- [x] **D3** `5b2a465` — `app/api/experiments/gate-{request,respond}/route.ts`. Gate-request takes `{slug, gate, payload}`, dedupes via `sha256(canonicalJson(payload))` request_hash, posts Slack Block Kit message with two inline buttons whose `value` JSON-encodes `{rowId, outcome}`. Gate-respond verifies Slack signing (`v0:<ts>:<rawBody>` HMAC), updates the row, returns `replace_original: true` blocks so buttons disappear. Always 200 to skip Slack retry loop. Reuses `authenticateOps` + `lib/slack/client.ts`.
+- [x] **D2** `f401814` — `/dashboard/experiments/<slug>` page. RSC fetches 4 sources in parallel (business row, 30d experiment_metrics snapshot, kill-switch state, plan-billing estimate); client-side renders KPI cards, ledger card with green/yellow/red ratio coloring, kill-switch state card, scrollable run timeline + gate log. `[Stop experiment]` button POSTs to new `/api/experiments/<slug>/kill` (auth via `authenticateOps`, audit-logged, retry-storm-safe).
+
+**Notes**
+- Group D dependency was real but small: D1 → D2 was a pure type-shape contract, no runtime ordering. D3 + D4 fully independent.
+- D2's client component ended at 612 lines (above the 300-line soft target — split into 11 subcomponents in one file via skeleton + 7 section edits, each per-write-call under cap). Worth a tightening pass later, not blocking.
+- Group D adds 5 new files + 1 modified (`vercel.json`). Total Phase 3 footprint after Groups A+B+C+D: ~25 files touched.
+- **Phase 3 nearly complete** — only Group E (smoke tests) and Group F (launch) remain. E is sequential manual verification (4 tasks: tick dry-runs, kill-switch, gate trigger). F is operator-driven (OAuth credentials, niche-pick approval, day 1/7/14/30 reviews).
+
 ### 2026-05-09 — Phase 3 Group C complete (infra)
 
 **Completed (implementation)** — all 4 Group C tasks landed. C1 was implemented synchronously first since it blocks the others; C2 / C3 / C4 dispatched in parallel via subagents on `claude/group-c-experiment-infra` (off latest main after PR #129 merge).
