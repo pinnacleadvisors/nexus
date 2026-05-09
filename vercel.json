@@ -34,6 +34,14 @@
     {
       "path": "/api/cron/scale-down-businesses",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/solopreneur-tick",
+      "schedule": "0 9,12,15,21 * * *"
+    },
+    {
+      "path": "/api/cron/codex-maintainer-tick",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
