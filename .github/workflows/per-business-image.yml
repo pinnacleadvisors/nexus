@@ -3,10 +3,14 @@ name: Build per-business gateway image
 # Builds and pushes ghcr.io/<org>/nexus-business:<slug> to GHCR.
 #
 # Triggers:
-#   - workflow_dispatch (manual run from the Actions tab — recommended for
-#     pilots, lets you pick the slug and niche each run)
-#   - push to main when services/claude-gateway/** changes (auto-rebuilds
-#     all known business images so they pick up base-image updates)
+#   - workflow_dispatch ONLY — operator picks the slug + niche per run.
+#
+#   (The previous `push: branches[main], paths: services/claude-gateway/**`
+#   trigger was removed because the job is single-tagged off `inputs.slug`,
+#   which is empty on push events → produces an invalid Docker tag
+#   `ghcr.io/.../nexus-business:` and fails. If we later want auto-rebuild
+#   on base-image changes, add a SEPARATE workflow that loops a matrix over
+#   known business slugs — don't reuse this single-slug job under push.)
 #
 # Why CI instead of `docker build` on a laptop:
 #   - No local Docker / Docker Desktop install required
@@ -40,12 +44,6 @@ on:
         required: false
         type: string
         default: ''
-
-  push:
-    branches: [main]
-    paths:
-      - 'services/claude-gateway/**'
-      - 'lib/businesses/mcp-manifest.ts'
 
 jobs:
   build-and-push:
