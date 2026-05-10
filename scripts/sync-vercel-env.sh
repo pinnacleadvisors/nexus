@@ -74,8 +74,11 @@ push_one() {
 
   # Vercel CLI: `env rm` then `env add`. `env add` rejects duplicates.
   # Pipe the value via stdin so it never appears in argv (process listings).
-  "${vercel_cmd[@]}" env rm "$name" production --token "$VERCEL_TOKEN" "${team_arg[@]}" --yes >/dev/null 2>&1 || true
-  if printf '%s' "$value" | "${vercel_cmd[@]}" env add "$name" production --token "$VERCEL_TOKEN" "${team_arg[@]}" >/dev/null 2>&1; then
+  # Note: `${arr[@]+"${arr[@]}"}` is the bash-3.2-safe expansion for an array
+  # that may be empty (macOS ships bash 3.2; bash 4+ tolerates empty arrays
+  # under set -u but 3.2 errors out).
+  "${vercel_cmd[@]}" env rm "$name" production --token "$VERCEL_TOKEN" ${team_arg[@]+"${team_arg[@]}"} --yes >/dev/null 2>&1 || true
+  if printf '%s' "$value" | "${vercel_cmd[@]}" env add "$name" production --token "$VERCEL_TOKEN" ${team_arg[@]+"${team_arg[@]}"} >/dev/null 2>&1; then
     ok "$name ($(printf '%s' "$value" | wc -c | tr -d ' ') bytes)"
   else
     err "$name push failed — re-run with manual: vercel env add $name production"
