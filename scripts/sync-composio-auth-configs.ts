@@ -73,9 +73,21 @@ async function listAuthConfigs(): Promise<AuthConfigRow[]> {
     const body = await res.text().catch(() => '')
     throw new Error(`list auth_configs failed: ${res.status} ${body.slice(0, 200)}`)
   }
-  const data = (await res.json()) as { items?: AuthConfigRow[]; data?: AuthConfigRow[] }
-  // Composio's pagination wraps the array as either `items` or `data` depending on version.
-  return data.items ?? data.data ?? []
+  const raw = (await res.json()) as unknown
+  // Composio's pagination wrapper has shifted across versions — accept any of:
+  //   { items: [...] } | { data: [...] } | { auth_configs: [...] } | [...]
+  let rows: AuthConfigRow[] = []
+  if (Array.isArray(raw)) {
+    rows = raw as AuthConfigRow[]
+  } else if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>
+    rows = (r.items ?? r.data ?? r.auth_configs ?? []) as AuthConfigRow[]
+    if (rows.length === 0 && process.env.COMPOSIO_DEBUG) {
+      console.error(`  [debug] list response keys: ${Object.keys(r).join(', ')}`)
+      console.error(`  [debug] first 400 chars: ${JSON.stringify(raw).slice(0, 400)}`)
+    }
+  }
+  return rows
 }
 
 async function createComposioManagedAuthConfig(toolkitSlug: string, displayName: string): Promise<string> {
@@ -151,7 +163,10 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
   const result: SyncResult = { created: [], existing: [], skipped: [], errors: [] }
 
   console.error('Listing existing Auth Configs from Composio…')
-  const existingConfigs = opts.dryRun ? [] : await listAuthConfigs()
+  // Always fetch — the LIST endpoint is read-only, dry-run shouldn't blind itself.
+  // (Old behavior: skipped the call in dry-run, so the preview showed
+  // "found 0" even when 16 configs actually existed.)
+  const existingConfigs = await listAuthConfigs()
   // Case-insensitive map — Composio's API has shipped slugs in mixed case
   // historically (`gmail` vs `GMAIL`); providers.ts uses uppercase canonical.
   const bySlug = new Map(existingConfigs.map(c => [c.toolkit.slug.toUpperCase(), c]))
@@ -159,6 +174,8 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
   if (existingConfigs.length > 0) {
     const slugs = [...bySlug.keys()].sort()
     console.error(`  existing toolkit slugs: ${slugs.join(', ')}`)
+  } else {
+    console.error('  (run with COMPOSIO_DEBUG=1 to dump the LIST response shape if this seems wrong)')
   }
 
   for (const provider of OAUTH_PROVIDERS) {
