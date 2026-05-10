@@ -153,28 +153,72 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
       )}
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm" style={{ color: '#9090b0' }}>
+        <div
+          className="flex items-center gap-2 text-sm px-4 py-3"
+          style={{
+            color:                '#9090b0',
+            background:           'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+            backdropFilter:       'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            border:               '1px solid rgba(255,255,255,0.06)',
+            borderRadius:         '14px',
+          }}
+        >
           <Loader2 size={14} className="animate-spin" /> Loading connections…
         </div>
       ) : (
         <>
           {accounts.length > 0 && (
-            <Section title="Connected accounts">
+            <Section title="Connected">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {accounts.map(a => {
                   const provider = OAUTH_PROVIDERS.find(p => p.id === a.platform)
                   return (
-                    <div key={a.id} className="rounded-lg border p-3 flex items-center justify-between" style={{ borderColor: '#24243e', background: '#0c0c18' }}>
+                    <div
+                      key={a.id}
+                      className="group p-3.5 flex items-center justify-between transition-all"
+                      style={{
+                        background:           'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+                        backdropFilter:       'blur(28px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+                        border:               '1px solid rgba(255,255,255,0.10)',
+                        borderRadius:         '16px',
+                        boxShadow:
+                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.boxShadow =
+                          '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(108,99,255,0.18)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.boxShadow =
+                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
+                      }}
+                    >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: '#16162a' }}>
-                          <CheckCircle2 size={16} style={{ color: '#22c55e' }} />
+                        <div
+                          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                          style={{
+                            background: 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))',
+                            border:     '1px solid rgba(34,197,94,0.20)',
+                            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+                          }}
+                        >
+                          <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
-                            {provider?.name ?? a.platform}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
+                              {provider?.name ?? a.platform}
+                            </span>
+                            <StatusPill kind={a.status === 'active' ? 'connected' : a.status === 'error' ? 'offline' : 'pending'} />
                           </div>
-                          <div className="text-xs" style={{ color: '#9090b0' }}>
-                            {a.businessSlug ? `Business: ${a.businessSlug}` : 'User default'} · connected {new Date(a.createdAt).toLocaleDateString()}
+                          <div className="text-[11px] mt-0.5 flex items-center gap-1.5 min-w-0" style={{ color: '#9090b0' }}>
+                            <span className="font-mono truncate" style={{ color: '#a8a3ff' }}>
+                              {a.businessSlug ?? 'shared'}
+                            </span>
+                            <span style={{ color: '#55556a' }}>·</span>
+                            <span className="truncate">{new Date(a.createdAt).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
@@ -182,8 +226,22 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
                         type="button"
                         onClick={() => void disconnect(a.id, provider?.name ?? a.platform)}
                         disabled={busy === a.id}
-                        className="text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors"
-                        style={{ color: '#9090b0', border: '1px solid #24243e' }}
+                        className="text-[11px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                        style={{
+                          color:      '#e8e8f0',
+                          background: 'rgba(255,255,255,0.04)',
+                          border:     '1px solid rgba(255,255,255,0.08)',
+                        }}
+                        onMouseEnter={e => {
+                          if (busy !== a.id) {
+                            e.currentTarget.style.background = 'rgba(239,68,68,0.10)'
+                            e.currentTarget.style.borderColor = 'rgba(239,68,68,0.30)'
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+                        }}
                       >
                         {busy === a.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
                         Disconnect
@@ -223,20 +281,58 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
                       type="button"
                       onClick={() => void connect(p)}
                       disabled={busy === p.id || connected}
-                      className="rounded-lg border p-3 flex items-center gap-3 transition-colors disabled:opacity-60 hover:bg-[#0f0f1f]"
-                      style={{ borderColor: '#24243e', background: '#0c0c18' }}
+                      className="group p-3.5 flex items-center gap-3 transition-all disabled:opacity-60 text-left"
+                      style={{
+                        background:           connected
+                          ? 'linear-gradient(135deg, rgba(34,197,94,0.05), rgba(255,255,255,0.02))'
+                          : 'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+                        backdropFilter:       'blur(28px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+                        border:               '1px solid rgba(255,255,255,0.10)',
+                        borderRadius:         '16px',
+                        boxShadow:
+                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+                      }}
+                      onMouseEnter={e => {
+                        if (busy !== p.id && !connected) {
+                          e.currentTarget.style.boxShadow =
+                            '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(108,99,255,0.22)'
+                          e.currentTarget.style.transform = 'translateY(-1px)'
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.boxShadow =
+                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
+                        e.currentTarget.style.transform = 'translateY(0)'
+                      }}
                     >
-                      <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: '#16162a' }}>
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                        style={{
+                          background: connected
+                            ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))'
+                            : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+                          border: connected
+                            ? '1px solid rgba(34,197,94,0.20)'
+                            : '1px solid rgba(108,99,255,0.20)',
+                          boxShadow: '0 1px 0 0 rgba(255,255,255,0.06) inset',
+                        }}
+                      >
                         {busy === p.id
                           ? <Loader2 size={16} className="animate-spin" style={{ color: '#9090b0' }} />
                           : connected
-                            ? <CheckCircle2 size={16} style={{ color: '#22c55e' }} />
-                            : <Plug size={16} style={{ color: '#6c63ff' }} />}
+                            ? <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
+                            : <Plug size={16} style={{ color: '#a8a3ff' }} />}
                       </div>
-                      <div className="min-w-0 text-left">
-                        <div className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{p.name}</div>
-                        <div className="text-xs" style={{ color: '#9090b0' }}>
-                          {connected ? 'Connected' : `Connect via Composio · ${p.actions.length} actions`}
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{p.name}</span>
+                          {connected && <StatusPill kind="connected" />}
+                        </div>
+                        <div className="text-[11px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
+                          {connected
+                            ? <span className="font-mono uppercase tracking-wider" style={{ color: '#6a6a86' }}>composio · oauth</span>
+                            : <>via Composio <span style={{ color: '#55556a' }}>·</span> <span className="font-mono" style={{ color: '#a8a3ff' }}>{p.actions.length}</span> actions</>}
                         </div>
                       </div>
                     </button>
@@ -265,21 +361,45 @@ function ApiKeyCard({
   const setup = provider.apiKeySetup ?? {}
   return (
     <div
-      className="rounded-lg border p-3 flex flex-col gap-2"
-      style={{ borderColor: '#24243e', background: '#0c0c18' }}
+      className="p-3.5 flex flex-col gap-2.5"
+      style={{
+        background:           connected
+          ? 'linear-gradient(135deg, rgba(34,197,94,0.05), rgba(255,255,255,0.02))'
+          : 'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '16px',
+        boxShadow:
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+      }}
     >
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: '#16162a' }}>
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+          style={{
+            background: connected
+              ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))'
+              : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+            border: connected
+              ? '1px solid rgba(34,197,94,0.20)'
+              : '1px solid rgba(108,99,255,0.20)',
+            boxShadow: '0 1px 0 0 rgba(255,255,255,0.06) inset',
+          }}
+        >
           {busy
             ? <Loader2 size={16} className="animate-spin" style={{ color: '#9090b0' }} />
             : connected
-              ? <CheckCircle2 size={16} style={{ color: '#22c55e' }} />
-              : <KeyRound size={16} style={{ color: '#6c63ff' }} />}
+              ? <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
+              : <KeyRound size={16} style={{ color: '#a8a3ff' }} />}
         </div>
-        <div className="min-w-0 text-left">
-          <div className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{provider.name}</div>
-          <div className="text-xs" style={{ color: '#9090b0' }}>
-            {connected ? 'API key saved · paste new to rotate' : 'API-key setup'}
+        <div className="min-w-0 text-left flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{provider.name}</span>
+            <StatusPill kind={connected ? 'connected' : 'manual'} />
+          </div>
+          <div className="text-[11px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
+            {connected ? 'Key encrypted · paste to rotate' : <span className="font-mono uppercase tracking-wider" style={{ color: '#6a6a86' }}>direct · api key</span>}
           </div>
         </div>
       </div>
@@ -294,25 +414,30 @@ function ApiKeyCard({
           value={value}
           onChange={e => onChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSave() } }}
-          placeholder={`Paste ${provider.name} API key`}
-          className="flex-1 rounded px-2 py-1.5 text-xs font-mono"
+          placeholder={`paste ${provider.name.toLowerCase()} key`}
+          className="flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors"
           style={{
-            background:  '#050510',
-            border:      '1px solid #24243e',
+            background:  'rgba(5,5,16,0.55)',
+            border:      '1px solid rgba(255,255,255,0.08)',
             color:       '#e8e8f0',
             outline:     'none',
           }}
+          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(108,99,255,0.40)' }}
+          onBlur={e =>  { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
           disabled={busy}
         />
         <button
           type="button"
           onClick={onSave}
           disabled={busy || value.trim().length === 0}
-          className="text-xs px-3 rounded transition-colors disabled:opacity-50"
+          className="text-[11px] px-3 rounded-lg transition-all disabled:opacity-50 font-medium"
           style={{
-            background: '#1a1a2e',
+            background: saved
+              ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.06))'
+              : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.10))',
             color:      '#e8e8f0',
-            border:     '1px solid #6c63ff',
+            border:     saved ? '1px solid rgba(34,197,94,0.30)' : '1px solid rgba(108,99,255,0.30)',
+            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
           }}
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : saved ? 'Saved' : 'Save'}
@@ -323,8 +448,10 @@ function ApiKeyCard({
           href={setup.credentialsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] underline"
-          style={{ color: '#6c63ff' }}
+          className="inline-flex items-center gap-1 text-[11px]"
+          style={{ color: '#a8a3ff' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#c4c0ff' }}
+          onMouseLeave={e => { e.currentTarget.style.color = '#a8a3ff' }}
         >
           Where to get this <ExternalLink size={10} />
         </a>
@@ -336,24 +463,102 @@ function ApiKeyCard({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h2 className="text-xs uppercase tracking-wider mb-2" style={{ color: '#9090b0' }}>{title}</h2>
+      <h2 className="text-[10px] font-mono uppercase tracking-[0.18em] mb-2.5 flex items-center gap-2" style={{ color: '#9090b0' }}>
+        <span style={{ color: '#a8a3ff' }}>{'//'}</span>
+        <span>{title}</span>
+        <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
+      </h2>
       {children}
     </div>
   )
 }
 
-function Banner({ kind, children, onDismiss }: { kind: 'ok' | 'error'; children: React.ReactNode; onDismiss: () => void }) {
-  const okColor    = '#22c55e'
-  const errColor   = '#ef4444'
+type PillKind = 'connected' | 'pending' | 'manual' | 'offline'
+
+function StatusPill({ kind }: { kind: PillKind }) {
+  const map: Record<PillKind, { label: string; dot: string; glow: string; text: string; bg: string; border: string }> = {
+    connected: {
+      label:  'CONNECTED',
+      dot:    '#4ade80',
+      glow:   '0 0 8px rgba(74,222,128,0.6)',
+      text:   '#4ade80',
+      bg:     'rgba(34,197,94,0.10)',
+      border: 'rgba(34,197,94,0.20)',
+    },
+    pending: {
+      label:  'PENDING',
+      dot:    '#fbbf24',
+      glow:   '0 0 8px rgba(251,191,36,0.5)',
+      text:   '#fbbf24',
+      bg:     'rgba(251,191,36,0.08)',
+      border: 'rgba(251,191,36,0.20)',
+    },
+    manual: {
+      label:  'MANUAL',
+      dot:    '#a8a3ff',
+      glow:   '0 0 8px rgba(168,163,255,0.5)',
+      text:   '#a8a3ff',
+      bg:     'rgba(108,99,255,0.10)',
+      border: 'rgba(108,99,255,0.22)',
+    },
+    offline: {
+      label:  'OFFLINE',
+      dot:    '#ef4444',
+      glow:   '0 0 8px rgba(239,68,68,0.5)',
+      text:   '#f87171',
+      bg:     'rgba(239,68,68,0.08)',
+      border: 'rgba(239,68,68,0.22)',
+    },
+  }
+  const s = map[kind]
   return (
-    <div className="rounded-md border px-3 py-2 flex items-start gap-2 text-sm" style={{
-      borderColor: kind === 'ok' ? okColor : errColor,
-      color:       '#e8e8f0',
-      background:  kind === 'ok' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-    }}>
+    <span
+      className="inline-flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] font-mono tracking-[0.12em] shrink-0"
+      style={{
+        background:   s.bg,
+        border:       `1px solid ${s.border}`,
+        borderRadius: '999px',
+        color:        s.text,
+      }}
+    >
+      <span
+        className="w-1 h-1 rounded-full"
+        style={{ background: s.dot, boxShadow: s.glow }}
+      />
+      {s.label}
+    </span>
+  )
+}
+
+function Banner({ kind, children, onDismiss }: { kind: 'ok' | 'error'; children: React.ReactNode; onDismiss: () => void }) {
+  const okColor    = '#4ade80'
+  const errColor   = '#f87171'
+  return (
+    <div
+      className="px-3.5 py-2.5 flex items-start gap-2.5 text-sm"
+      style={{
+        background:           kind === 'ok'
+          ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))'
+          : 'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(239,68,68,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               kind === 'ok' ? '1px solid rgba(34,197,94,0.22)' : '1px solid rgba(239,68,68,0.22)',
+        borderRadius:         '14px',
+        boxShadow:            '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 16px 32px -16px rgba(0,0,0,0.4)',
+        color:                '#e8e8f0',
+      }}
+    >
       {kind === 'ok' ? <CheckCircle2 size={16} style={{ color: okColor }} /> : <AlertCircle size={16} style={{ color: errColor }} />}
       <div className="flex-1">{children}</div>
-      <button type="button" onClick={onDismiss} aria-label="Dismiss"><X size={14} /></button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="rounded-md p-0.5 transition-colors"
+        style={{ color: '#9090b0' }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#e8e8f0'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+        onMouseLeave={e => { e.currentTarget.style.color = '#9090b0'; e.currentTarget.style.background = 'transparent' }}
+      ><X size={14} /></button>
     </div>
   )
 }

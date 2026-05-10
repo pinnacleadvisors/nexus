@@ -37,8 +37,17 @@ export const SETTINGS_TABS: TabSpec[] = [
 export default function SettingsTabs({ activeTab }: { activeTab: SettingsTabId }) {
   return (
     <div
-      className="flex items-center gap-1 mb-6 border-b overflow-x-auto"
-      style={{ borderColor: '#24243e' }}
+      className="flex items-center gap-1 mb-5 overflow-x-auto p-1"
+      style={{
+        background:           'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.08)',
+        borderRadius:         '14px',
+        boxShadow:            '0 1px 0 0 rgba(255,255,255,0.04) inset',
+        width:                'fit-content',
+        maxWidth:             '100%',
+      }}
     >
       {SETTINGS_TABS.map(t => {
         const Icon   = t.icon
@@ -47,13 +56,20 @@ export default function SettingsTabs({ activeTab }: { activeTab: SettingsTabId }
           <Link
             key={t.id}
             href={t.href}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
+            className="flex items-center gap-2 px-3.5 py-1.5 text-[13px] font-medium transition-all whitespace-nowrap"
             style={{
-              borderColor: active ? '#6c63ff'  : 'transparent',
-              color:       active ? '#e8e8f0'  : '#9090b0',
+              borderRadius: '10px',
+              background:   active
+                ? 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.08))'
+                : 'transparent',
+              border:       active
+                ? '1px solid rgba(108,99,255,0.30)'
+                : '1px solid transparent',
+              color:        active ? '#e8e8f0' : '#9090b0',
+              boxShadow:    active ? '0 1px 0 0 rgba(255,255,255,0.06) inset' : undefined,
             }}
           >
-            <Icon size={14} />
+            <Icon size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />
             {t.label}
           </Link>
         )
