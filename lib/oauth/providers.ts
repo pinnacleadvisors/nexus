@@ -338,9 +338,48 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       envVar: 'CLOUDFLARE_API_TOKEN',
     },
   },
+  {
+    // Vercel is **shareable** — one Pro team subscription covers every
+    // business. Per-business UX isolation is achieved via separate Vercel
+    // *projects* under the same team (one project per business; custom
+    // domain attached at the project level — visitors only see the business
+    // brand, never the parent team identity). Connect once at Default scope.
+    // The provision route falls back to the user-default row when no
+    // per-business connected_accounts row exists (see provision/route.ts
+    // fetchDecryptedApiKey).
+    //
+    // Vercel uses bearer API tokens, not OAuth — apiKeySetup pattern.
+    // Tokens are scoped to the team; create one at /account/tokens and
+    // restrict its scope to the team if you operate multiple teams.
+    id: 'vercel',
+    name: 'Vercel',
+    toolkitSlug: 'VERCEL', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'developer',
+    logo: '/logos/vercel.svg',
+    actions: [],
+    featuredFor: ['saas', 'ecommerce', 'creator', 'agency'],
+    sharePolicy: 'shareable',
+    apiKeySetup: {
+      instructions: 'Vercel dashboard → Account Settings → Tokens → Create Token. Set scope to your team (not "Personal Account") so the agent can deploy to per-business projects under that team. Copy the token immediately — Vercel only shows it once.',
+      credentialsUrl: 'https://vercel.com/account/tokens',
+      envVar: 'VERCEL_TOKEN',
+    },
+  },
 
   // ── Commerce ────────────────────────────────────────────────────────────
   {
+    // Stripe is **shareable** — connect once at Default scope and reuse the
+    // single account across every business. Per-business UX isolation is
+    // achieved via Stripe primitives, not separate accounts:
+    //   - Each business owns its own Products / Prices, all tagged with
+    //     metadata.business_slug for revenue attribution
+    //   - Statement descriptor on the PaymentIntent is set to the business
+    //     brand so the customer's bank statement reads "<Brand>" not the
+    //     parent account name
+    //   - Webhooks are filtered server-side by metadata.business_slug
+    // See docs/runbooks/shared-stripe-vercel.md for the full attribution
+    // pattern + agent-side rules. Agents MUST set metadata.business_slug
+    // on every Customer / Product / Price / PaymentIntent they create.
     id: 'stripe',
     name: 'Stripe',
     toolkitSlug: 'STRIPE',
@@ -352,7 +391,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'STRIPE_LIST_ALL_INVOICES',
     ],
     featuredFor: ['saas', 'ecommerce'],
-    sharePolicy: 'per-business',
+    sharePolicy: 'shareable',
   },
   {
     id: 'shopify',

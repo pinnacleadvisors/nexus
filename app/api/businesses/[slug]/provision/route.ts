@@ -118,16 +118,40 @@ async function fetchDecryptedApiKey(
   const db = createServerClient()
   if (!db) return null
 
-  type Chain = { eq: (col: string, val: unknown) => Chain; limit: (n: number) => Promise<{ data: KeyRow[] | null }> }
-  const result = await ((db.from('connected_accounts' as never) as unknown as {
+  type Chain = {
+    eq:    (col: string, val: unknown) => Chain
+    is:    (col: string, val: unknown) => Chain
+    limit: (n: number) => Promise<{ data: KeyRow[] | null }>
+  }
+  const from = (db.from('connected_accounts' as never) as unknown as {
     select: (cols: string) => Chain
-  }).select('encrypted_api_key')
+  })
+
+  // Per-business row first.
+  const perBiz = await (from
+    .select('encrypted_api_key')
     .eq('user_id', userId)
     .eq('business_slug', businessSlug)
     .eq('platform', platform)
     .eq('status', 'active') as Chain).limit(1)
 
-  const row = result.data?.[0]
+  let row = perBiz.data?.[0]
+
+  // Fall back to user-default (business_slug IS NULL) when no per-business
+  // row exists. Mirrors the same partition order executeBusinessAction()
+  // uses, and lets the operator share Stripe / Vercel / etc. across every
+  // business via a single Default-scope connection. See providers.ts
+  // sharePolicy: 'shareable' for which platforms expect this fallback.
+  if (!row || row.encrypted_api_key == null) {
+    const def = await (from
+      .select('encrypted_api_key')
+      .eq('user_id', userId)
+      .is('business_slug', null)
+      .eq('platform', platform)
+      .eq('status', 'active') as Chain).limit(1)
+    row = def.data?.[0]
+  }
+
   if (!row || row.encrypted_api_key == null) return null
 
   const ciphertext = decodeByteaToUtf8(row.encrypted_api_key)
