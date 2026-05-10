@@ -78,13 +78,19 @@ async function listAuthConfigs(): Promise<AuthConfigRow[]> {
   return data.items ?? data.data ?? []
 }
 
-async function createComposioManagedAuthConfig(toolkitSlug: string): Promise<string> {
+async function createComposioManagedAuthConfig(toolkitSlug: string, displayName: string): Promise<string> {
   const url = `${COMPOSIO_BASE_URL}/api/v3/auth_configs`
+  // v3 discriminator shape (changed mid-2026 — was { auth_scheme, is_composio_managed }).
+  // Confirmed against ComposioHQ/composio TS SDK on `next` branch:
+  //   ts/packages/core/src/models/AuthConfigs.ts
+  // The discriminator picks 'use_composio_managed_auth' (Composio brokers OAuth)
+  // vs 'use_custom_auth' (operator provides client_id/client_secret in
+  // auth_config.credentials with auth_config.authScheme).
   const body = {
     toolkit:     { slug: toolkitSlug },
     auth_config: {
-      auth_scheme:         'OAUTH2',
-      is_composio_managed: true,
+      type: 'use_composio_managed_auth',
+      name: displayName,
     },
   }
   const res = await fetch(url, {
@@ -146,8 +152,14 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
 
   console.error('Listing existing Auth Configs from Composio…')
   const existingConfigs = opts.dryRun ? [] : await listAuthConfigs()
-  const bySlug = new Map(existingConfigs.map(c => [c.toolkit.slug, c]))
+  // Case-insensitive map — Composio's API has shipped slugs in mixed case
+  // historically (`gmail` vs `GMAIL`); providers.ts uses uppercase canonical.
+  const bySlug = new Map(existingConfigs.map(c => [c.toolkit.slug.toUpperCase(), c]))
   console.error(`  found ${existingConfigs.length} existing configs`)
+  if (existingConfigs.length > 0) {
+    const slugs = [...bySlug.keys()].sort()
+    console.error(`  existing toolkit slugs: ${slugs.join(', ')}`)
+  }
 
   for (const provider of OAUTH_PROVIDERS) {
     if (provider.manualSetup) {
@@ -159,7 +171,7 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
       continue
     }
 
-    const existing = bySlug.get(provider.toolkitSlug)
+    const existing = bySlug.get(provider.toolkitSlug.toUpperCase())
     if (existing) {
       result.existing.push({ provider, authConfigId: existing.id })
       continue
@@ -171,7 +183,7 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
     }
 
     try {
-      const id = await createComposioManagedAuthConfig(provider.toolkitSlug)
+      const id = await createComposioManagedAuthConfig(provider.toolkitSlug, provider.name)
       result.created.push({ provider, authConfigId: id })
       console.error(`  ✓ created ${provider.toolkitSlug} → ${id}`)
     } catch (err) {
