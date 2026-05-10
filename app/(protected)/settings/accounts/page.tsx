@@ -83,10 +83,14 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
 
         <SettingsTabs activeTab="accounts" />
 
-        {/* Liquid-glass control bar — switcher LEFT, summary chip RIGHT */}
+        {/* Liquid-glass control bar — switcher LEFT, summary chip RIGHT.
+            position:relative + z-index lifts the bar (and its absolute-positioned
+            dropdown) above the AccountList siblings, which create their own
+            stacking contexts via backdrop-filter and would otherwise paint on top. */}
         <div
-          className="mb-5 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
+          className="relative mb-5 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
           style={{
+            zIndex:               50,
             background:           'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
             backdropFilter:       'blur(28px) saturate(180%)',
             WebkitBackdropFilter: 'blur(28px) saturate(180%)',

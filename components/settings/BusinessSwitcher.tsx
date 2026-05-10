@@ -120,7 +120,7 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
       {open && (
         <div
           role="listbox"
-          className="absolute z-30 mt-2 w-full overflow-hidden"
+          className="absolute z-50 mt-2 w-full overflow-hidden"
           style={{
             background:        'linear-gradient(135deg, rgba(20,20,32,0.92), rgba(12,12,22,0.94))',
             backdropFilter:    'blur(28px) saturate(180%)',
