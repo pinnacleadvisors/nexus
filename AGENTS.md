@@ -13,6 +13,57 @@ Nexus is an all-in-one business automation platform. AI agents (Claude, OpenClaw
 
 See `ROADMAP.md` for the full feature backlog and implementation status.
 
+## Operating principles for every agent (read first)
+
+These apply to **every** agent — managed sub-agents, Inngest crons, n8n workflows, ad-hoc dispatches. The detailed checklists later in this file explain the *why*; this section is the dense TL;DR for *what* every agent does on every task.
+
+**Before any LLM dispatch:**
+- Call `checkKillSwitch(businessSlug)` from `lib/cost-guard.ts`. If `kill: true`, log a `kill_switch_check` row to `experiment_metrics` and abort. If `signal: 'auto_pivot_eligible'`, route the proposal through the `niche_pick` gate.
+- Resolve `business_slug` first (per-business connection in `connected_accounts`), then fall back to user-default (`business_slug = NULL`). `executeBusinessAction()` and the provision route's `fetchDecryptedApiKey` already do this — never partition by guessing.
+- Every dispatch carries `inputs.tools: string[]` with **≥ 2 plausible options**. Single-tool budget is an anti-pattern (`lib/n8n/validate.ts` warns; the n8n-strategist enforces).
+
+**During execution:**
+- All OAuth-platform calls go through `executeBusinessAction()` → Composio. **Never** read raw OAuth tokens. Composio holds them; we only store `composio_account_id`.
+- Direct API-key platforms (`apiKeySetup` flag in `lib/oauth/providers.ts` — currently ConvertKit, Cloudflare DNS, Vercel) are read from container env vars set by the provision route. Never log the value, never echo it to stdout/Slack.
+- **Multi-business shared accounts** (Stripe + Vercel today; flagged `sharePolicy: 'shareable'`): tag every external object with `metadata.business_slug` so revenue/usage attribution stays clean. Set per-business `statement_descriptor` on Stripe PaymentIntents. See [`docs/runbooks/shared-stripe-vercel.md`](docs/runbooks/shared-stripe-vercel.md).
+- Logs include `businessSlug` for grepability. Secrets never logged in any form (presence/absence/length is OK; the value isn't).
+- `business_slug` is the partition key on every relevant table (`experiment_metrics`, `token_events`, `run_events`, `connected_accounts`). Never leak between businesses.
+
+**After execution:**
+- Persist durable lessons via the `memory_atom` MCP tool (preferred) or `node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom`. The memory-hq GitHub repo is canonical; the local `memory/molecular/` cache is dev-only and stale by default.
+- Every notable incident, root-cause discovery, vendor-quirk, or architectural decision gets one atom. Link to the relevant MOC (`mocs/<topic>`) — atoms without a MOC become orphans on the next `cli.mjs lint`.
+- Trivial fixes (typos, one-line config, package bumps) skip the atom — atom spam dilutes the signal.
+
+**Topology — what runs where:**
+- **KVM2** = shared `codex-gateway` (one Compose stack handles every business's `codex-maintainer` ticks). Sandbox Doppler config — no financial / secret-management secrets. Use for execution-heavy work (sysadmin, Coolify health, Vercel build-log scans, fresh-state SaaS research).
+- **KVM4** = per-business `claude-gateway` containers (one per `experiment_flag=true` business, Coolify-API-managed). Has the business's MCP set + `apiKeySetup` keys injected via `manifest.requiredEnv`.
+- **Vercel** = shared team. Per-business *projects* (one project = one storefront/site) under that team. Custom domains attached at the project level — visitors don't see team identity.
+- **Stripe** = shared account. Per-business attribution via `metadata.business_slug`. One tax form, one payout, one revenue truth source.
+- **Supabase** = shared DB. Partition key is `business_slug`. RLS allows service-role writes from API routes; direct client reads disallowed.
+- **Composio** = shared org. `connected_accounts` rows scoped per-business OR user-default; `executeBusinessAction()` resolves in that order.
+
+**Memory query order (every agent, every task):**
+1. `memory/INDEX.md` (≤ 500 tokens) — topic map across Layers 1 & 2
+2. `memory_search` MCP against memory-hq (canonical Layer-2c)
+3. Specific Layer-1/Layer-2 files via Read (`memory/platform/STACK.md`, `memory/roadmap/SUMMARY.md`, `task_plan-<topic>.md`)
+4. Grep/Glob fallback only for areas memory-hq doesn't cover yet
+
+**Authentication tokens (rotation cadence):**
+- `CLAUDE_CODE_OAUTH_TOKEN` — long-lived, refreshable; rotate when revoked
+- `CODEX_AUTH_JSON` — refresh-token rotation **~30-day**. Operator runs `codex login` on dev machine + pastes new auth.json into Doppler. Set calendar reminder. See [`docs/runbooks/codex-gateway-auth-rotation.md`](docs/runbooks/codex-gateway-auth-rotation.md).
+
+**Write-size discipline:** Single Write/Edit/Bash call ≤ 300 lines / 10 KB. Skeleton-then-fill for new files; anchored Edits for refactors. Hook at `.claude/hooks/check-write-size.sh` enforces.
+
+**Retry-storm rule:** API routes called by services that auto-retry (n8n, claw, Stripe webhooks, Inngest, Vercel crons) return **200 + `{ok: false, error}`** on transient failures, NOT 5xx. The full retry-storm checklist lives in the [Retry-storm vulnerability checklist](#retry-storm-vulnerability-checklist-run-mentally-for-every-change) below.
+
+**What NOT to do (for every agent):**
+- Don't introduce features beyond the task. Three similar lines beats a premature abstraction. No half-finished implementations.
+- Don't add error handling for impossible cases. Trust internal code + framework guarantees. Validate at system boundaries only.
+- Don't add backwards-compat shims for fresh code. Don't add feature flags when you can just change the code.
+- Don't dump unrequested files (CHANGELOG, README, planning docs) without explicit user request.
+- Don't run destructive ops (`rm -rf`, `git push --force`, `drop`, `--no-verify`) without explicit user confirmation. The cost of pausing is low; the cost of an unwanted action is high.
+- Don't modify `business-operator.md` or `codex-operator.md` — clone/extend pattern. (Specific to the solopreneur experiment but worth flagging here.)
+
 ## Stack Rules
 
 ### Next.js 16 (App Router)

@@ -46,16 +46,27 @@ Cost: ~$12/yr.
 
 Cost: $0 (free tier covers many zones).
 
-### 4. Vercel team for the storefront
-Use the Gmail from step 1 to sign up. Add the `<brand>.co` domain to the project once the agent ships v1 of the storefront. The agent uses the Vercel toolkit via Composio — connect at `/settings/accounts?businessSlug=pdf-experiment-01` after the OAuth round-trip.
+### 4. Vercel team for the storefront — **shared, one team for all businesses**
+- One Pro team subscription ($20/mo flat) covers every business. Connect ONCE at the **Default** scope (BusinessSwitcher set to "Default"), not per-business. The provision route falls back to the user-default `VERCEL_TOKEN` for every per-business container.
+- Sign up at https://vercel.com → upgrade the team to Pro
+- Generate a team-scoped API token at https://vercel.com/account/tokens (set scope = the team, NOT "Personal Account")
+- Paste at `/settings/accounts` with **Default** selected in the dropdown (apiKeySetup form). Stored encrypted, `business_slug: NULL`.
+- The agent creates a per-business Vercel **project** (one per business, named after the slug) under that team and attaches `<brand>.co` to it. Visitors only see the business brand — Vercel team identity is invisible.
 
-Cost: $0 (Hobby tier covers a starter storefront; upgrade only if you need team features).
+Cost: $20/mo flat (covers unlimited businesses). Hobby tier works only if you're staying with one business; Pro pays back at ≥ 2 businesses.
 
-### 5. Stripe — payments
-- Sign up with the Gmail from step 1 + the `<brand>.co` business name
-- Activate the account (requires real legal entity info — your existing LLC works, or use a sole-proprietor structure if you don't have an LLC yet)
-- Enable Stripe Checkout (default; the storefront uses hosted checkout for v1)
-- Connect at `/settings/accounts?businessSlug=pdf-experiment-01` (Composio Stripe toolkit)
+See [`shared-stripe-vercel.md`](./shared-stripe-vercel.md) for the full sharing pattern.
+
+### 5. Stripe — payments — **shared, one account for all businesses**
+- One Stripe account covers every business. Connect ONCE at the **Default** scope, not per-business. Composio brokers the action calls; `executeBusinessAction()` falls back to the user-default row automatically.
+- Sign up at https://stripe.com using the parent legal entity (your existing LLC, or sole-prop). Activate the account (real entity info required).
+- Enable Stripe Checkout (default; the storefront uses hosted checkout for v1).
+- Connect at `/settings/accounts` with **Default** selected in the dropdown (Composio OAuth flow). One row in `connected_accounts` with `business_slug: NULL`.
+- The agent tags every Customer / Product / Price / PaymentIntent it creates with `metadata.business_slug` so revenue attribution stays clean. The PaymentIntent's `statement_descriptor` is set to the per-business brand so the customer's bank statement shows `<BRAND>` not the parent legal entity.
+
+Cost: 2.9% + $0.30 per transaction. No monthly fee. One tax form per year, one set of payouts, one place to pull revenue numbers from.
+
+See [`shared-stripe-vercel.md`](./shared-stripe-vercel.md) for the metadata pattern + agent-side rules.
 
 Cost: 2.9% + $0.30 per transaction. No monthly fee.
 

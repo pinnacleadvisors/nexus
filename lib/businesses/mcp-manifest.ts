@@ -175,7 +175,15 @@ export const NICHE_PROFILES: readonly NicheProfile[] = [
 
   { niche: 'digital-products',  match: ['etsy', 'printable', 'template', 'organizer', 'contract bundle', 'digital product', 'info-product', 'pdf'],
     mcps: ['muapi-ai', 'tavily', 'cloudflare-mcp'],
-    env: ['CONVERTKIT_API_KEY'] },
+    // CONVERTKIT_API_KEY → per-business apiKeySetup (Kit free tier, 1 list per biz)
+    // VERCEL_TOKEN       → shareable apiKeySetup (one Vercel team, per-business
+    //                      projects under it; provision route falls back to
+    //                      user-default row when no per-business row exists)
+    // Stripe goes through Composio (not via env injection) — agent calls
+    // executeBusinessAction({platform:'stripe', ...}) which falls back to
+    // user-default automatically. Per-business attribution via
+    // metadata.business_slug on every Customer/Product/Price.
+    env: ['CONVERTKIT_API_KEY', 'VERCEL_TOKEN'] },
 
   // SaaS — needs deep observability + research
   { niche: 'saas',              match: ['saas', 'software', 'b2b'],
