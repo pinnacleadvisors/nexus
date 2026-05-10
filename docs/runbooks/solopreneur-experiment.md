@@ -71,6 +71,52 @@ Open `/dashboard/experiments/pdf-experiment-01` (D2) at each milestone. The page
 
 At each checkpoint, append a dated entry to the `## Progress` section of `task_plan-solopreneur-experiment.md` with the decision and rationale. If the decision is **continue**, no further action — the cron keeps ticking. If **pivot**, trigger the pivot flow above. If **kill**, click `[Stop experiment]` on the dashboard (or `POST /api/experiments/<slug>/kill`) and write a post-mortem atom to memory-hq under `mocs/solopreneur-experiments`.
 
+## Slack app setup (one-time, before launch)
+
+The 5 strategic gates (`niche_pick`, `domain_purchase`, `first_n_posts`, `paid_saas_signup`, `pricing_change`) round-trip through Slack. The agent posts an approval request via `/api/experiments/gate-request` (D3); your click on Approve/Reject hits `/api/experiments/gate-respond` (D3); the gate row resolves and the next tick proceeds.
+
+**One-time Slack-app config** — do this *once*, applies to every business that runs the experiment.
+
+1. **Create the Slack app** — https://api.slack.com/apps → **Create New App** → **From scratch** → name "Nexus Experiments", workspace = yours.
+2. **Incoming Webhooks** (left sidebar) → toggle **On** → **Add New Webhook to Workspace** → pick the channel where gate notifications land (recommend a dedicated `#nexus-experiments` channel) → **Allow** → copy the `https://hooks.slack.com/services/T.../B.../...` URL.
+3. **Interactivity & Shortcuts** → toggle **On** → **Request URL** = `${NEXUS_BASE_URL}/api/experiments/gate-respond` (the deployed Nexus URL — Slack must reach it over the public internet) → **Save Changes**.
+4. **Basic Information** (left sidebar) → scroll to **App Credentials** → copy the **Signing Secret**.
+5. **Doppler** — paste both values:
+   - `NEXUS_SLACK_WEBHOOK_URL = https://hooks.slack.com/services/...`
+   - `NEXUS_SLACK_SIGNING_SECRET = <signing secret>`
+   - Optional: `SLACK_EXPERIMENT_CHANNEL_ID = C0123456789` (informational only — the webhook URL pins the channel, this var is just shown in API responses)
+6. **Sync to Vercel + redeploy** — `doppler run -- bash scripts/sync-vercel-env.sh && npm run deploy -- --vercel`.
+
+**Verify with one command** — after deploy:
+```bash
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --phase=preflight
+```
+The `preflight` phase POSTs a test message to your webhook and confirms the row + env vars are populated. If the message arrives in your channel, the outbound side works. The inbound side (signing) is exercised by `--phase=e4` end-to-end after a real gate fires.
+
+**Two ways to verify Slack is reachable from this Claude Code session**:
+- *(simplest, no setup)* Run `scripts/smoke-experiment.ts --phase=preflight` — it posts via the existing `lib/slack/client.ts` helper and reports PASS/FAIL.
+- *(persistent integration)* Add Anthropic's reference Slack MCP to `~/.claude/settings.json` if you want Claude Code (not just the experiment) to read/write Slack from any session. The Composio Rube MCP that ships with the per-business container already exposes Slack via Composio brokerage — the experiment uses it without you adding anything else.
+
+## Smoke verification (Group E)
+
+Before activating the cron and handing the experiment to its agents, run the smoke runner:
+
+```bash
+# Full suite (preflight → E1 → E2 → E3 → E4)
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts
+
+# One phase at a time
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --phase=e1     # solopreneur-tick dry-run
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --phase=e2     # codex-maintainer-tick dry-run
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --phase=e3     # kill-switch verification
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --phase=e4     # gate-request → Slack click
+
+# Cleanup smoke fixtures
+doppler run -- npx --yes tsx scripts/smoke-experiment.ts --teardown
+```
+
+Phases must all PASS before activating the cron in Vercel for the first business. E4 requires a human Slack click — the script triggers and prints what to look for; you click *Reject* on the test message (it's a fixture).
+
 ## Cross-links
 
 - Task plan and atomic tasks: [`task_plan-solopreneur-experiment.md`](../../task_plan-solopreneur-experiment.md)
