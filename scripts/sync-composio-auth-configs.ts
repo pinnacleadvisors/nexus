@@ -135,9 +135,9 @@ async function pushToDoppler(updates: Record<string, string>): Promise<void> {
     return // Optional integration; skip silently when not configured.
   }
   const url = `${DOPPLER_BASE_URL}/configs/config/secrets?project=${encodeURIComponent(project)}&config=${encodeURIComponent(config)}`
-  // Doppler expects `secrets: { NAME: { value: "..." } }` for v3.
-  const secrets: Record<string, { value: string }> = {}
-  for (const [k, v] of Object.entries(updates)) secrets[k] = { value: v }
+  // Doppler v3 POST /configs/config/secrets expects flat string values
+  // (`{ secrets: { NAME: "value" } }`) — the wrapped `{ value: "..." }`
+  // shape returns 400 "must be a string" per request_id checks 2026-Q2.
   const res = await fetch(url, {
     method:  'POST',
     headers: {
@@ -145,12 +145,12 @@ async function pushToDoppler(updates: Record<string, string>): Promise<void> {
       'accept':        'application/json',
       'content-type':  'application/json',
     },
-    body:   JSON.stringify({ secrets }),
+    body:   JSON.stringify({ secrets: updates }),
     signal: AbortSignal.timeout(15_000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`Doppler push failed: ${res.status} ${text.slice(0, 200)}`)
+    throw new Error(`Doppler push failed: ${res.status} ${text.slice(0, 400)}`)
   }
 }
 
