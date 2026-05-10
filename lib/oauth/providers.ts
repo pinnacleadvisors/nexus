@@ -393,12 +393,14 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
   {
     id: 'google_analytics',
     name: 'Google Analytics',
-    toolkitSlug: 'GOOGLEANALYTICS',
+    // Composio's canonical toolkit slug uses the underscore form (matches what
+    // the dashboard creates and what `GET /api/v3/auth_configs` returns).
+    toolkitSlug: 'GOOGLE_ANALYTICS',
     category: 'analytics',
     logo: '/logos/google-analytics.svg',
     actions: [
-      'GOOGLEANALYTICS_RUN_REPORT',
-      'GOOGLEANALYTICS_RUN_REALTIME_REPORT',
+      'GOOGLE_ANALYTICS_RUN_REPORT',
+      'GOOGLE_ANALYTICS_RUN_REALTIME_REPORT',
     ],
     sharePolicy: 'per-business',
   },

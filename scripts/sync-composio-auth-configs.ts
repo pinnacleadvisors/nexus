@@ -52,6 +52,7 @@ interface SyncResult {
   created: Array<{ provider: OAuthProvider; authConfigId: string }>
   existing: Array<{ provider: OAuthProvider; authConfigId: string }>
   skipped: Array<{ provider: OAuthProvider; reason: string; credentialsUrl?: string }>
+  apiKey:  Array<{ provider: OAuthProvider; envVar?: string; credentialsUrl?: string }>
   errors:  Array<{ provider: OAuthProvider; error: string }>
 }
 
@@ -160,7 +161,7 @@ function envName(toolkitSlug: string): string {
 }
 
 async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
-  const result: SyncResult = { created: [], existing: [], skipped: [], errors: [] }
+  const result: SyncResult = { created: [], existing: [], skipped: [], apiKey: [], errors: [] }
 
   console.error('Listing existing Auth Configs from Composio…')
   // Always fetch — the LIST endpoint is read-only, dry-run shouldn't blind itself.
@@ -184,6 +185,17 @@ async function sync(opts: { dryRun: boolean }): Promise<SyncResult> {
         provider,
         reason:         provider.manualSetup.reason,
         credentialsUrl: provider.manualSetup.credentialsUrl,
+      })
+      continue
+    }
+
+    if (provider.apiKeySetup) {
+      // Not a Composio toolkit at all — operator pastes the API key per
+      // business at /settings/accounts. Skip the Composio create call.
+      result.apiKey.push({
+        provider,
+        envVar:         provider.apiKeySetup.envVar,
+        credentialsUrl: provider.apiKeySetup.credentialsUrl,
       })
       continue
     }
@@ -239,6 +251,17 @@ function printReport(r: SyncResult, opts: { dryRun: boolean }) {
     log('─ Manual setup required ─')
     for (const { provider, reason, credentialsUrl } of r.skipped) {
       log(`  ${provider.toolkitSlug}: ${reason}`)
+      if (credentialsUrl) log(`     credentials → ${credentialsUrl}`)
+    }
+    log('')
+  }
+
+  if (r.apiKey.length) {
+    log('─ API-key paste required (not Composio-brokered) ─')
+    log('  These platforms aren\'t in Composio\'s catalog — connect at /settings/accounts')
+    log('  per business. The script never tries to create a Composio Auth Config for them.')
+    for (const { provider, envVar, credentialsUrl } of r.apiKey) {
+      log(`  ${provider.id.padEnd(20)} env=${envVar ?? '(unset)'}`)
       if (credentialsUrl) log(`     credentials → ${credentialsUrl}`)
     }
     log('')
