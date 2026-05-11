@@ -22,6 +22,14 @@ const CSP = [
   // Fonts: self
   "font-src 'self' data:",
   // API + WebSocket connections
+  //
+  // Clerk note: script-src loads clerk.js from our custom frontend domain
+  // (clerk.nexus.pinnacleadvisors.com), but the SDK then makes background
+  // XHRs back to that same domain to refresh the session token (~60s TTL).
+  // If connect-src omits the custom domain, refreshes fail silently and
+  // every API route guarded by `auth()` 401s after the first minute. Keep
+  // script-src and connect-src in sync for both the custom domain and
+  // clerk-telemetry.com (Clerk SDK's analytics endpoint).
   [
     "connect-src 'self'",
     'https://api.anthropic.com',
@@ -30,6 +38,8 @@ const CSP = [
     'https://api.openai.com',
     'https://*.clerk.com',
     'https://*.clerk.accounts.dev',
+    'https://clerk.nexus.pinnacleadvisors.com',
+    'https://clerk-telemetry.com',
     'https://challenges.cloudflare.com',
     'https://inngest.com',
     'https://api.us-1.inngest.com',
