@@ -1,0 +1,138 @@
+name: Auto-rebuild business images
+
+# Auto-rebuilds every known business image when build-relevant files change
+# on main. Companion to per-business-image.yml (which is manual-only via
+# workflow_dispatch). The auto-rebuild reads BUSINESS_SEEDS from
+# lib/business/seeds.ts and matrix-builds one image per declared business
+# in parallel.
+#
+# When does a rebuild ACTUALLY change the image artifact?
+#   - mcps[] array changes for a profile that one or more seeds resolve to
+#     → MCP_PACKAGES build-arg differs → npm-install layer invalidates
+#   - Dockerfile / entrypoint / package.json / TS source under
+#     services/claude-gateway/ changes → respective layers invalidate
+#
+# When is the rebuild a near-no-op?
+#   - Profile-level `env: [...]` changes (runtime concern, not build-time)
+#   - Comment-only changes
+#   - Doc/markdown changes inside services/claude-gateway/
+#   In those cases the GHA cache (cache-from: type=gha) makes each matrix
+#   job complete in <1 min — cheap insurance against forgotten manual
+#   rebuilds.
+#
+# Adding a new business:
+#   1. Add a seed to lib/business/seeds.ts and append to BUSINESS_SEEDS
+#   2. Push to main → this workflow rebuilds the new business's image
+#      automatically (along with all the others)
+#   3. The first build is a full ~3-5 min; subsequent are cache-fast
+#
+# Skipping a business from auto-rebuild:
+#   Don't add it to BUSINESS_SEEDS. Use the manual workflow_dispatch on
+#   per-business-image.yml when you want to rebuild it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/businesses/mcp-manifest.ts'
+      - 'lib/business/seeds.ts'
+      - 'services/claude-gateway/Dockerfile.business'
+      - 'services/claude-gateway/entrypoint.sh'
+      - 'services/claude-gateway/package.json'
+      - 'services/claude-gateway/package-lock.json'
+      - 'services/claude-gateway/src/**'
+
+jobs:
+  list-businesses:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+      count:  ${{ steps.read.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Read BUSINESS_SEEDS → matrix
+        id: read
+        run: |
+          set -euo pipefail
+          MATRIX=$(npx --yes tsx -e '
+            import { BUSINESS_SEEDS } from "./lib/business/seeds";
+            const include = BUSINESS_SEEDS.map(s => ({ slug: s.slug, niche: s.niche }));
+            console.log(JSON.stringify({ include }));
+          ')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          COUNT=$(echo "$MATRIX" | jq -r '.include | length')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Resolved $COUNT business(es) for auto-rebuild"
+
+  build:
+    needs: list-businesses
+    if: ${{ needs.list-businesses.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.list-businesses.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Resolve MCP packages for niche
+        id: manifest
+        env:
+          NICHE: ${{ matrix.niche }}
+        run: |
+          set -euo pipefail
+          PKGS="$(npx --yes tsx -e '
+            import { resolveManifest } from "./lib/businesses/mcp-manifest";
+            const r = resolveManifest({ niche: process.env.NICHE });
+            console.log(r.mcps.map(p => p.pkg).join(" "));
+          ')"
+          echo "Resolved for niche=\"$NICHE\": $PKGS"
+          echo "mcp_packages=$PKGS" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase repo owner
+        id: lc
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push per-business image
+        uses: docker/build-push-action@v5
+        with:
+          context: services/claude-gateway/
+          file: services/claude-gateway/Dockerfile.business
+          push: true
+          tags: |
+            ghcr.io/${{ steps.lc.outputs.owner }}/nexus-business:${{ matrix.slug }}
+          build-args: |
+            BUSINESS_SLUG=${{ matrix.slug }}
+            MCP_PACKAGES=${{ steps.manifest.outputs.mcp_packages }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            nexus.business.slug=${{ matrix.slug }}
+            nexus.mcp.profile=${{ matrix.niche }}
+          cache-from: type=gha,scope=${{ matrix.slug }}
+          cache-to:   type=gha,mode=max,scope=${{ matrix.slug }}
+
+      - name: Summary row
+        run: |
+          {
+            echo "- \`${{ matrix.slug }}\` → \`ghcr.io/${{ steps.lc.outputs.owner }}/nexus-business:${{ matrix.slug }}\`"
+            echo "  - niche: \`${{ matrix.niche }}\`"
+            echo "  - MCPs: \`${{ steps.manifest.outputs.mcp_packages || '(none)' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
