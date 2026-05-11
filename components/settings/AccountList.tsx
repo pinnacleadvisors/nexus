@@ -12,7 +12,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useClerk } from '@clerk/nextjs'
 import { CheckCircle2, Loader2, Plug, Power, AlertCircle, X, KeyRound, ExternalLink } from 'lucide-react'
 import { OAUTH_PROVIDERS, type OAuthCategory, type OAuthProvider } from '@/lib/oauth/providers'
 
@@ -39,9 +40,39 @@ const CATEGORY_LABEL: Record<OAuthCategory, string> = {
 }
 
 export default function AccountList({ businessSlug }: { businessSlug?: string | null }) {
-  const params = useSearchParams()
+  const params        = useSearchParams()
+  const router        = useRouter()
+  const clerk         = useClerk()
   const justConnected = params?.get('connected')
   const errorParam    = params?.get('error')
+
+  // ── OAuth-callback resilience ────────────────────────────────────────────
+  // Composio OAuth flows can take several minutes (user signs into Slack,
+  // approves Composio, etc.) — long enough for the Clerk session to expire
+  // because the Nexus tab navigated away and the SDK couldn't refresh in
+  // the background. On return we land here with ?connected= or ?error=,
+  // and any in-flight client polls 401 against the stale session.
+  //
+  // Three guard layers:
+  //   1. Bump the session inactivity window right before navigating away
+  //      (in connect()) so we leave with as much runway as Clerk allows.
+  //   2. On mount with an OAuth-callback marker, do one router.refresh()
+  //      to re-trigger server-side render — that runs Clerk's middleware
+  //      which handshakes-then-renders, refreshing client cookies.
+  //   3. If load() sees a 401, the session is genuinely gone (long flow,
+  //      revoked, etc.) — redirect to /sign-in with returnUrl so the user
+  //      lands back here after re-auth, instead of leaving them stuck on
+  //      a broken page with mysterious 401s in console.
+  useEffect(() => {
+    const hasCallbackMarker = Boolean(justConnected || errorParam)
+    const refreshKey        = 'post-oauth-refresh'
+    if (hasCallbackMarker && !sessionStorage.getItem(refreshKey)) {
+      sessionStorage.setItem(refreshKey, '1')
+      router.refresh()
+    } else if (!hasCallbackMarker) {
+      sessionStorage.removeItem(refreshKey)
+    }
+  }, [justConnected, errorParam, router])
 
   const [accounts, setAccounts]     = useState<ConnectedAccount[]>([])
   const [loading,  setLoading]      = useState(true)
@@ -57,6 +88,15 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
     try {
       const url = businessSlug ? `/api/connected-accounts?businessSlug=${businessSlug}` : '/api/connected-accounts'
       const res = await fetch(url)
+      // Session died mid-flow (typical after a long OAuth wait on dev Clerk
+      // keys). Send the user through /sign-in with a returnUrl so they land
+      // back here with a fresh session, rather than staring at 401 console
+      // errors that don't surface in the UI.
+      if (res.status === 401) {
+        const here = window.location.pathname + window.location.search
+        window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+        return
+      }
       if (!res.ok) throw new Error(`load failed: ${res.status}`)
       const json = (await res.json()) as { accounts: ConnectedAccount[] }
       setAccounts(json.accounts)
@@ -72,6 +112,13 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
   async function connect(provider: OAuthProvider) {
     setBusy(provider.id); setErr(null)
     try {
+      // Bump the session's last-active time before navigating away to
+      // Composio. Inactivity timeout resets from this touch, so the
+      // session has the full Clerk-dashboard-configured window to survive
+      // the multi-minute OAuth flow even though the SDK won't run during
+      // the redirect chain. No-op when the SDK isn't loaded yet.
+      try { await clerk.session?.touch() } catch { /* swallow — best effort */ }
+
       const res = await fetch('/api/connected-accounts/init', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
