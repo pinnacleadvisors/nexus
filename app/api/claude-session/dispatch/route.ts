@@ -244,6 +244,14 @@ async function dispatchToOpenClaw(opts: {
   message:   string
   env:       Record<string, string>
   config:    BusinessClawConfig | null
+  /** Clerk user id — sent as X-Nexus-User-Id. The gateway's defence-in-depth
+   *  `ALLOWED_USER_IDS` allowlist (services/claude-gateway/src/index.ts) 403s
+   *  any request without a matching header when the gate is active. Other
+   *  call paths (lib/claw/gateway-call.ts, lib/claw/gateway-jobs.ts) inject
+   *  this header; this legacy function was the only one that didn't, which
+   *  surfaced as a 502 from /api/platform-chat with body
+   *  `{"error":"OpenClaw returned 403"}` once /manage-platform chat shipped. */
+  userId:    string
 }): Promise<{ ok: boolean; sessionId: string; status: number; body: unknown } | null> {
   if (!opts.config) return null
   const baseUrl   = opts.config.gatewayUrl
@@ -270,6 +278,7 @@ async function dispatchToOpenClaw(opts: {
         'Authorization':     `Bearer ${hookToken}`,
         'X-Nexus-Signature': sig,
         'X-Nexus-Timestamp': Date.now().toString(),
+        'X-Nexus-User-Id':   opts.userId,
       },
       body:    bodyStr,
       signal:  controller.signal,
@@ -502,6 +511,7 @@ export async function POST(req: NextRequest) {
     message,
     env,
     config: clawConfig,
+    userId,
   })
 
   audit(req, {
