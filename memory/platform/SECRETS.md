@@ -249,6 +249,7 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `ALLOWED_USER_IDS` | Comma-separated Clerk user IDs. When set, every signed POST must carry `X-Nexus-User-Id` matching one of these. Defence-in-depth — if the bearer ever leaks, this stops it from draining your Max plan. Mirrors the Vercel-side `ALLOWED_USER_IDS` so the same value works in both places. |
 | `NEXUS_REPO_URL` | Git URL the entrypoint clones into `/repo` so spawned `claude` sessions can read `.claude/agents/` + `.claude/skills/` (e.g. `https://github.com/pinnacleadvisors/nexus.git`). |
 | `CLAUDE_GATEWAY_REPO_REF` | Branch / tag to check out (default `main`). |
+| `COMPOSIO_API_KEY` | **New (Phase MCP)** — written into `~/.claude/settings.json` at boot under the `composio` MCP server's `env`. Activates the Composio rube-mcp so the platform-copilot has `mcp__composio__*` tool access to all 500+ Composio toolkits via the operator's admin-scope connected accounts. Unset = MCP not registered (graceful degrade — Claude still runs with built-in tools). See PR #151 (admin-scope) + companion MCP-install PR. |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
 | `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 180 000). |
 | `CLAUDE_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `claude-gw.<your-domain>` → this. |

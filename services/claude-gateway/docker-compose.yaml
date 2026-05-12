@@ -24,6 +24,10 @@ services:
       CLAUDE_GATEWAY_REPO_REF: "${CLAUDE_GATEWAY_REPO_REF:-main}"
       QUEUE_MAX_DEPTH:        "${QUEUE_MAX_DEPTH:-8}"
       REQUEST_TIMEOUT_MS:     "${REQUEST_TIMEOUT_MS:-180000}"
+      # Composio rube-mcp auth — picked up by entrypoint.sh and written into
+      # ~/.claude/settings.json under env. When unset the MCP is not
+      # registered (graceful degrade — Claude still runs with built-in tools).
+      COMPOSIO_API_KEY:       "${COMPOSIO_API_KEY:-}"
     volumes:
       - claude_home:/root/.claude
       - nexus_repo:/repo

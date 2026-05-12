@@ -18,6 +18,7 @@
  */
 
 import { createServerClient } from '@/lib/supabase'
+import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 
 interface ConnectedAccountRow {
   platform:       string
@@ -55,10 +56,13 @@ export async function buildPlatformSystemPrompt(userId: string): Promise<string>
       type Result<T> = Promise<{ data: T[] | null; error: { message: string } | null }>
       type Chain<T> = { eq: (c: string, v: unknown) => Chain<T>; is: (c: string, v: unknown) => Chain<T>; order: (c: string, o: { ascending: boolean }) => Chain<T>; limit: (n: number) => Result<T>; gte: (c: string, v: unknown) => Chain<T> }
 
+      // Admin-scope connections only (PR #151). The Shared (NULL) and per-
+      // business connections aren't surfaced here — they belong to the
+      // per-business agent surface, not platform-copilot.
       const connectedQ = (db.from('connected_accounts' as never) as unknown as { select: (c: string) => Chain<ConnectedAccountRow> })
         .select('platform, status, last_used_at')
         .eq('user_id', userId)
-        .is('business_slug', null)
+        .eq('business_slug', ADMIN_SCOPE)
         .eq('status', 'active')
         .order('last_used_at', { ascending: false })
         .limit(20)
@@ -90,7 +94,7 @@ export async function buildPlatformSystemPrompt(userId: string): Promise<string>
 
 function renderPrompt(state: { connected: ConnectedAccountRow[]; errors: RunEventRow[]; businesses: BusinessRow[] }): string {
   const connectedList = state.connected.length === 0
-    ? '  (none yet — operator should connect platforms at /settings/accounts under "Default scope")'
+    ? '  (none yet — operator should connect platforms at /settings/accounts under the **Admin** scope picker. Shared and per-business connections are not surfaced to you.)'
     : state.connected.map(a => `  - ${a.platform}${a.last_used_at ? ` (last used ${humanizeAge(a.last_used_at)})` : ''}`).join('\n')
 
   const businessList = state.businesses.length === 0
@@ -111,8 +115,18 @@ Memory:   pinnacleadvisors/memory-hq (write atoms via the memory-hq MCP when
 Active businesses:
 ${businessList}
 
-Connected platforms (operator's shared scope — use via the Composio rube-mcp):
+Connected platforms (operator's **Admin scope** — use via the Composio rube-mcp tools \`mcp__composio__*\`. These tokens are narrow-scoped to the Nexus platform itself: nexus Vercel project only, pinnacleadvisors/nexus GitHub repo only, #ops Slack channel only, etc. **Do NOT use these for per-business work** — those have separate tokens you can't see):
 ${connectedList}
+
+MCP tool availability:
+  - Composio rube-mcp is auto-registered on this gateway (when COMPOSIO_API_KEY
+    is set). Tool names look like \`mcp__composio__VERCEL_LIST_DEPLOYMENTS\`,
+    \`mcp__composio__GITHUB_LIST_PULL_REQUESTS_FOR_THE_AUTHENTICATED_USER\`,
+    \`mcp__composio__STRIPE_LIST_ALL_INVOICES\`, etc. Use these BEFORE
+    falling back to WebFetch + raw API calls.
+  - If a tool you expected isn't in your list, the operator likely hasn't
+    connected that platform in the Admin scope yet. Surface a clear
+    \"please connect <platform> in /settings/accounts → Admin scope\" message.
 
 Recent platform errors (last 24h, max 5 shown):
 ${errorList}
