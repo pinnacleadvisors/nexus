@@ -56,6 +56,17 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     '--verbose',
     '--max-turns', '25',
   ]
+  // MCP loading: `claude -p` (print/non-interactive mode) does NOT reliably
+  // auto-load ~/.claude/settings.json across versions. The entrypoint writes
+  // the MCP server registrations to /root/.claude/settings.json at boot, but
+  // each per-request CLI spawn needs the path explicitly. --strict-mcp-config
+  // makes discovery deterministic (only this file, no fallback hunting).
+  // Skip when MCP_CONFIG_PATH=skip — useful for tests that intentionally run
+  // without MCP, or to revert behaviour during incident response.
+  const mcpConfigPath = process.env.MCP_CONFIG_PATH ?? '/root/.claude/settings.json'
+  if (mcpConfigPath && mcpConfigPath !== 'skip') {
+    cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
+  }
   if (systemPrompt) {
     cliArgs.push('--append-system-prompt', systemPrompt)
   }

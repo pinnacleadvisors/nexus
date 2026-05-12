@@ -3,6 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { tracesSampler } from "@/lib/sentry/sampler";
 
 Sentry.init({
   dsn: "https://8e6ee1e8d4203bc4f7feb2cc947c1f64@o4511206891126784.ingest.de.sentry.io/4511276744310864",
@@ -10,8 +11,12 @@ Sentry.init({
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
+  // Per-transaction sampling — see lib/sentry/sampler.ts. Client-side
+  // <GatewayStatusPill> and the Sidebar cron probe both poll every 30s on
+  // every protected page; PlatformChat polls /api/platform-chat/poll every
+  // 2.5s during an active run. Those generate XHR transactions that the
+  // sampler now skips.
+  tracesSampler,
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
