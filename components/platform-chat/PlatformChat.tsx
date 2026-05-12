@@ -23,9 +23,16 @@ interface Message {
   durationMs?: number
 }
 
-interface ApiOk    { ok: true;  message: string; sessionId: string | null; durationMs: number }
-interface ApiFail  { ok: false; error: string;   code: string }
-type ApiResponse = ApiOk | ApiFail
+interface EnqueueOk   { ok: true;  jobId: string;  sessionTag: string }
+interface EnqueueFail { ok: false; error: string; code: string }
+type EnqueueResponse = EnqueueOk | EnqueueFail
+
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollFail   { ok: false; error: string; code: string }
+type PollResponse = PollOk | PollFail
+
+const POLL_INTERVAL_MS = 2_500
+const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
 
 const PLACEHOLDER = [
   '"Show me the last 3 Vercel deploy failures and what broke"',
@@ -57,28 +64,62 @@ export default function PlatformChat() {
     setBusy(true)
 
     try {
-      const res = await fetch('/api/platform-chat', {
+      // Step 1 — enqueue. Returns a jobId immediately; the long-running
+      // generation happens server-side on the gateway. This is the async
+      // job protocol added on the gateway in lib/claw/gateway-jobs.ts.
+      const enqRes = await fetch('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
         body:    JSON.stringify({ messages: nextMessages }),
       })
-      if (res.status === 401) {
-        // Session died (long pause, dev Clerk TTL). Send to /sign-in with returnUrl.
+      if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
         return
       }
-      const json = (await res.json()) as ApiResponse
-      if (!json.ok) {
-        setError(json.error)
+      const enq = (await enqRes.json()) as EnqueueResponse
+      if (!enq.ok) {
+        setError(enq.error)
         return
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: json.message, durationMs: json.durationMs }])
+
+      // Step 2 — poll until done. Each poll is <500ms; the loop runs until
+      // the gateway reports status='done' or 'error', or we hit the 5-min cap.
+      const finalText = await pollUntilDone(enq.jobId)
+      setMessages(prev => [...prev, { role: 'assistant', content: finalText.text, durationMs: finalText.durationMs }])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error — check your connection and try again')
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * Poll /api/platform-chat/poll until the gateway job completes. Returns the
+   * assistant text + total duration on success. Throws on timeout or job-level
+   * error so the caller's catch surfaces it via the red error banner.
+   */
+  async function pollUntilDone(jobId: string): Promise<{ text: string; durationMs: number }> {
+    const start = Date.now()
+    while (Date.now() - start < POLL_TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+      const res = await fetch(`/api/platform-chat/poll?jobId=${encodeURIComponent(jobId)}`, { cache: 'no-store' })
+      if (res.status === 401) {
+        const here = window.location.pathname + window.location.search
+        window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+        throw new Error('session expired during poll')
+      }
+      const j = (await res.json()) as PollResponse
+      if (!j.ok) throw new Error(j.error)
+      if (j.status === 'done') {
+        return { text: (j.text ?? '').trim() || '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)', durationMs: j.durationMs ?? (Date.now() - start) }
+      }
+      if (j.status === 'error') {
+        throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
+      }
+      // status === 'pending' | 'running' — keep polling
+    }
+    throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the gateway — check Coolify logs for the claude-gateway service.`)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -183,10 +224,17 @@ function EmptyState() {
 }
 
 function ThinkingIndicator() {
+  // Tick an elapsed-seconds counter so the operator sees the chat hasn't
+  // frozen during long agent runs (Opus + MCP tool calls easily hit 30-90s).
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
   return (
     <div className="flex items-center gap-2 text-sm" style={{ color: '#9090b0' }}>
       <Loader2 size={14} className="animate-spin" />
-      <span>Claude is working — checking platforms, reading code, maybe delegating to codex…</span>
+      <span>Claude is working — checking platforms, reading code, maybe delegating to codex… ({elapsed}s)</span>
     </div>
   )
 }

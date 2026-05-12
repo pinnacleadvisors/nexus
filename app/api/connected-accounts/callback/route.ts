@@ -109,18 +109,27 @@ export async function GET(req: NextRequest) {
     return settingsRedirect(req, { error: 'database not configured' })
   }
 
-  // Upsert: if an active row already exists for (user, business, platform), revoke it first.
+  // Upsert: if an active row already exists for (user_id, business_slug, platform),
+  // revoke it first. The `.eq('platform', cookie.platform)` filter is critical —
+  // without it the update revokes EVERY active row in this (user, business) scope,
+  // nuking unrelated connections. Symptom before the fix: connecting Slack via
+  // OAuth would silently revoke the operator's GitHub/Stripe rows in the same
+  // scope. The api-key route at app/api/connected-accounts/api-key/route.ts
+  // always had the platform filter — this aligns the OAuth path with it.
   const update = await (db.from('connected_accounts' as never) as unknown as {
     update: (patch: Record<string, unknown>) => {
       eq: (c: string, v: string) => {
         eq: (c: string, v: string | null) => {
-          eq: (c: string, v: string) => Promise<{ error: { message: string } | null }>
+          eq: (c: string, v: string) => {
+            eq: (c: string, v: string) => Promise<{ error: { message: string } | null }>
+          }
         }
       }
     }
   }).update({ status: 'revoked' })
     .eq('user_id', cookie.userId)
     .eq('business_slug', cookie.businessSlug)
+    .eq('platform', cookie.platform)
     .eq('status', 'active')
 
   if (update.error) {

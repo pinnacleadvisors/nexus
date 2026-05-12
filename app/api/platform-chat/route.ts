@@ -1,27 +1,32 @@
 /**
  * POST /api/platform-chat
  *
- * Platform-dev chat backend. Each turn:
+ * Platform-dev chat backend (async job variant). Each turn:
  *   1. Auth via Clerk
  *   2. Cost-cap guard via assertUnderCostCap (user scope)
- *   3. Build platform system prompt with connected accounts + recent errors
+ *   3. Build platform system prompt with admin-scope connections + recent errors
  *   4. Resolve the shared claude-gateway via resolveClaudeCodeConfig
- *   5. Call the gateway directly via lib/claw/gateway-call.ts::callGateway —
- *      NOT via /api/claude-session/dispatch. The dispatch route is for n8n /
- *      idea workflows and strips the assistant text from its response shape
- *      (returns only metadata). callGateway returns the real text and uses
- *      the same 55s timeout as Vercel's maxDuration. It also injects the
- *      X-Nexus-User-Id header so the gateway's ALLOWED_USER_IDS gate passes.
+ *   5. Enqueue a job on the gateway (POST /api/jobs). Returns the jobId
+ *      immediately — the client then polls /api/platform-chat/poll until done.
+ *
+ * Why async vs sync (the old shape):
+ *   - Opus + Composio MCP tool calls + agent self-reasoning can easily run
+ *     for minutes on one turn. The old single-fetch model capped at the
+ *     gateway's 55s timeout, surfacing as "gateway returned 0: gateway
+ *     request timed out".
+ *   - Vercel's per-function maxDuration is 60s. We can't stretch a single
+ *     blocking fetch past that.
+ *   - Async jobs: enqueue is fast (<1s), result polled separately, no
+ *     individual call hits the timeout ceiling. Each poll is <500ms.
  *
  * Body:
  *   { messages: Array<{ role: 'user' | 'assistant'; content: string }> }
  *
- * Returns:
- *   { ok: true,  message: string, sessionId: string, durationMs: number }
- *   { ok: false, error: string,   code: 'unauthorized' | 'capped' | 'no_gateway' | 'gateway_error' | 'invalid' }
+ * Returns 200:
+ *   { ok: true, jobId: string, sessionTag: string }
  *
- * Phase 2 will switch to callGatewayStream + SSE so partial output is
- * visible during long-running tool calls. Phase 3 adds approval gates.
+ * Returns 4xx/5xx:
+ *   { ok: false, error: string, code: string }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -30,11 +35,11 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
-import { callGateway } from '@/lib/claw/gateway-call'
+import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
 
 export const runtime    = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 30   // Enqueue should be <1s; 30s leaves plenty of slack.
 
 interface PlatformChatBody {
   messages?: Array<{ role?: string; content?: string }>
@@ -63,7 +68,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'last message must be a non-empty user message', code: 'invalid' }, { status: 400 })
   }
 
-  // Cost cap. User scope — platform-dev chat has no business_slug.
+  // Cost cap — user scope (platform-dev chat has no business_slug).
   const cap = await assertUnderCostCap(session.userId)
   if (!cap.ok) {
     return NextResponse.json({
@@ -73,7 +78,6 @@ export async function POST(req: NextRequest) {
     }, { status: 402 })
   }
 
-  // Resolve the shared claude-gateway (operator-level, no business slug).
   const gateway = await resolveClaudeCodeConfig(session.userId)
   if (!gateway) {
     return NextResponse.json({
@@ -83,11 +87,6 @@ export async function POST(req: NextRequest) {
     }, { status: 503 })
   }
 
-  // System prompt + composite turn message. The gateway loads the agent spec
-  // (.claude/agents/platform-copilot.md) as a system-style preface from its
-  // own /repo clone, then prepends our message as the user turn. We include
-  // the prior conversation as part of the user message so multi-turn state
-  // works without server-side session storage (Phase 4 will persist).
   const systemPrompt = await buildPlatformSystemPrompt(session.userId)
   const transcript   = body.messages
     .filter(m => typeof m.content === 'string' && m.content.length > 0)
@@ -103,44 +102,38 @@ export async function POST(req: NextRequest) {
     }, { status: 413 })
   }
 
-  const t0 = Date.now()
-  const result = await callGateway({
+  const sessionTag = `platform-chat-${Date.now()}`
+  const t0         = Date.now()
+  const enqueued = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
-    sessionTag:  `platform-chat-${Date.now()}`,
+    sessionTag,
     agentSlug:   'platform-copilot',
     message:     composite,
     userId:      session.userId,
-    timeoutMs:   55_000,
+    timeoutMs:   10_000,
   })
 
-  if (!result.ok) {
+  if (!enqueued.ok || !enqueued.jobId) {
     audit(req, {
-      action:   'platform_chat.turn',
+      action:   'platform_chat.enqueue',
       resource: 'chat',
       userId:   session.userId,
-      metadata: { stage: 'gateway', status: result.status, error: result.error, durationMs: Date.now() - t0 },
+      metadata: { stage: 'enqueue', http: enqueued.http, error: enqueued.error, durationMs: Date.now() - t0 },
     })
     return NextResponse.json({
       ok:    false,
-      error: `gateway returned ${result.status}: ${result.error ?? 'unknown error'}`,
+      error: `gateway enqueue failed: ${enqueued.error ?? 'unknown'}`,
       code:  'gateway_error',
-    }, { status: result.status >= 400 && result.status < 600 ? result.status : 502 })
+    }, { status: enqueued.http && enqueued.http >= 400 && enqueued.http < 600 ? enqueued.http : 502 })
   }
 
-  const text    = (result.text ?? '').trim()
-  const elapsed = Date.now() - t0
   audit(req, {
-    action:   'platform_chat.turn',
+    action:   'platform_chat.enqueue',
     resource: 'chat',
     userId:   session.userId,
-    metadata: { durationMs: elapsed, messageCount: body.messages.length, charCount: composite.length, replyLen: text.length },
+    metadata: { jobId: enqueued.jobId, sessionTag, charCount: composite.length, durationMs: Date.now() - t0 },
   })
 
-  return NextResponse.json({
-    ok:         true,
-    message:    text || '(the gateway returned an empty assistant message — usually means the agent timed out mid-tool-call or Claude refused for safety reasons; check the gateway logs)',
-    sessionId:  null,
-    durationMs: elapsed,
-  })
+  return NextResponse.json({ ok: true, jobId: enqueued.jobId, sessionTag })
 }
