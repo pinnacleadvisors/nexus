@@ -27,16 +27,18 @@ RUN apt-get update \
 # manually after smoke-testing a new release.
 RUN npm install --location=global @anthropic-ai/claude-code@latest
 
-# Composio universal MCP — gives the platform-copilot agent tool-level access
-# to all 500+ Composio toolkits via the operator's connected accounts.
-# Configured at boot in entrypoint.sh by writing ~/.claude/settings.json with
-# COMPOSIO_API_KEY in the env. Per the admin-scope architecture (PR #151),
-# this gateway is meant to serve the platform-copilot ONLY — Composio's
-# rube-mcp doesn't natively filter by our `business_slug` scope, so the
-# platform-copilot agent spec (.claude/agents/platform-copilot.md) carries
-# explicit instructions to use admin-scope connections only and ask for
-# approval before destructive actions. Per-business agents run on
-# per-business containers (Dockerfile.business) with separate MCP setups.
+# Composio MCP access for the platform-copilot agent.
+#
+# PR #152 shipped @composio/rube-mcp (universal, soft-isolation — relies on
+# the agent self-disciplining to admin-scope connections). This image now
+# uses @nexus/mcp-composio-admin instead — a hard-isolation wrapper built
+# from services/mcp-composio-admin/ that filters at the MCP layer: only
+# admin-scope (business_slug='_admin') connected_accounts rows are reachable.
+# rube-mcp is kept installed as a fallback in case the wrapper has issues —
+# the entrypoint registers ONE of them in ~/.claude/settings.json.
+#
+# Per-business agents run on per-business containers (Dockerfile.business)
+# with their own MCP setups, so there's no cross-scope pollution.
 RUN npm install --location=global @composio/rube-mcp@latest
 
 COPY package.json ./
