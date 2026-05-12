@@ -88,11 +88,33 @@ if [ -n "${COMPOSIO_API_KEY:-}" ] \
   fi
 fi
 
-if [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -eq 1 ]; then
-  mkdir -p /root/.claude
-  cat > /root/.claude/settings.json <<JSON
-{
-  "mcpServers": {
+# Try to build the memory-hq MCP too (services/mcp-memory/). Gives the
+# platform-copilot durable cross-session memory via the memory-hq graph.
+# Optional — registration is gated on MEMORY_HQ_TOKEN being set and the
+# build succeeding.
+MEMORY_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-memory"
+MEMORY_MCP_BUILT=0
+if [ -n "${MEMORY_HQ_TOKEN:-}" ] && [ -d "$MEMORY_MCP_DIR/src" ]; then
+  echo "[gateway] Building memory-hq MCP from $MEMORY_MCP_DIR..."
+  if (cd "$MEMORY_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    MEMORY_MCP_BUILT=1
+    echo "[gateway] memory-hq MCP built — will register."
+  else
+    echo "[gateway] WARNING: memory-hq MCP build FAILED — skipping registration."
+  fi
+fi
+
+# Assemble the settings.json. Whichever MCP servers built successfully get
+# registered. composio-admin (hard-isolation) is the primary; rube-mcp is
+# the soft-isolation fallback used only when the wrapper isn't available.
+# memory-hq is additive — registers alongside whichever Composio variant is
+# active.
+build_mcp_block() {
+  local first=1
+  if [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
     "composio-admin": {
       "command": "node",
       "args": ["$WRAPPER_DIR/dist/index.js"],
@@ -104,15 +126,11 @@ if [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -eq 1 ]; then
         "ALLOWED_USER_IDS":           "${ALLOWED_USER_IDS:-}"
       }
     }
-  }
-}
 JSON
-  echo "[gateway] Wrote MCP config: composio-admin (hard-isolation, admin-scope only)."
-elif [ -n "${COMPOSIO_API_KEY:-}" ]; then
-  mkdir -p /root/.claude
-  cat > /root/.claude/settings.json <<JSON
-{
-  "mcpServers": {
+  elif [ -n "${COMPOSIO_API_KEY:-}" ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
     "composio": {
       "command": "npx",
       "args": ["-y", "@composio/rube-mcp"],
@@ -120,17 +138,53 @@ elif [ -n "${COMPOSIO_API_KEY:-}" ]; then
         "COMPOSIO_API_KEY": "${COMPOSIO_API_KEY}"
       }
     }
+JSON
+  fi
+  if [ "$MEMORY_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "memory-hq": {
+      "command": "node",
+      "args": ["$MEMORY_MCP_DIR/dist/index.js"],
+      "env": {
+        "MEMORY_HQ_TOKEN":  "${MEMORY_HQ_TOKEN}",
+        "NEXUS_BASE_URL":   "${NEXUS_BASE_URL:-}",
+        "MEMORY_AUTHOR":    "claude-agent:platform-copilot"
+      }
+    }
+JSON
+  fi
+}
+
+MCP_BLOCK="$(build_mcp_block)"
+if [ -n "$MCP_BLOCK" ]; then
+  mkdir -p /root/.claude
+  cat > /root/.claude/settings.json <<JSON
+{
+  "mcpServers": {
+$MCP_BLOCK
   }
 }
 JSON
-  echo "[gateway] Wrote MCP config: rube-mcp (soft-isolation fallback)."
-  echo "[gateway]   To enable hard-isolation, set SUPABASE_SERVICE_ROLE_KEY in env and ensure /repo/services/mcp-composio-admin/ is present + buildable."
+  REGISTERED=""
+  [ "$WRAPPER_BUILT" -eq 1 ]                              && REGISTERED="$REGISTERED composio-admin"
+  [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -ne 1 ] && REGISTERED="$REGISTERED composio"
+  [ "$MEMORY_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED memory-hq"
+  echo "[gateway] Wrote MCP config:$REGISTERED"
 else
-  echo "[gateway] WARNING: COMPOSIO_API_KEY not set — Composio MCP NOT registered."
-  echo "[gateway]          Platform-copilot will lack Composio tools (Vercel, GitHub, Slack, Stripe, etc.)."
-  echo "[gateway]          Set COMPOSIO_API_KEY in Coolify env and redeploy to activate."
+  # No MCP servers built — log clearly and clean up any stale settings.json
+  # from a prior boot WITH keys set (volume persistence edge case).
+  echo "[gateway] WARNING: no MCP servers registered."
+  if [ -z "${COMPOSIO_API_KEY:-}" ]; then
+    echo "[gateway]   - COMPOSIO_API_KEY not set → platform-copilot will lack Composio tools."
+  fi
+  if [ -z "${MEMORY_HQ_TOKEN:-}" ]; then
+    echo "[gateway]   - MEMORY_HQ_TOKEN not set → no durable memory across sessions."
+  fi
+  echo "[gateway]   Set the missing env vars in Coolify and redeploy to activate."
   if [ -f /root/.claude/settings.json ]; then
-    echo "[gateway]          Removing stale /root/.claude/settings.json."
+    echo "[gateway]   Removing stale /root/.claude/settings.json."
     rm -f /root/.claude/settings.json
   fi
 fi

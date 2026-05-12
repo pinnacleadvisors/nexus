@@ -36,6 +36,13 @@ services:
       SUPABASE_SERVICE_ROLE_KEY:  "${SUPABASE_SERVICE_ROLE_KEY:-}"
       NEXUS_OPERATOR_USER_ID:     "${NEXUS_OPERATOR_USER_ID:-}"
       MCP_USE_RUBE_FALLBACK:      "${MCP_USE_RUBE_FALLBACK:-0}"
+      # memory-hq MCP — gives the platform-copilot durable cross-session
+      # learnings (atoms, entities, MOCs) via the memory-hq graph. Optional
+      # but recommended. Entrypoint builds + registers it alongside the
+      # composio MCP when MEMORY_HQ_TOKEN is set. NEXUS_BASE_URL is needed
+      # for the writes (which go through POST /api/memory/event).
+      MEMORY_HQ_TOKEN:            "${MEMORY_HQ_TOKEN:-}"
+      NEXUS_BASE_URL:             "${NEXUS_BASE_URL:-}"
     volumes:
       - claude_home:/root/.claude
       - nexus_repo:/repo

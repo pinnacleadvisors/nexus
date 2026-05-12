@@ -254,6 +254,8 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `NEXT_PUBLIC_SUPABASE_URL` | Same as the Vercel-side env var — used by the wrapper for its REST queries. |
 | `NEXUS_OPERATOR_USER_ID` | Optional — Clerk user_id whose admin-scope rows the wrapper loads. Defaults to the first entry in `ALLOWED_USER_IDS` (single-user mode convenience). Override when running multi-owner or for testing. |
 | `MCP_USE_RUBE_FALLBACK` | Optional `0`/`1`. Force the gateway to use the legacy `@composio/rube-mcp` instead of the hard-isolation wrapper. Use for debugging when the wrapper misbehaves. |
+| `MEMORY_HQ_TOKEN` | **New (Phase MCP)** — when set, entrypoint builds + registers `@nexus/mcp-memory` alongside the Composio MCP. Gives platform-copilot durable cross-session memory (write atoms / entities / MOCs into the memory-hq graph, search past learnings). Optional but recommended — same value as Vercel-side `MEMORY_HQ_TOKEN`. |
+| `NEXUS_BASE_URL` | Required when `MEMORY_HQ_TOKEN` is set. The memory-hq MCP routes writes through `POST <NEXUS_BASE_URL>/api/memory/event`. Same value as Vercel-side `NEXUS_BASE_URL`. |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
 | `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 180 000). |
 | `CLAUDE_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `claude-gw.<your-domain>` → this. |
