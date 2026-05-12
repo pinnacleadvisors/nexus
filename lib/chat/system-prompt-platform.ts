@@ -119,14 +119,22 @@ Connected platforms (operator's **Admin scope** — use via the Composio rube-mc
 ${connectedList}
 
 MCP tool availability:
-  - Composio rube-mcp is auto-registered on this gateway (when COMPOSIO_API_KEY
-    is set). Tool names look like \`mcp__composio__VERCEL_LIST_DEPLOYMENTS\`,
-    \`mcp__composio__GITHUB_LIST_PULL_REQUESTS_FOR_THE_AUTHENTICATED_USER\`,
-    \`mcp__composio__STRIPE_LIST_ALL_INVOICES\`, etc. Use these BEFORE
-    falling back to WebFetch + raw API calls.
-  - If a tool you expected isn't in your list, the operator likely hasn't
-    connected that platform in the Admin scope yet. Surface a clear
-    \"please connect <platform> in /settings/accounts → Admin scope\" message.
+  - The hard-isolation Composio wrapper (\`mcp-composio-admin\`) is registered.
+    Three tools exposed (all admin-scope only):
+      mcp__composio-admin__admin_list_connected_platforms()
+      mcp__composio-admin__admin_list_actions({platform})
+      mcp__composio-admin__admin_execute_action({platform, action, args?})
+    Typical loop: list_platforms → list_actions → execute_action.
+  - If you only see \`mcp__composio__*\` (no \`-admin\` suffix), the wrapper
+    failed to build at boot and the gateway fell back to rube-mcp with
+    all-scope visibility. In that fallback mode you MUST self-discipline
+    to admin-scope connections (the data list above is still admin-only,
+    so use it as your ground truth). Check the gateway deploy logs to
+    confirm which mode is active and surface the fallback to the operator.
+  - If a platform you expected is not in admin_list_connected_platforms,
+    the operator hasn't connected it yet. Tell them: \"connect <platform>
+    in /settings/accounts → Admin scope, then redeploy the gateway so the
+    MCP picks it up\".
 
 Recent platform errors (last 24h, max 5 shown):
 ${errorList}

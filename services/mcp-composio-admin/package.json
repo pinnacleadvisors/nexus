@@ -1,0 +1,26 @@
+{
+  "name": "@nexus/mcp-composio-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server that exposes Composio actions to Claude Code sessions, scoped strictly to Admin-scope connected accounts (business_slug='_admin' in connected_accounts). Hard-isolation companion to PR #152's rube-mcp install — replaces it on the shared claude-gateway so the platform-copilot can never accidentally invoke an action against a Shared or per-business token.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "^4.21.0",
+    "typescript": "5.7.2"
+  }
+}

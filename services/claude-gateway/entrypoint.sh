@@ -49,17 +49,66 @@ else
   echo "[gateway] Legacy: 'claude login' inside this container with /root/.claude mounted as a persistent volume."
 fi
 
-# MCP configuration — write ~/.claude/settings.json with the Composio rube-mcp
-# entry so the spawned claude CLI auto-discovers tools for all 500+ Composio
-# toolkits via the operator's connected accounts. This shared gateway serves
-# the platform-copilot agent; admin-scope tokens (business_slug='_admin' in
-# connected_accounts, PR #151) are the intended target. Per-business agents
-# run on separate per-business containers (Dockerfile.business) with their
-# own MCP setup, so there's no cross-pollination between scopes.
+# MCP configuration. Two implementations available:
+#
+#   1. mcp-composio-admin (PREFERRED, hard-isolation, this PR):
+#      Custom wrapper at /repo/services/mcp-composio-admin/. Built at runtime
+#      from the cloned repo (avoids Dockerfile context complexity). Filters
+#      Composio actions to admin-scope (business_slug='_admin') connections
+#      only — agent literally cannot reach Shared / per-business tokens.
+#      Activates when:
+#        - COMPOSIO_API_KEY is set
+#        - SUPABASE_SERVICE_ROLE_KEY is set (needed to read connected_accounts)
+#        - The wrapper builds successfully (npm install + tsc)
+#
+#   2. rube-mcp (FALLBACK, soft-isolation, PR #152):
+#      The vanilla @composio/rube-mcp. Sees every Composio connection your
+#      API key can reach. Relies on agent self-discipline (system prompt +
+#      agent spec) for scope correctness. Used when the wrapper build fails
+#      or SUPABASE_SERVICE_ROLE_KEY is unset.
+#
+# Force the fallback by setting MCP_USE_RUBE_FALLBACK=1.
 #
 # Overwritten every boot so config drift (manual edits via shell) doesn't
-# persist. .credentials.json (OAuth) lives in the same dir and is untouched.
-if [ -n "${COMPOSIO_API_KEY:-}" ]; then
+# persist. .credentials.json (OAuth) is a separate file in the same dir.
+
+WRAPPER_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-composio-admin"
+WRAPPER_BUILT=0
+
+if [ -n "${COMPOSIO_API_KEY:-}" ] \
+   && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
+   && [ "${MCP_USE_RUBE_FALLBACK:-0}" != "1" ] \
+   && [ -d "$WRAPPER_DIR/src" ]; then
+  echo "[gateway] Building mcp-composio-admin wrapper from $WRAPPER_DIR..."
+  if (cd "$WRAPPER_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    WRAPPER_BUILT=1
+    echo "[gateway] Wrapper built — registering as hard-isolation MCP."
+  else
+    echo "[gateway] WARNING: wrapper build FAILED — falling back to rube-mcp."
+  fi
+fi
+
+if [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -eq 1 ]; then
+  mkdir -p /root/.claude
+  cat > /root/.claude/settings.json <<JSON
+{
+  "mcpServers": {
+    "composio-admin": {
+      "command": "node",
+      "args": ["$WRAPPER_DIR/dist/index.js"],
+      "env": {
+        "COMPOSIO_API_KEY":           "${COMPOSIO_API_KEY}",
+        "NEXT_PUBLIC_SUPABASE_URL":   "${NEXT_PUBLIC_SUPABASE_URL:-}",
+        "SUPABASE_SERVICE_ROLE_KEY":  "${SUPABASE_SERVICE_ROLE_KEY}",
+        "NEXUS_OPERATOR_USER_ID":     "${NEXUS_OPERATOR_USER_ID:-}",
+        "ALLOWED_USER_IDS":           "${ALLOWED_USER_IDS:-}"
+      }
+    }
+  }
+}
+JSON
+  echo "[gateway] Wrote MCP config: composio-admin (hard-isolation, admin-scope only)."
+elif [ -n "${COMPOSIO_API_KEY:-}" ]; then
   mkdir -p /root/.claude
   cat > /root/.claude/settings.json <<JSON
 {
@@ -74,15 +123,12 @@ if [ -n "${COMPOSIO_API_KEY:-}" ]; then
   }
 }
 JSON
-  echo "[gateway] Wrote MCP config to /root/.claude/settings.json (composio rube-mcp active)."
+  echo "[gateway] Wrote MCP config: rube-mcp (soft-isolation fallback)."
+  echo "[gateway]   To enable hard-isolation, set SUPABASE_SERVICE_ROLE_KEY in env and ensure /repo/services/mcp-composio-admin/ is present + buildable."
 else
-  # Without COMPOSIO_API_KEY the rube-mcp can't authenticate — don't register a
-  # broken MCP entry. Claude still runs with just its built-in tools.
   echo "[gateway] WARNING: COMPOSIO_API_KEY not set — Composio MCP NOT registered."
   echo "[gateway]          Platform-copilot will lack Composio tools (Vercel, GitHub, Slack, Stripe, etc.)."
   echo "[gateway]          Set COMPOSIO_API_KEY in Coolify env and redeploy to activate."
-  # Remove any stale settings.json left from a prior boot WITH the key set
-  # (volume persistence + redeploy without the key = stale config).
   if [ -f /root/.claude/settings.json ]; then
     echo "[gateway]          Removing stale /root/.claude/settings.json."
     rm -f /root/.claude/settings.json
