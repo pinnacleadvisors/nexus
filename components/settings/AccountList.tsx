@@ -16,6 +16,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useClerk } from '@clerk/nextjs'
 import { CheckCircle2, Loader2, Plug, Power, AlertCircle, X, KeyRound, ExternalLink } from 'lucide-react'
 import { OAUTH_PROVIDERS, type OAuthCategory, type OAuthProvider } from '@/lib/oauth/providers'
+import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 
 interface ConnectedAccount {
   id:           string
@@ -182,9 +183,27 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
     }
   }
 
+  // Filter providers by the current scope's policy.
+  //   - Admin scope: 'dual' + 'admin-only' (platform-management tokens)
+  //   - Shared scope (null): 'dual' + 'shared-only' (shared business resources)
+  //   - Per-business scope: 'per-business' (the per-audience platforms; Vercel/
+  //     GitHub/etc. are reached via the Shared fallback chain, not here)
+  // Defaults to 'per-business' when scopePolicy is unset (safest).
+  const currentScope: 'admin' | 'shared' | 'business' =
+    businessSlug === ADMIN_SCOPE ? 'admin'
+    : businessSlug             ? 'business'
+                               : 'shared'
+
+  const visibleProviders = OAUTH_PROVIDERS.filter(p => {
+    const policy = p.scopePolicy ?? 'per-business'
+    if (currentScope === 'admin')    return policy === 'dual' || policy === 'admin-only'
+    if (currentScope === 'shared')   return policy === 'dual' || policy === 'shared-only'
+    /* business */                   return policy === 'per-business'
+  })
+
   const connectedByPlatform = new Map(accounts.map(a => [a.platform, a]))
   const groupedProviders: Record<OAuthCategory, OAuthProvider[]> = {} as never
-  for (const p of OAUTH_PROVIDERS) {
+  for (const p of visibleProviders) {
     (groupedProviders[p.category] ??= []).push(p)
   }
 

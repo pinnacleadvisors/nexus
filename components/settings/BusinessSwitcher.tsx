@@ -15,18 +15,24 @@
 
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { ChevronsUpDown, Check, Briefcase, Globe2 } from 'lucide-react'
+import { ChevronsUpDown, Check, Briefcase, Globe2, ShieldCheck } from 'lucide-react'
 import type { BusinessRow } from '@/lib/business/types'
+import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 
 interface Props {
   businesses:   BusinessRow[]
   selectedSlug: string | null
+  /** When true, the Admin scope option is rendered. Pass true only for the
+   *  platform owner (gated by ALLOWED_USER_IDS in the parent server component). */
+  showAdmin?:   boolean
 }
 
-const DEFAULT_LABEL = 'Default'
-const DEFAULT_HINT  = 'Shared across businesses'
+const SHARED_LABEL = 'Shared'
+const SHARED_HINT  = 'Shared across businesses (fallback chain)'
+const ADMIN_LABEL  = 'Admin'
+const ADMIN_HINT   = 'Nexus platform — distinct tokens from Shared'
 
-export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
+export default function BusinessSwitcher({ businesses, selectedSlug, showAdmin = false }: Props) {
   const router    = useRouter()
   const pathname  = usePathname() ?? '/settings/accounts'
   const params    = useSearchParams()
@@ -45,9 +51,11 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
   }, [open])
 
   const selected = useMemo(() => {
-    if (!selectedSlug) return null
+    if (!selectedSlug || selectedSlug === ADMIN_SCOPE) return null
     return businesses.find(b => b.slug === selectedSlug) ?? null
   }, [businesses, selectedSlug])
+
+  const isAdminSelected = selectedSlug === ADMIN_SCOPE
 
   function pick(slug: string | null) {
     setOpen(false)
@@ -90,15 +98,17 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
           <div
             className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
             style={{
-              background: selected
+              background: selected || isAdminSelected
                 ? 'linear-gradient(135deg, rgba(108,99,255,0.35), rgba(108,99,255,0.10))'
                 : 'linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02))',
               border:     '1px solid rgba(255,255,255,0.08)',
             }}
           >
             {selected
-              ? <Briefcase size={13} style={{ color: '#a8a3ff' }} />
-              : <Globe2    size={13} style={{ color: '#9090b0' }} />}
+              ? <Briefcase  size={13} style={{ color: '#a8a3ff' }} />
+              : isAdminSelected
+                ? <ShieldCheck size={13} style={{ color: '#a8a3ff' }} />
+                : <Globe2   size={13} style={{ color: '#9090b0' }} />}
           </div>
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.14em]" style={{ color: '#55556a' }}>
@@ -106,10 +116,10 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
             </div>
             <div className="flex items-baseline gap-2 min-w-0">
               <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
-                {selected ? selected.name : DEFAULT_LABEL}
+                {selected ? selected.name : isAdminSelected ? ADMIN_LABEL : SHARED_LABEL}
               </span>
               <span className="text-[11px] font-mono truncate hidden sm:inline" style={{ color: '#6a6a86' }}>
-                {selected ? selected.slug : 'shared'}
+                {selected ? selected.slug : isAdminSelected ? '_admin' : 'shared'}
               </span>
             </div>
           </div>
@@ -131,10 +141,18 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
               '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -16px rgba(0,0,0,0.6), 0 0 0 1px rgba(108,99,255,0.10)',
           }}
         >
+          {showAdmin && (
+            <Option
+              kind="admin"
+              active={isAdminSelected}
+              onClick={() => pick(ADMIN_SCOPE)}
+            />
+          )}
           <Option
             kind="default"
-            active={!selectedSlug}
+            active={!selectedSlug && !isAdminSelected}
             onClick={() => pick(null)}
+            divider={showAdmin}
           />
           {empty ? (
             <div
@@ -167,16 +185,17 @@ export default function BusinessSwitcher({ businesses, selectedSlug }: Props) {
 function Option({
   kind, business, active, onClick, divider,
 }: {
-  kind:      'default' | 'business'
+  kind:      'default' | 'business' | 'admin'
   business?: BusinessRow
   active:    boolean
   onClick:   () => void
   divider?:  boolean
 }) {
   const isDefault = kind === 'default'
-  const name = isDefault ? DEFAULT_LABEL : (business?.name ?? '')
-  const slug = isDefault ? 'shared'      : (business?.slug ?? '')
-  const hint = isDefault ? DEFAULT_HINT  : (business?.niche ?? '')
+  const isAdmin   = kind === 'admin'
+  const name = isAdmin   ? ADMIN_LABEL  : isDefault ? SHARED_LABEL : (business?.name ?? '')
+  const slug = isAdmin   ? '_admin'     : isDefault ? 'shared'     : (business?.slug ?? '')
+  const hint = isAdmin   ? ADMIN_HINT   : isDefault ? SHARED_HINT  : (business?.niche ?? '')
   return (
     <button
       type="button"
@@ -200,9 +219,11 @@ function Option({
           border: '1px solid rgba(255,255,255,0.08)',
         }}
       >
-        {isDefault
-          ? <Globe2 size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />
-          : <Briefcase size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />}
+        {isAdmin
+          ? <ShieldCheck size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />
+          : isDefault
+            ? <Globe2 size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />
+            : <Briefcase size={13} style={{ color: active ? '#a8a3ff' : '#9090b0' }} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 min-w-0">

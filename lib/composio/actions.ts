@@ -18,6 +18,7 @@
 import { executeAction, ComposioError } from './client'
 import { createServerClient } from '@/lib/supabase'
 import { getProvider } from '@/lib/oauth/providers'
+import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 
 export class ConnectedAccountMissingError extends Error {
   platform: string
@@ -64,8 +65,11 @@ async function findActiveAccount(
 
   if (exact.data && exact.data.length > 0) return exact.data[0]
 
-  // Fallback to user-default (business_slug IS NULL) only if a business slug was requested.
-  if (businessSlug) {
+  // Fallback to user-default (business_slug IS NULL) only if a business slug
+  // was requested AND it's not the admin sentinel. Admin scope is strict
+  // by design — falling through would let platform-copilot accidentally
+  // use a customer-context token.
+  if (businessSlug && businessSlug !== ADMIN_SCOPE) {
     type DefaultChain = { eq: (c: string, v: unknown) => DefaultChain; is: (c: string, v: null) => DefaultChain; limit: (n: number) => Promise<{ data: AccountRow[] | null }> }
     const fallback = await ((db.from('connected_accounts' as never) as unknown as {
       select: (cols: string) => DefaultChain
@@ -105,6 +109,53 @@ export async function executeBusinessAction(input: ExecuteBusinessActionInput): 
   })
 
   // Fire-and-forget last_used_at bump; never block the action result on this.
+  const db = createServerClient()
+  if (db) {
+    void (db.from('connected_accounts' as never) as unknown as {
+      update: (p: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> }
+    }).update({ last_used_at: new Date().toISOString() }).eq('id', account.id)
+  }
+
+  return result
+}
+
+/**
+ * Execute a Composio action in the **Admin scope** — used by the platform-
+ * copilot for platform-management work (Vercel deploys of the nexus project,
+ * GitHub operations on pinnacleadvisors/nexus, #ops Slack alerts, etc.).
+ *
+ * Resolution is strict — ONLY business_slug='_admin' rows. NEVER falls
+ * through to NULL or per-business. That's the safety guarantee: platform-
+ * copilot can't accidentally use a customer-context token, and a misbehaving
+ * business agent can't accidentally reach an admin token by passing
+ * businessSlug='_admin' (the executeBusinessAction path doesn't even look
+ * at admin rows).
+ */
+export interface ExecuteAdminActionInput {
+  userId:    string
+  platform:  string
+  action:    string
+  arguments: Record<string, unknown>
+  timeoutMs?: number
+}
+
+export async function executeAdminAction(input: ExecuteAdminActionInput): Promise<unknown> {
+  if (!getProvider(input.platform)) {
+    throw new Error(`Unknown platform: ${input.platform}`)
+  }
+
+  const account = await findActiveAccount(input.userId, ADMIN_SCOPE, input.platform)
+  if (!account) {
+    throw new ConnectedAccountMissingError(input.platform, ADMIN_SCOPE)
+  }
+
+  const result = await executeAction({
+    action:             input.action,
+    connectedAccountId: account.composio_account_id,
+    arguments:          input.arguments,
+    timeoutMs:          input.timeoutMs,
+  })
+
   const db = createServerClient()
   if (db) {
     void (db.from('connected_accounts' as never) as unknown as {

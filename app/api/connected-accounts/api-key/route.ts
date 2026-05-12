@@ -23,7 +23,7 @@ import { audit } from '@/lib/audit'
 import { encrypt } from '@/lib/crypto'
 import { createServerClient } from '@/lib/supabase'
 import { getProvider } from '@/lib/oauth/providers'
-import { isBusinessSlug } from '@/lib/claw/business-client'
+import { isValidScope } from '@/lib/claw/business-client'
 
 export const runtime = 'nodejs'
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   }
 
   const businessSlug = body.businessSlug?.trim() || null
-  if (businessSlug && !isBusinessSlug(businessSlug)) {
+  if (businessSlug && !isValidScope(businessSlug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
 
@@ -139,7 +139,7 @@ export async function DELETE(req: NextRequest) {
   if (!provider) return NextResponse.json({ error: 'unknown platform' }, { status: 400 })
 
   const businessSlug = body.businessSlug?.trim() || null
-  if (businessSlug && !isBusinessSlug(businessSlug)) {
+  if (businessSlug && !isValidScope(businessSlug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
 

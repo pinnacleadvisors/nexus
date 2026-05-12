@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
-import { isBusinessSlug } from '@/lib/claw/business-client'
+import { isValidScope } from '@/lib/claw/business-client'
 
 export const runtime = 'nodejs'
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (!session.userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const businessSlug = new URL(req.url).searchParams.get('businessSlug')
-  if (businessSlug && !isBusinessSlug(businessSlug)) {
+  if (businessSlug && !isValidScope(businessSlug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
 
