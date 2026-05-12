@@ -26,6 +26,28 @@ import { createServerClient } from '@/lib/supabase'
 
 export const BUSINESS_KIND_PREFIX = 'business:'
 
+/**
+ * Sentinel value for the **Admin scope** on `connected_accounts.business_slug`.
+ * Distinct from a real business slug (leading underscore fails the
+ * `isBusinessSlug` regex) and from the Shared scope (which is `NULL`).
+ *
+ * Why three scopes (Admin / Shared / per-business):
+ *   - Admin (`_admin`): platform-management connections (Vercel project token
+ *     scoped to nexus, GitHub fine-grained PAT on pinnacleadvisors/nexus,
+ *     Slack #ops bot). Read by the platform-copilot ONLY. Never falls
+ *     through to per-business agents — that would let a business agent
+ *     touch your GitHub or Vercel project.
+ *   - Shared (`NULL`): shared business resources (Stripe shared account,
+ *     shared Gmail/Canva, etc.). Falls through from per-business when a
+ *     business hasn't connected its own copy.
+ *   - Per-business (`'<slug>'`): scoped to one business (Twitter audience,
+ *     ConvertKit list, etc.). Never visible to other businesses or to admin.
+ *
+ * See lib/oauth/providers.ts `scopePolicy` field for which providers appear
+ * in which scope's picker UI.
+ */
+export const ADMIN_SCOPE = '_admin'
+
 export interface BusinessClawConfig {
   gatewayUrl:    string
   bearerToken:   string
@@ -34,7 +56,19 @@ export interface BusinessClawConfig {
 }
 
 export function isBusinessSlug(slug: string): boolean {
+  if (slug === ADMIN_SCOPE) return false   // sentinel — not a business slug
   return /^[a-z0-9][a-z0-9-]{1,60}$/.test(slug)
+}
+
+export function isAdminScope(slug: string): boolean {
+  return slug === ADMIN_SCOPE
+}
+
+/** Accepts either a valid business slug OR the admin sentinel. Use this
+ *  in route validators that should permit both. Use `isBusinessSlug` when
+ *  you need to reject the admin sentinel specifically. */
+export function isValidScope(slug: string): boolean {
+  return isBusinessSlug(slug) || isAdminScope(slug)
 }
 
 export function businessKind(slug: string): string {

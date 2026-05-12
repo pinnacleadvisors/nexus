@@ -88,6 +88,22 @@ export interface OAuthProvider {
    * Higgsfield API key just shares quota).
    */
   sharePolicy?: 'shareable' | 'per-business'
+  /**
+   * Which scope picker(s) this provider appears in at /settings/accounts:
+   *   - 'per-business': only when a business is selected (per-audience
+   *     platforms like Twitter, Instagram, Gmail per-business identity).
+   *   - 'shared-only':  only Shared scope. Operator's higher-tier
+   *     subscription powers all businesses via fallback (Shopify Plus,
+   *     Canva Pro, shared ConvertKit list).
+   *   - 'dual':         both Admin AND Shared. Same provider, two separate
+   *     OAuth connections with different token scopes (Vercel, GitHub,
+   *     Stripe, Slack — admin token = narrow/read-everywhere; shared token =
+   *     broader/write for business ops).
+   *   - 'admin-only':   only Admin. Reserved for platform-infrastructure
+   *     providers with no business-facing purpose.
+   * Defaults to 'per-business' (safest) when unset.
+   */
+  scopePolicy?: 'per-business' | 'shared-only' | 'dual' | 'admin-only'
 }
 
 export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
@@ -107,6 +123,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['marketing', 'content', 'agency'],
     sharePolicy: 'per-business',
+    scopePolicy: 'per-business',
     manualSetup: {
       reason: 'Composio managed credentials for Twitter were removed 2026-02-12. Provide your own OAuth client_id + client_secret + bearer token from developer.twitter.com.',
       credentialsUrl: 'https://developer.twitter.com/en/portal/dashboard',
@@ -125,6 +142,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['b2b', 'saas', 'agency'],
     sharePolicy: 'per-business',
+    scopePolicy: 'per-business',
   },
   {
     id: 'instagram',
@@ -139,6 +157,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['ecommerce', 'creator', 'agency'],
     sharePolicy: 'per-business',
+    scopePolicy: 'per-business',
   },
   {
     id: 'tiktok',
@@ -152,6 +171,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['creator', 'ecommerce'],
     sharePolicy: 'per-business',
+    scopePolicy: 'per-business',
     manualSetup: {
       reason: 'TikTok requires your own developer app + client_key + client_secret in Composio.',
       credentialsUrl: 'https://developers.tiktok.com/apps',
@@ -170,6 +190,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['creator', 'content'],
     sharePolicy: 'per-business',
+    scopePolicy: 'per-business',
   },
 
   // ── Email ───────────────────────────────────────────────────────────────
@@ -186,7 +207,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GMAIL_CREATE_EMAIL_DRAFT',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
   {
     id: 'outlook',
     name: 'Outlook',
@@ -199,7 +220,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'OUTLOOK_OUTLOOK_CREATE_DRAFT',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
   {
     // Non-Composio API-key platform. ConvertKit (recently rebranded "Kit") V4
     // API uses a per-account bearer token; the agent calls REST directly. Key
@@ -213,7 +234,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     actions: [],
     featuredFor: ['creator', 'content', 'marketing'],
     sharePolicy: 'per-business',
-    apiKeySetup: {
+    scopePolicy: 'per-business',    apiKeySetup: {
       instructions: 'ConvertKit dashboard → Settings → Advanced → API & Webhooks → V4 API Keys → Create new key. Paste the secret token below.',
       credentialsUrl: 'https://app.convertkit.com/account_settings/advanced_settings',
       envVar: 'CONVERTKIT_API_KEY',
@@ -233,7 +254,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'SLACK_LIST_ALL_CHANNELS',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'dual',  },
   {
     id: 'discord',
     name: 'Discord',
@@ -246,7 +267,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['creator', 'community'],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
 
   // ── Productivity ────────────────────────────────────────────────────────
   {
@@ -261,7 +282,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'NOTION_QUERY_DATABASE',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
   {
     id: 'google_docs',
     name: 'Google Docs',
@@ -274,7 +295,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
   {
     id: 'google_sheets',
     name: 'Google Sheets',
@@ -287,7 +308,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLESHEETS_INSERT_DIMENSION',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
 
   // ── Developer ───────────────────────────────────────────────────────────
   {
@@ -303,7 +324,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['saas', 'developer'],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'dual',  },
   {
     id: 'linear',
     name: 'Linear',
@@ -317,7 +338,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['saas', 'developer'],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
   {
     // Non-Composio API-key platform. Cloudflare's official DNS MCP authenticates
     // via a zone-scoped API token (no IP allowlist), making it usable from any
@@ -332,7 +353,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     actions: [],
     featuredFor: ['saas', 'ecommerce', 'creator', 'agency'],
     sharePolicy: 'per-business',
-    apiKeySetup: {
+    scopePolicy: 'per-business',    apiKeySetup: {
       instructions: 'Cloudflare dashboard → My Profile → API Tokens → Create Token → use the "Edit zone DNS" template. Restrict to the specific zone(s) this business owns. Copy the secret token (only shown once) and paste below.',
       credentialsUrl: 'https://dash.cloudflare.com/profile/api-tokens',
       envVar: 'CLOUDFLARE_API_TOKEN',
@@ -359,7 +380,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     actions: [],
     featuredFor: ['saas', 'ecommerce', 'creator', 'agency'],
     sharePolicy: 'shareable',
-    apiKeySetup: {
+    scopePolicy: 'dual',    apiKeySetup: {
       instructions: 'Vercel dashboard → Account Settings → Tokens → Create Token. Set scope to your team (not "Personal Account") so the agent can deploy to per-business projects under that team. Copy the token immediately — Vercel only shows it once.',
       credentialsUrl: 'https://vercel.com/account/tokens',
       envVar: 'VERCEL_TOKEN',
@@ -392,7 +413,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['saas', 'ecommerce'],
     sharePolicy: 'shareable',
-  },
+    scopePolicy: 'dual',  },
   {
     id: 'shopify',
     name: 'Shopify',
@@ -406,7 +427,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['ecommerce'],
     sharePolicy: 'per-business',
-    manualSetup: {
+    scopePolicy: 'shared-only',    manualSetup: {
       reason: 'Shopify auth needs the shop subdomain + your custom app credentials (admin API access token).',
       credentialsUrl: 'https://help.shopify.com/en/manual/apps/app-types/custom-apps',
     },
@@ -426,7 +447,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     featuredFor: ['marketing', 'agency', 'creator'],
     sharePolicy: 'shareable',
-  },
+    scopePolicy: 'shared-only',  },
 
   // ── Analytics ───────────────────────────────────────────────────────────
   {
@@ -442,7 +463,7 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       'GOOGLE_ANALYTICS_RUN_REALTIME_REPORT',
     ],
     sharePolicy: 'per-business',
-  },
+    scopePolicy: 'per-business',  },
 ] as const
 
 export function getProvider(id: string): OAuthProvider | undefined {

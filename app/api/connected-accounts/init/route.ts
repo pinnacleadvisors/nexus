@@ -26,7 +26,7 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { createConnectionLink, getAuthConfigId, ComposioError } from '@/lib/composio/client'
 import { getProvider } from '@/lib/oauth/providers'
-import { isBusinessSlug } from '@/lib/claw/business-client'
+import { isValidScope } from '@/lib/claw/business-client'
 
 export const runtime = 'nodejs'
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unknown platform' }, { status: 400 })
   }
   const businessSlug = body.businessSlug?.trim() || null
-  if (businessSlug && !isBusinessSlug(businessSlug)) {
+  if (businessSlug && !isValidScope(businessSlug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
   }
 

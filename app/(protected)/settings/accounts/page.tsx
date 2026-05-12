@@ -21,6 +21,15 @@ import BusinessSwitcher from '@/components/settings/BusinessSwitcher'
 import { listBusinessesForUser } from '@/lib/business/db'
 import type { BusinessRow } from '@/lib/business/types'
 
+// Owner-only — the Admin scope picker only renders for users in ALLOWED_USER_IDS.
+// When the env var is unset (single-user mode), every authenticated user is the
+// owner. Mirrors the proxy.ts owner gate.
+function isPlatformOwner(userId: string): boolean {
+  const raw = process.env.ALLOWED_USER_IDS?.trim()
+  if (!raw) return true
+  return raw.split(',').map(s => s.trim()).filter(Boolean).includes(userId)
+}
+
 export const dynamic = 'force-dynamic'
 
 export default async function AccountsSettingsPage(props: { searchParams: Promise<{ businessSlug?: string }> }) {
@@ -31,9 +40,13 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
   // gracefully fall back to an empty list — the switcher renders "Default"
   // only and AccountList still works.
   let businesses: BusinessRow[] = []
+  let showAdmin = false
   try {
     const { userId } = await auth()
-    if (userId) businesses = await listBusinessesForUser(userId)
+    if (userId) {
+      businesses = await listBusinessesForUser(userId)
+      showAdmin  = isPlatformOwner(userId)
+    }
   } catch {
     businesses = []
   }
@@ -100,7 +113,7 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
               '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
           }}
         >
-          <BusinessSwitcher businesses={businesses} selectedSlug={selectedSlug} />
+          <BusinessSwitcher businesses={businesses} selectedSlug={selectedSlug} showAdmin={showAdmin} />
           <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
             <ScopeChip selectedSlug={selectedSlug} selectedName={selectedBiz?.name ?? null} />
           </div>
