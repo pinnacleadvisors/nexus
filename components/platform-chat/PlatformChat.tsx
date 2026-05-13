@@ -37,11 +37,7 @@ interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag:
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-<<<<<<< feat/chat-poll-with-deltas
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
-=======
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
->>>>>>> main
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 

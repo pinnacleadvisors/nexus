@@ -1,27 +1,29 @@
 'use client'
 
 /**
- * BusinessChat — /businesses/[slug]/chat body (Phase 5a, MVP).
+ * BusinessChat — /businesses/[slug]/chat body.
  *
- * Single rolling chat per business — no sidebar yet (multi-session for
- * per-business is a follow-up; the chat_sessions schema already supports
- * `scope='business:<slug>'`, just no UI to manage multiple).
+ * Phase 5b — full parity with PlatformChat. Per-business mirror of the
+ * platform copilot:
+ *   - Multi-session sidebar (scope='business:<slug>')
+ *   - Approval cards (Phase 3 inheritance)
+ *   - Streaming partial text bubble (Phase 2a inheritance)
+ *   - Tool-call cards (Phase 2b inheritance)
+ *   - Persistence + delete via per-business sessions API
  *
- * Reuses the platform chat's primitives:
- *   - ApprovalCard for inline approval gates
- *   - Approval reply protocol via lib/chat/approval
- *   - Job enqueue + poll loop
- *
- * Differences from PlatformChat (Phase 5b/full-parity will close these):
- *   - No SessionSidebar (single rolling chat per business)
- *   - No multi-chat / delete UI
- *   - Hits /api/businesses/<slug>/chat instead of /api/platform-chat
+ * Differences from PlatformChat:
+ *   - Hits /api/businesses/<slug>/chat and /api/businesses/<slug>/chat/sessions/*
+ *   - Header shows the business name + scope hint
+ *   - Empty-state copy mentions this business's connections
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as TerminalIcon, Copy, Check } from 'lucide-react'
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
+import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
+import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
+import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 interface Message {
   role:                  'user' | 'assistant'
@@ -29,12 +31,19 @@ interface Message {
   durationMs?:           number
   approval_requests?:    ApprovalRequest[]
   approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
+  tool_calls?:           ToolCall[]
 }
 
-interface EnqueueResp { ok: true; jobId: string; sessionId: string }
-interface ErrResp     { ok: false; error: string; code: string }
-interface PollResp    { ok: true; status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number }
-interface MsgRow      { id: string; role: 'user'|'assistant'|'system'; content: string; metadata?: { approval_requests?: ApprovalRequest[]; durationMs?: number } }
+interface EnqueueOk   { ok: true;  jobId: string; sessionId: string }
+interface EnqueueFail { ok: false; error: string; code: string }
+type EnqueueResponse = EnqueueOk | EnqueueFail
+
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number }
+interface PollFail   { ok: false; error: string; code: string }
+type PollResponse = PollOk | PollFail
+
+interface SessionsResp { ok: true; sessions: SessionSummary[] }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
@@ -45,61 +54,84 @@ interface Props {
 }
 
 export default function BusinessChat({ slug, name }: Props) {
-  const [messages, setMessages]     = useState<Message[]>([])
-  const [input,    setInput]        = useState('')
-  const [busy,     setBusy]         = useState(false)
-  const [error,    setError]        = useState<string | null>(null)
-  const [sessionId, setSessionId]   = useState<string | null>(null)
-  const cancelRef = useRef(false)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input,    setInput]    = useState('')
+  const [busy,     setBusy]     = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
+  const [partial,  setPartial]  = useState<string>('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef(false)
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy])
+  // Multi-session state — mirrors PlatformChat but talks to the
+  // per-business sessions API so the scope filter is 'business:<slug>'.
+  const [sessions,        setSessions]        = useState<SessionSummary[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(true)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
 
-  // On mount, fetch the most-recent business-scope session for this slug
-  // and its history. The first send() also auto-resolves a session if none
-  // exists yet, so this is a "warm-start if there's anything to warm" step.
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch('/api/platform-chat/sessions', { cache: 'no-store' })
-        if (!res.ok) return
-        const j = await res.json() as { ok: true; sessions: Array<{ id: string; scope?: string; agent_slug?: string; last_message_at?: string; title?: string }> } | { ok: false }
-        if (!j.ok || cancelled) return
-        // platform-chat/sessions returns scope='platform' only. We need a
-        // business-scope listing. Since we don't yet have a per-business
-        // sessions endpoint, query the platform endpoint and skip — the
-        // enqueue route will resolve/create on first send. Net result: a
-        // brand-new tab starts fresh, history hydrates after first turn.
-        // Follow-up: add GET /api/businesses/[slug]/chat/sessions for full
-        // history hydration on mount.
-      } catch { /* swallow */ }
-    })()
-    return () => { cancelled = true }
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
+
+  // Reload session list — called on mount + after create/delete.
+  const reloadSessions = useCallback(async () => {
+    setSessionsLoading(true)
+    try {
+      const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/sessions`, { cache: 'no-store' })
+      if (res.status === 401) {
+        const here = window.location.pathname + window.location.search
+        window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+        return
+      }
+      const j = (await res.json()) as SessionsResp | { ok: false; error: string }
+      if (j.ok) setSessions(j.sessions)
+    } catch { /* swallow — sidebar shows empty state */ }
+    finally { setSessionsLoading(false) }
   }, [slug])
+  useEffect(() => { void reloadSessions() }, [reloadSessions])
 
-  // Once we have a sessionId (post-first-turn), hydrate history.
+  // Load history when the operator picks a session.
   useEffect(() => {
-    if (!sessionId) return
+    if (!activeSessionId) { setMessages([]); return }
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/platform-chat/sessions/${sessionId}/messages`, { cache: 'no-store' })
+        const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/sessions/${activeSessionId}/messages`, { cache: 'no-store' })
         if (!res.ok) return
-        const j = await res.json() as { ok: true; messages: MsgRow[] } | { ok: false }
+        const j = (await res.json()) as MessagesResp | { ok: false }
         if (!j.ok || cancelled) return
         setMessages(j.messages.map(m => ({
           role:              m.role === 'system' ? 'assistant' : m.role,
           content:           m.content,
           durationMs:        m.metadata?.durationMs,
           approval_requests: m.metadata?.approval_requests,
+          tool_calls:        m.metadata?.tool_calls,
         })))
+        setError(null)
       } catch { /* swallow */ }
     })()
     return () => { cancelled = true }
-  }, [sessionId])
+  }, [activeSessionId, slug])
 
-  function handleCancel() { if (busy) cancelRef.current = true }
+  function handleNewChat() {
+    setActiveSessionId(null)
+    setMessages([])
+    setError(null)
+  }
+
+  async function handleDeleteSession(sessionId: string) {
+    try {
+      const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/sessions/${sessionId}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) {
+        setError('Failed to delete chat — please retry.')
+        return
+      }
+      if (sessionId === activeSessionId) {
+        setActiveSessionId(null)
+        setMessages([])
+      }
+      await reloadSessions()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'delete failed')
+    }
+  }
 
   function handleApproval(approval: ApprovalRequest, approvedItemIds: string[]) {
     const reply = buildApprovalReply(approval.approval_id, approvedItemIds, approval.items.map(it => it.id))
@@ -127,150 +159,333 @@ export default function BusinessChat({ slug, name }: Props) {
     setTimeout(() => { void send(reply) }, 30)
   }
 
+  function handleCancel() {
+    if (!busy) return
+    cancelRef.current = true
+  }
+
   async function send(forcedText?: string) {
     const text = (forcedText ?? input).trim()
     if (!text || busy) return
     setError(null)
     cancelRef.current = false
+    setPartial('')
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setInput('')
     setBusy(true)
+
     try {
       const enqRes = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ messages: nextMessages, sessionId }),
+        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
         return
       }
-      const enq = (await enqRes.json()) as EnqueueResp | ErrResp
+      const enq = (await enqRes.json()) as EnqueueResponse
       if (!enq.ok) { setError(enq.error); return }
-      if (!sessionId) setSessionId(enq.sessionId)
-      const final = await pollUntilDone(enq.jobId, enq.sessionId)
-      if (final.cancelled) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '_Run cancelled by operator._' }])
+      if (!activeSessionId) setActiveSessionId(enq.sessionId)
+
+      const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      if (finalResult.cancelled) {
+        setMessages(prev => [...prev, {
+          role:    'assistant',
+          content: '_Run cancelled by operator. The gateway job continues server-side and will finish silently — its cost still applies (server-side cancel is a follow-up)._',
+        }])
+        void reloadSessions()
         return
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: final.text, durationMs: final.durationMs, approval_requests: final.approval_requests }])
+      setMessages(prev => [...prev, {
+        role:               'assistant',
+        content:            finalResult.text,
+        durationMs:         finalResult.durationMs,
+        approval_requests:  finalResult.approval_requests,
+        tool_calls:         finalResult.tool_calls,
+      }])
+      setPartial('')
+      void reloadSessions()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'network error')
+      setError(e instanceof Error ? e.message : 'network error — check your connection and try again')
     } finally {
       setBusy(false)
     }
   }
 
-  async function pollUntilDone(jobId: string, sid: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; cancelled?: boolean }> {
+  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; cancelled?: boolean }> {
     const start = Date.now()
-    const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sid)}`
+    const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
-      if (cancelRef.current) return { text: '', durationMs: Date.now() - start, cancelled: true }
+      if (cancelRef.current) {
+        return { text: '', durationMs: Date.now() - start, cancelled: true }
+      }
       const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/poll?${qs}`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
-        throw new Error('session expired')
+        throw new Error('session expired during poll')
       }
-      const j = (await res.json()) as PollResp | ErrResp
+      const j = (await res.json()) as PollResponse
       if (!j.ok) throw new Error(j.error)
-      if (j.status === 'done') return { text: (j.text ?? '').trim() || '(empty response)', durationMs: j.durationMs ?? (Date.now() - start), approval_requests: j.approval_requests }
-      if (j.status === 'error') throw new Error(j.jobError ?? 'gateway error')
+      if (j.status === 'done') {
+        return {
+          text:               (j.text ?? '').trim() || '(empty response from the gateway — the agent finished without writing a final reply)',
+          durationMs:         j.durationMs ?? (Date.now() - start),
+          approval_requests:  j.approval_requests,
+          tool_calls:         j.tool_calls,
+        }
+      }
+      if (j.status === 'error') {
+        throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
+      }
+      if (j.partialText) setPartial(j.partialText)
     }
-    throw new Error(`timed out (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min)`)
+    throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the business gateway — check Coolify logs.`)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void send()
+    }
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] min-h-[500px]">
-      <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-        <div className="flex items-center gap-2 text-sm">
-          <Briefcase size={14} style={{ color: '#a8a3ff' }} />
-          <span style={{ color: '#e8e8f0' }}>{name}</span>
-          <span style={{ color: '#55556a' }}>—</span>
-          <span style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
-        </div>
-      </div>
+    <div className="flex h-[calc(100vh-200px)] min-h-[500px]">
+      <SessionSidebar
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        loading={sessionsLoading}
+        onSelect={setActiveSessionId}
+        onNew={handleNewChat}
+        onDelete={handleDeleteSession}
+      />
 
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-sm text-center py-12" style={{ color: '#9090b0' }}>
-            Ask this business&apos;s copilot anything — investigate revenue, propose changes, debug a workflow. Approval-gated actions show inline buttons.
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2 text-sm">
+            <Briefcase size={14} style={{ color: '#a8a3ff' }} />
+            <span style={{ color: '#e8e8f0' }}>{name} copilot</span>
+            <span style={{ color: '#55556a' }}>—</span>
+            <span style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
           </div>
-        )}
-        {messages.map((m, i) => {
-          const isUser = m.role === 'user'
-          return (
-            <div key={i} className={isUser ? 'flex justify-end' : 'flex justify-start'}>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          {messages.length === 0 && <EmptyState name={name} />}
+          {messages.map((m, i) => (
+            <MessageBubble key={i} message={m} onApprove={handleApproval} busy={busy} />
+          ))}
+          {busy && partial && (
+            <div className="flex justify-start">
               <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm" style={{
-                background: isUser
-                  ? 'linear-gradient(135deg, rgba(108,99,255,0.25), rgba(108,99,255,0.10))'
-                  : 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))',
-                border: isUser ? '1px solid rgba(108,99,255,0.30)' : '1px solid rgba(255,255,255,0.08)',
-                color: '#e8e8f0',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+                border:     '1px dashed rgba(168,163,255,0.30)',
+                color:      '#c8c8d8',
               }}>
-                {m.content && <div className="whitespace-pre-wrap">{m.content}</div>}
-                {!isUser && m.approval_requests?.map(req => (
-                  <ApprovalCard
-                    key={req.approval_id}
-                    request={req}
-                    resolution={m.approval_resolutions?.[req.approval_id] ?? null}
-                    disabled={busy}
-                    onSubmit={ids => handleApproval(req, ids)}
-                  />
-                ))}
-                {m.durationMs !== undefined && (
-                  <div className="mt-2 text-[10px]" style={{ color: '#55556a' }}>{(m.durationMs / 1000).toFixed(1)}s</div>
-                )}
+                <div className="text-[10px] uppercase tracking-[0.14em] mb-1" style={{ color: '#a8a3ff' }}>Streaming</div>
+                <div className="whitespace-pre-wrap">{partial}</div>
               </div>
             </div>
-          )
-        })}
-        {busy && (
-          <div className="flex items-center gap-2 text-sm" style={{ color: '#9090b0' }}>
-            <Loader2 size={14} className="animate-spin" />
-            <span>Working…</span>
-            <button onClick={handleCancel} className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#fca5a5' }}>
-              <XIcon size={10} /> Cancel
+          )}
+          {busy && <ThinkingIndicator onCancel={handleCancel} />}
+          {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+          <div ref={bottomRef} />
+        </div>
+
+        <div className="border-t p-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex gap-2 rounded-xl p-3" style={{
+            background:           'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+            border:               '1px solid rgba(255,255,255,0.10)',
+            backdropFilter:       'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+          }}>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={messages.length === 0 ? `Ask the ${name} copilot anything — Enter to send, Shift+Enter for newline` : 'Reply… (Enter to send)'}
+              rows={Math.min(8, Math.max(2, input.split('\n').length))}
+              disabled={busy}
+              className="flex-1 resize-none bg-transparent focus:outline-none text-sm font-mono"
+              style={{ color: '#e8e8f0' }}
+            />
+            <button
+              onClick={() => void send()}
+              disabled={busy || !input.trim()}
+              className="self-end px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+                border:     '1px solid rgba(108,99,255,0.30)',
+                color:      '#e8e8f0',
+              }}
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              <span>{busy ? 'Working…' : 'Send'}</span>
             </button>
           </div>
-        )}
-        {error && (
-          <div className="rounded-lg p-3 flex items-start gap-2" style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#fca5a5' }}>
-            <AlertTriangle size={14} className="mt-0.5" />
-            <div className="flex-1 text-sm">
-              <div className="font-semibold mb-1">Turn failed</div>
-              <div className="font-mono text-xs whitespace-pre-wrap">{error}</div>
-            </div>
+          <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
+            <TerminalIcon size={11} />
+            <span>Scoped to <span className="font-mono">business:{slug}</span> — connections resolve per-business first, then fall back to Shared.</span>
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="border-t p-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-        <div className="flex gap-2 rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))', border: '1px solid rgba(255,255,255,0.10)' }}>
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={messages.length === 0 ? `Ask the ${name} copilot anything…` : 'Reply… (Enter to send)'}
-            rows={Math.min(8, Math.max(2, input.split('\n').length))}
-            disabled={busy}
-            className="flex-1 resize-none bg-transparent focus:outline-none text-sm font-mono"
-            style={{ color: '#e8e8f0' }}
-          />
-          <button onClick={() => void send()} disabled={busy || !input.trim()} className="self-end px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-semibold disabled:opacity-40" style={{ background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))', border: '1px solid rgba(108,99,255,0.30)', color: '#e8e8f0' }}>
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            <span>{busy ? 'Working…' : 'Send'}</span>
-          </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function EmptyState({ name }: { name: string }) {
+  const examples = [
+    `"What did ${name} ship this week?"`,
+    `"Show me the last 3 errors from the ${name} Vercel project."`,
+    `"Draft a tweet from the ${name} Twitter — propose it first."`,
+    `"Why is the ${name} Stripe webhook 500-ing?"`,
+    `"Sync the ${name} domain DNS to Cloudflare — show the diff before applying."`,
+  ].join('\n')
+  return (
+    <div className="max-w-2xl mx-auto py-12 text-center space-y-4">
+      <Briefcase size={32} style={{ color: '#a8a3ff' }} className="mx-auto" />
+      <h2 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>
+        How can I help with {name}?
+      </h2>
+      <p className="text-sm" style={{ color: '#9090b0' }}>
+        I have read access to this business&apos;s connected accounts (and any Shared fallbacks).
+        I&apos;ll always propose a plan and ask for approval before making any change that mutates state.
+      </p>
+      <pre className="text-xs text-left p-3 rounded-lg overflow-x-auto" style={{
+        background: 'rgba(255,255,255,0.03)',
+        border:     '1px solid rgba(255,255,255,0.08)',
+        color:      '#9090b0',
+        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+      }}>
+        Try:{'\n'}{examples}
+      </pre>
+    </div>
+  )
+}
+
+function ThinkingIndicator({ onCancel }: { onCancel?: () => void }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div className="flex items-center gap-2 text-sm" style={{ color: '#9090b0' }}>
+      <Loader2 size={14} className="animate-spin" />
+      <span>Claude is working — checking this business&apos;s connections… ({elapsed}s)</span>
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          title="Cancel — stop polling. The gateway job continues server-side but its result is ignored."
+          className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+          style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#fca5a5' }}
+        >
+          <XIcon size={10} /> Cancel
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="rounded-lg p-3 flex items-start gap-2" style={{
+      background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#fca5a5',
+    }}>
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <div className="flex-1 text-sm">
+        <div className="font-semibold mb-1">Turn failed</div>
+        <div className="font-mono text-xs whitespace-pre-wrap">{message}</div>
+      </div>
+      <button onClick={onDismiss} className="text-xs underline opacity-80 hover:opacity-100">Dismiss</button>
+    </div>
+  )
+}
+
+function MessageBubble({ message, onApprove, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; busy: boolean }) {
+  const isUser = message.role === 'user'
+  return (
+    <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
+      <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm" style={{
+        background: isUser
+          ? 'linear-gradient(135deg, rgba(108,99,255,0.25), rgba(108,99,255,0.10))'
+          : 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))',
+        border: isUser ? '1px solid rgba(108,99,255,0.30)' : '1px solid rgba(255,255,255,0.08)',
+        color:  '#e8e8f0',
+      }}>
+        {!isUser && message.tool_calls && message.tool_calls.length > 0 && (
+          <div className="mb-2">
+            {message.tool_calls.map(call => <ToolCallCard key={call.id} call={call} />)}
+          </div>
+        )}
+        {message.content && <RenderedMarkdown text={message.content} />}
+        {!isUser && message.approval_requests?.map(req => (
+          <ApprovalCard
+            key={req.approval_id}
+            request={req}
+            resolution={message.approval_resolutions?.[req.approval_id] ?? null}
+            disabled={busy}
+            onSubmit={ids => onApprove(req, ids)}
+          />
+        ))}
+        {message.durationMs !== undefined && (
+          <div className="mt-2 text-[10px]" style={{ color: '#55556a' }}>
+            {(message.durationMs / 1000).toFixed(1)}s
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RenderedMarkdown({ text }: { text: string }) {
+  const blocks = splitFencedCode(text)
+  return (
+    <div className="space-y-2">
+      {blocks.map((b, i) => b.kind === 'code'
+        ? <CodeBlock key={i} code={b.body} lang={b.lang} />
+        : <p key={i} className="whitespace-pre-wrap">{b.body}</p>,
+      )}
+    </div>
+  )
+}
+
+function splitFencedCode(text: string): Array<{ kind: 'text' | 'code'; body: string; lang?: string }> {
+  const re = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
+  const out: Array<{ kind: 'text' | 'code'; body: string; lang?: string }> = []
+  let last = 0
+  let m
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push({ kind: 'text', body: text.slice(last, m.index) })
+    out.push({ kind: 'code', body: m[2], lang: m[1] || undefined })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) out.push({ kind: 'text', body: text.slice(last) })
+  return out.length > 0 ? out : [{ kind: 'text', body: text }]
+}
+
+function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const [copied, setCopied] = useState(false)
+  async function onCopy() {
+    try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* clipboard blocked */ }
+  }
+  return (
+    <div className="relative rounded-lg overflow-hidden" style={{ background: 'rgba(0,0,0,0.40)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex items-center justify-between px-3 py-1.5 text-[10px]" style={{ color: '#9090b0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <span className="font-mono uppercase tracking-wider">{lang || 'text'}</span>
+        <button onClick={onCopy} className="flex items-center gap-1 hover:opacity-100 opacity-70">
+          {copied ? <Check size={10} /> : <Copy size={10} />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs font-mono" style={{ color: '#e8e8f0' }}>{code}</pre>
     </div>
   )
 }

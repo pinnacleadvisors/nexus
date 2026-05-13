@@ -104,6 +104,23 @@ if [ -n "${MEMORY_HQ_TOKEN:-}" ] && [ -d "$MEMORY_MCP_DIR/src" ]; then
   fi
 fi
 
+# Build the codex-delegate MCP (services/mcp-codex-delegate/). Gives the
+# platform-copilot a first-class `delegate_to_codex` tool that calls the
+# codex-gateway's async-job HTTP API and returns the full transcript inline.
+# Optional — registration is gated on CODEX_GATEWAY_URL + CODEX_GATEWAY_BEARER_TOKEN
+# being set AND the build succeeding. Phase 2c of task_plan-chat.md.
+CODEX_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-codex-delegate"
+CODEX_MCP_BUILT=0
+if [ -n "${CODEX_GATEWAY_URL:-}" ] && [ -n "${CODEX_GATEWAY_BEARER_TOKEN:-}" ] && [ -d "$CODEX_MCP_DIR/src" ]; then
+  echo "[gateway] Building codex-delegate MCP from $CODEX_MCP_DIR..."
+  if (cd "$CODEX_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    CODEX_MCP_BUILT=1
+    echo "[gateway] codex-delegate MCP built — will register."
+  else
+    echo "[gateway] WARNING: codex-delegate MCP build FAILED — skipping registration."
+  fi
+fi
+
 # Assemble the settings.json. Whichever MCP servers built successfully get
 # registered. composio-admin (hard-isolation) is the primary; rube-mcp is
 # the soft-isolation fallback used only when the wrapper isn't available.
@@ -155,6 +172,24 @@ JSON
     }
 JSON
   fi
+  if [ "$CODEX_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "codex-delegate": {
+      "command": "node",
+      "args": ["$CODEX_MCP_DIR/dist/index.js"],
+      "env": {
+        "CODEX_GATEWAY_URL":          "${CODEX_GATEWAY_URL}",
+        "CODEX_GATEWAY_BEARER_TOKEN": "${CODEX_GATEWAY_BEARER_TOKEN}",
+        "NEXUS_OPERATOR_USER_ID":     "${NEXUS_OPERATOR_USER_ID:-}",
+        "ALLOWED_USER_IDS":           "${ALLOWED_USER_IDS:-}",
+        "CODEX_DELEGATE_TIMEOUT_MS":  "${CODEX_DELEGATE_TIMEOUT_MS:-300000}",
+        "CODEX_DELEGATE_POLL_MS":     "${CODEX_DELEGATE_POLL_MS:-3000}"
+      }
+    }
+JSON
+  fi
 }
 
 MCP_BLOCK="$(build_mcp_block)"
@@ -182,7 +217,8 @@ $MCP_BLOCK
       "mcp__memory-hq__memory_entity",
       "mcp__memory-hq__memory_moc",
       "mcp__memory-hq__memory_query",
-      "mcp__memory-hq__memory_search"
+      "mcp__memory-hq__memory_search",
+      "mcp__codex-delegate__delegate_to_codex"
     ]
   }
 }
@@ -191,6 +227,7 @@ JSON
   [ "$WRAPPER_BUILT" -eq 1 ]                              && REGISTERED="$REGISTERED composio-admin"
   [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -ne 1 ] && REGISTERED="$REGISTERED composio"
   [ "$MEMORY_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED memory-hq"
+  [ "$CODEX_MCP_BUILT" -eq 1 ]                            && REGISTERED="$REGISTERED codex-delegate"
   echo "[gateway] Wrote MCP config:$REGISTERED"
 else
   # No MCP servers built — log clearly and clean up any stale settings.json
@@ -201,6 +238,9 @@ else
   fi
   if [ -z "${MEMORY_HQ_TOKEN:-}" ]; then
     echo "[gateway]   - MEMORY_HQ_TOKEN not set → no durable memory across sessions."
+  fi
+  if [ -z "${CODEX_GATEWAY_URL:-}" ] || [ -z "${CODEX_GATEWAY_BEARER_TOKEN:-}" ]; then
+    echo "[gateway]   - CODEX_GATEWAY_URL or CODEX_GATEWAY_BEARER_TOKEN not set → delegate_to_codex unavailable."
   fi
   echo "[gateway]   Set the missing env vars in Coolify and redeploy to activate."
   if [ -f /root/.claude/settings.json ]; then
