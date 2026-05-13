@@ -101,6 +101,9 @@ export interface JobStatusResult {
   status?:    JobStatus
   /** Final assistant text once status === 'done'. */
   text?:      string
+  /** Phase 2a — partial assistant text accumulated while pending/running.
+   *  Clients render this as a tentative bubble between polls. */
+  partialText?: string
   /** Native CLI error when status === 'error'. */
   jobError?:  string
   durationMs?: number
@@ -135,6 +138,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
     const data = (parsed ?? {}) as {
       status?:    JobStatus
       result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number }
+      partialText?: string
       createdAt?:  number
       startedAt?:  number
       finishedAt?: number
@@ -143,6 +147,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
       ok:          true,
       status:      data.status,
       text:        data.result?.content,
+      partialText: data.partialText,
       jobError:    data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
       durationMs:  data.result?.durationMs,
       createdAt:   data.createdAt,

@@ -33,7 +33,7 @@ interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag:
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
@@ -63,6 +63,10 @@ export default function PlatformChat() {
   // to completion (wasted spend but bounded) — proper server-side cancel
   // is a follow-up that needs a gateway-side DELETE /api/jobs/:id endpoint.
   const cancelRef = useRef(false)
+  // Phase 2a — partial text accumulated by the running job, polled on each
+  // tick and rendered as a tentative assistant bubble while busy. Cleared
+  // when the final message lands (or the turn is cancelled).
+  const [partial, setPartial] = useState<string>('')
 
   // Phase 4 — session state. activeSessionId is null until either the
   // operator creates/picks one explicitly, OR the first send() auto-creates
@@ -178,6 +182,7 @@ export default function PlatformChat() {
     if (!text || busy) return
     setError(null)
     cancelRef.current = false   // reset flag for the new turn
+    setPartial('')               // clear stale partial text from a prior run
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setInput('')
@@ -223,6 +228,7 @@ export default function PlatformChat() {
         durationMs:         finalResult.durationMs,
         approval_requests:  finalResult.approval_requests,
       }])
+      setPartial('')   // final landed, clear tentative bubble
       // Refresh sidebar (title may have been auto-derived from first message,
       // and last_message_at definitely changed).
       void reloadSessions()
@@ -268,7 +274,9 @@ export default function PlatformChat() {
       if (j.status === 'error') {
         throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
       }
-      // status === 'pending' | 'running' — keep polling
+      // status === 'pending' | 'running' — Phase 2a pushes the running
+      // partial text into UI state so the chat shows progressive output.
+      if (j.partialText) setPartial(j.partialText)
     }
     throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the gateway — check Coolify logs for the claude-gateway service.`)
   }
@@ -317,6 +325,26 @@ export default function PlatformChat() {
               busy={busy}
             />
           ))}
+          {/* Phase 2a — tentative assistant bubble showing partial text
+              accumulated by the running job. Updates on each 2.5s poll;
+              replaced by the final MessageBubble once status='done'. */}
+          {busy && partial && (
+            <div className="flex justify-start">
+              <div
+                className="max-w-[85%] rounded-2xl px-4 py-3 text-sm"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+                  border:     '1px dashed rgba(168,163,255,0.30)',
+                  color:      '#c8c8d8',
+                }}
+              >
+                <div className="text-[10px] uppercase tracking-[0.14em] mb-1" style={{ color: '#a8a3ff' }}>
+                  Streaming
+                </div>
+                <div className="whitespace-pre-wrap">{partial}</div>
+              </div>
+            </div>
+          )}
           {busy && <ThinkingIndicator onCancel={handleCancel} />}
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
           <div ref={bottomRef} />

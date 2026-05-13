@@ -267,6 +267,11 @@ app.post('/api/jobs', async c => {
       env:       body.env,
       repoPath:  REPO_PATH,
       timeoutMs: REQUEST_MAX_MS,
+      // Phase 2a (poll-with-deltas) — pipe text deltas into the job-store
+      // so the GET /api/jobs/:id endpoint can return partial text while
+      // the job is still running. Lets the chat UI render progressive
+      // output without needing SSE.
+      onDelta:   delta => jobs.appendPartialText(jobId, delta),
     })
     jobs.markDone(jobId, result)
     return result
@@ -309,6 +314,9 @@ app.get('/api/jobs/:jobId', async c => {
     startedAt:  job.startedAt,
     finishedAt: job.finishedAt,
     result:     job.result,
+    // Phase 2a — partial text accumulated while the job is still running.
+    // Clients use this to render progressive output between polls.
+    partialText: job.partialText,
   })
 })
 
