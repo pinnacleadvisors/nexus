@@ -1,0 +1,106 @@
+/**
+ * Approval-request protocol for platform-copilot chat (Phase 3 of
+ * task_plan-chat.md). The agent emits fenced code blocks tagged
+ * `approval-request` to surface an inline approval gate; the chat UI
+ * parses them and renders `<ApprovalCard>` components with buttons.
+ *
+ * Protocol — agent emits:
+ *
+ *     ```approval-request
+ *     {
+ *       "title": "Open PR for the gateway-status comment",
+ *       "approval_id": "auth-refactor-2026-05-13-001",
+ *       "items": [
+ *         { "id": "1", "label": "Create branch feat/...", "approved_by_default": true },
+ *         { "id": "2", "label": "Edit app/api/...", "approved_by_default": true }
+ *       ]
+ *     }
+ *     ```
+ *
+ * Reply format the UI auto-sends when the operator clicks Approve:
+ *
+ *     APPROVAL [auth-refactor-2026-05-13-001]: approve 1,2
+ *     APPROVAL [auth-refactor-2026-05-13-001]: approve 1 (skip 2)
+ *     APPROVAL [auth-refactor-2026-05-13-001]: deny all
+ *
+ * The agent reads this in its next turn and proceeds with the approved
+ * subset. Buttons are NOT executable — they only generate the reply text.
+ */
+
+export interface ApprovalItem {
+  id:                  string
+  label:               string
+  approved_by_default?: boolean
+}
+
+export interface ApprovalRequest {
+  title:        string
+  approval_id:  string
+  items:        ApprovalItem[]
+}
+
+export interface ParsedAssistantMessage {
+  /** Original full text, with approval-request blocks STRIPPED so the bubble
+   *  doesn't render the raw JSON. The cards render separately. */
+  text:               string
+  /** Extracted approval requests (zero-or-more) in document order. */
+  approval_requests:  ApprovalRequest[]
+}
+
+const APPROVAL_FENCE_RE = /```approval-request\s*\n([\s\S]*?)\n```/g
+
+/**
+ * Pull approval-request blocks out of an assistant message. Returns the
+ * remaining prose (with blocks removed) and the structured requests.
+ *
+ * Malformed JSON inside a block is treated as a regular code block (left
+ * inline) — better to surface raw text than to swallow the agent's intent.
+ */
+export function parseAssistantMessage(text: string): ParsedAssistantMessage {
+  const requests: ApprovalRequest[] = []
+  let cleaned = text.replace(APPROVAL_FENCE_RE, (match, body: string) => {
+    try {
+      const parsed = JSON.parse(body.trim()) as Partial<ApprovalRequest>
+      if (!parsed.approval_id || !parsed.title || !Array.isArray(parsed.items)) return match
+      // Validate items shape — drop the whole block on malformed items.
+      for (const it of parsed.items) {
+        if (typeof it.id !== 'string' || typeof it.label !== 'string') return match
+      }
+      requests.push({
+        title:       parsed.title,
+        approval_id: parsed.approval_id,
+        items:       parsed.items.map(it => ({
+          id:                  it.id,
+          label:               it.label,
+          approved_by_default: it.approved_by_default !== false,
+        })),
+      })
+      return ''   // strip the block from the rendered text
+    } catch {
+      return match   // leave malformed JSON in place
+    }
+  })
+  // Trim trailing whitespace left by stripping a block at the end of the message.
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim()
+  return { text: cleaned, approval_requests: requests }
+}
+
+/**
+ * Build the reply string the chat auto-sends when the operator clicks an
+ * approval button. The agent's next-turn prompt explicitly recognises this
+ * format and proceeds with the approved subset only.
+ */
+export function buildApprovalReply(
+  approval_id: string,
+  approvedItemIds: string[],
+  allItemIds: string[],
+): string {
+  if (approvedItemIds.length === 0) {
+    return `APPROVAL [${approval_id}]: deny all`
+  }
+  if (approvedItemIds.length === allItemIds.length) {
+    return `APPROVAL [${approval_id}]: approve ${approvedItemIds.join(',')}`
+  }
+  const skipped = allItemIds.filter(id => !approvedItemIds.includes(id))
+  return `APPROVAL [${approval_id}]: approve ${approvedItemIds.join(',')} (skip ${skipped.join(',')})`
+}

@@ -3,33 +3,42 @@
 /**
  * PlatformChat — /manage-platform Console tab body.
  *
- * Phase 1 MVP — multi-turn chat with the shared claude-gateway, scoped to
- * the Nexus platform itself (operator's shared-scope connected accounts +
- * recent platform state baked into the system prompt).
+ * Phase 1 — chat shell + async dispatch (#145, #155)
+ * Phase 3 — approval cards via the approval-request sentinel (this PR)
+ * Phase 4 — persistence + multi-chat + delete via chat_sessions (this PR)
  *
- * Replaces the legacy form-based dev console. Same role (Nexus builds
- * Nexus) but the interaction is conversational instead of "fill form →
- * generate plan → approve → dispatch". Phase 2 adds SSE streaming + tool
- * call cards. Phase 3 adds approval gates. Phase 4 adds persistence.
+ * Phase 2 (SSE streaming + tool-call cards) and Phase 5+ are deferred.
+ * See task_plan-chat.md for the full plan.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check } from 'lucide-react'
+import ApprovalCard from './ApprovalCard'
+import SessionSidebar, { type SessionSummary } from './SessionSidebar'
+import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 
 interface Message {
   role:       'user' | 'assistant'
   content:    string
   /** Wall-clock ms the turn took (assistant messages only). */
   durationMs?: number
+  /** Approval requests extracted from the assistant text (Phase 3). */
+  approval_requests?: ApprovalRequest[]
+  /** Resolution state per approval_id, populated when the operator clicks
+   *  Approve/Deny. Kept client-side so the card collapses but stays visible. */
+  approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
 }
 
-interface EnqueueOk   { ok: true;  jobId: string;  sessionTag: string }
+interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
+
+interface SessionsResp { ok: true; sessions: SessionSummary[] }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; durationMs?: number } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -49,13 +58,111 @@ export default function PlatformChat() {
   const [error,    setError]    = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Phase 4 — session state. activeSessionId is null until either the
+  // operator creates/picks one explicitly, OR the first send() auto-creates
+  // one (the server returns the new sessionId in the enqueue response).
+  const [sessions,        setSessions]        = useState<SessionSummary[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(true)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
-  async function send() {
-    const text = input.trim()
+  // Load session list on mount + after each delete/create.
+  const reloadSessions = useCallback(async () => {
+    setSessionsLoading(true)
+    try {
+      const res = await fetch('/api/platform-chat/sessions', { cache: 'no-store' })
+      if (res.status === 401) {
+        const here = window.location.pathname + window.location.search
+        window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+        return
+      }
+      const j = (await res.json()) as SessionsResp | { ok: false; error: string }
+      if (j.ok) setSessions(j.sessions)
+    } catch { /* swallow — sidebar shows empty state */ }
+    finally { setSessionsLoading(false) }
+  }, [])
+  useEffect(() => { void reloadSessions() }, [reloadSessions])
+
+  // Load message history when the operator switches sessions.
+  useEffect(() => {
+    if (!activeSessionId) { setMessages([]); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/platform-chat/sessions/${activeSessionId}/messages`, { cache: 'no-store' })
+        if (!res.ok) return
+        const j = (await res.json()) as MessagesResp | { ok: false }
+        if (!j.ok || cancelled) return
+        setMessages(j.messages.map(m => ({
+          role:                 m.role === 'system' ? 'assistant' : m.role,
+          content:              m.content,
+          durationMs:           m.metadata?.durationMs,
+          approval_requests:    m.metadata?.approval_requests,
+        })))
+        setError(null)
+      } catch { /* swallow */ }
+    })()
+    return () => { cancelled = true }
+  }, [activeSessionId])
+
+  async function handleNewChat() {
+    setActiveSessionId(null)
+    setMessages([])
+    setError(null)
+  }
+
+  async function handleDeleteSession(sessionId: string) {
+    try {
+      const res = await fetch(`/api/platform-chat/sessions/${sessionId}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) {
+        setError('Failed to delete chat — please retry.')
+        return
+      }
+      if (sessionId === activeSessionId) {
+        setActiveSessionId(null)
+        setMessages([])
+      }
+      await reloadSessions()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'delete failed')
+    }
+  }
+
+  function handleApproval(approval: ApprovalRequest, approvedItemIds: string[]) {
+    const reply = buildApprovalReply(approval.approval_id, approvedItemIds, approval.items.map(it => it.id))
+    // Mark resolution on the last message that contains this approval_id so
+    // the card collapses to read-only state instead of duplicating.
+    setMessages(prev => {
+      const next = [...prev]
+      for (let i = next.length - 1; i >= 0; i--) {
+        const m = next[i]
+        if (m.approval_requests?.some(r => r.approval_id === approval.approval_id)) {
+          next[i] = {
+            ...m,
+            approval_resolutions: {
+              ...(m.approval_resolutions ?? {}),
+              [approval.approval_id]: {
+                approvedItemIds,
+                deniedItemIds: approval.items.map(it => it.id).filter(id => !approvedItemIds.includes(id)),
+              },
+            },
+          }
+          break
+        }
+      }
+      return next
+    })
+    setInput(reply)
+    // Auto-send so the agent sees the response without the operator clicking Send.
+    setTimeout(() => { void send(reply) }, 30)
+  }
+
+  async function send(forcedText?: string) {
+    const text = (forcedText ?? input).trim()
     if (!text || busy) return
     setError(null)
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
@@ -64,13 +171,13 @@ export default function PlatformChat() {
     setBusy(true)
 
     try {
-      // Step 1 — enqueue. Returns a jobId immediately; the long-running
-      // generation happens server-side on the gateway. This is the async
-      // job protocol added on the gateway in lib/claw/gateway-jobs.ts.
+      // Step 1 — enqueue. The route auto-creates a session when sessionId
+      // is null and returns its id; subsequent turns include it so the
+      // user + assistant messages persist into the same conversation.
       const enqRes = await fetch('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify({ messages: nextMessages }),
+        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -82,11 +189,21 @@ export default function PlatformChat() {
         setError(enq.error)
         return
       }
+      // Bind the session id (may have been auto-created on this turn).
+      if (!activeSessionId) setActiveSessionId(enq.sessionId)
 
       // Step 2 — poll until done. Each poll is <500ms; the loop runs until
       // the gateway reports status='done' or 'error', or we hit the 5-min cap.
-      const finalText = await pollUntilDone(enq.jobId)
-      setMessages(prev => [...prev, { role: 'assistant', content: finalText.text, durationMs: finalText.durationMs }])
+      const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      setMessages(prev => [...prev, {
+        role:               'assistant',
+        content:            finalResult.text,
+        durationMs:         finalResult.durationMs,
+        approval_requests:  finalResult.approval_requests,
+      }])
+      // Refresh sidebar (title may have been auto-derived from first message,
+      // and last_message_at definitely changed).
+      void reloadSessions()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error — check your connection and try again')
     } finally {
@@ -95,15 +212,20 @@ export default function PlatformChat() {
   }
 
   /**
-   * Poll /api/platform-chat/poll until the gateway job completes. Returns the
-   * assistant text + total duration on success. Throws on timeout or job-level
-   * error so the caller's catch surfaces it via the red error banner.
+   * Poll /api/platform-chat/poll until the gateway job completes. The
+   * sessionId is included in the query so the poll route persists the
+   * assistant reply into chat_messages with the parsed approval_requests
+   * already in metadata — page reloads recover the same UI state.
    */
-  async function pollUntilDone(jobId: string): Promise<{ text: string; durationMs: number }> {
+  async function pollUntilDone(
+    jobId: string,
+    sessionId: string,
+  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[] }> {
     const start = Date.now()
+    const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
-      const res = await fetch(`/api/platform-chat/poll?jobId=${encodeURIComponent(jobId)}`, { cache: 'no-store' })
+      const res = await fetch(`/api/platform-chat/poll?${qs}`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
@@ -112,7 +234,11 @@ export default function PlatformChat() {
       const j = (await res.json()) as PollResponse
       if (!j.ok) throw new Error(j.error)
       if (j.status === 'done') {
-        return { text: (j.text ?? '').trim() || '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)', durationMs: j.durationMs ?? (Date.now() - start) }
+        return {
+          text:               (j.text ?? '').trim() || '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)',
+          durationMs:         j.durationMs ?? (Date.now() - start),
+          approval_requests:  j.approval_requests,
+        }
       }
       if (j.status === 'error') {
         throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
@@ -130,27 +256,46 @@ export default function PlatformChat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] min-h-[500px]">
-      {/* Header strip — explains scope so operator never confuses with per-business chat */}
-      <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-        <div className="flex items-center gap-2 text-sm">
-          <Sparkles size={14} style={{ color: '#a8a3ff' }} />
-          <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
-          <span style={{ color: '#55556a' }}>—</span>
-          <span style={{ color: '#9090b0' }}>
-            scoped to Nexus itself, uses your shared-scope connected accounts (Vercel, GitHub, Slack, Stripe, YouTube, …)
-          </span>
-        </div>
-      </div>
+    <div className="flex h-[calc(100vh-200px)] min-h-[500px]">
+      {/* Phase 4 — session sidebar (left rail) */}
+      <SessionSidebar
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        loading={sessionsLoading}
+        onSelect={setActiveSessionId}
+        onNew={handleNewChat}
+        onDelete={handleDeleteSession}
+      />
 
-      {/* Message list */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && <EmptyState />}
-        {messages.map((m, i) => <MessageBubble key={i} message={m} />)}
-        {busy && <ThinkingIndicator />}
-        {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
-        <div ref={bottomRef} />
-      </div>
+      {/* Chat column (right of sidebar) */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header strip — explains scope so operator never confuses with per-business chat */}
+        <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2 text-sm">
+            <Sparkles size={14} style={{ color: '#a8a3ff' }} />
+            <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
+            <span style={{ color: '#55556a' }}>—</span>
+            <span style={{ color: '#9090b0' }}>
+              scoped to Nexus itself, uses admin-scope connections (Vercel, GitHub, Slack, Stripe, …) via the hard-isolation MCP
+            </span>
+          </div>
+        </div>
+
+        {/* Message list */}
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          {messages.length === 0 && <EmptyState />}
+          {messages.map((m, i) => (
+            <MessageBubble
+              key={i}
+              message={m}
+              onApprove={handleApproval}
+              busy={busy}
+            />
+          ))}
+          {busy && <ThinkingIndicator />}
+          {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+          <div ref={bottomRef} />
+        </div>
 
       {/* Input */}
       <div className="border-t p-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
@@ -189,9 +334,10 @@ export default function PlatformChat() {
         </div>
         <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
           <TerminalIcon size={11} />
-          <span>Phase 1 MVP — sync responses, no streaming yet. Phase 2 adds inline tool-call cards + codex delegation panels.</span>
+          <span>Async polling + persistent sessions + approval cards. SSE streaming + inline tool-call cards are still deferred (Phase 2 — see task_plan-chat.md).</span>
         </div>
       </div>
+      </div>{/* close chat column */}
     </div>
   )
 }
@@ -255,12 +401,18 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   )
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message, onApprove, busy,
+}: {
+  message:   Message
+  onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void
+  busy:      boolean
+}) {
   const isUser = message.role === 'user'
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
       <div
-        className="max-w-[85%] rounded-2xl px-4 py-3 text-sm"
+        className={isUser ? 'max-w-[85%] rounded-2xl px-4 py-3 text-sm' : 'max-w-[85%] rounded-2xl px-4 py-3 text-sm'}
         style={{
           background: isUser
             ? 'linear-gradient(135deg, rgba(108,99,255,0.25), rgba(108,99,255,0.10))'
@@ -269,7 +421,19 @@ function MessageBubble({ message }: { message: Message }) {
           color:  '#e8e8f0',
         }}
       >
-        <RenderedMarkdown text={message.content} />
+        {message.content && <RenderedMarkdown text={message.content} />}
+        {/* Phase 3 — render any approval-request blocks the agent emitted as
+            inline cards. Each card carries its own approval_id; on click we
+            auto-send the canonical APPROVAL [<id>]: ... reply. */}
+        {!isUser && message.approval_requests?.map(req => (
+          <ApprovalCard
+            key={req.approval_id}
+            request={req}
+            resolution={message.approval_resolutions?.[req.approval_id] ?? null}
+            disabled={busy}
+            onSubmit={ids => onApprove(req, ids)}
+          />
+        ))}
         {message.durationMs !== undefined && (
           <div className="mt-2 text-[10px]" style={{ color: '#55556a' }}>
             {(message.durationMs / 1000).toFixed(1)}s
@@ -331,4 +495,3 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
 }
 
 // Keep imported for Phase 2 use — Tool call card dropdown / Codex delegation card
-export { ChevronDown, ChevronRight }

@@ -139,32 +139,59 @@ function checkPollingEndpointsInSkipList() {
   const skipBlock = /SKIP_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[([\s\S]*?)\]/.exec(samplerText)
   const skipBody  = (skipBlock?.[1] ?? '').replace(/\\\//g, '/')
 
-  // Walk app/, components/ for setInterval + fetch('/api/...') combos.
-  // We only flag CLIENT components ('use client' or under /app where the
-  // file imports react hooks) because server-side setInterval doesn't fire
-  // Sentry transactions on the client.
+  // Walk app/, components/ for setInterval + fetch('/api/...') combos —
+  // but only flag the fetch when it's TEXTUALLY CLOSE to a setInterval
+  // / usePollWithBackoff (same logical block). Files that have an interval
+  // for an unrelated UI counter (e.g. a "Working… (Ns)" elapsed timer)
+  // plus separate event-driven fetches would otherwise false-positive.
+  //
+  // Heuristic: a fetch is "polled" when it appears within PROXIMITY_LINES
+  // of a setInterval / usePollWithBackoff call. Tunable below — 25 is
+  // generous enough to catch a setInterval that calls a sibling function
+  // declared a few lines above, while tight enough to exclude unrelated
+  // fetches further down the file.
+  const PROXIMITY_LINES = 25
+  // We also detect the inline arrow case to avoid false positives —
+  // setInterval(() => setState(...), N) without a fetch in the body never
+  // qualifies as polling, regardless of proximity to other fetches.
+  function lineNumberOf(text, idx) { return text.slice(0, idx).split('\n').length }
+
   const ROOTS = ['app', 'components']
+  const HIGH_VALUE_RE = /HIGH_VALUE_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[([\s\S]*?)\]/.exec(samplerText)
+  const highBody = (HIGH_VALUE_RE?.[1] ?? '').replace(/\\\//g, '/')
+
   for (const r of ROOTS) {
     for (const file of listFiles(join(ROOT, r), /\.(tsx|ts)$/)) {
       const text = readFileSync(file, 'utf8')
-      // Cheap filter — skip files that don't poll at all.
       if (!/\b(setInterval|usePollWithBackoff)\b/.test(text)) continue
-      // Find any fetch('/api/...') call in the same file.
+
+      // Index every setInterval / usePollWithBackoff site by line number.
+      // Inline arrows with no `fetch` in their body are excluded — those
+      // are UI counters / timers, not pollers.
+      const pollerSites = []
+      const SETINT_RE = /\b(setInterval|usePollWithBackoff)\s*\(\s*(\([^)]*\)\s*=>\s*\{[\s\S]*?\}|[A-Za-z_$][\w$]*)/g
+      let p
+      while ((p = SETINT_RE.exec(text)) !== null) {
+        const callback = p[2]
+        // Inline arrow body — if it contains fetch, this is a poller.
+        // If it's an arrow without fetch (UI counter pattern), skip.
+        if (callback.startsWith('(')) {
+          if (!/\bfetch\s*\(/.test(callback)) continue
+        }
+        pollerSites.push(lineNumberOf(text, p.index))
+      }
+      if (pollerSites.length === 0) continue
+
       const fetchRe = /fetch\s*\(\s*[`'"](\/api\/[^`'"\s)?]+)/g
       let m
       while ((m = fetchRe.exec(text)) !== null) {
         const apiPath = m[1]
-        // Already in SKIP_PATTERNS? Substring-match against the unescaped
-        // body — any pattern that contains the apiPath as a substring
-        // counts (because the regex would match URLs starting with that
-        // path).
+        const lineIdx = lineNumberOf(text, m.index)
+        const near    = pollerSites.some(p => Math.abs(p - lineIdx) <= PROXIMITY_LINES)
+        if (!near) continue
         const inSkip = skipBody.includes(apiPath)
-        // Also: high-value patterns may intentionally NOT be in skip.
-        const HIGH_VALUE_RE = /HIGH_VALUE_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[([\s\S]*?)\]/.exec(samplerText)
-        const highBody = (HIGH_VALUE_RE?.[1] ?? '').replace(/\\\//g, '/')
-        const inHigh   = highBody.includes(apiPath)
+        const inHigh = highBody.includes(apiPath)
         if (!inSkip && !inHigh) {
-          const lineIdx = text.slice(0, m.index).split('\n').length
           findings.push({
             file: rel(file),
             line: lineIdx,

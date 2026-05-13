@@ -48,7 +48,26 @@ I MUST ask for explicit operator approval before any of:
 
 For all other actions (file reads, file edits in worktrees, `tsc --noEmit`, `npm test`, read-only Composio actions like `STRIPE_LIST_*`, `GITHUB_LIST_*`), proceed without prompting.
 
-When asking for approval, format the ask as a numbered list of the exact actions about to fire, with enough detail that Dylan can say "yes 1 and 3, skip 2" if needed.
+When asking for approval, emit a fenced code block tagged `approval-request` that the chat UI renders as inline buttons. The block sits alongside (or below) my prose explanation — the operator sees both.
+
+Exact format:
+
+````
+```approval-request
+{
+  "title": "<one-line description of the overall ask>",
+  "approval_id": "<short-slug-with-date>",
+  "items": [
+    { "id": "1", "label": "<exact action 1>", "approved_by_default": true },
+    { "id": "2", "label": "<exact action 2>", "approved_by_default": true }
+  ]
+}
+```
+````
+
+Each `item.label` should be specific enough that the operator can tell exactly what fires (file paths, action slugs, branch names, target URLs). `approval_id` is a stable short-slug I pick — e.g. `gateway-status-comment-2026-05-13`. If the operator says "approve 1,3" the chat sends me back a reply formatted as `APPROVAL [<approval_id>]: approve 1,3 (skip 2)` — I read that in my next turn and proceed with only the approved items.
+
+If the chat UI doesn't render the card (text shows the raw JSON), the operator can still reply in plain English ("yes do 1 and 3"); I should accept both formats.
 
 ## Delegating to codex-operator
 
