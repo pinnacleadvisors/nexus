@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
@@ -18,6 +18,8 @@ import {
   Inbox,
   Brain,
   Terminal,
+  Briefcase,
+  MessageSquare,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -70,9 +72,53 @@ interface NavGroup {
   label: string
   icon: LucideIcon
   children: NavLink[]
+  /** Optional href on the group label so clicking it navigates AND toggles. */
+  href?: string
 }
 
 type NavItem = NavLink | NavGroup
+
+/**
+ * Async businesses fetched once on mount + cached for the session.
+ * The Sidebar uses this to render the Businesses entry as a group with
+ * per-business chat sub-items. SessionStorage cache survives navigation
+ * (Sidebar re-mounts) but not page reloads — short enough to stay fresh,
+ * long enough to avoid every navigation flash.
+ */
+interface BusinessLink { slug: string; name: string }
+interface BusinessesResp { ok: true; businesses: Array<{ slug: string; name: string; status: string }> }
+const BUSINESSES_CACHE_KEY = 'nexus:sidebar:businesses'
+
+function readCachedBusinesses(): BusinessLink[] | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(BUSINESSES_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as BusinessLink[]
+  } catch { return null }
+}
+
+function useBusinessesForSidebar(): BusinessLink[] {
+  const [list, setList] = useState<BusinessLink[]>(() => readCachedBusinesses() ?? [])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/businesses', { cache: 'no-store' })
+        if (!res.ok) return
+        const j = (await res.json()) as BusinessesResp | { ok: false }
+        if (!j.ok || cancelled) return
+        const filtered = j.businesses
+          .filter(b => b.status !== 'archived')
+          .map(b => ({ slug: b.slug, name: b.name }))
+        setList(filtered)
+        try { sessionStorage.setItem(BUSINESSES_CACHE_KEY, JSON.stringify(filtered)) } catch { /* quota */ }
+      } catch { /* swallow — fall back to cached / empty */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+  return list
+}
 
 // Five top-level surfaces, mapped to the operator's mental model:
 //   Mission Control = Watch     (default landing)
@@ -81,8 +127,22 @@ type NavItem = NavLink | NavGroup
 //   Knowledge       = Learn     (graph + memory)
 //   Toolbox         = Reusable assets (agents, tools, snippets)
 //   Settings        = Admin     (everything that lived under Manage Platform)
-const NAV: NavItem[] = [
+// Top-level surfaces, mapped to the operator's mental model:
+//   Mission Control = Watch       (default landing)
+//   Businesses      = Per-business copilots + management
+//   Ideas / Signals = Capture
+//   Pipeline        = Decide       (board + automation library + swarm)
+//   Knowledge       = Learn        (graph + memory)
+//   Toolbox         = Reusable assets (agents, tools, snippets)
+//   Settings        = Admin        (everything that lived under Manage Platform)
+//
+// `Businesses` is rendered as a dynamic group when businesses exist —
+// children are per-business chat sub-items so the operator reaches a
+// specific business's copilot in 1 click. Falls back to a flat link when
+// the list is empty (first-time-user state).
+const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/dashboard',       label: 'Mission Control', icon: LayoutDashboard },
+  { type: 'link', href: '/businesses',      label: 'Businesses',      icon: Briefcase },
   { type: 'link', href: '/idea',            label: 'Ideas',           icon: Lightbulb },
   { type: 'link', href: '/signals',         label: 'Signals',         icon: Inbox },
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
@@ -93,8 +153,33 @@ const NAV: NavItem[] = [
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
 
+function buildNav(businesses: BusinessLink[]): NavItem[] {
+  if (businesses.length === 0) return BASE_NAV
+  return BASE_NAV.map(item => {
+    if (item.type !== 'link' || item.href !== '/businesses') return item
+    const group: NavGroup = {
+      type:  'group',
+      id:    'businesses',
+      label: item.label,
+      icon:  item.icon,
+      href:  '/businesses',
+      children: [
+        { type: 'link', href: '/businesses', label: 'All businesses', icon: Briefcase },
+        ...businesses.map<NavLink>(b => ({
+          type:  'link',
+          href:  `/businesses/${encodeURIComponent(b.slug)}/chat`,
+          label: b.name,
+          icon:  MessageSquare,
+        })),
+      ],
+    }
+    return group
+  })
+}
+
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard')       return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+  if (href === '/businesses')      return pathname === '/businesses' || pathname.startsWith('/businesses/')
   if (href === '/idea')            return pathname === '/idea' || pathname.startsWith('/idea-library')
   if (href === '/signals')         return pathname === '/signals' || pathname.startsWith('/signals/')
   if (href === '/board')           return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
@@ -111,6 +196,16 @@ export default function Sidebar() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const pathname = usePathname() ?? ''
   const healthBadge = useHealthBadge()
+  const businesses  = useBusinessesForSidebar()
+  const nav         = buildNav(businesses)
+
+  // Auto-expand the Businesses group when the user is on a /businesses route
+  // so they don't have to click the chevron after navigating in.
+  useEffect(() => {
+    if (pathname.startsWith('/businesses')) {
+      setOpenGroups(g => g.businesses ? g : { ...g, businesses: true })
+    }
+  }, [pathname])
 
   function toggleGroup(id: string) {
     setOpenGroups(g => ({ ...g, [id]: !g[id] }))
@@ -147,7 +242,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {NAV.map(item =>
+        {nav.map(item =>
           item.type === 'link' ? (
             <SidebarLink
               key={item.href}
@@ -313,19 +408,61 @@ function SidebarGroup({
     )
   }
 
+  // When the group has an href, render the icon+label as a Link (navigates)
+  // and the chevron as a separate toggle button (expands/collapses). This
+  // gives the operator one click to go to the index AND one click to expand
+  // the children — the previous toggle-only behaviour hid the index route.
+  const labelActive = !!group.href && isActive(pathname, group.href) && !anyChildActive
+  const Header = group.href
+    ? (
+        <div
+          className="flex items-center rounded-lg overflow-hidden"
+          style={(labelActive || anyChildActive)
+            ? { backgroundColor: '#1a1a2e' }
+            : undefined}
+        >
+          <Link
+            href={group.href}
+            className="flex-1 flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors"
+            style={{
+              color:      labelActive || anyChildActive ? '#e8e8f0' : '#9090b0',
+              borderLeft: labelActive || anyChildActive ? '2px solid #6c63ff' : undefined,
+            }}
+            onMouseEnter={e => { if (!labelActive && !anyChildActive) e.currentTarget.style.backgroundColor = '#12121e' }}
+            onMouseLeave={e => { if (!labelActive && !anyChildActive) e.currentTarget.style.backgroundColor = 'transparent' }}
+          >
+            <Icon size={18} className="shrink-0" />
+            <span className="flex-1 text-left truncate">{group.label}</span>
+          </Link>
+          <button
+            onClick={onToggle}
+            aria-label={open ? `Collapse ${group.label}` : `Expand ${group.label}`}
+            className="shrink-0 px-2 py-2 transition-colors"
+            style={{ color: anyChildActive || labelActive ? '#a8a3ff' : '#55556a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#e8e8f0' }}
+            onMouseLeave={e => { e.currentTarget.style.color = anyChildActive || labelActive ? '#a8a3ff' : '#55556a' }}
+          >
+            {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+      )
+    : (
+        <button
+          onClick={onToggle}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+          style={{ color: anyChildActive ? '#e8e8f0' : '#9090b0' }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#12121e' }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+        >
+          <Icon size={18} className="shrink-0" />
+          <span className="flex-1 text-left">{group.label}</span>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+      )
+
   return (
     <div>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-        style={{ color: anyChildActive ? '#e8e8f0' : '#9090b0' }}
-        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#12121e' }}
-        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
-      >
-        <Icon size={18} className="shrink-0" />
-        <span className="flex-1 text-left">{group.label}</span>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-      </button>
+      {Header}
       {open && (
         <div className="mt-0.5 space-y-0.5">
           {group.children.map(c => (
