@@ -23,7 +23,10 @@ async function loadBusiness(userId: string, slug: string): Promise<BusinessRow |
   const db = createServerClient()
   if (!db) return null
   try {
-    const res = await (db.from('businesses' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
+    // Canonical table is `business_operators` (see lib/business/db.ts header).
+    // Earlier drafts of this file queried `businesses` which doesn't exist —
+    // hence the 404-on-open-chat bug shipped briefly in #170.
+    const res = await (db.from('business_operators' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
       .select('slug, name')
       .eq('slug', slug)
       .eq('user_id', userId)

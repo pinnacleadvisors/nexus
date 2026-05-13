@@ -79,7 +79,8 @@ export async function buildPlatformSystemPrompt(userId: string): Promise<string>
       const errorsR = await errorsQ
       errors = errorsR.data ?? []
 
-      const businessesQ = (db.from('businesses' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
+      // Canonical table is `business_operators` (see lib/business/db.ts header).
+      const businessesQ = (db.from('business_operators' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
         .select('slug, name, niche')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
