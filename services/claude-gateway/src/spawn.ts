@@ -17,11 +17,31 @@ export interface RunArgs {
   onDelta?:   (delta: string) => void
 }
 
+/**
+ * Tool-use event observed in the CLI's stream-json output (Phase 2b of
+ * task_plan-chat.md). Captured per turn for UI rendering on the Vercel
+ * side — chat renders a collapsible card per call so the operator sees
+ * "what Claude is actually doing".
+ */
+export interface ToolCallRecord {
+  /** Stable id from the CLI event; matches tool_use ↔ tool_result. */
+  id:          string
+  /** Tool name, e.g. "mcp__composio-admin__admin_execute_action", "Bash". */
+  name:        string
+  input:       unknown
+  output?:     unknown
+  isError?:    boolean
+  startedAt:   number
+  finishedAt?: number
+}
+
 export interface RunResult {
   ok:         boolean
   content:    string
   error?:     string
   durationMs: number
+  /** Phase 2b — tool calls observed during this turn. */
+  toolCalls?: ToolCallRecord[]
   usage?:     {
     input_tokens?:  number
     output_tokens?: number
@@ -113,6 +133,8 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     let stdoutBuf = ''
     let stderrBuf = ''
     let lastAssistantText = ''
+    /** Tool-use records keyed by CLI tool_use_id, accumulated as the agent runs. */
+    const toolCalls = new Map<string, ToolCallRecord>()
     let result: RunResult = { ok: false, content: '', durationMs: 0 }
     let resolved = false
 
@@ -178,6 +200,7 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
         content:    lastAssistantText,
         error:      code === 0 ? undefined : `claude CLI exited with code ${code}: ${stderrBuf.slice(-512)}`,
         durationMs: Date.now() - started,
+        toolCalls:  toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
       })
     })
 
@@ -190,13 +213,39 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
       }
 
       if (type === 'assistant' && event.message) {
-        const message = event.message as { content?: Array<{ type?: string; text?: string }> }
+        const message = event.message as { content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }> }
         const blocks = message.content ?? []
         for (const block of blocks) {
           if (block.type === 'text' && typeof block.text === 'string') {
             lastAssistantText += block.text
             if (args.onDelta) {
               try { args.onDelta(block.text) } catch { /* swallow */ }
+            }
+          }
+          // Phase 2b — capture tool_use blocks. Matched to the eventual
+          // tool_result block via the same tool_use_id when it lands.
+          if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
+            toolCalls.set(block.id, {
+              id:        block.id,
+              name:      block.name,
+              input:     block.input,
+              startedAt: Date.now(),
+            })
+          }
+        }
+      }
+
+      // tool_result blocks arrive inside `user` events synthesised by the
+      // CLI when a tool returns. Match by tool_use_id and attach output.
+      if (type === 'user' && event.message) {
+        const message = event.message as { content?: Array<{ type?: string; tool_use_id?: string; content?: unknown; is_error?: boolean }> }
+        for (const block of message.content ?? []) {
+          if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+            const rec = toolCalls.get(block.tool_use_id)
+            if (rec) {
+              rec.output     = block.content
+              rec.isError    = block.is_error === true
+              rec.finishedAt = Date.now()
             }
           }
         }
@@ -208,6 +257,7 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
           ok:         (event.subtype as string | undefined) !== 'error',
           content:    text,
           durationMs: Date.now() - started,
+          toolCalls:  toolCalls.size > 0 ? [...toolCalls.values()] : undefined,
           usage:      event.usage as RunResult['usage'],
           model:      event.model as string | undefined,
           sessionId:  result.sessionId ?? (event.session_id as string | undefined),
