@@ -113,8 +113,14 @@ export interface JobStatusResult {
   status?:    JobStatus
   /** Final assistant text once status === 'done'. */
   text?:      string
+<<<<<<< feat/chat-poll-with-deltas
+  /** Phase 2a — partial assistant text accumulated while pending/running.
+   *  Clients render this as a tentative bubble between polls. */
+  partialText?: string
+=======
   /** Tool calls observed during the turn (Phase 2b — chat renders as cards). */
   toolCalls?: ToolCall[]
+>>>>>>> main
   /** Native CLI error when status === 'error'. */
   jobError?:  string
   durationMs?: number
@@ -148,7 +154,12 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
     }
     const data = (parsed ?? {}) as {
       status?:    JobStatus
+<<<<<<< feat/chat-poll-with-deltas
+      result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number }
+      partialText?: string
+=======
       result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number; toolCalls?: ToolCall[] }
+>>>>>>> main
       createdAt?:  number
       startedAt?:  number
       finishedAt?: number
@@ -157,7 +168,11 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
       ok:          true,
       status:      data.status,
       text:        data.result?.content,
+<<<<<<< feat/chat-poll-with-deltas
+      partialText: data.partialText,
+=======
       toolCalls:   data.result?.toolCalls,
+>>>>>>> main
       jobError:    data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
       durationMs:  data.result?.durationMs,
       createdAt:   data.createdAt,

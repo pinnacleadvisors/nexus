@@ -35,6 +35,14 @@ export interface JobRecord {
   finishedAt?: number
   /** Final result once status === 'done' or 'error'. */
   result?:     RunResult
+  /**
+   * Phase 2a (poll-with-deltas) — text accumulated so far while the job is
+   * still running. Updated via setPartialText() each time the spawn process
+   * emits an assistant-text delta. Pollers (GET /api/jobs/:id) read it on
+   * pending/running jobs so the chat UI can render progressive output
+   * without needing SSE.
+   */
+  partialText?: string
 }
 
 export interface JobStoreOptions {
@@ -74,6 +82,14 @@ export class JobStore {
     if (!job || job.status !== 'pending') return
     job.status    = 'running'
     job.startedAt = Date.now()
+  }
+
+  /** Phase 2a — append a text delta to the job's running partial text.
+   *  Cheap to call from spawn.ts's onDelta callback. Cleared on markDone. */
+  appendPartialText(jobId: string, delta: string): void {
+    const job = this.jobs.get(jobId)
+    if (!job || (job.status !== 'pending' && job.status !== 'running')) return
+    job.partialText = (job.partialText ?? '') + delta
   }
 
   markDone(jobId: string, result: RunResult): void {

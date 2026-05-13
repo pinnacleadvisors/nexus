@@ -114,6 +114,10 @@ export async function GET(req: NextRequest) {
     ok:                true,
     status:            result.status,
     text:              displayText,
+    /** Phase 2a — partial text accumulated while running. Client renders
+     *  this as a tentative bubble between polls so long Opus runs feel
+     *  progressive without going through SSE. */
+    partialText:       result.partialText,
     approval_requests: approvalRequests,
     tool_calls:        result.toolCalls,    // Phase 2b — chat renders cards
     jobError:          result.jobError,
