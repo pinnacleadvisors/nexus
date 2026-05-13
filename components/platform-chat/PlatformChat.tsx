@@ -15,7 +15,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon } from 'lucide-react'
 import ApprovalCard from './ApprovalCard'
 import SessionSidebar, { type SessionSummary } from './SessionSidebar'
+import ToolCallCard from './ToolCallCard'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
+import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 interface Message {
   role:       'user' | 'assistant'
@@ -27,18 +29,20 @@ interface Message {
   /** Resolution state per approval_id, populated when the operator clicks
    *  Approve/Deny. Kept client-side so the card collapses but stays visible. */
   approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
+  /** Tool calls observed during the turn (Phase 2b). Render as cards. */
+  tool_calls?: ToolCall[]
 }
 
 interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; durationMs?: number } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -108,6 +112,7 @@ export default function PlatformChat() {
           content:              m.content,
           durationMs:           m.metadata?.durationMs,
           approval_requests:    m.metadata?.approval_requests,
+          tool_calls:           m.metadata?.tool_calls,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -222,6 +227,7 @@ export default function PlatformChat() {
         content:            finalResult.text,
         durationMs:         finalResult.durationMs,
         approval_requests:  finalResult.approval_requests,
+        tool_calls:         finalResult.tool_calls,
       }])
       // Refresh sidebar (title may have been auto-derived from first message,
       // and last_message_at definitely changed).
@@ -242,7 +248,7 @@ export default function PlatformChat() {
   async function pollUntilDone(
     jobId: string,
     sessionId: string,
-  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; cancelled?: boolean }> {
+  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -263,6 +269,7 @@ export default function PlatformChat() {
           text:               (j.text ?? '').trim() || '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)',
           durationMs:         j.durationMs ?? (Date.now() - start),
           approval_requests:  j.approval_requests,
+          tool_calls:         j.tool_calls,
         }
       }
       if (j.status === 'error') {
@@ -460,6 +467,14 @@ function MessageBubble({
           color:  '#e8e8f0',
         }}
       >
+        {/* Phase 2b — tool-call cards. Rendered ABOVE the prose so the
+            operator sees "what Claude did" before reading the synthesis.
+            Each card collapses by default; click to expand input/output. */}
+        {!isUser && message.tool_calls && message.tool_calls.length > 0 && (
+          <div className="mb-2">
+            {message.tool_calls.map(call => <ToolCallCard key={call.id} call={call} />)}
+          </div>
+        )}
         {message.content && <RenderedMarkdown text={message.content} />}
         {/* Phase 3 — render any approval-request blocks the agent emitted as
             inline cards. Each card carries its own approval_id; on click we

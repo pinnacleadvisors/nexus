@@ -96,11 +96,25 @@ export interface JobStatusOpts {
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'error'
 
+/** Tool-use record forwarded from the gateway (matches services/claude-gateway
+ *  /src/spawn.ts::ToolCallRecord). Phase 2b of task_plan-chat.md. */
+export interface ToolCall {
+  id:          string
+  name:        string
+  input:       unknown
+  output?:     unknown
+  isError?:    boolean
+  startedAt:   number
+  finishedAt?: number
+}
+
 export interface JobStatusResult {
   ok:         boolean
   status?:    JobStatus
   /** Final assistant text once status === 'done'. */
   text?:      string
+  /** Tool calls observed during the turn (Phase 2b — chat renders as cards). */
+  toolCalls?: ToolCall[]
   /** Native CLI error when status === 'error'. */
   jobError?:  string
   durationMs?: number
@@ -134,7 +148,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
     }
     const data = (parsed ?? {}) as {
       status?:    JobStatus
-      result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number }
+      result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number; toolCalls?: ToolCall[] }
       createdAt?:  number
       startedAt?:  number
       finishedAt?: number
@@ -143,6 +157,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
       ok:          true,
       status:      data.status,
       text:        data.result?.content,
+      toolCalls:   data.result?.toolCalls,
       jobError:    data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
       durationMs:  data.result?.durationMs,
       createdAt:   data.createdAt,
