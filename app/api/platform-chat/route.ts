@@ -37,12 +37,23 @@ import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
+import {
+  appendMessage,
+  getSession,
+  createSession,
+  updateSessionTitle,
+  deriveTitleFromMessage,
+} from '@/lib/chat/sessions'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 30   // Enqueue should be <1s; 30s leaves plenty of slack.
 
 interface PlatformChatBody {
-  messages?: Array<{ role?: string; content?: string }>
+  messages?:  Array<{ role?: string; content?: string }>
+  /** Phase 4 — when set, the user message is persisted into chat_messages
+   *  under this session and the jobId is associated with it. When unset,
+   *  the route auto-creates a new session and returns its id. */
+  sessionId?: string
 }
 
 const MAX_TURN_CHARS = 32_000
@@ -102,7 +113,40 @@ export async function POST(req: NextRequest) {
     }, { status: 413 })
   }
 
-  const sessionTag = `platform-chat-${Date.now()}`
+  // ── Phase 4: session resolution + persistence ────────────────────────────
+  // If the client passed a sessionId, verify ownership. Otherwise create a
+  // new session and derive a title from the first user message. The persisted
+  // user message + the eventual assistant reply both live under this session.
+  let sessionId = body.sessionId?.trim() || null
+  let sessionRow = sessionId ? await getSession(session.userId, sessionId) : null
+  if (sessionId && !sessionRow) {
+    return NextResponse.json({ ok: false, error: 'session not found', code: 'invalid' }, { status: 404 })
+  }
+  if (!sessionRow) {
+    sessionRow = await createSession({
+      userId:    session.userId,
+      scope:     'platform',
+      agentSlug: 'platform-copilot',
+      title:     deriveTitleFromMessage(lastUser.content as string),
+    })
+    if (!sessionRow) {
+      return NextResponse.json({ ok: false, error: 'failed to create chat session', code: 'invalid' }, { status: 500 })
+    }
+    sessionId = sessionRow.id
+  } else if (!sessionRow.title) {
+    // First user message arrived against a pre-existing untitled session.
+    await updateSessionTitle(sessionRow.id, deriveTitleFromMessage(lastUser.content as string))
+  }
+
+  // Persist the user's latest message before the dispatch — if the gateway
+  // fails, the user still sees their input preserved in the session.
+  await appendMessage({
+    sessionId: sessionRow.id,
+    role:      'user',
+    content:   lastUser.content as string,
+  })
+
+  const sessionTag = `platform-chat-${sessionRow.id}-${Date.now()}`
   const t0         = Date.now()
   const enqueued = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
@@ -132,8 +176,13 @@ export async function POST(req: NextRequest) {
     action:   'platform_chat.enqueue',
     resource: 'chat',
     userId:   session.userId,
-    metadata: { jobId: enqueued.jobId, sessionTag, charCount: composite.length, durationMs: Date.now() - t0 },
+    metadata: { jobId: enqueued.jobId, sessionId: sessionRow.id, sessionTag, charCount: composite.length, durationMs: Date.now() - t0 },
   })
 
-  return NextResponse.json({ ok: true, jobId: enqueued.jobId, sessionTag })
+  return NextResponse.json({
+    ok:        true,
+    jobId:     enqueued.jobId,
+    sessionId: sessionRow.id,
+    sessionTag,
+  })
 }

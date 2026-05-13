@@ -27,6 +27,8 @@ import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
+import { parseAssistantMessage } from '@/lib/chat/approval'
+import { appendMessage, getSession } from '@/lib/chat/sessions'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15   // Single GET to gateway, default poll budget is small.
@@ -76,14 +78,46 @@ export async function GET(req: NextRequest) {
     }, { status: result.http && result.http >= 400 && result.http < 600 ? result.http : 502 })
   }
 
+  // Phase 3 — extract approval-request blocks from the assistant text so
+  // the client can render them as inline buttons instead of raw JSON.
+  // Phase 4 — when the job lands `done` and the caller passes sessionId,
+  // persist the assistant reply (with parsed approvals as metadata) so
+  // the conversation is durable across page reloads.
+  let displayText        = result.text ?? ''
+  let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+
+  if (result.status === 'done' && result.text) {
+    const parsed = parseAssistantMessage(result.text)
+    displayText      = parsed.text
+    approvalRequests = parsed.approval_requests
+
+    const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
+    if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
+      const owned = await getSession(session.userId, sessionId)
+      if (owned) {
+        await appendMessage({
+          sessionId,
+          role:    'assistant',
+          content: displayText,
+          metadata: {
+            durationMs:        result.durationMs,
+            jobId,
+            approval_requests: approvalRequests,
+          },
+        })
+      }
+    }
+  }
+
   return NextResponse.json({
-    ok:          true,
-    status:      result.status,
-    text:        result.text,
-    jobError:    result.jobError,
-    durationMs:  result.durationMs,
-    createdAt:   result.createdAt,
-    startedAt:   result.startedAt,
-    finishedAt:  result.finishedAt,
+    ok:                true,
+    status:            result.status,
+    text:              displayText,
+    approval_requests: approvalRequests,
+    jobError:          result.jobError,
+    durationMs:        result.durationMs,
+    createdAt:         result.createdAt,
+    startedAt:         result.startedAt,
+    finishedAt:        result.finishedAt,
   })
 }
