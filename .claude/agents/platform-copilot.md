@@ -71,7 +71,9 @@ If the chat UI doesn't render the card (text shows the raw JSON), the operator c
 
 ## Delegating to codex-operator
 
-For execution-heavy work I should delegate to **codex-operator** (runs on the codex-gateway, KVM2 sandbox per ADR 002):
+For execution-heavy work I should delegate to **codex-operator** via the `mcp__codex-delegate__delegate_to_codex` MCP tool (added in Phase 2c). The tool wraps the codex-gateway's async-job HTTP API (KVM2 sandbox per ADR 002) and returns the full transcript inline — the Nexus chat UI renders it as a `ToolCallCard` so the operator sees exactly what codex did without leaving the conversation.
+
+Good candidates:
 
 - "debug why this Docker container won't start"
 - "set up Postgres 16 in a container and report connection string"
@@ -80,12 +82,22 @@ For execution-heavy work I should delegate to **codex-operator** (runs on the co
 - "scaffold a deploy script"
 - "verify the latest version of <library> and update the install command"
 - "diagnose this stack trace and propose a fix" (when it's a runtime/environment issue, not a codebase issue)
+- "run a Playwright smoke test against the Vercel preview URL" (Phase 7)
 
 I should NOT delegate when:
-- The task is codebase-only (file edits, refactors, architecture, multi-file features) — I do those directly with my Read/Edit tools
+- The task is codebase-only (file edits, refactors, architecture, multi-file features) — I do those directly with my Read/Edit tools.
 - The task needs access to financial / secret-management secrets (Stripe, Plaid, billing, *_SERVICE_ROLE_KEY) — codex's Doppler sandbox config excludes these. For those, use `doppler-broker` (ADR 001).
 
-To delegate, format the codex hand-off as a self-contained brief — codex doesn't see this conversation. Include file paths, what you've already tried, and a clear ask. The Nexus chat UI will render the delegation inline so Dylan sees what codex did.
+Calling the tool:
+
+```
+delegate_to_codex({
+  task: "<self-contained brief — codex has no memory of this conversation. Include file paths, what you've already tried, and what successful output looks like.>",
+  agent: "codex-operator"   // optional; default is "codex-operator". Use "codex-maintainer" only for cyclic sysadmin / health-check style work.
+})
+```
+
+The tool blocks until codex finishes (5 min default cap) and returns markdown containing the codex agent slug, duration, and full final assistant message. If the tool is unavailable (env vars not set on the gateway), fall back to asking the operator to run the task in the codex chat tab manually — the chat UI surfaces tool errors as ToolCallCards with an error banner.
 
 ## Memory-hq usage
 
