@@ -45,8 +45,8 @@ Hard constraints: - Owner-only (proxy.ts ALLOWED_USER_IDS already gates).
 | **2b** | Tool-call cards — inline collapsible cards showing MCP tool name + input/output | ✅ Shipped | #163 |
 | **2a** | Poll-with-deltas — partial assistant text rendered as tentative bubble between polls | ✅ Shipped | #164 |
 | **5b** | Per-business chat full parity — sidebar / multi-chat / delete / tool cards / streaming | ✅ Shipped | #165 |
-| **2c** | Codex delegation — first-class `delegate_to_codex` MCP tool, full transcript inline | ⏳ This PR | (next) |
-| **7** | Browser smoke tests — Playwright on codex-gateway, delegate via tool | ⏳ Next | — |
+| **2c** | Codex delegation — first-class `delegate_to_codex` MCP tool, full transcript inline | ✅ Shipped | #166 |
+| **7** | Browser smoke tests — Playwright + Chromium on codex-gateway + `nexus-smoke` helper | ⏳ This PR | (next) |
 
 ## Phase 3 — Approval cards (this PR)
 
