@@ -31,6 +31,8 @@ Hard constraints: - Owner-only (proxy.ts ALLOWED_USER_IDS already gates).
                     can ship.
 ```
 
+> **Operator rollout guide** — after merging a new chat-phase PR, follow [`docs/runbooks/chat-phases-rollout.md`](docs/runbooks/chat-phases-rollout.md) for the click-by-click Coolify + Vercel verification flow.
+
 ## Phase status
 
 | Phase | Scope | Status | Ship PR(s) |
