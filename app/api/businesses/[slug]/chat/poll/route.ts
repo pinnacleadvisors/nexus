@@ -1,0 +1,88 @@
+/**
+ * GET /api/businesses/[slug]/chat/poll?jobId=<id>&sessionId=<id>
+ *
+ * Mirror of /api/platform-chat/poll for the per-business gateway.
+ * Resolves the right per-business gateway via resolveClawConfig(userId, slug),
+ * proxies the gateway's GET /api/jobs/:id, parses any approval-request
+ * blocks from the final assistant text, and persists the assistant reply
+ * into chat_messages when sessionId is provided + ownership verified.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
+import { getGatewayJob } from '@/lib/claw/gateway-jobs'
+import { parseAssistantMessage } from '@/lib/chat/approval'
+import { appendMessage, getSession } from '@/lib/chat/sessions'
+
+export const runtime    = 'nodejs'
+export const maxDuration = 15
+
+export async function GET(req: NextRequest, context: { params: Promise<{ slug: string }> }) {
+  const rl = await rateLimit(req, { limit: 120, window: '1 m', prefix: 'business-chat:poll' })
+  if (!rl.success) return rateLimitResponse(rl)
+
+  const session = await auth()
+  if (!session.userId) return NextResponse.json({ ok: false, error: 'unauthorized', code: 'unauthorized' }, { status: 401 })
+
+  const { slug } = await context.params
+  if (!isBusinessSlug(slug)) {
+    return NextResponse.json({ ok: false, error: 'invalid business slug', code: 'invalid' }, { status: 400 })
+  }
+
+  const jobId = new URL(req.url).searchParams.get('jobId')?.trim()
+  if (!jobId || !/^job_[A-Za-z0-9_-]{6,128}$/.test(jobId)) {
+    return NextResponse.json({ ok: false, error: 'jobId query param required', code: 'invalid' }, { status: 400 })
+  }
+
+  const gateway = await resolveClawConfig(session.userId, slug)
+  if (!gateway) {
+    return NextResponse.json({ ok: false, error: `no gateway for business "${slug}"`, code: 'no_gateway' }, { status: 503 })
+  }
+
+  const result = await getGatewayJob({
+    gatewayUrl:  gateway.gatewayUrl,
+    bearerToken: gateway.bearerToken,
+    jobId,
+    userId:      session.userId,
+    timeoutMs:   10_000,
+  })
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: `gateway poll failed: ${result.error ?? 'unknown'}`, code: 'gateway_error' }, { status: result.http && result.http >= 400 && result.http < 600 ? result.http : 502 })
+  }
+
+  let displayText      = result.text ?? ''
+  let approvalRequests = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+
+  if (result.status === 'done' && result.text) {
+    const parsed = parseAssistantMessage(result.text)
+    displayText      = parsed.text
+    approvalRequests = parsed.approval_requests
+
+    const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
+    if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
+      const owned = await getSession(session.userId, sessionId)
+      if (owned && owned.scope === `business:${slug}`) {
+        await appendMessage({
+          sessionId,
+          role:    'assistant',
+          content: displayText,
+          metadata: { durationMs: result.durationMs, jobId, approval_requests: approvalRequests },
+        })
+      }
+    }
+  }
+
+  return NextResponse.json({
+    ok:                true,
+    status:            result.status,
+    text:              displayText,
+    approval_requests: approvalRequests,
+    jobError:          result.jobError,
+    durationMs:        result.durationMs,
+    createdAt:         result.createdAt,
+    startedAt:         result.startedAt,
+    finishedAt:        result.finishedAt,
+  })
+}
