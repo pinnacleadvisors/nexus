@@ -28,11 +28,18 @@ import type { SamplingContext } from '@sentry/core'
 
 /** Patterns that match ROUTE/transaction names we want to skip entirely. */
 const SKIP_PATTERNS: RegExp[] = [
-  /\/api\/platform-chat\/poll/,    // Chat polling — fires every 2.5s during a run
-  /\/api\/gateway-status/,         // GatewayStatusPill — every 30s, every protected page
-  /\/api\/health\/cron/,           // Sidebar cron health probe — every 30s
-  /\/api\/vercel\/log-drain/,      // Self-amplifying webhook — bypassed in proxy.ts already
+  /\/api\/platform-chat\/poll/,      // Chat polling — fires every 2.5s during a run
+  /\/api\/gateway-status/,           // GatewayStatusPill — every 30s, every protected page
+  /\/api\/health\/cron/,             // Sidebar cron health probe — every 30s
+  /\/api\/vercel\/log-drain/,        // Self-amplifying webhook — bypassed in proxy.ts already
   /\/api\/connected-accounts(\?|$)/, // List endpoint, frequently re-fetched by AccountList
+  // Dashboard pollers (each fires on a setInterval from the listed component).
+  // Added when scripts/check-sentry-config.mjs flagged them as un-skipped pollers.
+  /\/api\/runs/,                     // <ActiveRunsPanel> — every 15s
+  /\/api\/ideas/,                    // <ActiveRunsPanel> — every 15s
+  /\/api\/board/,                    // <PendingReviewsPanel> — every 30s
+  /\/api\/org(\?|$)/,                // /dashboard/org page poller
+  /\/api\/claw\/status/,             // Legacy /tools/claw status pill (pre-claude-gateway era)
 ]
 
 /** Patterns that benefit from full visibility — keep at 100% even though they're not errors. */
