@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check } from 'lucide-react'
+import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon } from 'lucide-react'
 import ApprovalCard from './ApprovalCard'
 import SessionSidebar, { type SessionSummary } from './SessionSidebar'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
@@ -57,6 +57,12 @@ export default function PlatformChat() {
   const [busy,     setBusy]     = useState(false)
   const [error,    setError]    = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Phase 6 — Cancel button. cancelRef.current is set to true when the
+  // operator clicks Cancel on a running job; the poll loop checks it on
+  // each iteration and bails out. The server-side gateway job continues
+  // to completion (wasted spend but bounded) — proper server-side cancel
+  // is a follow-up that needs a gateway-side DELETE /api/jobs/:id endpoint.
+  const cancelRef = useRef(false)
 
   // Phase 4 — session state. activeSessionId is null until either the
   // operator creates/picks one explicitly, OR the first send() auto-creates
@@ -161,10 +167,17 @@ export default function PlatformChat() {
     setTimeout(() => { void send(reply) }, 30)
   }
 
+  function handleCancel() {
+    if (!busy) return
+    cancelRef.current = true
+    // The poll loop notices on its next tick (max 2.5s) and bails out.
+  }
+
   async function send(forcedText?: string) {
     const text = (forcedText ?? input).trim()
     if (!text || busy) return
     setError(null)
+    cancelRef.current = false   // reset flag for the new turn
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setInput('')
@@ -193,8 +206,17 @@ export default function PlatformChat() {
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
 
       // Step 2 — poll until done. Each poll is <500ms; the loop runs until
-      // the gateway reports status='done' or 'error', or we hit the 5-min cap.
+      // the gateway reports status='done' or 'error', or we hit the 5-min
+      // cap, OR the operator clicks Cancel.
       const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      if (finalResult.cancelled) {
+        setMessages(prev => [...prev, {
+          role:    'assistant',
+          content: '_Run cancelled by operator. The gateway job continues server-side and will finish silently — its cost still applies (server-side cancel is a follow-up)._',
+        }])
+        void reloadSessions()
+        return
+      }
       setMessages(prev => [...prev, {
         role:               'assistant',
         content:            finalResult.text,
@@ -220,11 +242,14 @@ export default function PlatformChat() {
   async function pollUntilDone(
     jobId: string,
     sessionId: string,
-  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[] }> {
+  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+      if (cancelRef.current) {
+        return { text: '', durationMs: Date.now() - start, cancelled: true }
+      }
       const res = await fetch(`/api/platform-chat/poll?${qs}`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -292,7 +317,7 @@ export default function PlatformChat() {
               busy={busy}
             />
           ))}
-          {busy && <ThinkingIndicator />}
+          {busy && <ThinkingIndicator onCancel={handleCancel} />}
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
           <div ref={bottomRef} />
         </div>
@@ -369,7 +394,7 @@ function EmptyState() {
   )
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ onCancel }: { onCancel?: () => void }) {
   // Tick an elapsed-seconds counter so the operator sees the chat hasn't
   // frozen during long agent runs (Opus + MCP tool calls easily hit 30-90s).
   const [elapsed, setElapsed] = useState(0)
@@ -381,6 +406,20 @@ function ThinkingIndicator() {
     <div className="flex items-center gap-2 text-sm" style={{ color: '#9090b0' }}>
       <Loader2 size={14} className="animate-spin" />
       <span>Claude is working — checking platforms, reading code, maybe delegating to codex… ({elapsed}s)</span>
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          title="Cancel — stop polling. The gateway job continues server-side but its result is ignored."
+          className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+          style={{
+            background: 'rgba(239,68,68,0.10)',
+            border:     '1px solid rgba(239,68,68,0.30)',
+            color:      '#fca5a5',
+          }}
+        >
+          <XIcon size={10} /> Cancel
+        </button>
+      )}
     </div>
   )
 }
