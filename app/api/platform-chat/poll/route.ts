@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
             durationMs:        result.durationMs,
             jobId,
             approval_requests: approvalRequests,
+            tool_calls:        result.toolCalls,    // Phase 2b — persisted with the message
           },
         })
       }
@@ -118,6 +119,7 @@ export async function GET(req: NextRequest) {
      *  progressive without going through SSE. */
     partialText:       result.partialText,
     approval_requests: approvalRequests,
+    tool_calls:        result.toolCalls,    // Phase 2b — chat renders cards
     jobError:          result.jobError,
     durationMs:        result.durationMs,
     createdAt:         result.createdAt,
