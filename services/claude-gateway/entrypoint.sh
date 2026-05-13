@@ -160,10 +160,30 @@ JSON
 MCP_BLOCK="$(build_mcp_block)"
 if [ -n "$MCP_BLOCK" ]; then
   mkdir -p /root/.claude
+  # Pre-allowlist the trusted MCP tools so `claude -p` (non-interactive) doesn't
+  # silently drop tool calls waiting for a TTY confirmation. Default permission
+  # mode expects an interactive prompt — in headless mode the MCP invocations
+  # never fire. The composio-admin wrapper is structurally isolated to admin-
+  # scope rows (PR #153), and memory-hq writes only to the operator's own
+  # GitHub repo, so wholesale-allowing these 8 tool names is safe and matches
+  # the "trusted MCP, default-deny everything else" pattern. Bash / Edit /
+  # Write etc. remain default-prompted, preserving the approval-card gates.
   cat > /root/.claude/settings.json <<JSON
 {
   "mcpServers": {
 $MCP_BLOCK
+  },
+  "permissions": {
+    "allow": [
+      "mcp__composio-admin__admin_list_connected_platforms",
+      "mcp__composio-admin__admin_list_actions",
+      "mcp__composio-admin__admin_execute_action",
+      "mcp__memory-hq__memory_atom",
+      "mcp__memory-hq__memory_entity",
+      "mcp__memory-hq__memory_moc",
+      "mcp__memory-hq__memory_query",
+      "mcp__memory-hq__memory_search"
+    ]
   }
 }
 JSON

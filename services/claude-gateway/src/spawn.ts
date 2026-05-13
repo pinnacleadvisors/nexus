@@ -67,6 +67,24 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
   if (mcpConfigPath && mcpConfigPath !== 'skip') {
     cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
   }
+
+  // Pre-allow the trusted MCP tools as a belt-and-braces alongside the
+  // permissions.allow block in settings.json (which the entrypoint writes).
+  // The settings.json field IS the canonical Claude Code surface, but older
+  // CLI versions silently ignore unknown settings.json keys — passing the
+  // flag too means a stale CLI in the gateway image still works. The list
+  // mirrors the entrypoint's permissions.allow exactly.
+  const PRE_ALLOWED_MCP_TOOLS = [
+    'mcp__composio-admin__admin_list_connected_platforms',
+    'mcp__composio-admin__admin_list_actions',
+    'mcp__composio-admin__admin_execute_action',
+    'mcp__memory-hq__memory_atom',
+    'mcp__memory-hq__memory_entity',
+    'mcp__memory-hq__memory_moc',
+    'mcp__memory-hq__memory_query',
+    'mcp__memory-hq__memory_search',
+  ]
+  for (const t of PRE_ALLOWED_MCP_TOOLS) cliArgs.push('--allowedTools', t)
   if (systemPrompt) {
     cliArgs.push('--append-system-prompt', systemPrompt)
   }
