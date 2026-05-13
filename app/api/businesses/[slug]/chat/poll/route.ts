@@ -68,7 +68,12 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
           sessionId,
           role:    'assistant',
           content: displayText,
-          metadata: { durationMs: result.durationMs, jobId, approval_requests: approvalRequests },
+          metadata: {
+            durationMs:        result.durationMs,
+            jobId,
+            approval_requests: approvalRequests,
+            tool_calls:        result.toolCalls,
+          },
         })
       }
     }
@@ -78,6 +83,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     ok:                true,
     status:            result.status,
     text:              displayText,
+    partialText:       result.partialText,
+    tool_calls:        result.toolCalls,
     approval_requests: approvalRequests,
     jobError:          result.jobError,
     durationMs:        result.durationMs,
