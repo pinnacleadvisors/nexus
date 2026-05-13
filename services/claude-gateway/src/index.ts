@@ -14,7 +14,7 @@ const PORT          = Number(process.env.CLAUDE_GATEWAY_PORT ?? 3000)
 const BEARER        = process.env.CLAUDE_GATEWAY_BEARER ?? ''
 const REPO_PATH     = process.env.NEXUS_REPO_PATH ?? '/repo'
 const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
-const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 120_000)
+const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 600_000)
 const DEBUG_HMAC    = process.env.DEBUG_HMAC === '1'
 
 // Defence-in-depth allowlist. When set, every signed POST must carry an
