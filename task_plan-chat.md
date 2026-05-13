@@ -37,14 +37,16 @@ Hard constraints: - Owner-only (proxy.ts ALLOWED_USER_IDS already gates).
 |---|---|---|---|
 | **1** | MVP chat shell — single conversation, sync dispatch, markdown rendering | ✅ Shipped | #145, #146, #149, #150 |
 | **1b** | Async job protocol — kill the 55s timeout via enqueue + poll | ✅ Shipped | #155 |
-| **3** | Approval cards — server-side sentinel parsing + inline UI buttons | ⏳ This PR | (next) |
-| **4** | Persistence — `chat_sessions` + `chat_messages` tables, sidebar, multi-chat, delete | ⏳ This PR | (next) |
-| **2a** | SSE streaming — switch dispatch to `callGatewayStream` so partial output is visible | ⏳ Deferred | — |
-| **2b** | Tool-call cards — inline `Calling SLACK_*…` cards with expand/collapse | ⏳ Deferred | — |
-| **2c** | Codex delegation card — full inline Codex transcript on `delegate_to_codex` | ⏳ Deferred | — |
-| **5** | Per-business chat — `/businesses/<slug>/chat` route, business-scope system prompt | ⏳ Deferred | — |
-| **6** | Cancel button — kill an in-flight job from the UI | ⏳ Deferred | — |
-| **7** | Browser smoke tests — Playwright on codex-gateway, delegate via tool | ⏳ Deferred | — |
+| **3** | Approval cards — server-side sentinel parsing + inline UI buttons | ✅ Shipped | #156 |
+| **4** | Persistence — `chat_sessions` + `chat_messages` tables, sidebar, multi-chat, delete | ✅ Shipped | #157, #159 |
+| **8** | MCP pre-approval — gateway entrypoint writes `permissions.allow` for required MCP tools | ✅ Shipped | #160 |
+| **6** | Cancel button — bail out of in-flight poll loop | ✅ Shipped | #161 |
+| **5a** | Per-business chat MVP — `/businesses/<slug>/chat` route, business-scope system prompt | ✅ Shipped | #162 |
+| **2b** | Tool-call cards — inline collapsible cards showing MCP tool name + input/output | ✅ Shipped | #163 |
+| **2a** | Poll-with-deltas — partial assistant text rendered as tentative bubble between polls | ✅ Shipped | #164 |
+| **5b** | Per-business chat full parity — sidebar / multi-chat / delete / tool cards / streaming | ✅ Shipped | #165 |
+| **2c** | Codex delegation — first-class `delegate_to_codex` MCP tool, full transcript inline | ✅ Shipped | #166 |
+| **7** | Browser smoke tests — Playwright + Chromium on codex-gateway + `nexus-smoke` helper | ⏳ This PR | (next) |
 
 ## Phase 3 — Approval cards (this PR)
 
