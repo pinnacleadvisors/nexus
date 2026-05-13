@@ -286,6 +286,7 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
 ### Pre-commit Checklist
 - [ ] `npx tsc --noEmit` passes with zero errors
 - [ ] `npm run check:retry-storm` passes (or any new finding has a `// retry-storm-check: ignore` comment with a one-line justification)
+- [ ] `npm run check:sentry-config` passes — Sentry configs use the shared `tracesSampler` (no `tracesSampleRate > 0.05`) AND any new polling endpoint (`setInterval(fetch('/api/...'), N)`) is listed in `SKIP_PATTERNS` at [`lib/sentry/sampler.ts`](lib/sentry/sampler.ts). The 2026-05-12 incident burned the 5M-spans-in-3-days budget cap; this check prevents regressions.
 - [ ] All interactive components have `'use client'`
 - [ ] No browser globals (`window`, `document`) in Server Components
 - [ ] Icons verified to exist in lucide-react
