@@ -44,8 +44,8 @@ Hard constraints: - Owner-only (proxy.ts ALLOWED_USER_IDS already gates).
 | **5a** | Per-business chat MVP — `/businesses/<slug>/chat` route, business-scope system prompt | ✅ Shipped | #162 |
 | **2b** | Tool-call cards — inline collapsible cards showing MCP tool name + input/output | ✅ Shipped | #163 |
 | **2a** | Poll-with-deltas — partial assistant text rendered as tentative bubble between polls | ✅ Shipped | #164 |
-| **5b** | Per-business chat full parity — sidebar / multi-chat / delete / tool cards / streaming | ⏳ This PR | (next) |
-| **2c** | Codex delegation card — first-class MCP tool + UI special-case for codex transcripts | ⏳ Next | — |
+| **5b** | Per-business chat full parity — sidebar / multi-chat / delete / tool cards / streaming | ✅ Shipped | #165 |
+| **2c** | Codex delegation — first-class `delegate_to_codex` MCP tool, full transcript inline | ⏳ This PR | (next) |
 | **7** | Browser smoke tests — Playwright on codex-gateway, delegate via tool | ⏳ Next | — |
 
 ## Phase 3 — Approval cards (this PR)
