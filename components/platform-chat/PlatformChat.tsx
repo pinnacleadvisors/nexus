@@ -417,19 +417,20 @@ export default function PlatformChat() {
       </div>{/* close chat column */}
 
       {/* Phase 9 — Views side panel. Renders only when the operator picks a
-          view from the dropdown. Closes on Esc or the X button. */}
+          view from the dropdown. Resizable via left-edge handle (persisted
+          per-view in localStorage). Drag below threshold or click X to close. */}
       {activeView === 'tasks' && (
-        <ViewsPanel title="Manual to-dos" subtitle="Tasks the agent flagged for you (admin scope)" onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Manual to-dos" subtitle="Tasks the agent flagged for you (admin scope)" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:tasks">
           <TasksView scope="admin" onCountChange={setTasksBadge} />
         </ViewsPanel>
       )}
       {activeView === 'approvals' && (
-        <ViewsPanel title="Approval queue" subtitle="Pending approval cards across every admin chat" onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Approval queue" subtitle="Pending approval cards across every admin chat" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:approvals">
           <ApprovalsView scope="admin" sessionsBasePath="/manage-platform" onCountChange={setApprovalsBadge} />
         </ViewsPanel>
       )}
       {activeView === 'calendar' && (
-        <ViewsPanel title="Calendar" subtitle="Upcoming due dates + scheduled runs" onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Calendar" subtitle="Upcoming due dates + scheduled runs" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:calendar">
           <CalendarView scope="admin" />
         </ViewsPanel>
       )}
