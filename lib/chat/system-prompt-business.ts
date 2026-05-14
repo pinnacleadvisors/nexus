@@ -46,7 +46,8 @@ export async function buildBusinessSystemPrompt(userId: string, businessSlug: st
     try {
       type Chain<T> = { eq: (c: string, v: unknown) => Chain<T>; is: (c: string, v: unknown) => Chain<T>; order: (c: string, o: { ascending: boolean }) => Chain<T>; limit: (n: number) => Promise<{ data: T[] | null; error: { message: string } | null }>; gte: (c: string, v: unknown) => Chain<T> }
 
-      const bizQ = (db.from('businesses' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
+      // Canonical table is `business_operators` (see lib/business/db.ts header).
+      const bizQ = (db.from('business_operators' as never) as unknown as { select: (c: string) => Chain<BusinessRow> })
         .select('slug, name, niche, money_model')
         .eq('slug', businessSlug)
         .eq('user_id', userId)

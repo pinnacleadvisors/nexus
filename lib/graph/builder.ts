@@ -342,11 +342,15 @@ export async function buildGraph(forceRebuild = false): Promise<GraphData> {
     const nodes: GraphNode[] = []
     const edges: GraphEdge[] = []
 
-    // Businesses
-    const { data: businesses } = await db.from('businesses').select('id,name,created_at').limit(50)
+    // Businesses — canonical table is `business_operators` (see lib/business/db.ts).
+    // The graph builder previously queried `businesses` which doesn't exist,
+    // so the businesses partition of the graph was always empty.
+    const { data: businesses } = await (db as unknown as {
+      from: (t: string) => { select: (c: string) => { limit: (n: number) => Promise<{ data: Array<{ slug: string; name: string | null; created_at: string | null }> | null }> } }
+    }).from('business_operators').select('slug,name,created_at').limit(50)
     for (const b of businesses ?? []) {
       nodes.push({
-        id: `biz-${b.id}`, type: 'business', label: b.name ?? 'Business',
+        id: `biz-${b.slug}`, type: 'business', label: b.name ?? 'Business',
         metadata: {}, position3d: { x: (Math.random() - 0.5) * 120, y: (Math.random() - 0.5) * 120, z: (Math.random() - 0.5) * 120 },
         clusterId: 0, pageRank: 0, connections: 0, createdAt: b.created_at ?? iso(),
       })
