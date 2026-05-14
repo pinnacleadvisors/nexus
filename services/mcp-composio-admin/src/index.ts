@@ -117,7 +117,21 @@ async function composioListActions(toolkitSlug: string): Promise<unknown> {
   return res.json()
 }
 
-async function composioExecute(actionSlug: string, connectedAccountId: string, args: unknown): Promise<unknown> {
+/**
+ * Execute a Composio action.
+ *
+ * Composio's REST policy as of 2026-05 requires `entity_id` on every
+ * tool-execute call (error code 1811 / ActionExecute_ConnectedAccountEntityIdRequired
+ * when missing). The canonical Nexus pattern (lib/composio/client.ts:154)
+ * is to pass the Clerk user_id as the entity_id — same identifier this
+ * MCP server already uses to load admin-scope rows.
+ *
+ * If entity_id is omitted, every write action errors with the 1811 code.
+ * Read actions (LIST/GET) usually still work, which is why this bug only
+ * surfaced when the platform-copilot tried to create a PR via
+ * GITHUB_CREATE_A_PULL_REQUEST.
+ */
+async function composioExecute(actionSlug: string, connectedAccountId: string, entityId: string, args: unknown): Promise<unknown> {
   const url = `${COMPOSIO_BASE}/api/v3/tools/execute/${encodeURIComponent(actionSlug.toUpperCase())}`
   const res = await fetch(url, {
     method:  'POST',
@@ -128,6 +142,7 @@ async function composioExecute(actionSlug: string, connectedAccountId: string, a
     },
     body: JSON.stringify({
       connected_account_id: connectedAccountId,
+      entity_id:            entityId,
       arguments:            args ?? {},
     }),
     signal: AbortSignal.timeout(30_000),
@@ -224,7 +239,10 @@ async function main() {
       const account = accounts.get(platform)
       if (!account)               throw new Error(`platform '${platform}' is not in admin scope. Connect it at /settings/accounts → Admin first, then redeploy the gateway. Available admin platforms: ${[...accounts.keys()].join(', ') || '(none)'}.`)
       try {
-        const data = await composioExecute(action, account.composio_account_id, args.args)
+        // Pass the operator's Clerk user_id as Composio's entity_id — required
+        // by Composio's REST policy (error 1811 otherwise on every write
+        // action, including GITHUB_CREATE_A_PULL_REQUEST).
+        const data = await composioExecute(action, account.composio_account_id, OPERATOR_USER_ID, args.args)
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
