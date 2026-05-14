@@ -44,6 +44,37 @@ function sign(bodyText: string, secret: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(bodyText).digest('hex')
 }
 
+/**
+ * Extract a useful error message from a Node fetch failure.
+ *
+ * Node's `fetch` (undici) wraps the underlying network error in a generic
+ * `TypeError: fetch failed` and stashes the real cause (DNS / TCP / TLS /
+ * timeout) on `.cause`. The bare message tells the operator nothing —
+ * surfacing the cause + the URL hostname is what turns "it's broken" into
+ * "the per-business gateway DNS doesn't resolve, the container is down".
+ *
+ * Examples after this transformation:
+ *   getaddrinfo ENOTFOUND claude-gw.inkbound.example.com (host: …)
+ *   connect ECONNREFUSED 127.0.0.1:3000 (host: …)
+ *   self-signed certificate (host: …)
+ *
+ * Keeps the hostname only — never logs auth tokens or paths-with-secrets.
+ */
+function formatFetchError(err: unknown, url: string): string {
+  let host = ''
+  try { host = new URL(url).host } catch { /* malformed URL — already informative */ }
+  const cause = (err as { cause?: unknown })?.cause
+  const causeMsg = cause instanceof Error
+    ? cause.message
+    : typeof cause === 'string'
+      ? cause
+      : null
+  const topMsg = err instanceof Error ? err.message : String(err)
+  const baseMsg = causeMsg && topMsg.toLowerCase() === 'fetch failed' ? causeMsg : topMsg
+  if (topMsg.toLowerCase().includes('abort')) return host ? `enqueue timed out (host: ${host})` : 'enqueue timed out'
+  return host ? `${baseMsg} (host: ${host})` : baseMsg
+}
+
 export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJobResult> {
   const base = opts.gatewayUrl.replace(/\/$/, '')
   const url  = `${base}/api/jobs`
@@ -79,8 +110,12 @@ export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJo
     if (!data.jobId) return { ok: false, error: 'gateway returned no jobId', http: res.status }
     return { ok: true, jobId: data.jobId, status: 'pending', http: res.status }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { ok: false, error: msg.includes('abort') ? 'enqueue timed out' : msg }
+    const formatted = formatFetchError(err, url)
+    // Server-side warn — grepable in Vercel logs without exposing the bearer.
+    // Useful when the operator reports a chat failure but can't read the
+    // browser-side error (e.g. a backgrounded poll that swallowed it).
+    console.warn(`[gateway-jobs] enqueue failed: ${formatted}`)
+    return { ok: false, error: formatted }
   } finally {
     clearTimeout(t)
   }
@@ -171,8 +206,11 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
       http:        res.status,
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { ok: false, error: msg.includes('abort') ? 'status request timed out' : msg }
+    const formatted = formatFetchError(err, url)
+    // Don't console.warn the poll-side failure — pollers tick every 2.5s and
+    // would flood logs while a gateway is down. The enqueue-side warn is
+    // enough to surface "the gateway is unreachable" once.
+    return { ok: false, error: formatted }
   } finally {
     clearTimeout(t)
   }
