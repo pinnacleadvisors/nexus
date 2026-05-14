@@ -62,6 +62,8 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `COST_ALERT_PER_RUN_USD` | 0.50 | Soft alert threshold per AI run (Slack/email) |
 | `USER_DAILY_USD_LIMIT`    | 25   | Hard per-user daily AI-spend cap. `/api/chat` and `/api/content/generate` return HTTP 402 once hit. See `lib/cost-guard.ts`. |
 | `USER_BUSINESS_DAILY_USD_LIMIT` | 10 | Hard per-business daily AI-spend cap (D10). Trips first when a dispatch carries a `businessSlug` and the business is over budget. Falls back to user cap. |
+| `MAX_PLAN_5H_TURNS_CEILING` | 150 | Declared ceiling of the **Claude Max plan's 5-hour rolling window**, expressed in weighted turns (Opus = 5×, Sonnet = 1×, Haiku = 0.25×). Anthropic doesn't publish this — it's our empirical estimate (~200 Sonnet prompts / 5h → ~150 Opus-weighted). Read by `lib/claw/plan-window.ts` (to be built in `task_plan-bug-hunt-loop.md` B0.5) to compute "% of window used" for the bug-hunt loop's plan-window budget. Tune empirically: if throttling kicks in below 80% of declared, lower 10–15%; if never hit even at heavy use, raise 10%. |
+| `PRO_PLAN_5H_TURNS_CEILING` | 100 | Same shape as `MAX_PLAN_5H_TURNS_CEILING` but for the **ChatGPT Pro plan** consumed by `codex-gateway`. Used by the bug-hunt loop when an iteration calls `delegate_to_codex` (Playwright smoke tests). One codex turn = weight 1. |
 
 ## Security (Phase 9)
 
