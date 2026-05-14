@@ -1,0 +1,24 @@
+{
+  "name": "@nexus/mcp-platform-audit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing 4 static-audit tools (tsc, retry-storm, sentry-config, eslint) to the bug-hunt-loop agent. Runs locally inside the claude-gateway container against the cloned /repo. Returns structured findings JSON the agent parses into bug-hunt-finding fenced blocks. Phase B5 of task_plan-bug-hunt-loop.md.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "^4.21.0",
+    "typescript": "5.7.2"
+  }
+}

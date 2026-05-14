@@ -121,6 +121,22 @@ if [ -n "${CODEX_GATEWAY_URL:-}" ] && [ -n "${CODEX_GATEWAY_BEARER_TOKEN:-}" ] &
   fi
 fi
 
+# Build the platform-audit MCP (services/mcp-platform-audit/). Exposes 4
+# local-exec audit tools (tsc / retry-storm / sentry-config / eslint) to
+# the bug-hunt-loop agent. Phase B5 of task_plan-bug-hunt-loop.md.
+# Requires the cloned /repo to exist (always true at this point in boot).
+PLATFORM_AUDIT_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-platform-audit"
+PLATFORM_AUDIT_MCP_BUILT=0
+if [ -d "$PLATFORM_AUDIT_MCP_DIR/src" ]; then
+  echo "[gateway] Building platform-audit MCP from $PLATFORM_AUDIT_MCP_DIR..."
+  if (cd "$PLATFORM_AUDIT_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    PLATFORM_AUDIT_MCP_BUILT=1
+    echo "[gateway] platform-audit MCP built — will register."
+  else
+    echo "[gateway] WARNING: platform-audit MCP build FAILED — skipping registration."
+  fi
+fi
+
 # Assemble the settings.json. Whichever MCP servers built successfully get
 # registered. composio-admin (hard-isolation) is the primary; rube-mcp is
 # the soft-isolation fallback used only when the wrapper isn't available.
@@ -190,6 +206,19 @@ JSON
     }
 JSON
   fi
+  if [ "$PLATFORM_AUDIT_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "platform-audit": {
+      "command": "node",
+      "args": ["$PLATFORM_AUDIT_MCP_DIR/dist/index.js"],
+      "env": {
+        "NEXUS_REPO_PATH": "${NEXUS_REPO_PATH:-/repo}"
+      }
+    }
+JSON
+  fi
 }
 
 MCP_BLOCK="$(build_mcp_block)"
@@ -218,7 +247,11 @@ $MCP_BLOCK
       "mcp__memory-hq__memory_moc",
       "mcp__memory-hq__memory_query",
       "mcp__memory-hq__memory_search",
-      "mcp__codex-delegate__delegate_to_codex"
+      "mcp__codex-delegate__delegate_to_codex",
+      "mcp__platform-audit__audit_tsc",
+      "mcp__platform-audit__audit_retry_storm",
+      "mcp__platform-audit__audit_sentry_config",
+      "mcp__platform-audit__audit_eslint"
     ]
   }
 }
@@ -228,6 +261,7 @@ JSON
   [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -ne 1 ] && REGISTERED="$REGISTERED composio"
   [ "$MEMORY_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED memory-hq"
   [ "$CODEX_MCP_BUILT" -eq 1 ]                            && REGISTERED="$REGISTERED codex-delegate"
+  [ "$PLATFORM_AUDIT_MCP_BUILT" -eq 1 ]                   && REGISTERED="$REGISTERED platform-audit"
   echo "[gateway] Wrote MCP config:$REGISTERED"
 else
   # No MCP servers built — log clearly and clean up any stale settings.json
