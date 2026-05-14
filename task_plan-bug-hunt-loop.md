@@ -26,7 +26,7 @@ Success criteria: - Operator types "/bug-hunt start" → copilot enters
                   - When all iterations report 0 net-new findings → loop
                     auto-suggests termination
                   - Total budget capped per loop as a percentage of the
-                    rolling 5-hour Claude Max plan window (default 25%,
+                    rolling 5-hour Claude Max plan window (default 33%,
                     falls back to USD cap only when the loop is forced
                     onto an API-billed path)
 Hard constraints: - NO action without operator-approved iteration-plan
@@ -128,6 +128,15 @@ create table public.gateway_turns (
   duration_ms     integer,
   input_tokens    integer,         -- when the gateway forwards them (claude CLI exposes usage)
   output_tokens   integer,
+  -- Per-call USD estimate. Always 0.00 for claude-max / codex-pro plans
+  -- (flat-fee subscriptions). Non-zero only for anthropic-api fallback,
+  -- computed from token counts × the model's per-MTok price.
+  cost_estimate_usd numeric(8,4) default 0.0000,
+  -- Number of tool-use blocks observed in the turn (Phase 2b capture).
+  -- Useful for separating "thinking-heavy" turns from "tool-heavy" turns
+  -- in the bug-hunt panel — a 5-tool-call turn isn't the same cost shape
+  -- as a 0-tool-call reasoning turn even if both are weight 5.
+  tool_calls_count  integer default 0,
   created_at      timestamptz not null default now(),
 
   constraint gateway_turns_plan_check check (plan in ('claude-max','codex-pro','anthropic-api'))
@@ -155,11 +164,12 @@ create table public.bug_hunt_sessions (
   status                  text  not null default 'active', -- 'active' | 'paused' | 'stopped' | 'done'
 
   -- Primary budget (default path — Max + Pro subscriptions, flat-fee).
-  -- 25% means the loop will refuse to start an iteration if its share of the
-  -- rolling 5-hour Max plan window has reached 25% of the declared ceiling.
-  plan_window_share_pct   numeric(5,2) default 25.00,
+  -- 33% means the loop will refuse to start an iteration if its share of the
+  -- rolling 5-hour Max plan window has reached 33% of the declared ceiling.
+  -- Aggressive default per operator choice — leaves 67% for interactive chat.
+  plan_window_share_pct   numeric(5,2) default 33.00,
   -- Mirror for codex (smoke tests). Independent ceiling.
-  codex_window_share_pct  numeric(5,2) default 25.00,
+  codex_window_share_pct  numeric(5,2) default 33.00,
   -- Refuse to start if resolveClawConfig would fall through to API billing.
   -- Belt-and-braces — keeps the loop honest about its own routing assumption.
   force_plan_window       boolean default true,

@@ -29,8 +29,12 @@ import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
+import { parseIterationPlans } from '@/lib/chat/iteration-plan'
+import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
+import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
+import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15   // Single GET to gateway, default poll budget is small.
@@ -44,6 +48,9 @@ export async function GET(req: NextRequest) {
   if (!session.userId) {
     return NextResponse.json({ ok: false, error: 'unauthorized', code: 'unauthorized' }, { status: 401 })
   }
+  // Capture for closures (async sub-helpers below lose TS narrowing on
+  // `session.userId` otherwise).
+  const userId: string = session.userId
 
   const jobId = new URL(req.url).searchParams.get('jobId')?.trim()
   if (!jobId) {
@@ -99,6 +106,21 @@ export async function GET(req: NextRequest) {
     const taskParse = parseManualTaskBlocks(displayText)
     displayText = taskParse.text
 
+    // Bug-hunt loop (PR-1) — extract iteration-plan + bug-hunt-finding blocks.
+    // iteration-plan blocks: the inner ApprovalRequest is added to the
+    //   approval_requests array so the existing ApprovalCard UI renders it
+    //   (extra context — iteration number, intent — appears in metadata).
+    // bug-hunt-finding blocks: each becomes a row in bug_hunt_findings, but
+    //   ONLY when the session_id maps to an active session owned by the user
+    //   (server-side override defeats prompt-injection cross-session writes).
+    const iterParse    = parseIterationPlans(displayText)
+    displayText        = iterParse.text
+    const findingParse = parseBugHuntFindings(displayText)
+    displayText        = findingParse.text
+    // The agent's iteration-plan items render as ApprovalCards via the normal
+    // protocol. Append the inner approval requests so the chat surfaces them.
+    for (const p of iterParse.plans) approvalRequests = [...approvalRequests, p.approval]
+
     const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
     if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
       const owned = await getSession(session.userId, sessionId)
@@ -114,6 +136,38 @@ export async function GET(req: NextRequest) {
             sourceSessionId:  sessionId,
           })
         }
+        // Insert findings — but only for sessions owned by the user. The
+        // session_id in the block is trusted ONLY after we verify ownership.
+        const ownedBugHuntSessions = new Map<string, boolean>()
+        async function ownsBugHunt(bhId: string): Promise<boolean> {
+          if (ownedBugHuntSessions.has(bhId)) return ownedBugHuntSessions.get(bhId)!
+          const row = await getBugHuntSession(userId, bhId)
+          const ok = !!row
+          ownedBugHuntSessions.set(bhId, ok)
+          return ok
+        }
+        for (const f of findingParse.findings) {
+          if (!(await ownsBugHunt(f.session_id))) continue
+          await insertFinding({
+            sessionId:  f.session_id,
+            iteration:  f.iteration,
+            severity:   f.severity,
+            category:   f.category,
+            title:      f.title,
+            detail:     f.detail ?? null,
+            sourcePath: f.source_path ?? null,
+          })
+        }
+        // Bump iteration counters for any iteration-plan blocks that target
+        // a session this user owns — the operator's approval implicitly
+        // marks "iteration N is now live".
+        const bumpedSessions = new Set<string>()
+        for (const p of iterParse.plans) {
+          if (bumpedSessions.has(p.session_id)) continue
+          if (!(await ownsBugHunt(p.session_id))) continue
+          await bumpIteration(userId, p.session_id)
+          bumpedSessions.add(p.session_id)
+        }
         await appendMessage({
           sessionId,
           role:    'assistant',
@@ -124,10 +178,27 @@ export async function GET(req: NextRequest) {
             approval_requests: approvalRequests,
             tool_calls:        result.toolCalls,    // Phase 2b — persisted with the message
             manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
+            iteration_plans:   iterParse.plans.length > 0 ? iterParse.plans : undefined,
+            findings_inserted: findingParse.findings.length || undefined,
           },
         })
       }
     }
+
+    // Record the gateway turn for plan-window accounting. Fire-and-forget.
+    // Use the most-relevant bug-hunt session_id (first one referenced in
+    // the assistant message) so the session-slice math attributes correctly.
+    const huntTag = iterParse.plans[0]?.session_id ?? findingParse.findings[0]?.session_id
+    const sessionTag = huntTag ? `bug-hunt-${huntTag}-iter` : 'platform-chat'
+    const toolCallsCount = Array.isArray(result.toolCalls) ? result.toolCalls.length : 0
+    void insertGatewayTurn({
+      userId:         session.userId,
+      plan:           'claude-max',
+      model:          'opus',          // platform-copilot defaults to opus
+      sessionTag,
+      durationMs:     result.durationMs ?? null,
+      toolCallsCount,
+    })
   }
 
   return NextResponse.json({

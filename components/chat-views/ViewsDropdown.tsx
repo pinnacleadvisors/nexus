@@ -13,9 +13,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { LayoutGrid, ChevronDown, ListTodo, CheckSquare, CalendarDays } from 'lucide-react'
+import { LayoutGrid, ChevronDown, ListTodo, CheckSquare, CalendarDays, Bug } from 'lucide-react'
 
-export type ViewName = 'tasks' | 'approvals' | 'calendar'
+export type ViewName = 'tasks' | 'approvals' | 'calendar' | 'bug-hunt'
 
 interface Props {
   scope:        string
@@ -33,9 +33,10 @@ interface ViewSpec {
 }
 
 const VIEWS: ViewSpec[] = [
-  { id: 'tasks',     label: 'Manual to-dos', hint: 'Tasks the agent flagged for you',        Icon: ListTodo },
-  { id: 'approvals', label: 'Approval queue', hint: 'Pending approve/deny decisions',        Icon: CheckSquare },
-  { id: 'calendar',  label: 'Calendar',       hint: 'Upcoming due dates + scheduled runs',  Icon: CalendarDays },
+  { id: 'tasks',     label: 'Manual to-dos',   hint: 'Tasks the agent flagged for you',         Icon: ListTodo },
+  { id: 'approvals', label: 'Approval queue',  hint: 'Pending approve/deny decisions',          Icon: CheckSquare },
+  { id: 'calendar',  label: 'Calendar',        hint: 'Upcoming due dates + scheduled runs',     Icon: CalendarDays },
+  { id: 'bug-hunt',  label: 'Bug hunt',        hint: 'Operator-gated loop to audit the platform', Icon: Bug },
 ]
 
 export default function ViewsDropdown({ scope, activeView, onOpen, badges }: Props) {
