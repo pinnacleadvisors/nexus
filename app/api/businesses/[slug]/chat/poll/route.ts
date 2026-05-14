@@ -14,7 +14,9 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
+import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
+import { createTask } from '@/lib/views/tasks'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15
@@ -60,10 +62,26 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     displayText      = parsed.text
     approvalRequests = parsed.approval_requests
 
+    // Phase 9 — extract `manual-task` blocks. Scope is overwritten to the
+    // session's scope so a malicious response can't write to other scopes.
+    const taskParse = parseManualTaskBlocks(displayText)
+    displayText = taskParse.text
+
     const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
     if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
       const owned = await getSession(session.userId, sessionId)
       if (owned && owned.scope === `business:${slug}`) {
+        for (const t of taskParse.tasks) {
+          await createTask({
+            userId:          session.userId,
+            scope:           `business:${slug}`,
+            title:           t.title,
+            description:     t.description ?? null,
+            dueAt:           t.due_at ?? null,
+            source:          'agent',
+            sourceSessionId: sessionId,
+          })
+        }
         await appendMessage({
           sessionId,
           role:    'assistant',
@@ -73,6 +91,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
             jobId,
             approval_requests: approvalRequests,
             tool_calls:        result.toolCalls,
+            manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
           },
         })
       }

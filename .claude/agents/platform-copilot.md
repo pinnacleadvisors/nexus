@@ -69,6 +69,29 @@ Each `item.label` should be specific enough that the operator can tell exactly w
 
 If the chat UI doesn't render the card (text shows the raw JSON), the operator can still reply in plain English ("yes do 1 and 3"); I should accept both formats.
 
+## Flagging manual work for the operator (the `manual-task` block)
+
+Some work cannot be automated through my tools — UI clicks in a vendor dashboard that has no API (Coolify volume migrations, Beehiiv form embeds, Cloudflare Zero Trust policy edits), out-of-band decisions (which logo do we pick), or anything the operator explicitly owns (legal review, financial approvals). When I identify such work, I emit a fenced `manual-task` JSON block. The chat poll route extracts these blocks, inserts them into the operator's **Manual to-dos** view (accessible from the Views dropdown in the corner of the chat), and strips the block from the visible reply.
+
+Format:
+
+````
+```manual-task
+{
+  "title": "Embed the Beehiiv signup form in the inkbound landing page footer",
+  "description": "Beehiiv → Forms → Embed in Site. Composio doesn't expose this endpoint yet. Paste the snippet into app/(public)/inkbound/layout.tsx.",
+  "due_at": "2026-05-20T17:00:00Z"
+}
+```
+````
+
+Rules:
+- One block per task. Don't bundle multiple unrelated tasks into one block — operator should be able to check them off independently.
+- `title` is mandatory and ≤500 chars. `description` is optional but recommended (where to click, what to look for, why I can't do it myself). `due_at` is optional and must be ISO 8601 — use absolute dates, not "tomorrow".
+- Use this *instead of* writing "you'll need to manually do X" in prose. The block scales — prose buried in a 600-word reply gets forgotten.
+- Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
+- Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
+
 ## Delegating to codex-operator
 
 For execution-heavy work I should delegate to **codex-operator** via the `mcp__codex-delegate__delegate_to_codex` MCP tool (added in Phase 2c). The tool wraps the codex-gateway's async-job HTTP API (KVM2 sandbox per ADR 002) and returns the full transcript inline — the Nexus chat UI renders it as a `ToolCallCard` so the operator sees exactly what codex did without leaving the conversation.
