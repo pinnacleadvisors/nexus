@@ -22,6 +22,11 @@ import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as Termin
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
 import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
+import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
+import ViewsPanel from '@/components/chat-views/ViewsPanel'
+import TasksView from '@/components/chat-views/TasksView'
+import ApprovalsView from '@/components/chat-views/ApprovalsView'
+import CalendarView from '@/components/chat-views/CalendarView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
@@ -67,6 +72,13 @@ export default function BusinessChat({ slug, name }: Props) {
   const [sessions,        setSessions]        = useState<SessionSummary[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  // Phase 9 — Views dropdown (Tasks / Approvals / Calendar). Scope is
+  // `business:<slug>` so the views show this business's items only.
+  const viewScope = `business:${slug}`
+  const [activeView,     setActiveView]     = useState<ViewName | null>(null)
+  const [tasksBadge,     setTasksBadge]     = useState<number>(0)
+  const [approvalsBadge, setApprovalsBadge] = useState<number>(0)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
@@ -266,13 +278,19 @@ export default function BusinessChat({ slug, name }: Props) {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <div className="flex items-center gap-2 text-sm">
-            <Briefcase size={14} style={{ color: '#a8a3ff' }} />
+        <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
+            <Briefcase size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
             <span style={{ color: '#e8e8f0' }}>{name} copilot</span>
             <span style={{ color: '#55556a' }}>—</span>
-            <span style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
+            <span className="truncate" style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
           </div>
+          <ViewsDropdown
+            scope={viewScope}
+            activeView={activeView}
+            onOpen={setActiveView}
+            badges={{ tasks: tasksBadge, approvals: approvalsBadge }}
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
@@ -334,6 +352,23 @@ export default function BusinessChat({ slug, name }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Phase 9 — Views side panel (per-business scope). */}
+      {activeView === 'tasks' && (
+        <ViewsPanel title="Manual to-dos" subtitle={`Tasks the ${name} copilot flagged for you`} onClose={() => setActiveView(null)}>
+          <TasksView scope={viewScope} onCountChange={setTasksBadge} />
+        </ViewsPanel>
+      )}
+      {activeView === 'approvals' && (
+        <ViewsPanel title="Approval queue" subtitle={`Pending approval cards in ${name}`} onClose={() => setActiveView(null)}>
+          <ApprovalsView scope={viewScope} sessionsBasePath={`/businesses/${encodeURIComponent(slug)}/chat`} onCountChange={setApprovalsBadge} />
+        </ViewsPanel>
+      )}
+      {activeView === 'calendar' && (
+        <ViewsPanel title="Calendar" subtitle={`Upcoming due dates + runs for ${name}`} onClose={() => setActiveView(null)}>
+          <CalendarView scope={viewScope} />
+        </ViewsPanel>
+      )}
     </div>
   )
 }

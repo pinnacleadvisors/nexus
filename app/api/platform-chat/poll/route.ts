@@ -28,7 +28,9 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
+import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
+import { createTask } from '@/lib/views/tasks'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15   // Single GET to gateway, default poll budget is small.
@@ -91,10 +93,27 @@ export async function GET(req: NextRequest) {
     displayText      = parsed.text
     approvalRequests = parsed.approval_requests
 
+    // Phase 9 — extract any `manual-task` fenced blocks the agent emitted
+    // and insert them into operator_tasks. Strip the blocks from displayText
+    // so they don't render raw to the operator (the Tasks panel shows them).
+    const taskParse = parseManualTaskBlocks(displayText)
+    displayText = taskParse.text
+
     const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
     if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
       const owned = await getSession(session.userId, sessionId)
       if (owned) {
+        for (const t of taskParse.tasks) {
+          await createTask({
+            userId:           session.userId,
+            scope:            'admin',        // platform-chat = admin scope
+            title:            t.title,
+            description:      t.description ?? null,
+            dueAt:            t.due_at ?? null,
+            source:           'agent',
+            sourceSessionId:  sessionId,
+          })
+        }
         await appendMessage({
           sessionId,
           role:    'assistant',
@@ -104,6 +123,7 @@ export async function GET(req: NextRequest) {
             jobId,
             approval_requests: approvalRequests,
             tool_calls:        result.toolCalls,    // Phase 2b — persisted with the message
+            manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
           },
         })
       }

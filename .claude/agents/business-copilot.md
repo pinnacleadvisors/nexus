@@ -49,6 +49,20 @@ We share a system prompt source (`lib/chat/system-prompt-business.ts`) so our un
 
    On approval the chat auto-sends `APPROVAL [<id>]: approve 1,2`. I proceed with the approved subset only.
 
+3b. **Use the `manual-task` block** when I identify work only the operator can do — UI clicks in a vendor dashboard with no API (Beehiiv embeds, Cloudflare DNS edits some operators prefer to do themselves), out-of-band decisions (logo / domain / brand voice), or anything that requires human judgement I can't make. The chat poll route inserts each block into the operator's **Manual to-dos** view (Views dropdown in the chat corner — scoped to `business:<slug>`) and strips it from my visible reply. Format:
+
+   ````
+   ```manual-task
+   {
+     "title": "Embed Beehiiv signup form in the landing-page footer",
+     "description": "Beehiiv → Forms → Embed in Site. Composio doesn't expose this. Paste snippet into app/(public)/<slug>/layout.tsx.",
+     "due_at": "2026-05-20T17:00:00Z"
+   }
+   ```
+   ````
+
+   One block per task. Title mandatory + ≤500 chars; description optional but recommended; `due_at` optional ISO 8601 (absolute dates only, not "tomorrow"). Don't combine with `approval-request` — that's "click yes/no on something I'm about to do"; this is "you do it, I can't". When the operator asks "what's throttling autonomous progress?" emit a batch of `manual-task` blocks rather than prose so the items become checkable items rather than forgettable narrative.
+
 4. **Tag every Stripe / customer / product mutation** with `metadata.business_slug='<slug>'` so revenue attribution stays clean across businesses that share one Stripe account (see [docs/runbooks/shared-stripe-vercel.md](/docs/runbooks/shared-stripe-vercel.md)).
 
 5. **Approval gates required for** (always):

@@ -16,6 +16,11 @@ import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy,
 import ApprovalCard from './ApprovalCard'
 import SessionSidebar, { type SessionSummary } from './SessionSidebar'
 import ToolCallCard from './ToolCallCard'
+import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
+import ViewsPanel from '@/components/chat-views/ViewsPanel'
+import TasksView from '@/components/chat-views/TasksView'
+import ApprovalsView from '@/components/chat-views/ApprovalsView'
+import CalendarView from '@/components/chat-views/CalendarView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
@@ -78,6 +83,12 @@ export default function PlatformChat() {
   const [sessions,        setSessions]        = useState<SessionSummary[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  // Phase 9 — Views dropdown (Tasks / Approvals / Calendar).
+  // Scope = 'admin' for platform-copilot.
+  const [activeView,     setActiveView]     = useState<ViewName | null>(null)
+  const [tasksBadge,     setTasksBadge]     = useState<number>(0)
+  const [approvalsBadge, setApprovalsBadge] = useState<number>(0)
 
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
@@ -309,16 +320,22 @@ export default function PlatformChat() {
 
       {/* Chat column (right of sidebar) */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header strip — explains scope so operator never confuses with per-business chat */}
-        <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <div className="flex items-center gap-2 text-sm">
-            <Sparkles size={14} style={{ color: '#a8a3ff' }} />
+        {/* Header strip — explains scope + Views dropdown on the right */}
+        <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
+            <Sparkles size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
             <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
             <span style={{ color: '#55556a' }}>—</span>
-            <span style={{ color: '#9090b0' }}>
+            <span className="truncate" style={{ color: '#9090b0' }}>
               scoped to Nexus itself, uses admin-scope connections (Vercel, GitHub, Slack, Stripe, …) via the hard-isolation MCP
             </span>
           </div>
+          <ViewsDropdown
+            scope="admin"
+            activeView={activeView}
+            onOpen={setActiveView}
+            badges={{ tasks: tasksBadge, approvals: approvalsBadge }}
+          />
         </div>
 
         {/* Message list */}
@@ -398,6 +415,24 @@ export default function PlatformChat() {
         </div>
       </div>
       </div>{/* close chat column */}
+
+      {/* Phase 9 — Views side panel. Renders only when the operator picks a
+          view from the dropdown. Closes on Esc or the X button. */}
+      {activeView === 'tasks' && (
+        <ViewsPanel title="Manual to-dos" subtitle="Tasks the agent flagged for you (admin scope)" onClose={() => setActiveView(null)}>
+          <TasksView scope="admin" onCountChange={setTasksBadge} />
+        </ViewsPanel>
+      )}
+      {activeView === 'approvals' && (
+        <ViewsPanel title="Approval queue" subtitle="Pending approval cards across every admin chat" onClose={() => setActiveView(null)}>
+          <ApprovalsView scope="admin" sessionsBasePath="/manage-platform" onCountChange={setApprovalsBadge} />
+        </ViewsPanel>
+      )}
+      {activeView === 'calendar' && (
+        <ViewsPanel title="Calendar" subtitle="Upcoming due dates + scheduled runs" onClose={() => setActiveView(null)}>
+          <CalendarView scope="admin" />
+        </ViewsPanel>
+      )}
     </div>
   )
 }
