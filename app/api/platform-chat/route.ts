@@ -37,6 +37,8 @@ import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
+import { getActiveSession as getActiveBugHuntSession, listFindings } from '@/lib/bug-hunt/sessions'
+import { getPlanWindowUsage } from '@/lib/claw/plan-window'
 import {
   appendMessage,
   getSession,
@@ -104,7 +106,68 @@ export async function POST(req: NextRequest) {
     .map(m => `${m.role === 'user' ? 'OPERATOR' : 'CLAUDE'}: ${m.content}`)
     .join('\n\n')
 
-  const composite = `${systemPrompt}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+  // Bug-hunt-loop activation. The platform-copilot is the default agent —
+  // but when an active bug-hunt session exists for this user AND the
+  // operator's latest message looks like a bug-hunt command (or an
+  // APPROVAL reply to an iteration-plan), dispatch the bug-hunt-loop
+  // agent instead so it gets its own spec loaded as the system prompt.
+  //
+  // The bug-hunt-loop spec at .claude/agents/bug-hunt-loop.md fully
+  // describes the iteration-plan / finding-block protocol. Mixing it
+  // inline into the platform-copilot spec would bloat the platform turn
+  // for every chat. Splitting on agent slug is cleaner.
+  const activeHunt = await getActiveBugHuntSession(session.userId, 'admin')
+  const lastUserText = String(lastUser.content ?? '').trim()
+  const looksLikeBugHunt = /^\/bug-hunt\b/i.test(lastUserText)
+    || /^APPROVAL\s*\[\s*bh-/i.test(lastUserText)
+  const useBugHuntAgent = !!activeHunt && looksLikeBugHunt
+
+  let bugHuntContext = ''
+  if (useBugHuntAgent && activeHunt) {
+    // Inject the live session state so the agent's iteration-plan is
+    // grounded in real numbers rather than guessing.
+    const tagPrefix = `bug-hunt-${activeHunt.id}-`
+    const [maxUsage, proUsage, findings] = await Promise.all([
+      getPlanWindowUsage(session.userId, 'claude-max', tagPrefix),
+      getPlanWindowUsage(session.userId, 'codex-pro',  tagPrefix),
+      listFindings(activeHunt.id),
+    ])
+    const openFindings = findings.filter(f => f.status === 'open')
+    bugHuntContext = [
+      '## Bug-hunt session context (live)',
+      '',
+      `session_id:         ${activeHunt.id}`,
+      `status:             ${activeHunt.status}`,
+      `iteration_count:    ${activeHunt.iteration_count} / ${activeHunt.max_iterations}`,
+      `plan_window_share_pct: ${activeHunt.plan_window_share_pct}`,
+      `codex_window_share_pct: ${activeHunt.codex_window_share_pct}`,
+      `force_plan_window:  ${activeHunt.force_plan_window}`,
+      '',
+      `claude_max usage:   session ${maxUsage.sessionSharePct.toFixed(1)}% / window ${maxUsage.windowSharePct.toFixed(1)}% (cap ${activeHunt.plan_window_share_pct}%)`,
+      `codex_pro  usage:   session ${proUsage.sessionSharePct.toFixed(1)}% / window ${proUsage.windowSharePct.toFixed(1)}% (cap ${activeHunt.codex_window_share_pct}%)`,
+      '',
+      `total findings:     ${findings.length} (open: ${openFindings.length}, pr-opened: ${findings.filter(f => f.status === 'pr-opened').length}, wont-fix: ${findings.filter(f => f.status === 'wont-fix').length}, merged: ${findings.filter(f => f.status === 'merged').length})`,
+      '',
+      'When emitting an iteration-plan block: use the session_id above, set `iteration` to the next number (iteration_count + 1), pick a stable `approval_id` like `<session_id>-i<N>`.',
+      '',
+      openFindings.length > 0
+        ? '## Open findings the operator may want fixed:\n\n' + openFindings.slice(0, 10).map(f => `- [${f.id}] ${f.severity} / ${f.category} — ${f.title}${f.source_path ? ` (${f.source_path})` : ''}`).join('\n')
+        : '## No open findings — fresh session, propose static-audit for iteration 1.',
+      '',
+    ].join('\n')
+  }
+
+  // Active bug-hunt session is surfaced even when the platform-copilot
+  // (not bug-hunt-loop) is dispatched, so the agent can nudge the operator
+  // toward typing /bug-hunt iterate when relevant.
+  const huntHint = !useBugHuntAgent && activeHunt
+    ? `\n\n## Active bug-hunt session\n\nA bug-hunt session is currently ${activeHunt.status} (id: ${activeHunt.id}, iter ${activeHunt.iteration_count}/${activeHunt.max_iterations}). The operator can type "/bug-hunt iterate" to ask you to propose the next iteration's plan, OR control it from the Bug-hunt panel in the Views dropdown.\n`
+    : ''
+
+  const composite = useBugHuntAgent
+    ? `${bugHuntContext}\n\n---\n\nConversation so far:\n\n${transcript}\n\nThis is a bug-hunt iteration request. Emit an \`iteration-plan\` fenced JSON block per your charter, then end the turn. Do NOT run audits in this turn — the operator must approve the plan first via APPROVAL [<approval_id>]: reply.`
+    : `${systemPrompt}${huntHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+
   if (composite.length > MAX_TURN_CHARS) {
     return NextResponse.json({
       ok:    false,
@@ -146,13 +209,19 @@ export async function POST(req: NextRequest) {
     content:   lastUser.content as string,
   })
 
-  const sessionTag = `platform-chat-${sessionRow.id}-${Date.now()}`
+  // sessionTag prefix is what plan-window math uses to slice usage by consumer.
+  // When the bug-hunt-loop agent is dispatched, tag the turn with the session
+  // id so it counts toward the loop's plan-window cap (NOT the operator's
+  // regular interactive chat).
+  const sessionTag = useBugHuntAgent && activeHunt
+    ? `bug-hunt-${activeHunt.id}-iter`
+    : `platform-chat-${sessionRow.id}-${Date.now()}`
   const t0         = Date.now()
   const enqueued = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
     sessionTag,
-    agentSlug:   'platform-copilot',
+    agentSlug:   useBugHuntAgent ? 'bug-hunt-loop' : 'platform-copilot',
     message:     composite,
     userId:      session.userId,
     timeoutMs:   10_000,

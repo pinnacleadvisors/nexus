@@ -14,9 +14,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Play, Pause, Square, AlertCircle, CheckCircle2, ExternalLink, FileText } from 'lucide-react'
+import { Loader2, Play, Pause, Square, AlertCircle, CheckCircle2, ExternalLink, FileText, ChevronDown, ChevronRight, Wrench, ListChecks, AlertTriangle, Send, Bug } from 'lucide-react'
 import type { BugHuntSessionRow, BugHuntFindingRow } from '@/lib/bug-hunt/sessions'
 import type { PlanWindowUsage } from '@/lib/claw/plan-window'
+import type { ActivityEvent, ActivityKind } from '@/app/api/bug-hunt/[id]/activity/route'
 
 interface ActiveResp {
   ok:       true
@@ -33,17 +34,24 @@ interface DetailResp {
 }
 
 interface Props {
-  onCountChange?: (openFindings: number) => void
+  onCountChange?:  (openFindings: number) => void
+  /** Optional — when provided, the panel renders an "Iterate now" button
+   *  that calls this with a fixed chat command to auto-send. Parent
+   *  (PlatformChat) wires it to its own send() so the operator doesn't
+   *  have to type. */
+  onSendChatMessage?: (text: string) => void
 }
 
 const POLL_MS = 4_000
 
-export default function BugHuntView({ onCountChange }: Props) {
+export default function BugHuntView({ onCountChange, onSendChatMessage }: Props) {
   const [state, setState] = useState<{ session: BugHuntSessionRow | null; usage?: ActiveResp['usage']; findings: BugHuntFindingRow[]; openCount: number }>(
     { session: null, findings: [], openCount: 0 },
   )
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState<string | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [error,   setError]       = useState<string | null>(null)
+  const [activity, setActivity]   = useState<ActivityEvent[]>([])
+  const [activityOpen, setActivityOpen] = useState(true)
 
   const reload = useCallback(async () => {
     try {
@@ -57,10 +65,15 @@ export default function BugHuntView({ onCountChange }: Props) {
         onCountChange?.(0)
         return
       }
-      // Active session — fetch detail to get the findings list
-      const detRes = await fetch(`/api/bug-hunt/${encodeURIComponent(j.session.id)}`, { cache: 'no-store' })
+      // Active session — fetch detail + activity in parallel
+      const [detRes, actRes] = await Promise.all([
+        fetch(`/api/bug-hunt/${encodeURIComponent(j.session.id)}`, { cache: 'no-store' }),
+        fetch(`/api/bug-hunt/${encodeURIComponent(j.session.id)}/activity`, { cache: 'no-store' }),
+      ])
       const det = (await detRes.json()) as DetailResp | { ok: false; error: string }
       if (!det.ok) { setError(det.error); setLoading(false); return }
+      const act = (await actRes.json()) as { ok: true; events: ActivityEvent[] } | { ok: false; error: string }
+      if (act.ok) setActivity(act.events)
       const openCount = det.findings.filter(f => f.status === 'open').length
       setState({ session: det.session, usage: det.usage, findings: det.findings, openCount })
       onCountChange?.(openCount)
@@ -180,10 +193,118 @@ export default function BugHuntView({ onCountChange }: Props) {
             USD fallback: ${s.spent_usd.toFixed(2)} / ${s.budget_usd.toFixed(2)}
           </div>
         )}
+
+        {/* Propose-next-iteration button — visible only when status=active
+            AND the parent provided a send-callback (i.e. we're rendered
+            inside a chat where typing /bug-hunt iterate makes sense). */}
+        {s.status === 'active' && onSendChatMessage && (
+          <button
+            onClick={() => onSendChatMessage('/bug-hunt iterate')}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded text-xs font-medium transition-colors"
+            style={{
+              background: 'linear-gradient(135deg, rgba(108,99,255,0.25), rgba(108,99,255,0.08))',
+              border:     '1px solid rgba(108,99,255,0.30)',
+              color:      '#e8e8f0',
+            }}
+          >
+            <Send size={11} /> Propose iteration {s.iteration_count + 1} in chat
+          </button>
+        )}
       </div>
+
+      {/* Session activity dropdown — chronological feed of what the loop
+          has done. Collapsible. Failures (tool errors, etc.) get a red
+          border so they stand out. */}
+      <ActivitySection
+        events={activity}
+        open={activityOpen}
+        onToggle={() => setActivityOpen(o => !o)}
+        sessionId={s.id}
+      />
 
       {/* Findings */}
       <FindingsList findings={state.findings} sessionId={s.id} reload={reload} />
+    </div>
+  )
+}
+
+// ── Activity feed ───────────────────────────────────────────────────────────
+
+function ActivitySection({ events, open, onToggle, sessionId }: { events: ActivityEvent[]; open: boolean; onToggle: () => void; sessionId: string }) {
+  const failureCount = events.filter(e => !e.ok).length
+  const hasEvents = events.length > 0
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${failureCount > 0 ? 'rgba(239,68,68,0.30)' : 'rgba(255,255,255,0.08)'}` }}>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left"
+        style={{ color: '#c8c8d8' }}
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        <span className="text-xs font-semibold flex-1">Session activity</span>
+        {hasEvents && (
+          <span className="text-[10px]" style={{ color: '#55556a' }}>{events.length} event{events.length === 1 ? '' : 's'}</span>
+        )}
+        {failureCount > 0 && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5' }}>
+            {failureCount} failure{failureCount === 1 ? '' : 's'}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="px-2 pb-2 space-y-1">
+          {!hasEvents && (
+            <div className="text-[11px] text-center py-3" style={{ color: '#55556a' }}>
+              No activity yet. Click <span className="font-mono">Propose iteration</span> above or type <span className="font-mono">/bug-hunt iterate</span> in the chat to start the loop.
+            </div>
+          )}
+          {events.map((e, i) => <ActivityRow key={`${sessionId}-${i}-${e.at}`} event={e} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const KIND_ICON: Record<ActivityKind, typeof Bug> = {
+  'session-started':     Play,
+  'session-paused':      Pause,
+  'session-resumed':     Play,
+  'session-stopped':     Square,
+  'iteration-proposed':  ListChecks,
+  'iteration-approved':  CheckCircle2,
+  'tool-call':           Wrench,
+  'finding-inserted':    Bug,
+  'pr-opened':           ExternalLink,
+  'turn-completed':      CheckCircle2,
+}
+
+function ActivityRow({ event }: { event: ActivityEvent }) {
+  const Icon = KIND_ICON[event.kind] ?? CheckCircle2
+  const isFail = !event.ok
+  return (
+    <div
+      className="flex items-start gap-2 px-2 py-1.5 rounded"
+      style={{
+        background: isFail ? 'rgba(239,68,68,0.08)' : 'transparent',
+        border:     isFail ? '1px solid rgba(239,68,68,0.25)' : '1px solid transparent',
+      }}
+    >
+      {isFail
+        ? <AlertTriangle size={11} className="mt-0.5 shrink-0" style={{ color: '#fca5a5' }} />
+        : <Icon         size={11} className="mt-0.5 shrink-0" style={{ color: '#a8a3ff' }} />}
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px]" style={{ color: isFail ? '#fca5a5' : '#e8e8f0' }}>
+          {event.title}
+        </div>
+        {event.detail && (
+          <div className="text-[10px] mt-0.5 truncate" style={{ color: '#9090b0' }} title={event.detail}>
+            {event.detail}
+          </div>
+        )}
+        <div className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>
+          {new Date(event.at).toLocaleString()}
+        </div>
+      </div>
     </div>
   )
 }

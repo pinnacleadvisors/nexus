@@ -438,7 +438,10 @@ export default function PlatformChat() {
       )}
       {activeView === 'bug-hunt' && (
         <ViewsPanel title="Bug hunt" subtitle="Operator-gated audit loop" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:bug-hunt">
-          <BugHuntView onCountChange={setBugHuntBadge} />
+          <BugHuntView
+            onCountChange={setBugHuntBadge}
+            onSendChatMessage={text => void send(text)}
+          />
         </ViewsPanel>
       )}
     </div>
