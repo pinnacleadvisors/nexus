@@ -38,6 +38,7 @@
 | `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth. |
 | `ANTHROPIC_API_KEY` | Final fallback when both gateways are unavailable. |
 | `CLAUDE_MAX_ONLY` | Set to `1` in production once every call site is migrated through the gateway. Forces `lib/claw/llm.ts::callClaude` and the auditied direct call sites (`/api/agent`, `/api/build/plan`, `lib/swarm/Queen.ts`) to refuse the API fallback so accidental gateway misconfigurations surface as visible errors instead of silent token spend. Track migration progress in `task_plan-autonomous-qa.md`. |
+| `GATEWAY_ALLOW_SELF_SIGNED_HOSTS` | **Escape hatch — default unset, leave unset in production.** Comma-separated hostname patterns whose gateways may serve self-signed certs. Each pattern is either an exact host (`localhost`, `127.0.0.1`) or a single-leading-wildcard subdomain (`*.sslip.io`, `*.nip.io`). When set, `lib/claw/self-signed-fetch.ts` swaps to an undici dispatcher with `rejectUnauthorized: false` for matching hostnames; every other host stays strict. Useful during early per-business gateway provisioning when the cert is Coolify-auto-generated (sslip.io / nip.io URLs). Long-term fix: put the gateway behind Cloudflare Tunnel so it gets a real cert — see `docs/runbooks/per-business-container-rollout.md`. |
 
 ### Per-business OpenClaw fleet (D6 / D7)
 

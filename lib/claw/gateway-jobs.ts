@@ -14,6 +14,7 @@
  */
 
 import { createHmac } from 'node:crypto'
+import { fetchAllowSelfSigned, isSelfSignedAllowed, SELF_SIGNED_ALLOW_ENV } from './self-signed-fetch'
 
 export interface EnqueueJobOpts {
   gatewayUrl:   string
@@ -72,7 +73,27 @@ function formatFetchError(err: unknown, url: string): string {
   const topMsg = err instanceof Error ? err.message : String(err)
   const baseMsg = causeMsg && topMsg.toLowerCase() === 'fetch failed' ? causeMsg : topMsg
   if (topMsg.toLowerCase().includes('abort')) return host ? `enqueue timed out (host: ${host})` : 'enqueue timed out'
+
+  // Hint at the self-signed escape hatch when the failure looks like a
+  // cert issue and the host ISN'T already in the allowlist — saves the
+  // operator a doc lookup.
+  const lower = (causeMsg ?? baseMsg).toLowerCase()
+  const isCertError = lower.includes('self-signed certificate')
+    || lower.includes('unable to verify the first certificate')
+    || lower.includes('cert_has_expired')
+    || lower.includes('certificate')
+  if (isCertError && host && !isSelfSignedAllowed(host)) {
+    return `${baseMsg} (host: ${host}) — to allow self-signed certs for this host, set ${SELF_SIGNED_ALLOW_ENV}=${suggestPattern(host)} in your Vercel env. Long-term fix: put the gateway behind Cloudflare Tunnel for a real cert (see docs/runbooks/per-business-container-rollout.md).`
+  }
   return host ? `${baseMsg} (host: ${host})` : baseMsg
+}
+
+/** Suggest a sensible allowlist pattern for a host — wildcard for sslip/nip, literal otherwise. */
+function suggestPattern(host: string): string {
+  const h = host.toLowerCase()
+  if (h.endsWith('.sslip.io')) return '*.sslip.io'
+  if (h.endsWith('.nip.io'))   return '*.nip.io'
+  return h
 }
 
 export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJobResult> {
@@ -97,7 +118,7 @@ export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJo
   const ac = new AbortController()
   const t  = setTimeout(() => ac.abort(), opts.timeoutMs ?? 10_000)
   try {
-    const res = await fetch(url, { method: 'POST', headers, body, signal: ac.signal })
+    const res = await fetchAllowSelfSigned(url, { method: 'POST', headers, body, signal: ac.signal })
     let parsed: unknown = null
     try { parsed = await res.json() } catch { /* leave null */ }
     if (!res.ok) {
@@ -175,7 +196,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
   const ac = new AbortController()
   const t  = setTimeout(() => ac.abort(), opts.timeoutMs ?? 10_000)
   try {
-    const res = await fetch(url, { headers, signal: ac.signal })
+    const res = await fetchAllowSelfSigned(url, { headers, signal: ac.signal })
     let parsed: unknown = null
     try { parsed = await res.json() } catch { /* leave null */ }
     if (!res.ok) {
