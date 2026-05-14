@@ -22,6 +22,9 @@ import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as Termin
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
 import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
+import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
+import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
+import { findClaimedRanges } from '@/lib/chat/crash'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
@@ -37,18 +40,19 @@ interface Message {
   approval_requests?:    ApprovalRequest[]
   approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
   tool_calls?:           ToolCall[]
+  crashed?:              CrashedInfo
 }
 
-interface EnqueueOk   { ok: true;  jobId: string; sessionId: string }
+interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; usage?: ContextUsageView }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
@@ -79,6 +83,10 @@ export default function BusinessChat({ slug, name }: Props) {
   const [activeView,     setActiveView]     = useState<ViewName | null>(null)
   const [tasksBadge,     setTasksBadge]     = useState<number>(0)
   const [approvalsBadge, setApprovalsBadge] = useState<number>(0)
+
+  // Context usage from the most-recent successful enqueue. Surfaces in
+  // the bottom-right ContextIndicator.
+  const [usage, setUsage] = useState<ContextUsageView | null>(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
@@ -115,6 +123,7 @@ export default function BusinessChat({ slug, name }: Props) {
           durationMs:        m.metadata?.durationMs,
           approval_requests: m.metadata?.approval_requests,
           tool_calls:        m.metadata?.tool_calls,
+          crashed:           m.metadata?.crashed,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -201,6 +210,7 @@ export default function BusinessChat({ slug, name }: Props) {
       const enq = (await enqRes.json()) as EnqueueResponse
       if (!enq.ok) { setError(enq.error); return }
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
+      if (enq.usage) setUsage(enq.usage)
 
       const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
       if (finalResult.cancelled) {
@@ -217,6 +227,7 @@ export default function BusinessChat({ slug, name }: Props) {
         durationMs:         finalResult.durationMs,
         approval_requests:  finalResult.approval_requests,
         tool_calls:         finalResult.tool_calls,
+        crashed:            finalResult.crashed,
       }])
       setPartial('')
       void reloadSessions()
@@ -227,7 +238,7 @@ export default function BusinessChat({ slug, name }: Props) {
     }
   }
 
-  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; cancelled?: boolean }> {
+  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -245,14 +256,23 @@ export default function BusinessChat({ slug, name }: Props) {
       if (!j.ok) throw new Error(j.error)
       if (j.status === 'done') {
         return {
-          text:               (j.text ?? '').trim() || '(empty response from the gateway — the agent finished without writing a final reply)',
+          text:               (j.text ?? '').trim() || (j.crashed ? '' : '(empty response from the gateway — the agent finished without writing a final reply)'),
           durationMs:         j.durationMs ?? (Date.now() - start),
           approval_requests:  j.approval_requests,
           tool_calls:         j.tool_calls,
+          crashed:            j.crashed,
         }
       }
       if (j.status === 'error') {
-        throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
+        // Mid-stream crash — return a message with crashed metadata
+        // instead of throwing so the operator sees both partial text
+        // and the CrashedTurnCard.
+        return {
+          text:               (j.text ?? '').trim(),
+          durationMs:         j.durationMs ?? (Date.now() - start),
+          tool_calls:         j.tool_calls,
+          crashed:            j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
+        }
       }
       if (j.partialText) setPartial(j.partialText)
     }
@@ -348,7 +368,9 @@ export default function BusinessChat({ slug, name }: Props) {
           </div>
           <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
             <TerminalIcon size={11} />
-            <span>Scoped to <span className="font-mono">business:{slug}</span> — connections resolve per-business first, then fall back to Shared.</span>
+            <span className="flex-1 min-w-0 truncate">Scoped to <span className="font-mono">business:{slug}</span> — per-business + Shared fallback.</span>
+            {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
+            <ContextIndicator usage={usage} />
           </div>
         </div>
       </div>
@@ -456,12 +478,15 @@ function MessageBubble({ message, onApprove, busy }: { message: Message; onAppro
         border: isUser ? '1px solid rgba(108,99,255,0.30)' : '1px solid rgba(255,255,255,0.08)',
         color:  '#e8e8f0',
       }}>
+        {!isUser && message.crashed && (
+          <CrashedTurnCard crashed={message.crashed} />
+        )}
         {!isUser && message.tool_calls && message.tool_calls.length > 0 && (
           <div className="mb-2">
             {message.tool_calls.map(call => <ToolCallCard key={call.id} call={call} />)}
           </div>
         )}
-        {message.content && <RenderedMarkdown text={message.content} />}
+        {message.content && <RenderedMarkdown text={message.content} highlightClaimed={!!message.crashed} />}
         {!isUser && message.approval_requests?.map(req => (
           <ApprovalCard
             key={req.approval_id}
@@ -481,16 +506,43 @@ function MessageBubble({ message, onApprove, busy }: { message: Message; onAppro
   )
 }
 
-function RenderedMarkdown({ text }: { text: string }) {
+function RenderedMarkdown({ text, highlightClaimed = false }: { text: string; highlightClaimed?: boolean }) {
   const blocks = splitFencedCode(text)
   return (
     <div className="space-y-2">
       {blocks.map((b, i) => b.kind === 'code'
         ? <CodeBlock key={i} code={b.body} lang={b.lang} />
-        : <p key={i} className="whitespace-pre-wrap">{b.body}</p>,
+        : <p key={i} className="whitespace-pre-wrap">
+            {highlightClaimed ? renderWithClaimedHighlights(b.body) : b.body}
+          </p>,
       )}
     </div>
   )
+}
+
+/** Same as PlatformChat's amber-highlight wrapper — duplicated here so
+ *  BusinessChat doesn't have to import a UI helper from a sibling chat. */
+function renderWithClaimedHighlights(body: string): React.ReactNode {
+  const ranges = findClaimedRanges(body)
+  if (ranges.length === 0) return body
+  const out: React.ReactNode[] = []
+  let cursor = 0
+  for (let i = 0; i < ranges.length; i++) {
+    const [s, e] = ranges[i]
+    if (s > cursor) out.push(body.slice(cursor, s))
+    out.push(
+      <mark
+        key={`claim-${i}-${s}`}
+        title="The agent claimed this work — but the turn crashed mid-stream. Verify it actually happened."
+        style={{ background: 'rgba(245,158,11,0.20)', color: '#fbbf24', padding: '0 2px', borderRadius: 3 }}
+      >
+        {body.slice(s, e)}
+      </mark>,
+    )
+    cursor = e
+  }
+  if (cursor < body.length) out.push(body.slice(cursor))
+  return out
 }
 
 function splitFencedCode(text: string): Array<{ kind: 'text' | 'code'; body: string; lang?: string }> {

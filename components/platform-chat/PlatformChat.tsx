@@ -16,6 +16,9 @@ import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy,
 import ApprovalCard from './ApprovalCard'
 import SessionSidebar, { type SessionSummary } from './SessionSidebar'
 import ToolCallCard from './ToolCallCard'
+import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
+import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
+import { findClaimedRanges } from '@/lib/chat/crash'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
@@ -37,18 +40,21 @@ interface Message {
   approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
   /** Tool calls observed during the turn (Phase 2b). Render as cards. */
   tool_calls?: ToolCall[]
+  /** Crash info — when set, renders a CrashedTurnCard above the bubble
+   *  and amber-highlights "claimed but unverified" phrases inline. */
+  crashed?: CrashedInfo
 }
 
-interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string }
+interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -92,6 +98,10 @@ export default function PlatformChat() {
   const [approvalsBadge, setApprovalsBadge] = useState<number>(0)
   const [bugHuntBadge,   setBugHuntBadge]   = useState<number>(0)
 
+  // Context usage from the most-recent successful enqueue. Surfaces in
+  // the bottom-right ContextIndicator (Claude-Code-Desktop style).
+  const [usage, setUsage] = useState<ContextUsageView | null>(null)
+
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -130,6 +140,7 @@ export default function PlatformChat() {
           durationMs:           m.metadata?.durationMs,
           approval_requests:    m.metadata?.approval_requests,
           tool_calls:           m.metadata?.tool_calls,
+          crashed:              m.metadata?.crashed,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -227,6 +238,9 @@ export default function PlatformChat() {
       }
       // Bind the session id (may have been auto-created on this turn).
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
+      // Surface context usage so the ContextIndicator in the input footer
+      // reflects this turn's load.
+      if (enq.usage) setUsage(enq.usage)
 
       // Step 2 — poll until done. Each poll is <500ms; the loop runs until
       // the gateway reports status='done' or 'error', or we hit the 5-min
@@ -246,6 +260,7 @@ export default function PlatformChat() {
         durationMs:         finalResult.durationMs,
         approval_requests:  finalResult.approval_requests,
         tool_calls:         finalResult.tool_calls,
+        crashed:            finalResult.crashed,
       }])
       setPartial('')   // final landed, clear tentative bubble
       // Refresh sidebar (title may have been auto-derived from first message,
@@ -267,7 +282,7 @@ export default function PlatformChat() {
   async function pollUntilDone(
     jobId: string,
     sessionId: string,
-  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; cancelled?: boolean }> {
+  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -285,14 +300,24 @@ export default function PlatformChat() {
       if (!j.ok) throw new Error(j.error)
       if (j.status === 'done') {
         return {
-          text:               (j.text ?? '').trim() || '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)',
+          text:               (j.text ?? '').trim() || (j.crashed ? '' : '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)'),
           durationMs:         j.durationMs ?? (Date.now() - start),
           approval_requests:  j.approval_requests,
           tool_calls:         j.tool_calls,
+          crashed:            j.crashed,
         }
       }
       if (j.status === 'error') {
-        throw new Error(j.jobError ?? 'gateway reported an unspecified job error')
+        // Mid-stream crash — surface as a returned message with the
+        // crashed metadata, NOT a thrown error. The agent may have
+        // streamed partial text; the operator should still see it +
+        // the CrashedTurnCard above explaining the discontinuity.
+        return {
+          text:               (j.text ?? '').trim(),
+          durationMs:         j.durationMs ?? (Date.now() - start),
+          tool_calls:         j.tool_calls,
+          crashed:            j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
+        }
       }
       // status === 'pending' | 'running' — Phase 2a pushes the running
       // partial text into UI state so the chat shows progressive output.
@@ -413,7 +438,9 @@ export default function PlatformChat() {
         </div>
         <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
           <TerminalIcon size={11} />
-          <span>Async polling + persistent sessions + approval cards. SSE streaming + inline tool-call cards are still deferred (Phase 2 — see task_plan-chat.md).</span>
+          <span className="flex-1 min-w-0 truncate">Async polling + persistent sessions + approval cards. SSE streaming is still deferred.</span>
+          {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
+          <ContextIndicator usage={usage} />
         </div>
       </div>
       </div>{/* close chat column */}
@@ -541,6 +568,13 @@ function MessageBubble({
           color:  '#e8e8f0',
         }}
       >
+        {/* Mid-turn crash card — renders ABOVE the tool calls / prose so
+            the operator sees the discontinuity warning first. Phrases like
+            "writes are queued" in the message body get amber-highlighted
+            below. */}
+        {!isUser && message.crashed && (
+          <CrashedTurnCard crashed={message.crashed} />
+        )}
         {/* Phase 2b — tool-call cards. Rendered ABOVE the prose so the
             operator sees "what Claude did" before reading the synthesis.
             Each card collapses by default; click to expand input/output. */}
@@ -549,7 +583,7 @@ function MessageBubble({
             {message.tool_calls.map(call => <ToolCallCard key={call.id} call={call} />)}
           </div>
         )}
-        {message.content && <RenderedMarkdown text={message.content} />}
+        {message.content && <RenderedMarkdown text={message.content} highlightClaimed={!!message.crashed} />}
         {/* Phase 3 — render any approval-request blocks the agent emitted as
             inline cards. Each card carries its own approval_id; on click we
             auto-send the canonical APPROVAL [<id>]: ... reply. */}
@@ -577,16 +611,46 @@ function MessageBubble({
  * code blocks for monospace styling. Avoids pulling a full markdown lib
  * in the MVP. Phase 2 swaps for react-markdown when tool-call cards land.
  */
-function RenderedMarkdown({ text }: { text: string }) {
+function RenderedMarkdown({ text, highlightClaimed = false }: { text: string; highlightClaimed?: boolean }) {
   const blocks = splitFencedCode(text)
   return (
     <div className="space-y-2">
       {blocks.map((b, i) => b.kind === 'code'
         ? <CodeBlock key={i} code={b.body} lang={b.lang} />
-        : <p key={i} className="whitespace-pre-wrap">{b.body}</p>,
+        : <p key={i} className="whitespace-pre-wrap">
+            {highlightClaimed ? renderWithClaimedHighlights(b.body) : b.body}
+          </p>,
       )}
     </div>
   )
+}
+
+/**
+ * Wrap "claimed but unverified" phrases in amber <mark> spans when the
+ * turn crashed. Title attribute makes the highlight self-explanatory on
+ * hover. Falls back to plain text when no matches.
+ */
+function renderWithClaimedHighlights(body: string): React.ReactNode {
+  const ranges = findClaimedRanges(body)
+  if (ranges.length === 0) return body
+  const out: React.ReactNode[] = []
+  let cursor = 0
+  for (let i = 0; i < ranges.length; i++) {
+    const [s, e] = ranges[i]
+    if (s > cursor) out.push(body.slice(cursor, s))
+    out.push(
+      <mark
+        key={`claim-${i}-${s}`}
+        title="The agent claimed this work — but the turn crashed mid-stream. Verify it actually happened."
+        style={{ background: 'rgba(245,158,11,0.20)', color: '#fbbf24', padding: '0 2px', borderRadius: 3 }}
+      >
+        {body.slice(s, e)}
+      </mark>,
+    )
+    cursor = e
+  }
+  if (cursor < body.length) out.push(body.slice(cursor))
+  return out
 }
 
 function splitFencedCode(text: string): Array<{ kind: 'text' | 'code'; body: string; lang?: string }> {
