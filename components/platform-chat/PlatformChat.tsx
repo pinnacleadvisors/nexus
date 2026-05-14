@@ -21,6 +21,7 @@ import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
 import ApprovalsView from '@/components/chat-views/ApprovalsView'
 import CalendarView from '@/components/chat-views/CalendarView'
+import BugHuntView from '@/components/chat-views/BugHuntView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
@@ -89,6 +90,7 @@ export default function PlatformChat() {
   const [activeView,     setActiveView]     = useState<ViewName | null>(null)
   const [tasksBadge,     setTasksBadge]     = useState<number>(0)
   const [approvalsBadge, setApprovalsBadge] = useState<number>(0)
+  const [bugHuntBadge,   setBugHuntBadge]   = useState<number>(0)
 
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
@@ -334,7 +336,7 @@ export default function PlatformChat() {
             scope="admin"
             activeView={activeView}
             onOpen={setActiveView}
-            badges={{ tasks: tasksBadge, approvals: approvalsBadge }}
+            badges={{ tasks: tasksBadge, approvals: approvalsBadge, 'bug-hunt': bugHuntBadge }}
           />
         </div>
 
@@ -432,6 +434,11 @@ export default function PlatformChat() {
       {activeView === 'calendar' && (
         <ViewsPanel title="Calendar" subtitle="Upcoming due dates + scheduled runs" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:calendar">
           <CalendarView scope="admin" />
+        </ViewsPanel>
+      )}
+      {activeView === 'bug-hunt' && (
+        <ViewsPanel title="Bug hunt" subtitle="Operator-gated audit loop" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:bug-hunt">
+          <BugHuntView onCountChange={setBugHuntBadge} />
         </ViewsPanel>
       )}
     </div>
