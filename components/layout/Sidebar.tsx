@@ -24,6 +24,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
+import { useResizable } from '@/lib/hooks/useResizable'
 
 // Poll cadence for the Dev Console health badge. Long enough to not spam the
 // route, short enough that a red cron failure surfaces within a few minutes.
@@ -199,6 +200,18 @@ export default function Sidebar() {
   const businesses  = useBusinessesForSidebar()
   const nav         = buildNav(businesses)
 
+  // Resizable expanded-width. Drag the right edge to set; double-click to reset.
+  // Dragging below 80px snaps to fully-collapsed (operator gets icon-only mode).
+  const resize = useResizable({
+    key:          'nexus:sidebar:width',
+    defaultPx:    240,
+    minPx:        180,
+    maxPx:        420,
+    edge:         'right',
+    collapseAtPx: 100,
+    onSnap:       () => setCollapsed(true),
+  })
+
   // Auto-expand the Businesses group when the user is on a /businesses route
   // so they don't have to click the chevron after navigating in.
   useEffect(() => {
@@ -214,11 +227,28 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col h-full shrink-0 border-r transition-all duration-200',
-        collapsed ? 'w-16' : 'w-60'
+        'flex flex-col h-full shrink-0 border-r relative',
+        collapsed ? 'transition-all duration-200' : (resize.isDragging ? '' : 'transition-all duration-100'),
       )}
-      style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
+      style={{
+        backgroundColor: '#0d0d14',
+        borderColor:     '#24243e',
+        // Collapsed uses fixed icon-rail width; expanded uses the resizable width.
+        width:           collapsed ? '4rem' : `${resize.width}px`,
+      }}
     >
+      {/* Drag handle on the right edge — only visible when expanded. */}
+      {!collapsed && (
+        <div
+          {...resize.handleProps}
+          style={{
+            ...resize.handleProps.style,
+            background: resize.isDragging ? 'rgba(108,99,255,0.40)' : 'transparent',
+          }}
+          onMouseEnter={e => { if (!resize.isDragging) e.currentTarget.style.background = 'rgba(108,99,255,0.15)' }}
+          onMouseLeave={e => { if (!resize.isDragging) e.currentTarget.style.background = 'transparent' }}
+        />
+      )}
       {/* Logo */}
       <div
         className={cn(

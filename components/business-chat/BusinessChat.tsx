@@ -353,19 +353,20 @@ export default function BusinessChat({ slug, name }: Props) {
         </div>
       </div>
 
-      {/* Phase 9 — Views side panel (per-business scope). */}
+      {/* Phase 9 — Views side panel (per-business scope). Resizable via
+          left-edge handle (persisted per-business per-view in localStorage). */}
       {activeView === 'tasks' && (
-        <ViewsPanel title="Manual to-dos" subtitle={`Tasks the ${name} copilot flagged for you`} onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Manual to-dos" subtitle={`Tasks the ${name} copilot flagged for you`} onClose={() => setActiveView(null)} storageKey={`nexus:views-panel:business:${slug}:tasks`}>
           <TasksView scope={viewScope} onCountChange={setTasksBadge} />
         </ViewsPanel>
       )}
       {activeView === 'approvals' && (
-        <ViewsPanel title="Approval queue" subtitle={`Pending approval cards in ${name}`} onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Approval queue" subtitle={`Pending approval cards in ${name}`} onClose={() => setActiveView(null)} storageKey={`nexus:views-panel:business:${slug}:approvals`}>
           <ApprovalsView scope={viewScope} sessionsBasePath={`/businesses/${encodeURIComponent(slug)}/chat`} onCountChange={setApprovalsBadge} />
         </ViewsPanel>
       )}
       {activeView === 'calendar' && (
-        <ViewsPanel title="Calendar" subtitle={`Upcoming due dates + runs for ${name}`} onClose={() => setActiveView(null)}>
+        <ViewsPanel title="Calendar" subtitle={`Upcoming due dates + runs for ${name}`} onClose={() => setActiveView(null)} storageKey={`nexus:views-panel:business:${slug}:calendar`}>
           <CalendarView scope={viewScope} />
         </ViewsPanel>
       )}
