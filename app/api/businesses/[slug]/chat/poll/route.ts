@@ -15,6 +15,7 @@ import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
+import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
 import { parseCrash } from '@/lib/chat/crash'
@@ -55,8 +56,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     return NextResponse.json({ ok: false, error: `gateway poll failed: ${result.error ?? 'unknown'}`, code: 'gateway_error' }, { status: result.http && result.http >= 400 && result.http < 600 ? result.http : 502 })
   }
 
-  let displayText      = result.text ?? ''
-  let approvalRequests = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+  let displayText        = result.text ?? ''
+  let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+  let editPlans          = [] as ReturnType<typeof parseEditPlanBlocks>['plans']
+  let editGroupCompletes = [] as ReturnType<typeof parseEditPlanBlocks>['group_completes']
 
   // Crash detection — see app/api/platform-chat/poll/route.ts for design notes.
   const crashedRaw = result.jobError || (result.status === 'error' ? result.error : undefined)
@@ -72,6 +75,11 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     // session's scope so a malicious response can't write to other scopes.
     const taskParse = parseManualTaskBlocks(displayText)
     displayText = taskParse.text
+    // Multi-turn edit plans — mirror of platform-chat poll.
+    const editPlanParse = parseEditPlanBlocks(displayText)
+    displayText         = editPlanParse.text
+    editPlans           = editPlanParse.plans
+    editGroupCompletes  = editPlanParse.group_completes
 
     const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
     if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
@@ -98,6 +106,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
             approval_requests: approvalRequests,
             tool_calls:        result.toolCalls,
             manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
+            edit_plans:           editPlans.length > 0 ? editPlans : undefined,
+            edit_group_completes: editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
             crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
           },
         })
@@ -127,13 +137,15 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   }
 
   return NextResponse.json({
-    ok:                true,
-    status:            result.status,
-    text:              displayText,
-    partialText:       result.partialText,
-    tool_calls:        result.toolCalls,
-    approval_requests: approvalRequests,
-    jobError:          result.jobError,
+    ok:                    true,
+    status:                result.status,
+    text:                  displayText,
+    partialText:           result.partialText,
+    tool_calls:            result.toolCalls,
+    approval_requests:     approvalRequests,
+    edit_plans:            editPlans.length > 0 ? editPlans : undefined,
+    edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    jobError:              result.jobError,
     crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
     durationMs:        result.durationMs,
     createdAt:         result.createdAt,

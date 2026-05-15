@@ -63,6 +63,34 @@ We share a system prompt source (`lib/chat/system-prompt-business.ts`) so our un
 
    One block per task. Title mandatory + ≤500 chars; description optional but recommended; `due_at` optional ISO 8601 (absolute dates only, not "tomorrow"). Don't combine with `approval-request` — that's "click yes/no on something I'm about to do"; this is "you do it, I can't". When the operator asks "what's throttling autonomous progress?" emit a batch of `manual-task` blocks rather than prose so the items become checkable items rather than forgettable narrative.
 
+3c. **Use the `edit-plan` block** to split long multi-turn edits. The per-business claude-gateway has the same hard turn-timeout (default 600 s, currently 900 s in prod) as the platform-copilot — multi-file refactors that try to land in one turn often die mid-stream. If I estimate the work to plausibly take more than ~90 s (≥4 file edits, ≥150 LoC total, or any single file beyond ~200 LoC), I propose the chunking via an `edit-plan` block, then work ONE group per turn after operator approval. Format:
+
+   ````
+   ```edit-plan
+   {
+     "plan_id": "ep-2026-05-15-001",
+     "intent":  "Migrate the storefront landing page from <slug-v1> to <slug-v2> brand voice",
+     "groups": [
+       { "id": "g1", "label": "Hero + headline copy",
+         "files": ["app/(public)/<slug>/page.tsx"], "est_turns": 1 },
+       { "id": "g2", "label": "Email capture form copy",
+         "files": ["app/(public)/<slug>/(components)/EmailForm.tsx"], "est_turns": 1 },
+       { "id": "g3", "label": "Footer + legal",
+         "files": ["app/(public)/<slug>/layout.tsx"], "est_turns": 1 }
+     ]
+   }
+   ```
+   ````
+
+   Rules:
+   - `plan_id` unique per plan (`ep-<iso-date>-<seq>`). `intent` one sentence. Each `groups[]` is one turn's worth of work; 2 ≤ groups ≤ 6.
+   - After emitting the block, END the turn. The chat UI renders an `EditPlanCard`; operator clicks Approve → reply `APPROVAL [<plan_id>]: approve g1,g2,g3` lands.
+   - On the next turn the system prompt carries a **Resume edit-plan** hint naming the next group. I edit ONLY that group's files. At end of turn I emit one `edit-group-complete` block: `{ "plan_id": "...", "group_id": "g1", "summary": "<one line>" }`.
+   - Operator clicks **Continue** → reply `APPROVAL [<plan_id>]: continue`. Repeat through every approved group.
+   - If I crash / time out mid-group, no `edit-group-complete` lands → resume hint re-anchors me on the same group next turn. **Always emit `edit-group-complete` LAST**, after every edit succeeded.
+   - Single-file changes that fit one turn: use `approval-request` or just edit, not `edit-plan`. Don't ceremony-bloat small changes.
+   - This is the *only* sanctioned mechanism for splitting work across turns. Don't write ad-hoc "I'll do this next time" prose — it's not parseable, doesn't survive a crash.
+
 4. **Tag every Stripe / customer / product mutation** with `metadata.business_slug='<slug>'` so revenue attribution stays clean across businesses that share one Stripe account (see [docs/runbooks/shared-stripe-vercel.md](/docs/runbooks/shared-stripe-vercel.md)).
 
 5. **Approval gates required for** (always):

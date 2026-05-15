@@ -31,6 +31,7 @@ import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
+import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
 import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
@@ -95,6 +96,11 @@ export async function GET(req: NextRequest) {
   // the conversation is durable across page reloads.
   let displayText        = result.text ?? ''
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+  // Edit-plan + group-complete arrays surface in the poll response so the
+  // client can render EditPlanCards inline. Populated inside the
+  // status==='done' branch; default to empty so the response shape is stable.
+  let editPlans          = [] as ReturnType<typeof parseEditPlanBlocks>['plans']
+  let editGroupCompletes = [] as ReturnType<typeof parseEditPlanBlocks>['group_completes']
 
   // Crash detection — covers two failure shapes:
   //   1. status='error' with jobError set (CLI exited with code != 0)
@@ -130,6 +136,14 @@ export async function GET(req: NextRequest) {
     displayText        = iterParse.text
     const findingParse = parseBugHuntFindings(displayText)
     displayText        = findingParse.text
+    // Edit-plan blocks — the agent proposes chunked multi-turn edits here.
+    // The EditPlanCard renders these as approval cards with file-level
+    // granularity; the enqueue-side resume hint reads them on subsequent
+    // turns to re-anchor the agent on the next un-completed group.
+    const editPlanParse = parseEditPlanBlocks(displayText)
+    displayText         = editPlanParse.text
+    editPlans           = editPlanParse.plans
+    editGroupCompletes  = editPlanParse.group_completes
     // The agent's iteration-plan items render as ApprovalCards via the normal
     // protocol. Append the inner approval requests so the chat surfaces them.
     for (const p of iterParse.plans) approvalRequests = [...approvalRequests, p.approval]
@@ -193,6 +207,8 @@ export async function GET(req: NextRequest) {
             manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
             iteration_plans:   iterParse.plans.length > 0 ? iterParse.plans : undefined,
             findings_inserted: findingParse.findings.length || undefined,
+            edit_plans:        editPlanParse.plans.length > 0 ? editPlanParse.plans : undefined,
+            edit_group_completes: editPlanParse.group_completes.length > 0 ? editPlanParse.group_completes : undefined,
             // Crash flag survives page reload — the system-prompt builder
             // reads this on the next turn to inject the "previous turn
             // crashed" hint into the dispatch.
@@ -242,16 +258,22 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    ok:                true,
-    status:            result.status,
-    text:              displayText,
+    ok:                    true,
+    status:                result.status,
+    text:                  displayText,
     /** Phase 2a — partial text accumulated while running. Client renders
      *  this as a tentative bubble between polls so long Opus runs feel
      *  progressive without going through SSE. */
-    partialText:       result.partialText,
-    approval_requests: approvalRequests,
-    tool_calls:        result.toolCalls,    // Phase 2b — chat renders cards
-    jobError:          result.jobError,
+    partialText:           result.partialText,
+    approval_requests:     approvalRequests,
+    tool_calls:            result.toolCalls,    // Phase 2b — chat renders cards
+    /** Multi-turn edit plans the agent emitted this turn. Client renders
+     *  an EditPlanCard per entry. */
+    edit_plans:            editPlans.length > 0 ? editPlans : undefined,
+    /** Per-group completion markers. Client uses these to flip group
+     *  checkboxes to ✓ on prior cards. */
+    edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    jobError:              result.jobError,
     /** Crash info parsed from the gateway error — when present, the
      *  client renders a CrashedTurnCard above the assistant bubble. */
     crashed:           isCrashed

@@ -25,6 +25,7 @@ import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildBusinessSystemPrompt } from '@/lib/chat/system-prompt-business'
 import { appendMessage, listSessions, createSession, deriveTitleFromMessage, listMessages } from '@/lib/chat/sessions'
+import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 import { computeUsage } from '@/lib/chat/context-window'
 
 export const runtime    = 'nodejs'
@@ -115,6 +116,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
 
   // Crash-recovery hint — see app/api/platform-chat/route.ts for design notes.
   let crashHint = ''
+  let editPlanResumeHint = ''
   if (sessionId) {
     const recent = await listMessages(sessionId, 6)
     const lastAssistant = [...recent].reverse().find(m => m.role === 'assistant')
@@ -125,9 +127,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
       const code = crashedMeta.exit_code ?? '?'
       crashHint = `\n\n## ⚠ Previous turn crashed (exit code ${code})\n\nThe last turn ended in a CLI crash before the agent could finish its tool calls. **Re-issue any uncompleted tool calls; do not assume prior "pending" / "I'll write" / "queued" work landed.** Inspect the conversation, identify what was promised but unverified, redo it.\n`
     }
+    // Edit-plan resume — wider 30-msg window so multi-group plans survive.
+    const wideHistory  = await listMessages(sessionId, 30)
+    editPlanResumeHint = buildEditPlanResumeHint(wideHistory)
   }
 
-  const composite = `${systemPrompt}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+  const composite = `${systemPrompt}${crashHint}${editPlanResumeHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
   // Token-based budget check — see lib/chat/context-window.ts. Replaces
   // the old 32k-char cap with the model's actual input budget (~150k
   // tokens for Claude on 200k context).

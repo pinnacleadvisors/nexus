@@ -92,6 +92,56 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
+## Splitting long multi-file edits across turns (the `edit-plan` block)
+
+The claude-gateway kills a turn at `REQUEST_TIMEOUT_MS` (default 600 s in `docker-compose.yaml`, currently set to 900 s in production). Big multi-file refactors that try to land in one turn often die mid-stream, leaving the repo in an undefined state — files half-written, no commit, no clear "what got done" for the next turn.
+
+**The rule of thumb:** if I estimate the work to plausibly take more than ~90 s — ≥4 distinct file edits, ≥150 LoC total, or any single file beyond ~200 LoC — I do NOT try to finish it in one turn. Instead I emit an `edit-plan` fenced JSON block proposing how to chunk it, then work ONE group per turn after the operator approves.
+
+Format:
+
+````
+```edit-plan
+{
+  "plan_id": "ep-2026-05-15-001",
+  "intent":  "Add Beehiiv MCP entry to lib/businesses/mcp-manifest.ts + wire it into provision",
+  "groups": [
+    { "id": "g1", "label": "Manifest entry",
+      "files": ["lib/businesses/mcp-manifest.ts"], "est_turns": 1 },
+    { "id": "g2", "label": "Provision route wiring",
+      "files": ["app/api/businesses/[slug]/provision/route.ts"], "est_turns": 1 },
+    { "id": "g3", "label": "Roadmap + memory updates",
+      "files": ["memory/platform/SECRETS.md", "memory/roadmap/SUMMARY.md"], "est_turns": 1 }
+  ]
+}
+```
+````
+
+Rules:
+- `plan_id` is unique per plan — use `ep-<iso-date>-<seq>` (`ep-2026-05-15-001`, `ep-2026-05-15-002`).
+- `intent` is one sentence describing the whole multi-turn change.
+- Each `groups[]` entry is the unit of work I'll complete in ONE turn. `files` is a concrete list (paths matter for the resume hint), not a vague description. `est_turns` is almost always 1 — if a single group needs more than one turn, split it further.
+- 2 ≤ groups ≤ 6. Beyond 6 it becomes a checklist; below 2 don't bother with the protocol.
+- After emitting the block, END the turn. Don't try to "get a head start" on group 1 — the operator's approval gates everything.
+
+What happens after I emit:
+- The chat UI renders an `EditPlanCard` next to my message. Operator clicks **Approve all** (default) → reply is auto-sent as `APPROVAL [<plan_id>]: approve g1,g2,g3`.
+- On the next turn I see that reply + a **Resume edit-plan** hint in my system prompt naming the next group. I edit ONLY that group's files. At end of turn I emit one `edit-group-complete`:
+  ````
+  ```edit-group-complete
+  { "plan_id": "ep-2026-05-15-001", "group_id": "g1", "summary": "Manifest entry added. tsc clean." }
+  ```
+  ````
+- The operator clicks **Continue (group g2)** → reply `APPROVAL [<plan_id>]: continue`. Repeat.
+- If I crash or time out mid-group, no `edit-group-complete` lands for that group → the resume hint re-anchors me on the same group next turn. **Always emit `edit-group-complete` LAST in the turn**, after every edit in the group has succeeded.
+
+When NOT to use `edit-plan`:
+- Single-file edits or one-shot diffs that obviously fit one turn — emit them with normal `approval-request` (or just edit, depending on the rules above) instead. Don't ceremony-bloat small changes.
+- Iterations of an existing plan — if the operator amends a group mid-flight ("actually only g1, g3 — skip g2"), I don't re-emit the plan; I just respect the next `APPROVAL` reply and continue.
+- Pure investigation turns (no writes). Edit-plans are about writes that span turns.
+
+The `edit-plan` block is the *only* sanctioned mechanism for splitting work across turns. Don't invent ad-hoc "I'll do this next time" prose — it's not parseable, doesn't survive a crash, and doesn't bind the operator to a plan.
+
 ## Delegating to codex-operator
 
 For execution-heavy work I should delegate to **codex-operator** via the `mcp__codex-delegate__delegate_to_codex` MCP tool (added in Phase 2c). The tool wraps the codex-gateway's async-job HTTP API (KVM2 sandbox per ADR 002) and returns the full transcript inline — the Nexus chat UI renders it as a `ToolCallCard` so the operator sees exactly what codex did without leaving the conversation.

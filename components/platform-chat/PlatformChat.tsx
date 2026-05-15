@@ -18,7 +18,9 @@ import SessionSidebar, { type SessionSummary } from './SessionSidebar'
 import ToolCallCard from './ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
+import EditPlanCard, { type EditPlanResolution } from './EditPlanCard'
 import { findClaimedRanges } from '@/lib/chat/crash'
+import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
@@ -43,21 +45,67 @@ interface Message {
   /** Crash info — when set, renders a CrashedTurnCard above the bubble
    *  and amber-highlights "claimed but unverified" phrases inline. */
   crashed?: CrashedInfo
+  /** Multi-turn edit plans extracted from the assistant text. Rendered as
+   *  EditPlanCards inline with the assistant bubble. */
+  edit_plans?: EditPlan[]
+  /** Per-group completion markers — used to flip status of prior cards. */
+  edit_group_completes?: EditGroupComplete[]
 }
 
 interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
+
+/**
+ * Walk the message list chronologically and build a per-plan_id snapshot
+ * of approval + completion state. Operator `APPROVAL [<plan_id>]: approve
+ * g1,g2` replies populate approvedGroupIds; assistant edit_group_completes
+ * arrays populate completedGroupIds; `deny all` flips the denied flag.
+ *
+ * Returned map is keyed by plan_id so the MessageBubble can pass each
+ * EditPlanCard the right slice without re-scanning.
+ */
+function computeEditPlanResolutions(messages: Message[]): Map<string, EditPlanResolution> {
+  const out = new Map<string, EditPlanResolution>()
+  // Track all known plan_ids first so we don't tag operator replies
+  // against random strings — only against plans the agent actually emitted.
+  const knownPlans = new Set<string>()
+  for (const m of messages) for (const p of m.edit_plans ?? []) knownPlans.add(p.plan_id)
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      for (const c of m.edit_group_completes ?? []) {
+        if (!out.has(c.plan_id)) out.set(c.plan_id, { approvedGroupIds: [], completedGroupIds: [] })
+        const r = out.get(c.plan_id)!
+        if (!r.completedGroupIds.includes(c.group_id)) r.completedGroupIds.push(c.group_id)
+      }
+    } else if (m.role === 'user') {
+      const match = /APPROVAL\s+\[([^\]]+)\]:\s*(.+?)\s*$/m.exec(m.content)
+      if (!match) continue
+      const planId = match[1].trim()
+      if (!knownPlans.has(planId)) continue
+      const tail = match[2].trim()
+      if (!out.has(planId)) out.set(planId, { approvedGroupIds: [], completedGroupIds: [] })
+      const r = out.get(planId)!
+      if (/^deny\b/i.test(tail)) { r.denied = true; continue }
+      if (/^continue\b/i.test(tail)) continue // no state change
+      const approveMatch = /^approve\s+(.+)$/i.exec(tail)
+      if (!approveMatch) continue
+      const ids = approveMatch[1].split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+      for (const id of ids) if (!r.approvedGroupIds.includes(id)) r.approvedGroupIds.push(id)
+    }
+  }
+  return out
+}
 
 const PLACEHOLDER = [
   '"Show me the last 3 Vercel deploy failures and what broke"',
@@ -102,6 +150,12 @@ export default function PlatformChat() {
   // the bottom-right ContextIndicator (Claude-Code-Desktop style).
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
 
+  // Per-plan resolution map — aggregated across ALL messages on every
+  // render. Each plan_id → { approvedGroupIds, completedGroupIds, denied }.
+  // Computed inline (not memoized) because messages array changes on
+  // every send/poll anyway, so memoization gains nothing meaningful.
+  const editPlanResolutions = computeEditPlanResolutions(messages)
+
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -141,6 +195,8 @@ export default function PlatformChat() {
           approval_requests:    m.metadata?.approval_requests,
           tool_calls:           m.metadata?.tool_calls,
           crashed:              m.metadata?.crashed,
+          edit_plans:           m.metadata?.edit_plans,
+          edit_group_completes: m.metadata?.edit_group_completes,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -206,6 +262,15 @@ export default function PlatformChat() {
     // The poll loop notices on its next tick (max 2.5s) and bails out.
   }
 
+  // Edit-plan handler — Approve / Continue / Deny all flow into one path
+  // because the wire format is just an `APPROVAL [<plan_id>]: ...` string.
+  // The card itself decides which mode applies for the current state.
+  function handleEditPlanReply(planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) {
+    const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
+    setInput(reply)
+    setTimeout(() => { void send(reply) }, 30)
+  }
+
   async function send(forcedText?: string) {
     const text = (forcedText ?? input).trim()
     if (!text || busy) return
@@ -255,12 +320,14 @@ export default function PlatformChat() {
         return
       }
       setMessages(prev => [...prev, {
-        role:               'assistant',
-        content:            finalResult.text,
-        durationMs:         finalResult.durationMs,
-        approval_requests:  finalResult.approval_requests,
-        tool_calls:         finalResult.tool_calls,
-        crashed:            finalResult.crashed,
+        role:                  'assistant',
+        content:               finalResult.text,
+        durationMs:            finalResult.durationMs,
+        approval_requests:     finalResult.approval_requests,
+        tool_calls:            finalResult.tool_calls,
+        crashed:               finalResult.crashed,
+        edit_plans:            finalResult.edit_plans,
+        edit_group_completes:  finalResult.edit_group_completes,
       }])
       setPartial('')   // final landed, clear tentative bubble
       // Refresh sidebar (title may have been auto-derived from first message,
@@ -282,7 +349,7 @@ export default function PlatformChat() {
   async function pollUntilDone(
     jobId: string,
     sessionId: string,
-  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; cancelled?: boolean }> {
+  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -304,12 +371,15 @@ export default function PlatformChat() {
                                   || (j.crashed
                                        || (j.approval_requests?.length ?? 0) > 0
                                        || (j.tool_calls?.length ?? 0) > 0
+                                       || (j.edit_plans?.length ?? 0) > 0
                                        ? ''
                                        : '(the gateway returned an empty assistant message — usually means the agent finished without writing a final reply)'),
-          durationMs:         j.durationMs ?? (Date.now() - start),
-          approval_requests:  j.approval_requests,
-          tool_calls:         j.tool_calls,
-          crashed:            j.crashed,
+          durationMs:           j.durationMs ?? (Date.now() - start),
+          approval_requests:    j.approval_requests,
+          tool_calls:           j.tool_calls,
+          crashed:              j.crashed,
+          edit_plans:           j.edit_plans,
+          edit_group_completes: j.edit_group_completes,
         }
       }
       if (j.status === 'error') {
@@ -318,10 +388,12 @@ export default function PlatformChat() {
         // streamed partial text; the operator should still see it +
         // the CrashedTurnCard above explaining the discontinuity.
         return {
-          text:               (j.text ?? '').trim(),
-          durationMs:         j.durationMs ?? (Date.now() - start),
-          tool_calls:         j.tool_calls,
-          crashed:            j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
+          text:                 (j.text ?? '').trim(),
+          durationMs:           j.durationMs ?? (Date.now() - start),
+          tool_calls:           j.tool_calls,
+          crashed:              j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
+          edit_plans:           j.edit_plans,
+          edit_group_completes: j.edit_group_completes,
         }
       }
       // status === 'pending' | 'running' — Phase 2a pushes the running
@@ -378,6 +450,8 @@ export default function PlatformChat() {
               key={i}
               message={m}
               onApprove={handleApproval}
+              onEditPlanReply={handleEditPlanReply}
+              editPlanResolutions={editPlanResolutions}
               busy={busy}
             />
           ))}
@@ -554,11 +628,13 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 function MessageBubble({
-  message, onApprove, busy,
+  message, onApprove, onEditPlanReply, editPlanResolutions, busy,
 }: {
-  message:   Message
-  onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void
-  busy:      boolean
+  message:             Message
+  onApprove:           (request: ApprovalRequest, approvedItemIds: string[]) => void
+  onEditPlanReply:     (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void
+  editPlanResolutions: Map<string, EditPlanResolution>
+  busy:                boolean
 }) {
   const isUser = message.role === 'user'
   return (
@@ -599,6 +675,20 @@ function MessageBubble({
             resolution={message.approval_resolutions?.[req.approval_id] ?? null}
             disabled={busy}
             onSubmit={ids => onApprove(req, ids)}
+          />
+        ))}
+        {/* Multi-turn edit-plan cards — render with the AGGREGATED resolution
+            from the whole conversation so a plan emitted in turn 3 reflects
+            approvals + completions from turns 4..N. */}
+        {!isUser && message.edit_plans?.map(plan => (
+          <EditPlanCard
+            key={plan.plan_id}
+            plan={plan}
+            resolution={editPlanResolutions.get(plan.plan_id) ?? null}
+            disabled={busy}
+            onApprove={ids => onEditPlanReply(plan.plan_id, 'approve', ids)}
+            onContinue={()  => onEditPlanReply(plan.plan_id, 'continue')}
+            onDeny={()      => onEditPlanReply(plan.plan_id, 'deny')}
           />
         ))}
         {message.durationMs !== undefined && (

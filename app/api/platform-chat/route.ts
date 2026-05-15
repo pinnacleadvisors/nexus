@@ -48,6 +48,7 @@ import {
   deriveTitleFromMessage,
   listMessages,
 } from '@/lib/chat/sessions'
+import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 30   // Enqueue should be <1s; 30s leaves plenty of slack.
@@ -176,6 +177,11 @@ export async function POST(req: NextRequest) {
   // re-issue any uncompleted tool calls rather than assuming earlier
   // "pending" / "I'll write" claims actually landed.
   let crashHint = ''
+  // Edit-plan resume hint — when a prior edit-plan was approved but some
+  // groups never reported `edit-group-complete`, the agent gets a re-
+  // anchor telling it which group to do this turn (and only that group).
+  // Bigger window than the crash check — plans can span many turns.
+  let editPlanResumeHint = ''
   const incomingSessionId = body.sessionId?.trim() || null
   if (incomingSessionId) {
     const recent = await listMessages(incomingSessionId, 6)
@@ -187,11 +193,16 @@ export async function POST(req: NextRequest) {
       const code = crashedMeta.exit_code ?? '?'
       crashHint = `\n\n## ⚠ Previous turn crashed (exit code ${code})\n\nThe last turn ended in a CLI crash before the agent could finish its tool calls. **Re-issue any uncompleted tool calls; do not assume prior "pending" / "I'll write" / "queued" work landed.** Inspect the conversation to find what was promised but not verified, then redo it.\n`
     }
+    // Resume hint scans further back (edit-plans can be approved in turn N
+    // and resumed in turn N+5). 30 messages comfortably covers a multi-
+    // group plan without bloating the prompt.
+    const wideHistory = await listMessages(incomingSessionId, 30)
+    editPlanResumeHint = buildEditPlanResumeHint(wideHistory)
   }
 
   const composite = useBugHuntAgent
-    ? `${bugHuntContext}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nThis is a bug-hunt iteration request. Emit an \`iteration-plan\` fenced JSON block per your charter, then end the turn. Do NOT run audits in this turn — the operator must approve the plan first via APPROVAL [<approval_id>]: reply.`
-    : `${systemPrompt}${huntHint}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+    ? `${bugHuntContext}${crashHint}${editPlanResumeHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nThis is a bug-hunt iteration request. Emit an \`iteration-plan\` fenced JSON block per your charter, then end the turn. Do NOT run audits in this turn — the operator must approve the plan first via APPROVAL [<approval_id>]: reply.`
+    : `${systemPrompt}${huntHint}${crashHint}${editPlanResumeHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
 
   // Token-based budget check. Replaces the old 32k-char cap with the
   // model's actual input budget (~150k tokens for Claude on a 200k
