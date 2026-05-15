@@ -20,15 +20,17 @@ import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from './EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from './PermissionPromptCard'
+import FloatingActionBar from './FloatingActionBar'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
+import { pickPendingAction } from '@/lib/chat/action-bar'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
 import ApprovalsView from '@/components/chat-views/ApprovalsView'
 import CalendarView from '@/components/chat-views/CalendarView'
 import BugHuntView from '@/components/chat-views/BugHuntView'
-import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
+import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 interface Message {
@@ -163,6 +165,11 @@ export default function PlatformChat() {
   // every send/poll anyway, so memoization gains nothing meaningful.
   const editPlanResolutions = computeEditPlanResolutions(messages)
 
+  // The "current actionable thing" picked from messages + resolutions.
+  // Feeds the FloatingActionBar above the input so the operator never
+  // has to scroll up to an inline card to click Continue / Approve.
+  const pendingAction = pickPendingAction(messages, editPlanResolutions)
+
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -258,9 +265,13 @@ export default function PlatformChat() {
       }
       return next
     })
-    setInput(reply)
-    // Auto-send so the agent sees the response without the operator clicking Send.
-    setTimeout(() => { void send(reply) }, 30)
+    // The APPROVAL [...] reply is the wire format the agent reads, but
+    // showing it as a user bubble in the chat just adds noise. Mirroring
+    // Claude Code Desktop: the approval card's state change IS the visual
+    // confirmation. Skip setInput, fire send directly with the reply text.
+    // (The MessageBubble filter at render time also hides any APPROVAL
+    // messages that already landed via DB persistence.)
+    void send(reply)
   }
 
   function handleCancel() {
@@ -274,8 +285,35 @@ export default function PlatformChat() {
   // The card itself decides which mode applies for the current state.
   function handleEditPlanReply(planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) {
     const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
-    setInput(reply)
-    setTimeout(() => { void send(reply) }, 30)
+    // Same pattern as handleApproval — fire-and-forget, no visible reply
+    // bubble. The EditPlanCard's resolution state IS the confirmation.
+    void send(reply)
+  }
+
+  // FloatingActionBar dispatchers — all three just delegate to the
+  // existing handleApproval / handleEditPlanReply paths so the inline
+  // card + the bar share one code path. Each handler is safe to call
+  // when pendingAction is the wrong kind because it null-checks first.
+  function handleBarApproveAll() {
+    if (!pendingAction) return
+    if (pendingAction.kind === 'approval-request') {
+      handleApproval(pendingAction.request, pendingAction.request.items.map(it => it.id))
+    } else if (pendingAction.kind === 'edit-plan-approve') {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'approve', pendingAction.plan.groups.map(g => g.id))
+    }
+  }
+  function handleBarContinue() {
+    if (pendingAction?.kind === 'edit-plan-continue') {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'continue')
+    }
+  }
+  function handleBarDeny() {
+    if (!pendingAction) return
+    if (pendingAction.kind === 'approval-request') {
+      handleApproval(pendingAction.request, [])
+    } else {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'deny')
+    }
   }
 
   async function send(forcedText?: string) {
@@ -485,16 +523,21 @@ export default function PlatformChat() {
         {/* Message list */}
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && <EmptyState />}
-          {messages.map((m, i) => (
-            <MessageBubble
-              key={i}
-              message={m}
-              onApprove={handleApproval}
-              onEditPlanReply={handleEditPlanReply}
-              editPlanResolutions={editPlanResolutions}
-              busy={busy}
-            />
-          ))}
+          {messages.map((m, i) => {
+            // APPROVAL replies are wire-format only — never render as a
+            // user bubble. See isApprovalReply() for the rationale.
+            if (m.role === 'user' && isApprovalReply(m.content)) return null
+            return (
+              <MessageBubble
+                key={i}
+                message={m}
+                onApprove={handleApproval}
+                onEditPlanReply={handleEditPlanReply}
+                editPlanResolutions={editPlanResolutions}
+                busy={busy}
+              />
+            )
+          })}
           {/* Permission-broker cards — surfaced while the turn is running
               and the broker has pending Allow/Deny requests. Rendered
               ABOVE the partial bubble so the operator sees them first. */}
@@ -536,6 +579,20 @@ export default function PlatformChat() {
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
           <div ref={bottomRef} />
         </div>
+
+      {/* Floating action bar — surfaces the most-recent pending Continue /
+          Approve / Deny just above the input. Hides while a turn is
+          running (busy=true) and reappears when the next action lands.
+          The inline ApprovalCard / EditPlanCard buttons remain for
+          fine-grained control (per-group / per-item selection). */}
+      {pendingAction && !busy && (
+        <FloatingActionBar
+          action={pendingAction}
+          onApproveAll={handleBarApproveAll}
+          onContinue={handleBarContinue}
+          onDeny={handleBarDeny}
+        />
+      )}
 
       {/* Input */}
       <div className="border-t p-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
