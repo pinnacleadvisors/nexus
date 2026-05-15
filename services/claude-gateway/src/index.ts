@@ -272,6 +272,10 @@ app.post('/api/jobs', async c => {
       // the job is still running. Lets the chat UI render progressive
       // output without needing SSE.
       onDelta:   delta => jobs.appendPartialText(jobId, delta),
+      // PR #189 — surface the gateway jobId to the permission-broker MCP
+      // so it can correlate pending tool-permission requests with the
+      // running chat turn.
+      jobId,
     })
     jobs.markDone(jobId, result)
     return result

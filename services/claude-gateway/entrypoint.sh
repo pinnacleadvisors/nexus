@@ -121,6 +121,26 @@ if [ -n "${CODEX_GATEWAY_URL:-}" ] && [ -n "${CODEX_GATEWAY_BEARER_TOKEN:-}" ] &
   fi
 fi
 
+# Build the permission-broker MCP (services/mcp-permission-broker/). PR #189.
+# Catches CLI tool-permission requests via `--permission-prompt-tool` and
+# surfaces them to the operator's chat as Allow/Deny cards. Requires
+# SUPABASE_SERVICE_ROLE_KEY (writes pending rows to chat_permission_requests)
+# AND NEXUS_OPERATOR_USER_ID (so the broker knows whose decision to wait for).
+# Skipped entirely when MCP_PERMISSION_BROKER=skip (revert switch).
+BROKER_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-permission-broker"
+BROKER_MCP_BUILT=0
+if [ "${MCP_PERMISSION_BROKER:-}" != "skip" ] \
+   && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
+   && [ -d "$BROKER_MCP_DIR/src" ]; then
+  echo "[gateway] Building permission-broker MCP from $BROKER_MCP_DIR..."
+  if (cd "$BROKER_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    BROKER_MCP_BUILT=1
+    echo "[gateway] permission-broker MCP built — will register."
+  else
+    echo "[gateway] WARNING: permission-broker MCP build FAILED — skipping registration."
+  fi
+fi
+
 # Assemble the settings.json. Whichever MCP servers built successfully get
 # registered. composio-admin (hard-isolation) is the primary; rube-mcp is
 # the soft-isolation fallback used only when the wrapper isn't available.
@@ -190,19 +210,56 @@ JSON
     }
 JSON
   fi
+  if [ "$BROKER_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "permission-broker": {
+      "command": "node",
+      "args": ["$BROKER_MCP_DIR/dist/index.js"],
+      "env": {
+        "NEXT_PUBLIC_SUPABASE_URL":   "${NEXT_PUBLIC_SUPABASE_URL:-}",
+        "SUPABASE_SERVICE_ROLE_KEY":  "${SUPABASE_SERVICE_ROLE_KEY}",
+        "NEXUS_OPERATOR_USER_ID":     "${NEXUS_OPERATOR_USER_ID:-}",
+        "ALLOWED_USER_IDS":           "${ALLOWED_USER_IDS:-}",
+        "BROKER_TIMEOUT_MS":          "${BROKER_TIMEOUT_MS:-600000}",
+        "BROKER_POLL_INTERVAL_MS":    "${BROKER_POLL_INTERVAL_MS:-1000}"
+      }
+    }
+JSON
+  fi
 }
 
 MCP_BLOCK="$(build_mcp_block)"
 if [ -n "$MCP_BLOCK" ]; then
   mkdir -p /root/.claude
-  # Pre-allowlist the trusted MCP tools so `claude -p` (non-interactive) doesn't
-  # silently drop tool calls waiting for a TTY confirmation. Default permission
-  # mode expects an interactive prompt — in headless mode the MCP invocations
-  # never fire. The composio-admin wrapper is structurally isolated to admin-
-  # scope rows (PR #153), and memory-hq writes only to the operator's own
-  # GitHub repo, so wholesale-allowing these 8 tool names is safe and matches
-  # the "trusted MCP, default-deny everything else" pattern. Bash / Edit /
-  # Write etc. remain default-prompted, preserving the approval-card gates.
+  # Pre-allowlist the trusted MCP tools + the broad workhorse tools so
+  # `claude -p` (non-interactive) doesn't silently drop tool calls waiting
+  # for a TTY confirmation that never comes. Two tiers, both safe under
+  # the container threat model (ephemeral /repo clone, no financial
+  # secrets in this gateway's env per ADR 002):
+  #
+  #   1. MCP tools (composio-admin, memory-hq, codex-delegate) — already
+  #      structurally bounded by their respective wrappers.
+  #   2. Workhorse tools (Bash, Edit, Write, Read, Glob, Grep, LS,
+  #      BashOutput, NotebookEdit/NotebookRead, WebFetch, WebSearch,
+  #      TodoWrite). Approved here because:
+  #        - The container is the security boundary. /repo is a fresh
+  #          clone on each boot; the agent can't escape it.
+  #        - Compound-command splitting in Bash makes per-pattern
+  #          allowlists brittle. `npx tsc | head -30` splits into two
+  #          sub-commands and BOTH need to match. Wholesale-allow Bash
+  #          inside the sandbox.
+  #        - The CHAT-level approval-request block (lib/chat/approval.ts)
+  #          is the policy gate operators see. CLI-level approval gates
+  #          don't work in headless mode anyway — they emit prose
+  #          rejections the chat UI can't render as buttons.
+  #
+  # For tool calls that DON'T match the allow list, the new permission-
+  # broker MCP (PR #189) catches them via --permission-prompt-tool and
+  # surfaces an Allow/Deny card in the chat. So unknown tools still get
+  # a UI gate; the allow list just covers the common path so the broker
+  # isn't on the hot path for every Bash run.
   cat > /root/.claude/settings.json <<JSON
 {
   "mcpServers": {
@@ -218,7 +275,21 @@ $MCP_BLOCK
       "mcp__memory-hq__memory_moc",
       "mcp__memory-hq__memory_query",
       "mcp__memory-hq__memory_search",
-      "mcp__codex-delegate__delegate_to_codex"
+      "mcp__codex-delegate__delegate_to_codex",
+      "mcp__permission-broker__permission_prompt",
+      "Bash",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "BashOutput",
+      "NotebookRead",
+      "WebFetch",
+      "WebSearch",
+      "TodoWrite"
     ]
   }
 }
@@ -228,6 +299,7 @@ JSON
   [ -n "${COMPOSIO_API_KEY:-}" ] && [ "$WRAPPER_BUILT" -ne 1 ] && REGISTERED="$REGISTERED composio"
   [ "$MEMORY_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED memory-hq"
   [ "$CODEX_MCP_BUILT" -eq 1 ]                            && REGISTERED="$REGISTERED codex-delegate"
+  [ "$BROKER_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED permission-broker"
   echo "[gateway] Wrote MCP config:$REGISTERED"
 else
   # No MCP servers built — log clearly and clean up any stale settings.json

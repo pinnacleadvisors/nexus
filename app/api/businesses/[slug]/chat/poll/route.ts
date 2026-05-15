@@ -16,6 +16,7 @@ import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
+import { listPendingForJob, type PermissionRequestRow } from '@/lib/chat/permission-requests'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
 import { parseCrash } from '@/lib/chat/crash'
@@ -55,6 +56,9 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: `gateway poll failed: ${result.error ?? 'unknown'}`, code: 'gateway_error' }, { status: result.http && result.http >= 400 && result.http < 600 ? result.http : 502 })
   }
+
+  let pendingPermissions: PermissionRequestRow[] = []
+  try { pendingPermissions = await listPendingForJob(session.userId, jobId) } catch { /* swallow */ }
 
   let displayText        = result.text ?? ''
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
@@ -145,6 +149,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     approval_requests:     approvalRequests,
     edit_plans:            editPlans.length > 0 ? editPlans : undefined,
     edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    pending_permission_requests: pendingPermissions.length > 0 ? pendingPermissions : undefined,
     jobError:              result.jobError,
     crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
     durationMs:        result.durationMs,

@@ -19,6 +19,7 @@ import ToolCallCard from './ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from './EditPlanCard'
+import PermissionPromptCard, { type PermissionRequest } from './PermissionPromptCard'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
@@ -56,7 +57,7 @@ interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag:
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
@@ -149,6 +150,12 @@ export default function PlatformChat() {
   // Context usage from the most-recent successful enqueue. Surfaces in
   // the bottom-right ContextIndicator (Claude-Code-Desktop style).
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
+
+  // Pending CLI tool-permission requests from the broker MCP (PR #189).
+  // Refreshes on every poll tick while the turn is running; cleared when
+  // the turn lands or the operator resolves them. Rendered above the
+  // partial bubble so the operator sees them immediately.
+  const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
 
   // Per-plan resolution map — aggregated across ALL messages on every
   // render. Each plan_id → { approvedGroupIds, completedGroupIds, denied }.
@@ -277,6 +284,7 @@ export default function PlatformChat() {
     setError(null)
     cancelRef.current = false   // reset flag for the new turn
     setPartial('')               // clear stale partial text from a prior run
+    setPendingPermissions([])    // clear any leftover permission cards
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setInput('')
@@ -399,8 +407,40 @@ export default function PlatformChat() {
       // status === 'pending' | 'running' — Phase 2a pushes the running
       // partial text into UI state so the chat shows progressive output.
       if (j.partialText) setPartial(j.partialText)
+      // Surface any pending permission requests the broker MCP wrote
+      // during this turn. The card renders above the partial bubble.
+      setPendingPermissions(j.pending_permission_requests ?? [])
     }
     throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the gateway — check Coolify logs for the claude-gateway service.`)
+  }
+
+  // Permission-broker handlers — POST to the decide route which flips the
+  // row's status. The broker MCP polling that row inside the gateway
+  // returns the decision on its next tick (≤1s), and the gateway turn
+  // resumes. The local pending list is optimistically pruned so the card
+  // doesn't briefly re-appear before the next poll tick clears it.
+  async function decidePermission(id: string, allow: boolean, opts?: { updatedInput?: Record<string, unknown>; reason?: string }) {
+    setPendingPermissions(prev => prev.filter(r => r.id !== id))
+    try {
+      const res = await fetch(`/api/platform-chat/permission-requests/${encodeURIComponent(id)}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          allow,
+          ...(opts?.updatedInput ? { updated_input: opts.updatedInput } : {}),
+          ...(opts?.reason       ? { reason:        opts.reason }       : {}),
+        }),
+      })
+      if (!res.ok && res.status !== 409) {
+        // 409 = already resolved (race). Anything else: nudge the list
+        // back so the operator can retry. The card itself stays gone —
+        // next poll tick refetches authoritative state.
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        setError(`permission decide failed: ${body.error ?? res.status}`)
+      }
+    } catch (e) {
+      setError(`permission decide network error: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -455,6 +495,23 @@ export default function PlatformChat() {
               busy={busy}
             />
           ))}
+          {/* Permission-broker cards — surfaced while the turn is running
+              and the broker has pending Allow/Deny requests. Rendered
+              ABOVE the partial bubble so the operator sees them first. */}
+          {busy && pendingPermissions.length > 0 && (
+            <div className="flex justify-start">
+              <div className="max-w-[85%] w-full">
+                {pendingPermissions.map(req => (
+                  <PermissionPromptCard
+                    key={req.id}
+                    request={req}
+                    onAllow={(id, updatedInput) => void decidePermission(id, true,  { updatedInput })}
+                    onDeny={(id, reason)        => void decidePermission(id, false, { reason })}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           {/* Phase 2a — tentative assistant bubble showing partial text
               accumulated by the running job. Updates on each 2.5s poll;
               replaced by the final MessageBubble once status='done'. */}
