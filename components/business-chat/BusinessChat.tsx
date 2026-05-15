@@ -26,8 +26,11 @@ import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/Cr
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
+import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
+import { pickPendingAction } from '@/lib/chat/action-bar'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
+import { isApprovalReply } from '@/lib/chat/approval'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
@@ -133,6 +136,8 @@ export default function BusinessChat({ slug, name }: Props) {
 
   // Per-plan resolution map for EditPlanCards — mirror of PlatformChat.
   const editPlanResolutions = computeEditPlanResolutions(messages)
+  // Pick the current pending action so FloatingActionBar can surface it.
+  const pendingAction = pickPendingAction(messages, editPlanResolutions)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
@@ -224,14 +229,37 @@ export default function BusinessChat({ slug, name }: Props) {
       }
       return next
     })
-    setInput(reply)
-    setTimeout(() => { void send(reply) }, 30)
+    // Mirror PlatformChat: fire send() directly, never put the wire-format
+    // reply in the input box. The card's resolution state is the visual
+    // confirmation. See isApprovalReply() for the render filter.
+    void send(reply)
   }
 
   function handleEditPlanReply(planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) {
     const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
-    setInput(reply)
-    setTimeout(() => { void send(reply) }, 30)
+    void send(reply)
+  }
+
+  function handleBarApproveAll() {
+    if (!pendingAction) return
+    if (pendingAction.kind === 'approval-request') {
+      handleApproval(pendingAction.request, pendingAction.request.items.map(it => it.id))
+    } else if (pendingAction.kind === 'edit-plan-approve') {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'approve', pendingAction.plan.groups.map(g => g.id))
+    }
+  }
+  function handleBarContinue() {
+    if (pendingAction?.kind === 'edit-plan-continue') {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'continue')
+    }
+  }
+  function handleBarDeny() {
+    if (!pendingAction) return
+    if (pendingAction.kind === 'approval-request') {
+      handleApproval(pendingAction.request, [])
+    } else {
+      handleEditPlanReply(pendingAction.plan.plan_id, 'deny')
+    }
   }
 
   // The permission-broker endpoint is platform-scoped (not business-
@@ -408,9 +436,12 @@ export default function BusinessChat({ slug, name }: Props) {
 
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && <EmptyState name={name} />}
-          {messages.map((m, i) => (
-            <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} busy={busy} />
-          ))}
+          {messages.map((m, i) => {
+            if (m.role === 'user' && isApprovalReply(m.content)) return null
+            return (
+              <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} busy={busy} />
+            )
+          })}
           {busy && pendingPermissions.length > 0 && (
             <div className="flex justify-start">
               <div className="max-w-[85%] w-full">
@@ -441,6 +472,15 @@ export default function BusinessChat({ slug, name }: Props) {
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
           <div ref={bottomRef} />
         </div>
+
+        {pendingAction && !busy && (
+          <FloatingActionBar
+            action={pendingAction}
+            onApproveAll={handleBarApproveAll}
+            onContinue={handleBarContinue}
+            onDeny={handleBarDeny}
+          />
+        )}
 
         <div className="border-t p-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <div className="flex gap-2 rounded-xl p-3" style={{
