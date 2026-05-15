@@ -24,7 +24,9 @@ import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
+import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import { findClaimedRanges } from '@/lib/chat/crash'
+import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
 import TasksView from '@/components/chat-views/TasksView'
@@ -41,18 +43,55 @@ interface Message {
   approval_resolutions?: Record<string, { approvedItemIds: string[]; deniedItemIds: string[] }>
   tool_calls?:           ToolCall[]
   crashed?:              CrashedInfo
+  edit_plans?:           EditPlan[]
+  edit_group_completes?: EditGroupComplete[]
+}
+
+/**
+ * Walk messages chronologically and build a per-plan_id resolution
+ * snapshot. Mirror of PlatformChat.computeEditPlanResolutions — kept
+ * locally because the Message type is per-component (slug-aware).
+ */
+function computeEditPlanResolutions(messages: Message[]): Map<string, EditPlanResolution> {
+  const out         = new Map<string, EditPlanResolution>()
+  const knownPlans  = new Set<string>()
+  for (const m of messages) for (const p of m.edit_plans ?? []) knownPlans.add(p.plan_id)
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      for (const c of m.edit_group_completes ?? []) {
+        if (!out.has(c.plan_id)) out.set(c.plan_id, { approvedGroupIds: [], completedGroupIds: [] })
+        const r = out.get(c.plan_id)!
+        if (!r.completedGroupIds.includes(c.group_id)) r.completedGroupIds.push(c.group_id)
+      }
+    } else if (m.role === 'user') {
+      const match = /APPROVAL\s+\[([^\]]+)\]:\s*(.+?)\s*$/m.exec(m.content)
+      if (!match) continue
+      const planId = match[1].trim()
+      if (!knownPlans.has(planId)) continue
+      const tail = match[2].trim()
+      if (!out.has(planId)) out.set(planId, { approvedGroupIds: [], completedGroupIds: [] })
+      const r = out.get(planId)!
+      if (/^deny\b/i.test(tail)) { r.denied = true; continue }
+      if (/^continue\b/i.test(tail)) continue
+      const approveMatch = /^approve\s+(.+)$/i.exec(tail)
+      if (!approveMatch) continue
+      const ids = approveMatch[1].split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+      for (const id of ids) if (!r.approvedGroupIds.includes(id)) r.approvedGroupIds.push(id)
+    }
+  }
+  return out
 }
 
 interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; usage?: ContextUsageView }
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
@@ -88,6 +127,9 @@ export default function BusinessChat({ slug, name }: Props) {
   // the bottom-right ContextIndicator.
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
 
+  // Per-plan resolution map for EditPlanCards — mirror of PlatformChat.
+  const editPlanResolutions = computeEditPlanResolutions(messages)
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
   // Reload session list — called on mount + after create/delete.
@@ -118,12 +160,14 @@ export default function BusinessChat({ slug, name }: Props) {
         const j = (await res.json()) as MessagesResp | { ok: false }
         if (!j.ok || cancelled) return
         setMessages(j.messages.map(m => ({
-          role:              m.role === 'system' ? 'assistant' : m.role,
-          content:           m.content,
-          durationMs:        m.metadata?.durationMs,
-          approval_requests: m.metadata?.approval_requests,
-          tool_calls:        m.metadata?.tool_calls,
-          crashed:           m.metadata?.crashed,
+          role:                 m.role === 'system' ? 'assistant' : m.role,
+          content:              m.content,
+          durationMs:           m.metadata?.durationMs,
+          approval_requests:    m.metadata?.approval_requests,
+          tool_calls:           m.metadata?.tool_calls,
+          crashed:              m.metadata?.crashed,
+          edit_plans:           m.metadata?.edit_plans,
+          edit_group_completes: m.metadata?.edit_group_completes,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -180,6 +224,12 @@ export default function BusinessChat({ slug, name }: Props) {
     setTimeout(() => { void send(reply) }, 30)
   }
 
+  function handleEditPlanReply(planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) {
+    const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
+    setInput(reply)
+    setTimeout(() => { void send(reply) }, 30)
+  }
+
   function handleCancel() {
     if (!busy) return
     cancelRef.current = true
@@ -222,12 +272,14 @@ export default function BusinessChat({ slug, name }: Props) {
         return
       }
       setMessages(prev => [...prev, {
-        role:               'assistant',
-        content:            finalResult.text,
-        durationMs:         finalResult.durationMs,
-        approval_requests:  finalResult.approval_requests,
-        tool_calls:         finalResult.tool_calls,
-        crashed:            finalResult.crashed,
+        role:                 'assistant',
+        content:              finalResult.text,
+        durationMs:           finalResult.durationMs,
+        approval_requests:    finalResult.approval_requests,
+        tool_calls:           finalResult.tool_calls,
+        crashed:              finalResult.crashed,
+        edit_plans:           finalResult.edit_plans,
+        edit_group_completes: finalResult.edit_group_completes,
       }])
       setPartial('')
       void reloadSessions()
@@ -238,7 +290,7 @@ export default function BusinessChat({ slug, name }: Props) {
     }
   }
 
-  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; cancelled?: boolean }> {
+  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; cancelled?: boolean }> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -256,16 +308,19 @@ export default function BusinessChat({ slug, name }: Props) {
       if (!j.ok) throw new Error(j.error)
       if (j.status === 'done') {
         return {
-          text:               (j.text ?? '').trim()
-                                  || (j.crashed
-                                       || (j.approval_requests?.length ?? 0) > 0
-                                       || (j.tool_calls?.length ?? 0) > 0
-                                       ? ''
-                                       : '(empty response from the gateway — the agent finished without writing a final reply)'),
-          durationMs:         j.durationMs ?? (Date.now() - start),
-          approval_requests:  j.approval_requests,
-          tool_calls:         j.tool_calls,
-          crashed:            j.crashed,
+          text:                 (j.text ?? '').trim()
+                                    || (j.crashed
+                                         || (j.approval_requests?.length ?? 0) > 0
+                                         || (j.tool_calls?.length ?? 0) > 0
+                                         || (j.edit_plans?.length ?? 0) > 0
+                                         ? ''
+                                         : '(empty response from the gateway — the agent finished without writing a final reply)'),
+          durationMs:           j.durationMs ?? (Date.now() - start),
+          approval_requests:    j.approval_requests,
+          tool_calls:           j.tool_calls,
+          crashed:              j.crashed,
+          edit_plans:           j.edit_plans,
+          edit_group_completes: j.edit_group_completes,
         }
       }
       if (j.status === 'error') {
@@ -273,9 +328,11 @@ export default function BusinessChat({ slug, name }: Props) {
         // instead of throwing so the operator sees both partial text
         // and the CrashedTurnCard.
         return {
-          text:               (j.text ?? '').trim(),
-          durationMs:         j.durationMs ?? (Date.now() - start),
-          tool_calls:         j.tool_calls,
+          text:                 (j.text ?? '').trim(),
+          durationMs:           j.durationMs ?? (Date.now() - start),
+          tool_calls:           j.tool_calls,
+          edit_plans:           j.edit_plans,
+          edit_group_completes: j.edit_group_completes,
           crashed:            j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
         }
       }
@@ -321,7 +378,7 @@ export default function BusinessChat({ slug, name }: Props) {
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && <EmptyState name={name} />}
           {messages.map((m, i) => (
-            <MessageBubble key={i} message={m} onApprove={handleApproval} busy={busy} />
+            <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} busy={busy} />
           ))}
           {busy && partial && (
             <div className="flex justify-start">
@@ -472,7 +529,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   )
 }
 
-function MessageBubble({ message, onApprove, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; busy: boolean }) {
+function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolutions, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; onEditPlanReply: (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void; editPlanResolutions: Map<string, EditPlanResolution>; busy: boolean }) {
   const isUser = message.role === 'user'
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
@@ -499,6 +556,17 @@ function MessageBubble({ message, onApprove, busy }: { message: Message; onAppro
             resolution={message.approval_resolutions?.[req.approval_id] ?? null}
             disabled={busy}
             onSubmit={ids => onApprove(req, ids)}
+          />
+        ))}
+        {!isUser && message.edit_plans?.map(plan => (
+          <EditPlanCard
+            key={plan.plan_id}
+            plan={plan}
+            resolution={editPlanResolutions.get(plan.plan_id) ?? null}
+            disabled={busy}
+            onApprove={ids => onEditPlanReply(plan.plan_id, 'approve', ids)}
+            onContinue={()  => onEditPlanReply(plan.plan_id, 'continue')}
+            onDeny={()      => onEditPlanReply(plan.plan_id, 'deny')}
           />
         ))}
         {message.durationMs !== undefined && (
