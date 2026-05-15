@@ -24,7 +24,8 @@ import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildBusinessSystemPrompt } from '@/lib/chat/system-prompt-business'
-import { appendMessage, listSessions, createSession, deriveTitleFromMessage } from '@/lib/chat/sessions'
+import { appendMessage, listSessions, createSession, deriveTitleFromMessage, listMessages } from '@/lib/chat/sessions'
+import { computeUsage } from '@/lib/chat/context-window'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 30
@@ -34,7 +35,8 @@ interface Body {
   sessionId?: string
 }
 
-const MAX_TURN_CHARS = 32_000
+/** Sanity ceiling — anything past 2MB chars is runaway. Real check is token-based, see computeUsage(). */
+const ABSOLUTE_CHAR_CEILING = 2_000_000
 
 export async function POST(req: NextRequest, context: { params: Promise<{ slug: string }> }) {
   const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'business-chat' })
@@ -110,12 +112,35 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     .filter(m => typeof m.content === 'string' && m.content.length > 0)
     .map(m => `${m.role === 'user' ? 'OPERATOR' : 'CLAUDE'}: ${m.content}`)
     .join('\n\n')
-  const composite = `${systemPrompt}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
-  if (composite.length > MAX_TURN_CHARS) {
+
+  // Crash-recovery hint — see app/api/platform-chat/route.ts for design notes.
+  let crashHint = ''
+  if (sessionId) {
+    const recent = await listMessages(sessionId, 6)
+    const lastAssistant = [...recent].reverse().find(m => m.role === 'assistant')
+    const crashedMeta = lastAssistant?.metadata && typeof lastAssistant.metadata === 'object'
+      ? (lastAssistant.metadata as { crashed?: { exit_code?: number | null } }).crashed
+      : null
+    if (crashedMeta) {
+      const code = crashedMeta.exit_code ?? '?'
+      crashHint = `\n\n## ⚠ Previous turn crashed (exit code ${code})\n\nThe last turn ended in a CLI crash before the agent could finish its tool calls. **Re-issue any uncompleted tool calls; do not assume prior "pending" / "I'll write" / "queued" work landed.** Inspect the conversation, identify what was promised but unverified, redo it.\n`
+    }
+  }
+
+  const composite = `${systemPrompt}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+  // Token-based budget check — see lib/chat/context-window.ts. Replaces
+  // the old 32k-char cap with the model's actual input budget (~150k
+  // tokens for Claude on 200k context).
+  const compositeUsage = computeUsage(composite, 'opus')
+  if (compositeUsage.overBudget || composite.length > ABSOLUTE_CHAR_CEILING) {
+    const detail = compositeUsage.overBudget
+      ? `${compositeUsage.tokensUsed.toLocaleString()} tokens > ${compositeUsage.inputBudget.toLocaleString()} input budget (${compositeUsage.model.display}, ${compositeUsage.contextTokens.toLocaleString()} context). Start a new chat to reset, or trim earlier turns.`
+      : `composite size ${composite.length.toLocaleString()} chars > absolute ceiling ${ABSOLUTE_CHAR_CEILING.toLocaleString()}`
     return NextResponse.json({
       ok:    false,
-      error: `conversation too long for one turn (${composite.length} chars > ${MAX_TURN_CHARS}). Start a new chat to reset.`,
+      error: `conversation too long for one turn — ${detail}`,
       code:  'invalid',
+      usage: { tokensUsed: compositeUsage.tokensUsed, inputBudget: compositeUsage.inputBudget, model: compositeUsage.model.display },
     }, { status: 413 })
   }
 
@@ -134,5 +159,17 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     return NextResponse.json({ ok: false, error: `gateway enqueue failed: ${enq.error ?? 'unknown'}`, code: 'gateway_error' }, { status: enq.http && enq.http >= 400 && enq.http < 600 ? enq.http : 502 })
   }
   audit(req, { action: 'business_chat.enqueue', resource: 'chat', userId: session.userId, metadata: { businessSlug: slug, jobId: enq.jobId, sessionId, charCount: composite.length, durationMs: Date.now() - t0 } })
-  return NextResponse.json({ ok: true, jobId: enq.jobId, sessionId })
+  return NextResponse.json({
+    ok:       true,
+    jobId:    enq.jobId,
+    sessionId,
+    usage: {
+      tokensUsed:     compositeUsage.tokensUsed,
+      inputBudget:    compositeUsage.inputBudget,
+      contextTokens:  compositeUsage.contextTokens,
+      inputUsedPct:   compositeUsage.inputUsedPct,
+      contextUsedPct: compositeUsage.contextUsedPct,
+      model:          compositeUsage.model.display,
+    },
+  })
 }

@@ -35,6 +35,7 @@ import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
 import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
 import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
+import { parseCrash } from '@/lib/chat/crash'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15   // Single GET to gateway, default poll budget is small.
@@ -94,6 +95,18 @@ export async function GET(req: NextRequest) {
   // the conversation is durable across page reloads.
   let displayText        = result.text ?? ''
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
+
+  // Crash detection — covers two failure shapes:
+  //   1. status='error' with jobError set (CLI exited with code != 0)
+  //   2. status='done' but result.jobError still populated (some gateway
+  //      versions emit the partial-text + error pair when the CLI dies
+  //      mid-stream — we want to surface BOTH the streamed text AND the
+  //      crash card)
+  // parseCrash extracts the exit code + stderr tail from the formatted
+  // gateway error string.
+  const crashedRaw = result.jobError || (result.status === 'error' ? result.error : undefined)
+  const crash = crashedRaw ? parseCrash(crashedRaw) : null
+  const isCrashed = !!crash
 
   if (result.status === 'done' && result.text) {
     const parsed = parseAssistantMessage(result.text)
@@ -180,11 +193,16 @@ export async function GET(req: NextRequest) {
             manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
             iteration_plans:   iterParse.plans.length > 0 ? iterParse.plans : undefined,
             findings_inserted: findingParse.findings.length || undefined,
+            // Crash flag survives page reload — the system-prompt builder
+            // reads this on the next turn to inject the "previous turn
+            // crashed" hint into the dispatch.
+            crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
           },
         })
       }
     }
 
+    // (handled inside the done-branch)
     // Record the gateway turn for plan-window accounting. Fire-and-forget.
     // Use the most-relevant bug-hunt session_id (first one referenced in
     // the assistant message) so the session-slice math attributes correctly.
@@ -201,6 +219,28 @@ export async function GET(req: NextRequest) {
     })
   }
 
+  // If the job ended with status='error' (gateway CLI died without
+  // emitting any final assistant text), persist a placeholder message
+  // so the operator sees a crash card on reload.
+  if (result.status === 'error' && !result.text) {
+    const sessionIdParam = new URL(req.url).searchParams.get('sessionId')?.trim()
+    if (sessionIdParam && /^[0-9a-f-]{36}$/i.test(sessionIdParam)) {
+      const owned = await getSession(userId, sessionIdParam)
+      if (owned) {
+        await appendMessage({
+          sessionId: sessionIdParam,
+          role:      'assistant',
+          content:   '',
+          metadata:  {
+            durationMs: result.durationMs,
+            jobId,
+            crashed:    { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? result.jobError ?? null },
+          },
+        })
+      }
+    }
+  }
+
   return NextResponse.json({
     ok:                true,
     status:            result.status,
@@ -212,6 +252,11 @@ export async function GET(req: NextRequest) {
     approval_requests: approvalRequests,
     tool_calls:        result.toolCalls,    // Phase 2b — chat renders cards
     jobError:          result.jobError,
+    /** Crash info parsed from the gateway error — when present, the
+     *  client renders a CrashedTurnCard above the assistant bubble. */
+    crashed:           isCrashed
+      ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null }
+      : undefined,
     durationMs:        result.durationMs,
     createdAt:         result.createdAt,
     startedAt:         result.startedAt,

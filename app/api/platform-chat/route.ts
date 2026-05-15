@@ -39,12 +39,14 @@ import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
 import { getActiveSession as getActiveBugHuntSession, listFindings } from '@/lib/bug-hunt/sessions'
 import { getPlanWindowUsage } from '@/lib/claw/plan-window'
+import { computeUsage } from '@/lib/chat/context-window'
 import {
   appendMessage,
   getSession,
   createSession,
   updateSessionTitle,
   deriveTitleFromMessage,
+  listMessages,
 } from '@/lib/chat/sessions'
 
 export const runtime    = 'nodejs'
@@ -58,7 +60,12 @@ interface PlatformChatBody {
   sessionId?: string
 }
 
-const MAX_TURN_CHARS = 32_000
+/**
+ * Legacy hard cap, kept as a sanity ceiling for the composite string size.
+ * Replaced by the model's `inputBudget` (in TOKENS) — see lib/chat/context-window.ts.
+ * Anything past 2 MB chars is almost certainly a runaway / DoS — refuse there.
+ */
+const ABSOLUTE_CHAR_CEILING = 2_000_000
 
 export async function POST(req: NextRequest) {
   const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'platform-chat' })
@@ -164,15 +171,41 @@ export async function POST(req: NextRequest) {
     ? `\n\n## Active bug-hunt session\n\nA bug-hunt session is currently ${activeHunt.status} (id: ${activeHunt.id}, iter ${activeHunt.iteration_count}/${activeHunt.max_iterations}). The operator can type "/bug-hunt iterate" to ask you to propose the next iteration's plan, OR control it from the Bug-hunt panel in the Views dropdown.\n`
     : ''
 
-  const composite = useBugHuntAgent
-    ? `${bugHuntContext}\n\n---\n\nConversation so far:\n\n${transcript}\n\nThis is a bug-hunt iteration request. Emit an \`iteration-plan\` fenced JSON block per your charter, then end the turn. Do NOT run audits in this turn — the operator must approve the plan first via APPROVAL [<approval_id>]: reply.`
-    : `${systemPrompt}${huntHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+  // Crash-recovery hint — when the previous assistant message in this
+  // session crashed, inject a one-line warning so the agent knows to
+  // re-issue any uncompleted tool calls rather than assuming earlier
+  // "pending" / "I'll write" claims actually landed.
+  let crashHint = ''
+  const incomingSessionId = body.sessionId?.trim() || null
+  if (incomingSessionId) {
+    const recent = await listMessages(incomingSessionId, 6)
+    const lastAssistant = [...recent].reverse().find(m => m.role === 'assistant')
+    const crashedMeta = lastAssistant?.metadata && typeof lastAssistant.metadata === 'object'
+      ? (lastAssistant.metadata as { crashed?: { exit_code?: number | null } }).crashed
+      : null
+    if (crashedMeta) {
+      const code = crashedMeta.exit_code ?? '?'
+      crashHint = `\n\n## ⚠ Previous turn crashed (exit code ${code})\n\nThe last turn ended in a CLI crash before the agent could finish its tool calls. **Re-issue any uncompleted tool calls; do not assume prior "pending" / "I'll write" / "queued" work landed.** Inspect the conversation to find what was promised but not verified, then redo it.\n`
+    }
+  }
 
-  if (composite.length > MAX_TURN_CHARS) {
+  const composite = useBugHuntAgent
+    ? `${bugHuntContext}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nThis is a bug-hunt iteration request. Emit an \`iteration-plan\` fenced JSON block per your charter, then end the turn. Do NOT run audits in this turn — the operator must approve the plan first via APPROVAL [<approval_id>]: reply.`
+    : `${systemPrompt}${huntHint}${crashHint}\n\n---\n\nConversation so far:\n\n${transcript}\n\nReply as CLAUDE to the latest OPERATOR message.`
+
+  // Token-based budget check. Replaces the old 32k-char cap with the
+  // model's actual input budget (~150k tokens for Claude on a 200k
+  // context window). 32k chars ≈ 8k tokens — wildly under capacity.
+  const compositeUsage = computeUsage(composite, useBugHuntAgent ? 'opus' : 'opus')
+  if (compositeUsage.overBudget || composite.length > ABSOLUTE_CHAR_CEILING) {
+    const detail = compositeUsage.overBudget
+      ? `${compositeUsage.tokensUsed.toLocaleString()} tokens > ${compositeUsage.inputBudget.toLocaleString()} input budget (${compositeUsage.model.display}, ${compositeUsage.contextTokens.toLocaleString()} context). Start a new chat to reset, or trim earlier turns.`
+      : `composite size ${composite.length.toLocaleString()} chars > absolute ceiling ${ABSOLUTE_CHAR_CEILING.toLocaleString()}`
     return NextResponse.json({
       ok:    false,
-      error: `conversation too long for one turn (${composite.length} chars > ${MAX_TURN_CHARS}). Start a new chat to reset.`,
+      error: `conversation too long for one turn — ${detail}`,
       code:  'invalid',
+      usage: { tokensUsed: compositeUsage.tokensUsed, inputBudget: compositeUsage.inputBudget, model: compositeUsage.model.display },
     }, { status: 413 })
   }
 
@@ -253,5 +286,13 @@ export async function POST(req: NextRequest) {
     jobId:     enqueued.jobId,
     sessionId: sessionRow.id,
     sessionTag,
+    usage: {
+      tokensUsed:     compositeUsage.tokensUsed,
+      inputBudget:    compositeUsage.inputBudget,
+      contextTokens:  compositeUsage.contextTokens,
+      inputUsedPct:   compositeUsage.inputUsedPct,
+      contextUsedPct: compositeUsage.contextUsedPct,
+      model:          compositeUsage.model.display,
+    },
   })
 }

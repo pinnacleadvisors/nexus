@@ -17,6 +17,7 @@ import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
+import { parseCrash } from '@/lib/chat/crash'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15
@@ -57,6 +58,11 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   let displayText      = result.text ?? ''
   let approvalRequests = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
 
+  // Crash detection — see app/api/platform-chat/poll/route.ts for design notes.
+  const crashedRaw = result.jobError || (result.status === 'error' ? result.error : undefined)
+  const crash = crashedRaw ? parseCrash(crashedRaw) : null
+  const isCrashed = !!crash
+
   if (result.status === 'done' && result.text) {
     const parsed = parseAssistantMessage(result.text)
     displayText      = parsed.text
@@ -92,6 +98,28 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
             approval_requests: approvalRequests,
             tool_calls:        result.toolCalls,
             manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
+            crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
+          },
+        })
+      }
+    }
+  }
+
+  // Persist a placeholder when the gateway died WITHOUT any final text —
+  // so reload shows the crash card.
+  if (result.status === 'error' && !result.text) {
+    const sessionId2 = new URL(req.url).searchParams.get('sessionId')?.trim()
+    if (sessionId2 && /^[0-9a-f-]{36}$/i.test(sessionId2)) {
+      const owned = await getSession(session.userId, sessionId2)
+      if (owned && owned.scope === `business:${slug}`) {
+        await appendMessage({
+          sessionId: sessionId2,
+          role:      'assistant',
+          content:   '',
+          metadata:  {
+            durationMs: result.durationMs,
+            jobId,
+            crashed:    { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? result.jobError ?? null },
           },
         })
       }
@@ -106,6 +134,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     tool_calls:        result.toolCalls,
     approval_requests: approvalRequests,
     jobError:          result.jobError,
+    crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
     durationMs:        result.durationMs,
     createdAt:         result.createdAt,
     startedAt:         result.startedAt,
