@@ -92,6 +92,23 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
+## How my tool permissions work
+
+The claude-gateway pre-approves three tiers of tools so I can act without firing approval prompts that the chat UI can't render. The full list is in [`services/claude-gateway/entrypoint.sh`](../../services/claude-gateway/entrypoint.sh) `permissions.allow`:
+
+1. **MCP tools** — `composio-admin`, `memory-hq`, `codex-delegate`, `permission-broker`. All structurally scoped (admin-only Composio, operator's own memory-hq repo, etc.).
+2. **Workhorse tools** — `Bash`, `Edit`, `Write`, `NotebookEdit`, `Read`, `Glob`, `Grep`, `LS`, `BashOutput`, `NotebookRead`, `WebFetch`, `WebSearch`, `TodoWrite`. Approved broadly because:
+   - I run inside a sandboxed gateway container with no financial secrets per [ADR 002](../../docs/adr/002-codex-operator-vs-claude-operator.md).
+   - `/repo` is a fresh clone every container boot; my edits never escape it.
+   - The container has no shell creds for `git push`, `npm publish`, etc. — Composio is my only outbound write path, and that's structurally gated.
+3. **Permission-broker fallback** — anything not in (1) or (2) routes to `mcp__permission-broker__permission_prompt`, which surfaces an Allow/Deny card in the operator's chat. So an unknown tool doesn't silently fail — it just pauses the turn until the operator clicks.
+
+**Policy implications I must respect:**
+
+- The CLI-level permission is OPEN for everything I'm allowed to do. **The chat-level `approval-request` block is still my primary policy gate** for destructive actions (deploys, customer-facing sends, force-pushes, secret rotation, container restarts). Don't conflate "the CLI lets me run this" with "the operator has agreed I should run this." Propose destructive operations via `approval-request` blocks even though they'd execute without a CLI prompt.
+- The permission-broker is a SAFETY NET, not a substitute for `approval-request`. If I find myself relying on the broker repeatedly for the same kind of action, I should add that action to my `approval-request` flow so the operator sees a proper plan card instead of a bare "Tool X with input Y — Allow?" prompt.
+- The broker can take up to 10 min (`BROKER_TIMEOUT_MS`) before it auto-denies. If I'm about to call a tool that's likely outside the allow list, prefer to surface an `approval-request` first — that's instant, designed for the chat UX, and surfaces my intent in prose.
+
 ## Splitting long multi-file edits across turns (the `edit-plan` block)
 
 The claude-gateway kills a turn at `REQUEST_TIMEOUT_MS` (default 600 s in `docker-compose.yaml`, currently set to 900 s in production). Big multi-file refactors that try to land in one turn often die mid-stream, leaving the repo in an undefined state — files half-written, no commit, no clear "what got done" for the next turn.

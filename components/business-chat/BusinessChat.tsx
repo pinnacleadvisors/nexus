@@ -25,6 +25,7 @@ import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
+import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
@@ -86,7 +87,7 @@ interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; usage?: Con
 interface EnqueueFail { ok: false; error: string; code: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
@@ -126,6 +127,9 @@ export default function BusinessChat({ slug, name }: Props) {
   // Context usage from the most-recent successful enqueue. Surfaces in
   // the bottom-right ContextIndicator.
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
+
+  // Pending CLI tool-permission requests — same wiring as PlatformChat.
+  const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
 
   // Per-plan resolution map for EditPlanCards — mirror of PlatformChat.
   const editPlanResolutions = computeEditPlanResolutions(messages)
@@ -230,6 +234,31 @@ export default function BusinessChat({ slug, name }: Props) {
     setTimeout(() => { void send(reply) }, 30)
   }
 
+  // The permission-broker endpoint is platform-scoped (not business-
+  // scoped) because rows are keyed by user_id + job_id only — see
+  // app/api/platform-chat/permission-requests/[id]/route.ts. So we hit
+  // the same URL from both chat surfaces.
+  async function decidePermission(id: string, allow: boolean, opts?: { updatedInput?: Record<string, unknown>; reason?: string }) {
+    setPendingPermissions(prev => prev.filter(r => r.id !== id))
+    try {
+      const res = await fetch(`/api/platform-chat/permission-requests/${encodeURIComponent(id)}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          allow,
+          ...(opts?.updatedInput ? { updated_input: opts.updatedInput } : {}),
+          ...(opts?.reason       ? { reason:        opts.reason }       : {}),
+        }),
+      })
+      if (!res.ok && res.status !== 409) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        setError(`permission decide failed: ${body.error ?? res.status}`)
+      }
+    } catch (e) {
+      setError(`permission decide network error: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   function handleCancel() {
     if (!busy) return
     cancelRef.current = true
@@ -241,6 +270,7 @@ export default function BusinessChat({ slug, name }: Props) {
     setError(null)
     cancelRef.current = false
     setPartial('')
+    setPendingPermissions([])
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
     setInput('')
@@ -337,6 +367,7 @@ export default function BusinessChat({ slug, name }: Props) {
         }
       }
       if (j.partialText) setPartial(j.partialText)
+      setPendingPermissions(j.pending_permission_requests ?? [])
     }
     throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the business gateway — check Coolify logs.`)
   }
@@ -380,6 +411,20 @@ export default function BusinessChat({ slug, name }: Props) {
           {messages.map((m, i) => (
             <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} busy={busy} />
           ))}
+          {busy && pendingPermissions.length > 0 && (
+            <div className="flex justify-start">
+              <div className="max-w-[85%] w-full">
+                {pendingPermissions.map(req => (
+                  <PermissionPromptCard
+                    key={req.id}
+                    request={req}
+                    onAllow={(id, updatedInput) => void decidePermission(id, true,  { updatedInput })}
+                    onDeny={(id, reason)        => void decidePermission(id, false, { reason })}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           {busy && partial && (
             <div className="flex justify-start">
               <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm" style={{

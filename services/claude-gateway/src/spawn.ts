@@ -15,6 +15,13 @@ export interface RunArgs {
    * concatenated content so non-streaming callers behave unchanged.
    */
   onDelta?:   (delta: string) => void
+  /**
+   * Gateway jobId — injected into the child env as NEXUS_JOB_ID. Consumed by
+   * the mcp-permission-broker (PR #189) so it can correlate a pending CLI
+   * permission request to the right chat turn. When omitted, the broker
+   * returns a hard-deny on any tool-permission call (fail-safe).
+   */
+  jobId?:     string
 }
 
 /**
@@ -88,23 +95,55 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
   }
 
-  // Pre-allow the trusted MCP tools as a belt-and-braces alongside the
-  // permissions.allow block in settings.json (which the entrypoint writes).
-  // The settings.json field IS the canonical Claude Code surface, but older
-  // CLI versions silently ignore unknown settings.json keys — passing the
-  // flag too means a stale CLI in the gateway image still works. The list
-  // mirrors the entrypoint's permissions.allow exactly.
-  const PRE_ALLOWED_MCP_TOOLS = [
+  // Pre-allow the trusted MCP tools + workhorse tools as a belt-and-braces
+  // alongside the permissions.allow block in settings.json (which the
+  // entrypoint writes). The settings.json field IS the canonical Claude
+  // Code surface, but older CLI versions silently ignore unknown
+  // settings.json keys — passing the flag too means a stale CLI in the
+  // gateway image still works. The list mirrors the entrypoint's
+  // permissions.allow exactly. See entrypoint.sh for the threat-model
+  // rationale (broad Bash + Edit + Read are safe inside this container).
+  const PRE_ALLOWED_TOOLS = [
+    // MCP — Composio admin-scope wrapper
     'mcp__composio-admin__admin_list_connected_platforms',
     'mcp__composio-admin__admin_list_actions',
     'mcp__composio-admin__admin_execute_action',
+    // MCP — memory-hq
     'mcp__memory-hq__memory_atom',
     'mcp__memory-hq__memory_entity',
     'mcp__memory-hq__memory_moc',
     'mcp__memory-hq__memory_query',
     'mcp__memory-hq__memory_search',
+    // MCP — codex-delegate (only registered when the codex-gateway env is set)
+    'mcp__codex-delegate__delegate_to_codex',
+    // MCP — permission-broker (PR #189; only registered when the broker MCP builds)
+    'mcp__permission-broker__permission_prompt',
+    // Workhorse tools — bounded by the container, gated at chat-level via
+    // approval-request blocks and the permission-broker for un-allowed cases
+    'Bash',
+    'Edit',
+    'Write',
+    'NotebookEdit',
+    'Read',
+    'Glob',
+    'Grep',
+    'LS',
+    'BashOutput',
+    'NotebookRead',
+    'WebFetch',
+    'WebSearch',
+    'TodoWrite',
   ]
-  for (const t of PRE_ALLOWED_MCP_TOOLS) cliArgs.push('--allowedTools', t)
+  for (const t of PRE_ALLOWED_TOOLS) cliArgs.push('--allowedTools', t)
+
+  // Permission-broker UX (PR #189). Any tool call that's NOT in the
+  // PRE_ALLOWED_TOOLS list above triggers this MCP tool instead of dying
+  // in prose. The broker writes a pending row to chat_permission_requests,
+  // polls for the operator's Allow/Deny click, and returns the decision.
+  // Set MCP_PERMISSION_BROKER=skip to revert to the pre-PR behaviour.
+  if ((process.env.MCP_PERMISSION_BROKER ?? '') !== 'skip') {
+    cliArgs.push('--permission-prompt-tool', 'mcp__permission-broker__permission_prompt')
+  }
   if (systemPrompt) {
     cliArgs.push('--append-system-prompt', systemPrompt)
   }
@@ -120,6 +159,9 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
   delete childEnv.ANTHROPIC_AUTH_TOKEN
   delete childEnv.CLAUDE_CODE_USE_BEDROCK
   delete childEnv.CLAUDE_CODE_USE_VERTEX
+  // Surface the gateway's jobId to spawned MCP servers (currently only
+  // mcp-permission-broker consumes it). Absence = broker fail-safes to deny.
+  if (args.jobId) childEnv.NEXUS_JOB_ID = args.jobId
 
   console.log(`[gw] spawn claude agent=${args.agentSlug ?? 'none'} msgLen=${args.message.length}`)
 

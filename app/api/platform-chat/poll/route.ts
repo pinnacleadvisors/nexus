@@ -32,6 +32,7 @@ import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
+import { listPendingForJob, type PermissionRequestRow } from '@/lib/chat/permission-requests'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
 import { createTask } from '@/lib/views/tasks'
 import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
@@ -79,6 +80,16 @@ export async function GET(req: NextRequest) {
     userId:      session.userId,
     timeoutMs:   10_000,
   })
+
+  // Fetch any pending permission requests for this jobId (PR #189). The
+  // broker MCP inside the gateway writes them when the CLI hits a tool
+  // call that isn't pre-approved. We always return them — even when the
+  // gateway poll itself errored — so the UI can show the Allow/Deny
+  // card and unblock the running turn.
+  let pendingPermissions: PermissionRequestRow[] = []
+  try {
+    pendingPermissions = await listPendingForJob(userId, jobId)
+  } catch { /* swallow — poll is a hot-path, never throw on the side-channel */ }
 
   if (!result.ok) {
     // Gateway transport error (not a job-level error — those return ok:true).
@@ -273,6 +284,11 @@ export async function GET(req: NextRequest) {
     /** Per-group completion markers. Client uses these to flip group
      *  checkboxes to ✓ on prior cards. */
     edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    /** Pending CLI tool-permission requests (PR #189). Client renders a
+     *  PermissionPromptCard per entry. While the array is non-empty the
+     *  gateway turn is paused — operator Allow/Deny on /api/platform-
+     *  chat/permission-requests/:id unblocks the broker MCP's poll. */
+    pending_permission_requests: pendingPermissions.length > 0 ? pendingPermissions : undefined,
     jobError:              result.jobError,
     /** Crash info parsed from the gateway error — when present, the
      *  client renders a CrashedTurnCard above the assistant bubble. */
