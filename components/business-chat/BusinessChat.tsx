@@ -256,7 +256,12 @@ export default function BusinessChat({ slug, name }: Props) {
       if (!j.ok) throw new Error(j.error)
       if (j.status === 'done') {
         return {
-          text:               (j.text ?? '').trim() || (j.crashed ? '' : '(empty response from the gateway — the agent finished without writing a final reply)'),
+          text:               (j.text ?? '').trim()
+                                  || (j.crashed
+                                       || (j.approval_requests?.length ?? 0) > 0
+                                       || (j.tool_calls?.length ?? 0) > 0
+                                       ? ''
+                                       : '(empty response from the gateway — the agent finished without writing a final reply)'),
           durationMs:         j.durationMs ?? (Date.now() - start),
           approval_requests:  j.approval_requests,
           tool_calls:         j.tool_calls,
