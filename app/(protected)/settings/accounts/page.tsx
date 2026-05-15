@@ -18,6 +18,7 @@ import { Loader2, Settings as SettingsIcon } from 'lucide-react'
 import SettingsTabs from '@/components/settings/SettingsTabs'
 import AccountList from '@/components/settings/AccountList'
 import BusinessSwitcher from '@/components/settings/BusinessSwitcher'
+import CoolifyPanel from '@/components/settings/CoolifyPanel'
 import { listBusinessesForUser } from '@/lib/business/db'
 import type { BusinessRow } from '@/lib/business/types'
 
@@ -138,6 +139,11 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
         >
           <AccountList businessSlug={selectedSlug} />
         </Suspense>
+
+        {/* Coolify panel — platform-wide, owner-only. Only renders on the
+            Default (no-business) scope because Coolify lives at the
+            platform layer (not per-business). */}
+        {showAdmin && !selectedSlug && <CoolifyPanel />}
       </div>
     </div>
   )

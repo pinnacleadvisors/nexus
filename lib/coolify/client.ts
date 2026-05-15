@@ -244,3 +244,85 @@ export async function findAppByName(name: string): Promise<CoolifyAppRow | null>
   const all = await listApps()
   return all.find(a => a.name === name) ?? null
 }
+
+// ── Operations added for the mcp-coolify wrapper (PR #191) ───────────────────
+//
+// These complete the read-side and add the redeploy + restart + env-mutation
+// operations the agent needs to do ops work without operator handholding.
+// All callers respect the kill switch + audit log at the MCP layer; the
+// client functions themselves are policy-free wrappers around the API.
+
+/** Restart an existing app. Coolify v4 maps this to stop+start internally;
+ *  the explicit endpoint exists so callers don't race two requests. */
+export async function restartApp(uuid: string): Promise<void> {
+  await call<void>(`/applications/${encodeURIComponent(uuid)}/restart`, { method: 'POST' })
+}
+
+/** Trigger a fresh deploy (pull the latest image + redeploy). */
+export async function redeployApp(uuid: string): Promise<{ deployment_uuid?: string }> {
+  return call<{ deployment_uuid?: string }>(`/deploy?uuid=${encodeURIComponent(uuid)}`, { method: 'POST' })
+}
+
+/** Recent stdout/stderr lines from the running container. Coolify wraps
+ *  this in its `/applications/{uuid}/logs` endpoint and returns plain text. */
+export async function getAppLogs(uuid: string, opts: { lines?: number } = {}): Promise<string> {
+  const cfg = getConfig()
+  const url = `${cfg.baseUrl}/api/v1/applications/${encodeURIComponent(uuid)}/logs?lines=${opts.lines ?? 200}`
+  const ac  = new AbortController()
+  const timer = setTimeout(() => ac.abort(), DEFAULT_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, {
+      signal:  ac.signal,
+      headers: {
+        'Authorization': `Bearer ${cfg.token}`,
+        'Accept':        'text/plain, application/json',
+      },
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new CoolifyError(`coolify GET logs ${uuid} → ${res.status}`, res.status, body.slice(0, 500))
+    }
+    return await res.text()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** One Coolify env-var entry. Coolify's response shape includes the value
+ *  even on list calls — the MCP filters to keys-only before exposing. */
+export interface CoolifyEnvVar {
+  uuid:        string
+  key:         string
+  value?:      string
+  is_literal?: boolean
+  is_preview?: boolean
+}
+
+/** List ALL env vars for an app (returns values — caller must filter). */
+export async function listEnvVars(uuid: string): Promise<CoolifyEnvVar[]> {
+  return call<CoolifyEnvVar[]>(`/applications/${encodeURIComponent(uuid)}/envs`)
+}
+
+/** Add a new env var. Throws on duplicate key (use updateEnvVar instead). */
+export async function setEnvVar(uuid: string, key: string, value: string, opts: { is_literal?: boolean } = {}): Promise<void> {
+  await call<void>(`/applications/${encodeURIComponent(uuid)}/envs`, {
+    method: 'POST',
+    body:   JSON.stringify({ key, value, is_literal: opts.is_literal ?? true }),
+  })
+}
+
+/** Update an existing env var's value. Coolify v4 uses PATCH /envs with
+ *  the key in the body (not in the URL). */
+export async function updateEnvVar(uuid: string, key: string, value: string, opts: { is_literal?: boolean } = {}): Promise<void> {
+  await call<void>(`/applications/${encodeURIComponent(uuid)}/envs`, {
+    method: 'PATCH',
+    body:   JSON.stringify({ key, value, is_literal: opts.is_literal ?? true }),
+  })
+}
+
+/** Delete an env var by uuid. The env var uuid is returned by listEnvVars. */
+export async function deleteEnvVar(uuid: string, envUuid: string): Promise<void> {
+  await call<void>(`/applications/${encodeURIComponent(uuid)}/envs/${encodeURIComponent(envUuid)}`, {
+    method: 'DELETE',
+  })
+}

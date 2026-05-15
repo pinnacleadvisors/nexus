@@ -141,6 +141,27 @@ if [ "${MCP_PERMISSION_BROKER:-}" != "skip" ] \
   fi
 fi
 
+# Build the Coolify MCP (services/mcp-coolify/). PR #191.
+# Gives the platform-copilot read + bounded-write access to Coolify v4.
+# Requires SUPABASE_SERVICE_ROLE_KEY (kill-switch + audit log) AND
+# COOLIFY_KVM4_URL + COOLIFY_KVM4_API_TOKEN (the Coolify creds already
+# in Doppler from the provisioner). Skipped when MCP_COOLIFY=skip.
+COOLIFY_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-coolify"
+COOLIFY_MCP_BUILT=0
+if [ "${MCP_COOLIFY:-}" != "skip" ] \
+   && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
+   && [ -n "${COOLIFY_KVM4_URL:-}" ] \
+   && [ -n "${COOLIFY_KVM4_API_TOKEN:-}" ] \
+   && [ -d "$COOLIFY_MCP_DIR/src" ]; then
+  echo "[gateway] Building coolify MCP from $COOLIFY_MCP_DIR..."
+  if (cd "$COOLIFY_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    COOLIFY_MCP_BUILT=1
+    echo "[gateway] coolify MCP built — will register."
+  else
+    echo "[gateway] WARNING: coolify MCP build FAILED — skipping registration."
+  fi
+fi
+
 # Assemble the settings.json. Whichever MCP servers built successfully get
 # registered. composio-admin (hard-isolation) is the primary; rube-mcp is
 # the soft-isolation fallback used only when the wrapper isn't available.
@@ -228,6 +249,27 @@ JSON
     }
 JSON
   fi
+  if [ "$COOLIFY_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "coolify": {
+      "command": "node",
+      "args": ["$COOLIFY_MCP_DIR/dist/index.js"],
+      "env": {
+        "NEXT_PUBLIC_SUPABASE_URL":   "${NEXT_PUBLIC_SUPABASE_URL:-}",
+        "SUPABASE_SERVICE_ROLE_KEY":  "${SUPABASE_SERVICE_ROLE_KEY}",
+        "NEXUS_OPERATOR_USER_ID":     "${NEXUS_OPERATOR_USER_ID:-}",
+        "ALLOWED_USER_IDS":           "${ALLOWED_USER_IDS:-}",
+        "COOLIFY_KVM4_URL":           "${COOLIFY_KVM4_URL}",
+        "COOLIFY_KVM4_API_TOKEN":     "${COOLIFY_KVM4_API_TOKEN}",
+        "PROTECTED_UUIDS":            "${PROTECTED_UUIDS:-}",
+        "COOLIFY_RATE_LIMIT_MIN":     "${COOLIFY_RATE_LIMIT_MIN:-5}",
+        "COOLIFY_RATE_LIMIT_HOUR":    "${COOLIFY_RATE_LIMIT_HOUR:-30}"
+      }
+    }
+JSON
+  fi
 }
 
 MCP_BLOCK="$(build_mcp_block)"
@@ -277,6 +319,17 @@ $MCP_BLOCK
       "mcp__memory-hq__memory_search",
       "mcp__codex-delegate__delegate_to_codex",
       "mcp__permission-broker__permission_prompt",
+      "mcp__coolify__coolify_list_apps",
+      "mcp__coolify__coolify_get_app",
+      "mcp__coolify__coolify_get_logs",
+      "mcp__coolify__coolify_list_env_keys",
+      "mcp__coolify__coolify_get_env_value",
+      "mcp__coolify__coolify_redeploy",
+      "mcp__coolify__coolify_restart",
+      "mcp__coolify__coolify_start",
+      "mcp__coolify__coolify_stop",
+      "mcp__coolify__coolify_set_env",
+      "mcp__coolify__coolify_delete_env",
       "Bash",
       "Edit",
       "Write",
@@ -300,6 +353,7 @@ JSON
   [ "$MEMORY_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED memory-hq"
   [ "$CODEX_MCP_BUILT" -eq 1 ]                            && REGISTERED="$REGISTERED codex-delegate"
   [ "$BROKER_MCP_BUILT" -eq 1 ]                           && REGISTERED="$REGISTERED permission-broker"
+  [ "$COOLIFY_MCP_BUILT" -eq 1 ]                          && REGISTERED="$REGISTERED coolify"
   echo "[gateway] Wrote MCP config:$REGISTERED"
 else
   # No MCP servers built — log clearly and clean up any stale settings.json
