@@ -1,0 +1,26 @@
+{
+  "name": "@nexus/mcp-coolify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server giving the platform-copilot bounded access to the operator's Coolify v4 instance. Exposes read tools (list apps, logs, env keys) freely; write tools (redeploy, restart, env mutations) gated behind chat-level approval-request blocks + a Supabase kill switch + rate limits + a protected-uuid blocklist.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "^4.21.0",
+    "typescript": "5.7.2"
+  }
+}

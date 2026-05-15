@@ -118,6 +118,18 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     'mcp__codex-delegate__delegate_to_codex',
     // MCP — permission-broker (PR #189; only registered when the broker MCP builds)
     'mcp__permission-broker__permission_prompt',
+    // MCP — coolify (PR #191; only registered when COOLIFY_KVM4_* envs are set)
+    'mcp__coolify__coolify_list_apps',
+    'mcp__coolify__coolify_get_app',
+    'mcp__coolify__coolify_get_logs',
+    'mcp__coolify__coolify_list_env_keys',
+    'mcp__coolify__coolify_get_env_value',
+    'mcp__coolify__coolify_redeploy',
+    'mcp__coolify__coolify_restart',
+    'mcp__coolify__coolify_start',
+    'mcp__coolify__coolify_stop',
+    'mcp__coolify__coolify_set_env',
+    'mcp__coolify__coolify_delete_env',
     // Workhorse tools — bounded by the container, gated at chat-level via
     // approval-request blocks and the permission-broker for un-allowed cases
     'Bash',
