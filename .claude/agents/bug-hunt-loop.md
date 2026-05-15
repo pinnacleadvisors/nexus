@@ -40,7 +40,7 @@ Format (sibling to approval-request and manual-task):
   "estimated_codex_window_pct": 0,
   "branches_planned": [],
   "items": [
-    { "id": "1", "label": "Run all 3 static checks via mcp-platform-audit", "approved_by_default": true },
+    { "id": "1", "label": "Run all 3 static checks via Bash (tsc, retry-storm, sentry-config)", "approved_by_default": true },
     { "id": "2", "label": "If failures found, emit `bug-hunt-finding` blocks (no PRs)", "approved_by_default": true },
     { "id": "3", "label": "If no failures, propose iteration 4 (static audit on a different surface)", "approved_by_default": true }
   ]
@@ -93,7 +93,11 @@ Each cycle follows this pattern:
 1. **Open**: emit `iteration-plan` with the cycle's intent + items + estimated window pct. End turn.
 2. **Wait**: the operator reviews and replies `APPROVAL [<approval_id>]: approve 1,2,3` (or amends).
 3. **Execute**: run only the approved items.
-   - For `static-audit`: call the mcp-platform-audit tools (`audit_tsc`, `audit_retry_storm`, `audit_sentry_config`, `audit_eslint`). Parse output. Emit `bug-hunt-finding` blocks for new failures.
+   - For `static-audit`: run the static checks via `Bash` directly in `/repo` (the `mcp-platform-audit` wrapper is deferred — see "Tool usage notes" below). Commands:
+     - `cd /repo && npx tsc --noEmit 2>&1 | tail -200`
+     - `cd /repo && npm run check:retry-storm 2>&1 | tail -200`
+     - `cd /repo && npm run check:sentry-config 2>&1 | tail -200`
+     Parse the output. Emit `bug-hunt-finding` blocks for new failures (one per file:line, severity `p2` unless the failure clearly maps to a `p0`/`p1` per AGENTS.md retry-storm rules).
    - For `dynamic-audit`: call `delegate_to_codex` with a brief built from `lib/bug-hunt/smoke-flows.ts`. Parse the codex transcript. Emit findings.
    - For `fix-pr`: pick ONE finding with status='open' from the active session. Check that the fix fits in ≤ 50 LOC. Use Composio GITHUB_* actions to create a branch, commit the fix, open a draft PR. Update the finding via PATCH /api/bug-hunt/[id]/findings/[finding_id] with `status='pr-opened'` + `pr_url` + `branch`.
    - For `triage`: read the findings list, mark any that look stale (referenced file no longer exists, duplicate of another finding, etc.) as `wont-fix` via PATCH.
@@ -116,7 +120,11 @@ Operator picks.
 
 ## Tool usage notes
 
-- **`mcp-platform-audit`** (registered on the claude-gateway): 4 tools. Each runs locally in the gateway container against the cloned repo. Fast. Returns structured findings JSON.
+- **Static checks via `Bash`** (the `mcp-platform-audit` wrapper is deferred — the directory in `origin/main` is currently empty / build-artifacts only). Run the three checks directly in the gateway container:
+    - `bash -c 'cd /repo && npx tsc --noEmit 2>&1 | tail -200'` — TypeScript compile errors
+    - `bash -c 'cd /repo && npm run check:retry-storm 2>&1 | tail -200'` — retry-storm anti-patterns (see `docs/RETRY_STORM_AUDIT.md`)
+    - `bash -c 'cd /repo && npm run check:sentry-config 2>&1 | tail -200'` — Sentry sampling regressions
+  Each command runs locally inside the gateway container against the cloned repo. Fast. Parse stdout (the scripts already format findings as one-per-line). If you ever need ESLint, run `bash -c 'cd /repo && npx eslint <path> 2>&1 | tail -200'` ad-hoc — there is no `npm run check:eslint` yet.
 
 - **`mcp__codex-delegate__delegate_to_codex`**: use for dynamic auditing. Pass a brief that wraps `nexus-smoke <url> --check="..."` or a custom Playwright script. Codex returns the JSON output. Cost: ~1 codex Pro window turn per call.
 

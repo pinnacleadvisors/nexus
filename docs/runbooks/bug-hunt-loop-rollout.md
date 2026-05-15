@@ -45,18 +45,21 @@ If either query errors with "relation does not exist", the migration didn't appl
 
 ## Step 3 — Redeploy claude-gateway (Coolify)
 
-The new `platform-audit` MCP needs the redeploy to pick up. There are NO new env vars required for it — the gateway auto-detects `services/mcp-platform-audit/src` exists in the cloned repo and builds it.
+> **Note (2026-05-15)**: the `services/mcp-platform-audit/` MCP wrapper is **deferred** — the directory in `origin/main` currently contains only build artifacts (`dist/`, `node_modules/`, `package-lock.json`) with no `src/`. The bug-hunt-loop agent now invokes the three static checks directly via `Bash` (`cd /repo && npx tsc --noEmit`, `npm run check:retry-storm`, `npm run check:sentry-config`). Same coverage, same speed — just no MCP convenience wrapper. Path A (building the wrapper) is tracked in `task_plan-bug-hunt-loop.md` and can be picked up later if the Bash-direct approach gets noisy. See [GENERATION_PROTOCOL.md](../agents/GENERATION_PROTOCOL.md) for adding the wrapper if/when desired.
+
+The redeploy is still required so the new `.claude/agents/bug-hunt-loop.md` spec and the chat poll routes' iteration-plan parsing land in the running container. NO new env vars required.
 
 - [ ] Open Coolify on **KVM4** (the host with claude-gateway)
 - [ ] Project → environment → click **`claude-gateway`** service
 - [ ] Top-right (or under **Actions** dropdown) → **Redeploy**
 - [ ] Confirm the modal
-- [ ] Wait ~60–90 s for the rebuild (this one's quick — just `npm install` + `npm run build` for the new mcp-platform-audit dir)
+- [ ] Wait ~60–90 s for the rebuild
 - [ ] Click **Logs** tab. Look for this line in the boot output:
     ```
-    [gateway] Wrote MCP config: composio-admin memory-hq codex-delegate platform-audit
+    [gateway] Wrote MCP config: composio-admin memory-hq codex-delegate
     ```
-- [ ] **If `platform-audit` is missing** from that line: the wrapper build failed. Scroll up in the log for "WARNING: platform-audit MCP build FAILED" + the underlying error. Most common cause: the cloned repo wasn't refreshed (the entrypoint runs `git pull` early — should have picked up the new dir from main). Force a fresh repo clone by deleting the persistent `/repo` volume and redeploying.
+    (Note: `platform-audit` is **not expected** in that list — the agent uses Bash directly.)
+- [ ] Verify the agent spec was picked up: look earlier in the log for `[gateway] refreshing repo at /repo (main)` and `HEAD` matching the latest `origin/main` SHA from `git log -1 --format=%h` on your dev machine.
 
 ## Step 4 — (Optional) Tune the plan-window ceilings
 
@@ -96,7 +99,7 @@ End-to-end verification. Each step should take ≤ 30 s.
 ### 5.3 — Approve iteration 1
 
 - [ ] Click **Approve all** in the iteration card
-- [ ] Watch the chat — agent should call `audit_tsc`, `audit_retry_storm`, `audit_sentry_config` in sequence. Tool-call cards appear in chat.
+- [ ] Watch the chat — agent should fire 3 Bash tool calls in sequence (`npx tsc --noEmit`, `npm run check:retry-storm`, `npm run check:sentry-config`). Tool-call cards appear in chat with the command + truncated stdout.
 - [ ] If findings exist, you'll see them appear in the panel's "Open" group (refreshes every 4 s)
 - [ ] At end of turn, agent emits a fresh `iteration-plan` for iteration 2 (different scope — probably `dynamic-audit` or `triage`)
 - [ ] **Panel meter**: Claude Max bar should now show ~3–4% session-share (one Opus turn = 5 weighted turns ÷ ceiling 150). Codex bar still 0%.
@@ -136,7 +139,7 @@ For each draft PR:
 | Panel shows "Start session" forever; clicking does nothing | API 401 | Sign-in expired — refresh, sign back in |
 | Start session returns `code: 'no_plan_window_route'` | `force_plan_window=true` but no Max-plan gateway reachable | Either fix the claude-gateway routing (check `CLAUDE_CODE_GATEWAY_URL` env), or pass `{ "force_plan_window": false }` to the POST body to allow API-billed fallback |
 | Start session returns `code: 'session_exists'` | An old session is still status=active | Open the existing session via panel → Stop it → start fresh |
-| Agent runs iteration but no findings appear | `mcp-platform-audit` failed to register (Step 3) | Check boot log for `platform-audit` in the registered list |
+| Agent runs iteration but no findings appear | Bash check returned non-zero but the agent didn't parse it as a finding | Click the tool-call card to see the raw stdout; if there's a TS error or retry-storm hit visible, reply asking the agent to "emit a `bug-hunt-finding` for each error in the tsc output". A future iteration can add a `mcp-platform-audit` wrapper with structured output if this parsing gets brittle (deferred per Step 3 note) |
 | Agent emits findings but they don't show in panel | The session_id in the agent's blocks doesn't match an owned session | Look at the agent's reply text — block should reference the session id from the panel header. If it's making up an id, ask it to "use session id `<actual>` going forward" |
 | PR-opening errors with 1811 | The Composio `entity_id` fix didn't land | Verify PR #172 is on main and the claude-gateway has been redeployed since the merge |
 | Plan-window meter stays at 0% even after iterations | `gateway_turns` not being populated. Most likely the `platform-chat/poll` route's `insertGatewayTurn` call is failing silently | SQL: `select count(*) from gateway_turns where user_id = '<your-clerk-id>'` → if 0, the table is missing or RLS is blocking |

@@ -331,6 +331,8 @@ This panel lives in `/manage-platform` chat only (scope = admin). Per-business c
 
 ## Static-audit toolkit — B5
 
+> **Status update (2026-05-15)**: this MCP wrapper is **deferred**. The `services/mcp-platform-audit/` directory in `origin/main` currently contains only build artifacts (`dist/`, `node_modules/`, `package-lock.json`) with no `src/` — Step B5 was never completed. The bug-hunt-loop agent now invokes the three static checks directly via `Bash` (`bash -c 'cd /repo && npx tsc --noEmit'`, etc.) — see `.claude/agents/bug-hunt-loop.md` "Tool usage notes" and `docs/runbooks/bug-hunt-loop-rollout.md` Step 3. The wrapper remains a future improvement if Bash-direct output parsing gets noisy; the spec below is preserved as the Path-A blueprint.
+
 The agent needs to call these as tools, not free-text "run npm test". Each becomes a small Composio-style action callable via the existing `mcp__composio-admin__admin_execute_action` wrapper... but we don't want to overload Composio for this.
 
 Instead: a small new MCP server `services/mcp-platform-audit/` exposing 4 tools:
