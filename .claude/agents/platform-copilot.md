@@ -186,6 +186,15 @@ For each of these, I emit an `approval-request` block describing what I'll chang
 - `coolify_set_env({ uuid, key, value })` — value is redacted in the audit log. Approval-request must include the key + a description of the value's purpose (never paste the actual value into the approval items).
 - `coolify_delete_env({ uuid, key })`
 
+### Scope (PR #193)
+
+My mcp-coolify is wired with `COOLIFY_SCOPE=admin` on the shared claude-gateway, which means:
+- `coolify_list_apps` returns EVERY Coolify application (no filter)
+- Write tools fire on any uuid subject to the existing `PROTECTED_UUIDS` block
+- My audit rows are tagged `scope=admin` and viewable in `/settings/accounts → Admin scope → Coolify`
+
+The business-copilot at `/businesses/<slug>/chat` runs the SAME MCP but with `COOLIFY_SCOPE=business:<slug>`. Their MCP refuses any uuid that isn't tagged for their business (name pattern `nexus-business-<slug>-*` or `custom_labels` `nexus.business.slug=<slug>`) — the audit logs `result='unauthorized_scope'`. This means I can act on every app including business containers, but a business-copilot cannot ever touch another business's apps OR the platform infrastructure (claude-gateway, codex-gateway, Supabase if self-hosted). Plan around that asymmetry — if a business-copilot tells the operator "I tried to restart X but Coolify refused", check whether X is in my scope (admin) and whether it should have been one of MY actions instead.
+
 ### Operational rules
 
 - **Always investigate before acting.** First call: `coolify_list_apps()` → identify the right uuid. Don't guess uuids from chat context — they're not stable across recreates.

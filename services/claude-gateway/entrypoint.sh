@@ -265,7 +265,8 @@ JSON
         "COOLIFY_KVM4_API_TOKEN":     "${COOLIFY_KVM4_API_TOKEN}",
         "PROTECTED_UUIDS":            "${PROTECTED_UUIDS:-}",
         "COOLIFY_RATE_LIMIT_MIN":     "${COOLIFY_RATE_LIMIT_MIN:-5}",
-        "COOLIFY_RATE_LIMIT_HOUR":    "${COOLIFY_RATE_LIMIT_HOUR:-30}"
+        "COOLIFY_RATE_LIMIT_HOUR":    "${COOLIFY_RATE_LIMIT_HOUR:-30}",
+        "COOLIFY_SCOPE":              "${COOLIFY_SCOPE:-admin}"
       }
     }
 JSON

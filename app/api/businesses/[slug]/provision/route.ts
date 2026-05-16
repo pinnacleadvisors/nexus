@@ -217,6 +217,10 @@ export async function POST(
     CLAUDE_GATEWAY_PORT:   '3000',
     MCP_PACKAGES:          mcpPackages,
     MCP_PROFILE:           manifest.profile,
+    // PR #193 — scope the mcp-coolify server to THIS business so the
+    // business-copilot can only act on apps tagged for this slug. The
+    // MCP refuses uuids outside the scope with result='unauthorized_scope'.
+    COOLIFY_SCOPE:         `business:${slug}`,
   }
   // Source every required env var (per-MCP `env` ∪ profile-level `env`) from
   // Coolify shared variables. The provisioner just references the names so a

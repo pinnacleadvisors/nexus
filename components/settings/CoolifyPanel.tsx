@@ -33,14 +33,22 @@ interface State {
   audit:       AuditRow[]
 }
 
-export default function CoolifyPanel() {
+interface Props {
+  /** 'admin' or 'business:<slug>'. Passed straight to the API so the
+   *  activity feed + rate-limit counts are scope-narrowed. The kill
+   *  switch is a global singleton (one big "off" button for everything),
+   *  not per-scope. */
+  scope: 'admin' | `business:${string}`
+}
+
+export default function CoolifyPanel({ scope }: Props) {
   const [state, setState] = useState<State | null>(null)
   const [busy,  setBusy]  = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function reload() {
     try {
-      const res = await fetch('/api/settings/coolify', { cache: 'no-store' })
+      const res = await fetch(`/api/settings/coolify?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         setError(j.error ?? `HTTP ${res.status}`)
@@ -54,13 +62,16 @@ export default function CoolifyPanel() {
     }
   }
 
-  useEffect(() => { void reload() }, [])
+  // Re-fetch on scope change (operator switched business in the dropdown).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void reload() }, [scope])
   // Light polling so the audit feed stays current while the operator is
   // watching for the agent's recent activity. 8s is gentle on the route.
   useEffect(() => {
     const t = setInterval(() => { if (!busy) void reload() }, 8_000)
     return () => clearInterval(t)
-  }, [busy])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, scope])
 
   async function toggle(revoke: boolean, reason?: string) {
     setBusy(true)
@@ -118,12 +129,18 @@ export default function CoolifyPanel() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
             Coolify agent access
+            <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider" style={{ background: scope === 'admin' ? 'rgba(108,99,255,0.15)' : 'rgba(99,180,255,0.15)', color: scope === 'admin' ? '#a8a3ff' : '#7eb6ff', border: scope === 'admin' ? '1px solid rgba(108,99,255,0.30)' : '1px solid rgba(99,180,255,0.30)' }}>
+              {scope === 'admin' ? 'Admin scope' : `business:${scope.slice('business:'.length)}`}
+            </span>
             <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider" style={{ background: revoked ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)', color: revoked ? '#fca5a5' : '#86efac', border: revoked ? '1px solid rgba(239,68,68,0.30)' : '1px solid rgba(34,197,94,0.30)' }}>
-              {revoked ? 'Revoked' : 'Active'}
+              {revoked ? 'Globally revoked' : 'Active'}
             </span>
           </div>
           <p className="text-xs mt-1" style={{ color: '#9090b0' }}>
-            Platform-copilot can {revoked ? 'NOT' : ''} call Coolify v4 endpoints (list, logs, redeploy, restart, env-set). Reads fire freely; writes require chat-level approval-request blocks AND respect the rate limit + PROTECTED_UUIDS list. See <a href="https://github.com/pinnacleadvisors/nexus/blob/main/.claude/agents/platform-copilot.md" target="_blank" className="underline" style={{ color: '#a8a3ff' }}>platform-copilot.md <ExternalLink size={9} className="inline" /></a>.
+            {scope === 'admin'
+              ? <>Platform-copilot at <span className="font-mono">/manage-platform</span> can call any Coolify app (subject to <span className="font-mono">PROTECTED_UUIDS</span> on writes). Activity feed below is filtered to admin-scope only.</>
+              : <>Business-copilot at <span className="font-mono">/businesses/{scope.slice('business:'.length)}/chat</span> can only call apps tagged for this business — name <span className="font-mono">nexus-business-{scope.slice('business:'.length)}-*</span> OR <span className="font-mono">custom_labels</span> with <span className="font-mono">nexus.business.slug={scope.slice('business:'.length)}</span>. Other businesses&apos; apps are structurally invisible.</>}
+            {' '}Reads fire freely; writes require chat-level approval-request blocks. Disconnect is GLOBAL — revoking here disables access at every scope. See <a href="https://github.com/pinnacleadvisors/nexus/blob/main/.claude/agents/platform-copilot.md" target="_blank" rel="noopener" className="underline" style={{ color: '#a8a3ff' }}>platform-copilot.md <ExternalLink size={9} className="inline" /></a>.
           </p>
         </div>
         <button

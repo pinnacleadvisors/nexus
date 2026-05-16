@@ -18,12 +18,19 @@
 
 import { createServerClient } from '@/lib/supabase'
 
-export type CoolifyAuditResult = 'success' | 'error' | 'rate_limited' | 'protected_uuid' | 'kill_switch'
+export type CoolifyAuditResult = 'success' | 'error' | 'rate_limited' | 'protected_uuid' | 'kill_switch' | 'unauthorized_scope'
+
+/** Scope under which a Coolify action was attempted.
+ *   - 'admin'              → platform-copilot at /manage-platform
+ *   - 'business:<slug>'    → business-copilot at /businesses/<slug>/chat
+ *  Set on every audit insert by the MCP from its COOLIFY_SCOPE env. */
+export type CoolifyScope = 'admin' | `business:${string}`
 
 export interface CoolifyAuditRow {
   id:             string
   user_id:        string
   job_id:         string | null
+  scope:          CoolifyScope
   action:         string
   target_uuid:    string | null
   args_redacted:  Record<string, unknown>
@@ -131,8 +138,10 @@ export async function reactivateKillSwitch(): Promise<'active' | 'revoked' | nul
 }
 
 /** Count of "write" actions in the last N ms — used for rate-limit checks.
- *  "Write" excludes list_* and get_* actions. */
-export async function recentWriteCount(input: { userId: string; sinceMs: number }): Promise<number> {
+ *  "Write" excludes list_* and get_* actions. Optional scope filter scopes
+ *  the count: a business-copilot's bursts shouldn't be blocked by a separate
+ *  admin-side burst (they share the operator but operate independently). */
+export async function recentWriteCount(input: { userId: string; sinceMs: number; scope?: CoolifyScope }): Promise<number> {
   const db = createServerClient()
   if (!db) return 0
   const cutoff = new Date(Date.now() - input.sinceMs).toISOString()
@@ -147,13 +156,15 @@ export async function recentWriteCount(input: { userId: string; sinceMs: number 
       not: (c: string, op: string, v: unknown) => CountChain
       then: Promise<CountResp>['then']
     }
-    const res = await ((db.from('coolify_audit_log' as never) as unknown as { select: (c: string, opts?: { count: string; head: boolean }) => CountChain })
+    let q = (db.from('coolify_audit_log' as never) as unknown as { select: (c: string, opts?: { count: string; head: boolean }) => CountChain })
       .select('id', { count: 'exact', head: true })
       .eq('user_id', input.userId)
       .eq('result',  'success')
       .gte('created_at', cutoff)
       .not('action', 'like', 'coolify_list%')
-      .not('action', 'like', 'coolify_get%') as unknown as Promise<CountResp>)
+      .not('action', 'like', 'coolify_get%')
+    if (input.scope) q = q.eq('scope', input.scope)
+    const res = await (q as unknown as Promise<CountResp>)
     return res.count ?? 0
   } catch {
     return 0
@@ -163,15 +174,19 @@ export async function recentWriteCount(input: { userId: string; sinceMs: number 
 export const RATE_LIMIT_WRITES_PER_MIN  = 5
 export const RATE_LIMIT_WRITES_PER_HOUR = 30
 
-/** List recent audit rows for the UI feed. */
-export async function listRecentAuditRows(input: { userId: string; limit?: number }): Promise<CoolifyAuditRow[]> {
+/** List recent audit rows for the UI feed. Scope filter narrows the
+ *  panel to admin-only or business-only activity — operator can switch
+ *  via the BusinessSwitcher and the panel re-queries. */
+export async function listRecentAuditRows(input: { userId: string; scope?: CoolifyScope; limit?: number }): Promise<CoolifyAuditRow[]> {
   const db = createServerClient()
   if (!db) return []
   try {
     type Chain<T> = { eq: (c: string, v: unknown) => Chain<T>; order: (c: string, o: { ascending: boolean }) => Chain<T>; limit: (n: number) => Promise<{ data: T[] | null }> }
-    const res = await (db.from('coolify_audit_log' as never) as unknown as { select: (c: string) => Chain<CoolifyAuditRow> })
+    let q = (db.from('coolify_audit_log' as never) as unknown as { select: (c: string) => Chain<CoolifyAuditRow> })
       .select('*')
       .eq('user_id', input.userId)
+    if (input.scope) q = q.eq('scope', input.scope)
+    const res = await q
       .order('created_at', { ascending: false })
       .limit(input.limit ?? 50)
     return res.data ?? []

@@ -19,6 +19,7 @@ import SettingsTabs from '@/components/settings/SettingsTabs'
 import AccountList from '@/components/settings/AccountList'
 import BusinessSwitcher from '@/components/settings/BusinessSwitcher'
 import CoolifyPanel from '@/components/settings/CoolifyPanel'
+import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 import { listBusinessesForUser } from '@/lib/business/db'
 import type { BusinessRow } from '@/lib/business/types'
 
@@ -140,10 +141,14 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
           <AccountList businessSlug={selectedSlug} />
         </Suspense>
 
-        {/* Coolify panel — platform-wide, owner-only. Only renders on the
-            Default (no-business) scope because Coolify lives at the
-            platform layer (not per-business). */}
-        {showAdmin && !selectedSlug && <CoolifyPanel />}
+        {/* Coolify panel — owner-only, scope-aware (PR #193).
+            - Admin scope         → full power (every app), admin activity feed
+            - Business scope      → filtered to that business's apps + audit
+            - Default/Shared      → hidden (Coolify isn't a shared-token resource) */}
+        {showAdmin && selectedSlug === ADMIN_SCOPE && <CoolifyPanel scope="admin" />}
+        {showAdmin && selectedSlug && selectedSlug !== ADMIN_SCOPE && selectedBiz && (
+          <CoolifyPanel scope={`business:${selectedBiz.slug}` as `business:${string}`} />
+        )}
       </div>
     </div>
   )
