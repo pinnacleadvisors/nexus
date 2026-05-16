@@ -30,6 +30,7 @@ import TasksView from '@/components/chat-views/TasksView'
 import ApprovalsView from '@/components/chat-views/ApprovalsView'
 import CalendarView from '@/components/chat-views/CalendarView'
 import BugHuntView from '@/components/chat-views/BugHuntView'
+import HealthView from '@/components/chat-views/HealthView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
@@ -662,6 +663,11 @@ export default function PlatformChat() {
             onCountChange={setBugHuntBadge}
             onSendChatMessage={text => void send(text)}
           />
+        </ViewsPanel>
+      )}
+      {activeView === 'health' && (
+        <ViewsPanel title="Platform health" subtitle="Where is the platform leaking right now" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:health">
+          <HealthView scope="admin" />
         </ViewsPanel>
       )}
     </div>
