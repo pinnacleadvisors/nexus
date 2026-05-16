@@ -22,6 +22,7 @@ import {
   recentWriteCount,
   RATE_LIMIT_WRITES_PER_MIN,
   RATE_LIMIT_WRITES_PER_HOUR,
+  type CoolifyScope,
 } from '@/lib/coolify/audit'
 
 export const runtime    = 'nodejs'
@@ -33,6 +34,24 @@ function isPlatformOwner(userId: string): boolean {
   return raw.split(',').map(s => s.trim()).filter(Boolean).includes(userId)
 }
 
+/**
+ * Parse the optional `?scope=admin` or `?scope=business:<slug>` filter.
+ * Returns undefined when omitted (= no filter, full audit log).
+ *
+ * Sanitises the slug — only [a-z0-9-]+ allowed so PostgREST eq queries
+ * can't be tricked into matching unexpected scope values via path tricks.
+ */
+function parseScope(req: NextRequest): CoolifyScope | undefined {
+  const raw = new URL(req.url).searchParams.get('scope')?.trim()
+  if (!raw) return undefined
+  if (raw === 'admin') return 'admin'
+  if (raw.startsWith('business:')) {
+    const slug = raw.slice('business:'.length)
+    if (/^[a-z0-9-]{1,80}$/.test(slug)) return `business:${slug}`
+  }
+  return undefined
+}
+
 export async function GET(req: NextRequest) {
   const rl = await rateLimit(req, { limit: 30, window: '1 m', prefix: 'settings:coolify:get' })
   if (!rl.success) return rateLimitResponse(rl)
@@ -41,15 +60,18 @@ export async function GET(req: NextRequest) {
   if (!session.userId) return NextResponse.json({ ok: false, error: 'unauthorized', code: 'unauthorized' }, { status: 401 })
   if (!isPlatformOwner(session.userId)) return NextResponse.json({ ok: false, error: 'platform-owner only', code: 'forbidden' }, { status: 403 })
 
+  const scope = parseScope(req)
+
   const [active, audit, minCount, hourCount] = await Promise.all([
     isKillSwitchActive(),
-    listRecentAuditRows({ userId: session.userId, limit: 25 }),
-    recentWriteCount({ userId: session.userId, sinceMs: 60_000 }),
-    recentWriteCount({ userId: session.userId, sinceMs: 60 * 60_000 }),
+    listRecentAuditRows({ userId: session.userId, scope, limit: 25 }),
+    recentWriteCount({ userId: session.userId, sinceMs: 60_000,       scope }),
+    recentWriteCount({ userId: session.userId, sinceMs: 60 * 60_000,  scope }),
   ])
 
   return NextResponse.json({
     ok:     true,
+    scope:  scope ?? null,
     status: active ? 'active' : 'revoked',
     rate_limits: {
       per_minute: { used: minCount,  max: RATE_LIMIT_WRITES_PER_MIN  },

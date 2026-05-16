@@ -58,6 +58,25 @@ const PROTECTED_UUIDS   = new Set((process.env.PROTECTED_UUIDS ?? '').split(',')
 const RATE_PER_MIN      = Number(process.env.COOLIFY_RATE_LIMIT_MIN  ?? 5)
 const RATE_PER_HOUR     = Number(process.env.COOLIFY_RATE_LIMIT_HOUR ?? 30)
 
+// Scope under which this MCP instance operates. Set per-gateway:
+//   - claude-gateway (KVM4)            → 'admin' (default; full access)
+//   - per-business gateway (provisioner) → 'business:<slug>' (scoped to
+//                                          that business's containers)
+// 'admin' sees every app subject to PROTECTED_UUIDS on writes.
+// 'business:<slug>' filters list responses + refuses calls against
+// uuids that don't match the business's name pattern or custom_labels.
+const SCOPE_RAW = (process.env.COOLIFY_SCOPE ?? 'admin').trim()
+const SCOPE: 'admin' | { kind: 'business'; slug: string } =
+  SCOPE_RAW === 'admin'
+    ? 'admin'
+    : SCOPE_RAW.startsWith('business:')
+      ? { kind: 'business', slug: SCOPE_RAW.slice('business:'.length).trim() }
+      : 'admin'
+
+// Stamped on every audit insert so the /settings/accounts panel can
+// filter the activity feed by scope.
+const SCOPE_STR: string = SCOPE === 'admin' ? 'admin' : `business:${SCOPE.slug}`
+
 function fatal(msg: string): never {
   console.error('[coolify] ' + msg)
   process.exit(2)
@@ -93,7 +112,9 @@ async function isKillSwitchActive(): Promise<boolean> {
 
 async function recentWriteCount(sinceMs: number): Promise<number> {
   const cutoff = new Date(Date.now() - sinceMs).toISOString()
-  const url = `/rest/v1/coolify_audit_log?user_id=eq.${encodeURIComponent(OPERATOR_USER_ID)}&result=eq.success&created_at=gte.${cutoff}&action=not.like.coolify_list*&action=not.like.coolify_get*&select=id`
+  // Scope-filtered count — admin and business budgets are independent so
+  // a chatty business agent can't starve the platform-copilot's budget.
+  const url = `/rest/v1/coolify_audit_log?user_id=eq.${encodeURIComponent(OPERATOR_USER_ID)}&scope=eq.${encodeURIComponent(SCOPE_STR)}&result=eq.success&created_at=gte.${cutoff}&action=not.like.coolify_list*&action=not.like.coolify_get*&select=id`
   try {
     const res = await sbFetch(url, { headers: { Prefer: 'count=exact' } })
     const range = res.headers.get('content-range') ?? '0-0/0'
@@ -102,7 +123,7 @@ async function recentWriteCount(sinceMs: number): Promise<number> {
   } catch { return 0 }
 }
 
-type AuditResult = 'success' | 'error' | 'rate_limited' | 'protected_uuid' | 'kill_switch'
+type AuditResult = 'success' | 'error' | 'rate_limited' | 'protected_uuid' | 'kill_switch' | 'unauthorized_scope'
 
 async function audit(input: { action: string; targetUuid: string | null; argsRedacted: Record<string, unknown>; result: AuditResult; errorMessage?: string; durationMs?: number }) {
   try {
@@ -111,6 +132,7 @@ async function audit(input: { action: string; targetUuid: string | null; argsRed
       body: JSON.stringify({
         user_id:       OPERATOR_USER_ID,
         job_id:        JOB_ID,
+        scope:         SCOPE_STR,
         action:        input.action,
         target_uuid:   input.targetUuid,
         args_redacted: input.argsRedacted,
@@ -145,6 +167,66 @@ async function coolify<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.text()) as unknown as T
 }
 
+// ── Scope filtering ──────────────────────────────────────────────────────────
+
+interface AppShape {
+  uuid:          string
+  name?:         string
+  custom_labels?: string
+}
+
+/**
+ * Decide whether a Coolify app is callable under the current scope.
+ *   - admin           → always true (PROTECTED_UUIDS already handled in preGuard)
+ *   - business:<slug> → true ONLY when the app's name starts with
+ *                       `nexus-business-${slug}-` (the provisioner's naming
+ *                       convention) OR custom_labels contains
+ *                       `nexus.business.slug=${slug}` (manual labeling
+ *                       fallback for hand-created apps).
+ *
+ * Used by both list_apps (filter response) and the write tools (refuse
+ * non-matching uuids → audit result='unauthorized_scope').
+ */
+function isInScope(app: AppShape): boolean {
+  if (SCOPE === 'admin') return true
+  const slug   = SCOPE.slug
+  const name   = app.name ?? ''
+  const labels = (() => {
+    if (!app.custom_labels) return ''
+    try { return Buffer.from(app.custom_labels, 'base64').toString('utf8') } catch { return app.custom_labels }
+  })()
+  return name.startsWith(`nexus-business-${slug}-`)
+      || name === `nexus-business-${slug}`
+      || labels.includes(`nexus.business.slug=${slug}`)
+}
+
+/** Cache the list_apps response for ~5s so per-call uuid lookups don't
+ *  hammer Coolify. Each tool call goes through guardScope() which uses
+ *  this cache; the cache busts itself when stale.
+ *
+ *  The cache is at module scope (single-process MCP) and rebuilds on
+ *  expiry — no eager refresh because some scopes have many apps. */
+let appCache: { fetchedAt: number; apps: AppShape[] } | null = null
+async function getScopedApps(): Promise<AppShape[]> {
+  if (appCache && Date.now() - appCache.fetchedAt < 5_000) return appCache.apps
+  try {
+    const all = await coolify<AppShape[]>('/applications')
+    appCache = { fetchedAt: Date.now(), apps: all }
+    return all
+  } catch (err) {
+    console.error('[coolify/scope] list_apps failed', err instanceof Error ? err.message : err)
+    return appCache?.apps ?? []
+  }
+}
+
+async function uuidInScope(uuid: string): Promise<boolean> {
+  if (SCOPE === 'admin') return true
+  const apps = await getScopedApps()
+  const app  = apps.find(a => a.uuid === uuid)
+  if (!app) return false
+  return isInScope(app)
+}
+
 // ── Policy guards ────────────────────────────────────────────────────────────
 const READ_ACTIONS = new Set([
   'coolify_list_apps',
@@ -158,14 +240,28 @@ type GuardResult = { ok: true } | { ok: false; reason: AuditResult; message: str
 async function preGuard(action: string, targetUuid: string | null): Promise<GuardResult> {
   const active = await isKillSwitchActive()
   if (!active) return { ok: false, reason: 'kill_switch', message: 'Coolify access has been revoked from /settings/accounts. Re-enable from the same panel to use this tool.' }
+
+  // Scope check fires for ANY targeted action (read or write). list_apps
+  // doesn't target a uuid — it's filtered post-fetch in dispatch().
+  if (targetUuid && SCOPE !== 'admin') {
+    const allowed = await uuidInScope(targetUuid)
+    if (!allowed) {
+      return {
+        ok:      false,
+        reason:  'unauthorized_scope',
+        message: `Target uuid ${targetUuid.slice(0, 8)}… isn't in this scope (business:${SCOPE.slug}). Per-business agents can only act on apps whose name starts with \`nexus-business-${SCOPE.slug}-\` or whose custom_labels contains \`nexus.business.slug=${SCOPE.slug}\`. List your scoped apps first with coolify_list_apps.`,
+      }
+    }
+  }
+
   if (!READ_ACTIONS.has(action)) {
     if (targetUuid && PROTECTED_UUIDS.has(targetUuid)) {
       return { ok: false, reason: 'protected_uuid', message: `target uuid ${targetUuid} is in PROTECTED_UUIDS — refusing destructive action. Edit this in Coolify directly if you really need to change it.` }
     }
     const min  = await recentWriteCount(60_000)
-    if (min >= RATE_PER_MIN)  return { ok: false, reason: 'rate_limited', message: `rate limit: ${RATE_PER_MIN} writes/min exceeded. Cool down or check /settings/accounts for unexpected activity.` }
+    if (min >= RATE_PER_MIN)  return { ok: false, reason: 'rate_limited', message: `rate limit: ${RATE_PER_MIN} writes/min exceeded (this scope). Cool down or check /settings/accounts for unexpected activity.` }
     const hour = await recentWriteCount(60 * 60_000)
-    if (hour >= RATE_PER_HOUR) return { ok: false, reason: 'rate_limited', message: `rate limit: ${RATE_PER_HOUR} writes/hour exceeded.` }
+    if (hour >= RATE_PER_HOUR) return { ok: false, reason: 'rate_limited', message: `rate limit: ${RATE_PER_HOUR} writes/hour exceeded (this scope).` }
   }
   return { ok: true }
 }
@@ -196,7 +292,16 @@ async function dispatch(toolName: string, args: Record<string, unknown>): Promis
   try {
     let data: unknown
     switch (toolName) {
-      case 'coolify_list_apps':    data = await coolify('/applications'); break
+      case 'coolify_list_apps': {
+        // Admin sees everything; business scope filters to only the apps
+        // this business owns. The cache already filters via getScopedApps,
+        // but here we fetch fresh to reflect operator-side changes that
+        // happen between the cached 5s window.
+        const all = await coolify<AppShape[]>('/applications')
+        appCache = { fetchedAt: Date.now(), apps: all }   // refresh cache too
+        data = SCOPE === 'admin' ? all : all.filter(isInScope)
+        break
+      }
       case 'coolify_get_app':      data = await coolify(`/applications/${encodeURIComponent(String(args.uuid))}`); break
       case 'coolify_get_logs': {
         const lines = Number(args.lines ?? 200)
