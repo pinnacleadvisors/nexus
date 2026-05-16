@@ -269,6 +269,24 @@ OAuth-authenticated platform integrations (Twitter/X, LinkedIn, Gmail, Slack, No
 
 The Board review modal (`components/board/ReviewModal.tsx`) has a "Quality feedback" disclosure that POSTs to `/api/workflow-feedback`. The `workflow-optimizer` agent reads `open` rows, proposes a minimal diff against the producing agent's spec, and logs the change to `workflow_changelog` after the edit lands.
 
+The `workflow-feedback` route also accepts a non-human shape (`{ summary, details, source }`) — designed for synthetic feedback agents (e.g. a future `user-tester-panel`) to post into the same table the human reviewer uses, so the `workflow-optimizer` ingestion path stays single. Don't fork it.
+
+### Operator-gated loop pattern ("Ralph loop")
+
+Multi-turn agents that iterate against a moving target — bug hunts, multi-file edits, repeat audits, future synthetic user-tester panels — all share the same shape. Live exemplars: [`bug-hunt-loop`](.claude/agents/bug-hunt-loop.md) (iteration-plan + cost gate + draft-only PRs), [`workflow-optimizer`](.claude/agents/workflow-optimizer.md) (feedback → diff → apply → log), and the `edit-plan` block in [`platform-copilot`](.claude/agents/platform-copilot.md) / [`business-copilot`](.claude/agents/business-copilot.md) for chunked multi-file edits across the turn-timeout boundary. When you write a new loop-shaped agent, fork the closest exemplar and honour the invariants below — the chat UI parses the typed blocks and renders them as approval cards in the FloatingActionBar.
+
+| Invariant | What it means in practice |
+|---|---|
+| **No autonomous loops in chat** | Every iteration OPENS and CLOSES with a typed plan block (`iteration-plan`, `edit-plan`, `panel-review`, …). End the turn after emitting the block. The operator replies `APPROVAL [<id>]: approve <items>` (or amends) before the next action runs. Cron-driven loops (`business-operator`, `solopreneur-loop`, `codex-maintainer`) have their own gating via `approval_gates` / Slack inline buttons — not chat blocks. |
+| **Bounded per cycle** | Each iteration declares `scope` (`"static-audit" \| "fix-pr" \| "stop" \| …`), an `intent` (one sentence), and an explicit `items[]` list. Items the operator doesn't approve never run. 2 ≤ items ≤ 6 — bigger lists mean the plan should've been two cycles. |
+| **Cost-aware** | Before proposing the next iteration call `checkKillSwitch(businessSlug)` (per-business loops) AND check `usage.claude_max.sessionSharePct` against the session's `plan_window_share_pct`. If approaching the cap, propose `scope: "stop"` not `scope: "continue"` — the operator can override. |
+| **Verify-then-propose** | Never emit the next plan before parsing the current cycle's output. Findings go in a typed block (`bug-hunt-finding`, `edit-group-complete`, …) so the chat poll route can persist them server-side — the agent has no direct DB tool. Emit completion blocks LAST after every side effect succeeded, so a mid-cycle crash leaves the resume hint anchored on the same group next turn. |
+| **Stop-eligible by default** | Suggest `scope: "stop"` when two cycles return zero net-new signal, when usage is ≥ 95% of the plan-window cap, when `iteration_count >= max_iterations - 1`, or when all open findings are resolved. Operator picks "stop" or "extend"; never decide alone. |
+| **No production mutations from inside the loop** | Deploys, env writes, secret rotation, customer-facing messages, payment mutations — all go to a `manual-task` block, never executed by the loop. Open drafts (`draft: true` PRs, proposed env diffs, pending audits); the operator merges. |
+| **Memory on exit** | When a cycle uncovers a generalisable lesson (incident class, recurring vendor quirk), write one `memory_atom` linked to the relevant MOC per the [Post-incident memory protocol](#post-incident-memory-protocol). Trivial findings (one-line fixes, single-file typos) skip the atom — atom spam dilutes the signal. |
+
+If your new agent matches an existing exemplar's shape, fork its spec into `.claude/agents/<slug>.md` and replace the domain-specific parts (block names, scope values, tool list). The invariants above are not negotiable — they're what keeps the loop reviewable and abortable.
+
 ### Write Size Discipline (avoid Opus stream timeouts)
 
 Long single-shot Write/Edit/Bash payloads are the #1 cause of API stream errors on Opus. The PreToolUse hook `.claude/hooks/check-write-size.sh` enforces these limits — exceeding them blocks the call with a chunking instruction. Defaults: 300 lines / 10 KB per Write/Edit, 300 lines per Bash heredoc.
