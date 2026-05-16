@@ -39,7 +39,13 @@ export function GatewayStatusProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<GatewayStatus | null>(null)
 
   const fetcher = useCallback(async () => {
-    const res = await fetch('/api/gateway-status', { cache: 'no-store' })
+    // 15 s timeout — gateway-status reads from Coolify + Doppler and should
+    // never take this long. Hung fetches would block the polling loop and
+    // amplify cost under retry (AGENTS.md retry-storm checklist).
+    const res = await fetch('/api/gateway-status', {
+      cache:  'no-store',
+      signal: AbortSignal.timeout(15_000),
+    })
     if (!res.ok) throw new Error(`gateway-status HTTP ${res.status}`)
     const json = (await res.json()) as GatewayStatus
     setStatus(json)
