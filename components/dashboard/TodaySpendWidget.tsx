@@ -5,39 +5,17 @@
  * Goes amber at 60%, red at 80% so the operator notices BEFORE the cap
  * trips and starts returning HTTP 402 on every call.
  *
- * Shares the `/api/gateway-status` endpoint with `<GatewayStatusPill>`
- * so we don't have two different polling streams hitting the database.
+ * Reads the shared status from `<GatewayStatusProvider>` (mounted at the
+ * protected-layout level) so we don't double-poll `/api/gateway-status`
+ * — the comment in this file used to claim that, but the prior code
+ * actually ran its own setInterval. See docs/audits/2026-05-16-platform-audit.md.
  */
 
-import { useEffect, useState } from 'react'
 import { DollarSign, AlertTriangle } from 'lucide-react'
-
-const POLL_MS = 30_000
-
-interface SpendSnapshot {
-  spentUsd: number
-  capUsd:   number
-  scope:    'user' | 'business'
-  provider: 'gateway' | 'openclaw' | 'api' | 'none'
-}
+import { useGatewayStatus } from '@/lib/hooks/useGatewayStatus'
 
 export default function TodaySpendWidget() {
-  const [snap, setSnap] = useState<SpendSnapshot | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    async function tick() {
-      try {
-        const res = await fetch('/api/gateway-status', { cache: 'no-store' })
-        if (!res.ok) return
-        const json = await res.json() as SpendSnapshot
-        if (!cancelled) setSnap(json)
-      } catch { /* keep last */ }
-    }
-    tick()
-    const id = setInterval(tick, POLL_MS)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  const snap = useGatewayStatus()
 
   if (!snap) {
     return (

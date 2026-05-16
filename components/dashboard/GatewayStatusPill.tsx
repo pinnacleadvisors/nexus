@@ -2,10 +2,11 @@
 
 /**
  * Tiny indicator showing which Claude provider is currently active.
- * Polls `/api/gateway-status` every 30 s. Lives on every protected page
- * (mounted from the sidebar / mission control header) so the operator
- * always sees at-a-glance whether traffic is plan-billed (Max) or
- * token-billed (API).
+ * Reads the shared status from `<GatewayStatusProvider>` (mounted at the
+ * protected-layout level — one poll, many consumers). The audit at
+ * docs/audits/2026-05-16-platform-audit.md flagged this component's
+ * previous own-setInterval pattern as the source of an 11-GETs-per-load
+ * polling storm; now it just subscribes to the context.
  *
  *   green  Claude Code gateway healthy + claude CLI logged in (FREE)
  *   amber  Gateway healthy but claude not logged in OR fallback to OpenClaw
@@ -13,37 +14,13 @@
  *   grey   Nothing configured
  */
 
-import { useEffect, useState } from 'react'
 import { Server, ZapOff, AlertTriangle, CircleDot } from 'lucide-react'
+import { useGatewayStatus, type GatewayStatus } from '@/lib/hooks/useGatewayStatus'
 
-interface Status {
-  provider:       'gateway' | 'openclaw' | 'api' | 'none'
-  gatewayHealthy: boolean
-  loggedIn?:      boolean
-  queueDepth?:    number
-  spentUsd:       number
-  capUsd:         number
-}
-
-const POLL_MS = 30_000
+type Status = GatewayStatus
 
 export default function GatewayStatusPill() {
-  const [status, setStatus] = useState<Status | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    async function tick() {
-      try {
-        const res = await fetch('/api/gateway-status', { cache: 'no-store' })
-        if (!res.ok) return
-        const json = await res.json() as Status
-        if (!cancelled) setStatus(json)
-      } catch { /* keep last status */ }
-    }
-    tick()
-    const id = setInterval(tick, POLL_MS)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  const status = useGatewayStatus()
 
   if (!status) return null
 
