@@ -87,18 +87,30 @@ The Clerk session cookie persists in `~/.chrome-cdp-profile` indefinitely. You s
 
 ## Step 3 — Add the Playwright MCP to Claude Desktop
 
-Your current `claude_desktop_config.json` already has `memory-hq` + `n8n`. We add a third entry under `mcpServers` (alongside, not replacing). Run this `jq` patch from your terminal — it adds the entry without touching your existing tokens or preferences:
+Your current `claude_desktop_config.json` already has `memory-hq` + `n8n`. We add a third entry under `mcpServers` (alongside, not replacing). Use Python — it ships on every macOS at `/usr/bin/python3`, no install needed:
 
 ```bash
-CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-cp "$CFG" "$CFG.bak.$(date +%Y%m%d-%H%M%S)"
-jq '.mcpServers.playwright = {
-  "command": "npx",
-  "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9222"]
-}' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+python3 <<'PY'
+import json, os
+cfg = os.path.expanduser('~/Library/Application Support/Claude/claude_desktop_config.json')
+with open(cfg) as f: data = json.load(f)
+data.setdefault('mcpServers', {})['playwright'] = {
+    'command': 'npx',
+    'args': ['-y', '@playwright/mcp@latest', '--cdp-endpoint', 'http://localhost:9222']
+}
+with open(cfg, 'w') as f:
+    json.dump(data, f, indent=2)
+print('patched — playwright MCP added alongside memory-hq + n8n')
+PY
 ```
 
-The `.bak.<timestamp>` is your rollback. The patched entry looks like:
+Verify the patch landed:
+
+```bash
+python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/Library/Application Support/Claude/claude_desktop_config.json'))); print(list(d['mcpServers'].keys()))"
+```
+
+Should print `['memory-hq', 'n8n', 'playwright']`. The new entry in the file looks like:
 
 ```jsonc
 "playwright": {
@@ -111,7 +123,23 @@ The `.bak.<timestamp>` is your rollback. The patched entry looks like:
 }
 ```
 
-`-y` auto-accepts the npx install on first run. `--cdp-endpoint` tells Playwright MCP to attach to your logged-in Chrome instead of launching a fresh browser (which would have no session). After save, your config has three entries under `mcpServers`.
+`-y` auto-accepts the npx install on first run. `--cdp-endpoint` tells Playwright MCP to attach to your logged-in Chrome instead of launching a fresh browser (which would have no session).
+
+<details>
+<summary>Alternative — <code>jq</code> patch (only if you already have jq)</summary>
+
+```bash
+CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+cp "$CFG" "$CFG.bak.$(date +%Y%m%d-%H%M%S)"
+jq '.mcpServers.playwright = {
+  "command": "npx",
+  "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9222"]
+}' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+```
+
+Install jq via `brew install jq` if you want it (requires Homebrew from [brew.sh](https://brew.sh)). Python above is faster and zero-install for most operators.
+
+</details>
 
 ## Step 4 — Restart Claude Desktop + verify
 
