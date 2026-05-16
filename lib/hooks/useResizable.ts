@@ -67,11 +67,29 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 export function useResizable(opts: UseResizableOpts): UseResizableReturn {
-  const [width, setWidthState] = useState<number>(() => clamp(readPersisted(opts.key, opts.defaultPx), opts.minPx, opts.maxPx))
+  // SSR/CSR hydration parity — see docs/audits/2026-05-16-platform-audit.md
+  // Section 1 P1.2 ("React #418 hydration mismatch"). Reading localStorage in
+  // the useState initializer makes the client-side initial render diverge
+  // from the server-rendered HTML (server returns `defaultPx`, client returns
+  // the persisted width). The fix: initial state is ALWAYS `defaultPx`
+  // (matching SSR), then sync to the persisted value once after mount. Cost:
+  // a 1-frame flash if the operator has a non-default width — negligible vs
+  // hydration error on every protected route.
+  const [width, setWidthState] = useState<number>(() => clamp(opts.defaultPx, opts.minPx, opts.maxPx))
   const [isDragging, setIsDragging] = useState(false)
   const startXRef     = useRef(0)
   const startWidthRef = useRef(width)
   const snappedRef    = useRef(false)
+
+  useEffect(() => {
+    const persisted = readPersisted(opts.key, opts.defaultPx)
+    if (persisted !== opts.defaultPx) {
+      setWidthState(clamp(persisted, opts.minPx, opts.maxPx))
+    }
+    // Intentionally empty deps — sync once on mount only; subsequent width
+    // changes come from drag (setWidth) or other reads, not from the key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const setWidth = useCallback((next: number) => {
     const clamped = clamp(next, opts.minPx, opts.maxPx)

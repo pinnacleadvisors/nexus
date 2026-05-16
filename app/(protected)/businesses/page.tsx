@@ -169,7 +169,13 @@ function BusinessCard({ business }: { business: BusinessRow }) {
 
       <div className="text-[10px] flex items-center gap-3 mt-1" style={{ color: '#55556a' }}>
         <span title="Slug used in URLs + Composio connected_account scope">{business.slug}</span>
-        {business.slack_channel && <span title="Slack channel for digest posts">#{business.slack_channel}</span>}
+        {business.slack_channel && (
+          <span title="Slack channel for digest posts">
+            {/* Defensive: strip any leading '#' so seeded values like '#nexus-foo'
+                don't render as '##nexus-foo' (audit 2026-05-16 finding p2). */}
+            #{business.slack_channel.replace(/^#+/, '')}
+          </span>
+        )}
       </div>
     </div>
   )
