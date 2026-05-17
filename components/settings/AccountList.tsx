@@ -234,174 +234,45 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
         </div>
       ) : (
         <>
-          {accounts.length > 0 && (
-            <Section title="Connected">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {accounts.map(a => {
-                  const provider = OAUTH_PROVIDERS.find(p => p.id === a.platform)
-                  return (
-                    <div
-                      key={a.id}
-                      className="group p-3.5 flex items-center justify-between transition-all"
-                      style={{
-                        background:           'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
-                        backdropFilter:       'blur(28px) saturate(180%)',
-                        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-                        border:               '1px solid rgba(255,255,255,0.10)',
-                        borderRadius:         '16px',
-                        boxShadow:
-                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.boxShadow =
-                          '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(108,99,255,0.18)'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.boxShadow =
-                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
-                      }}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                          style={{
-                            background: 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))',
-                            border:     '1px solid rgba(34,197,94,0.20)',
-                            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
-                          }}
-                        >
-                          <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>
-                              {provider?.name ?? a.platform}
-                            </span>
-                            <StatusPill kind={a.status === 'active' ? 'connected' : a.status === 'error' ? 'offline' : 'pending'} />
-                          </div>
-                          <div className="text-[11px] mt-0.5 flex items-center gap-1.5 min-w-0" style={{ color: '#9090b0' }}>
-                            <span className="font-mono truncate" style={{ color: '#a8a3ff' }}>
-                              {a.businessSlug ?? 'shared'}
-                            </span>
-                            <span style={{ color: '#55556a' }}>·</span>
-                            <span className="truncate">{new Date(a.createdAt).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void disconnect(a.id, provider?.name ?? a.platform)}
-                        disabled={busy === a.id}
-                        className="text-[11px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
-                        style={{
-                          color:      '#e8e8f0',
-                          background: 'rgba(255,255,255,0.04)',
-                          border:     '1px solid rgba(255,255,255,0.08)',
-                        }}
-                        onMouseEnter={e => {
-                          if (busy !== a.id) {
-                            e.currentTarget.style.background = 'rgba(239,68,68,0.10)'
-                            e.currentTarget.style.borderColor = 'rgba(239,68,68,0.30)'
-                          }
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
-                          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-                        }}
-                      >
-                        {busy === a.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
-                        Disconnect
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            </Section>
-          )}
+          {/* The top "Connected" duplicate-list was retired by the audit
+              (2026-05-16). Connection state, scope, and Disconnect now live
+              in the per-category platform tile itself — one place per
+              logical platform. The badge below summarises the count so the
+              operator still sees a glanceable "X platforms connected" at
+              the top of the page. */}
+          <ConnectedSummary count={accounts.length} scope={currentScope} />
 
           {(Object.entries(groupedProviders) as Array<[OAuthCategory, OAuthProvider[]]>).map(([category, providers]) => (
             <Section key={category} title={CATEGORY_LABEL[category]}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {providers.map(p => {
-                  const connected = connectedByPlatform.has(p.id)
-                  // apiKeySetup providers render a paste form instead of the
-                  // OAuth Connect button. They're not brokered through Composio
-                  // so the existing init/callback flow doesn't apply.
+                  const account = connectedByPlatform.get(p.id)
+                  // apiKeySetup providers render a paste form / rotate widget
+                  // instead of the OAuth Connect button — not Composio-brokered.
                   if (p.apiKeySetup) {
                     return (
                       <ApiKeyCard
                         key={p.id}
                         provider={p}
-                        connected={connected}
+                        account={account}
                         busy={busy === p.id}
                         saved={!!apiKeySaved[p.id]}
                         value={apiKeyInput[p.id] ?? ''}
                         onChange={v => setApiKeyInput(prev => ({ ...prev, [p.id]: v }))}
                         onSave={() => void saveApiKey(p)}
+                        onDisconnect={() => account && void disconnect(account.id, p.name)}
                       />
                     )
                   }
                   return (
-                    <button
+                    <OAuthTile
                       key={p.id}
-                      type="button"
-                      onClick={() => void connect(p)}
-                      disabled={busy === p.id || connected}
-                      className="group p-3.5 flex items-center gap-3 transition-all disabled:opacity-60 text-left"
-                      style={{
-                        background:           connected
-                          ? 'linear-gradient(135deg, rgba(34,197,94,0.05), rgba(255,255,255,0.02))'
-                          : 'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
-                        backdropFilter:       'blur(28px) saturate(180%)',
-                        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-                        border:               '1px solid rgba(255,255,255,0.10)',
-                        borderRadius:         '16px',
-                        boxShadow:
-                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
-                      }}
-                      onMouseEnter={e => {
-                        if (busy !== p.id && !connected) {
-                          e.currentTarget.style.boxShadow =
-                            '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(108,99,255,0.22)'
-                          e.currentTarget.style.transform = 'translateY(-1px)'
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.boxShadow =
-                          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                      }}
-                    >
-                      <div
-                        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                        style={{
-                          background: connected
-                            ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))'
-                            : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
-                          border: connected
-                            ? '1px solid rgba(34,197,94,0.20)'
-                            : '1px solid rgba(108,99,255,0.20)',
-                          boxShadow: '0 1px 0 0 rgba(255,255,255,0.06) inset',
-                        }}
-                      >
-                        {busy === p.id
-                          ? <Loader2 size={16} className="animate-spin" style={{ color: '#9090b0' }} />
-                          : connected
-                            ? <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
-                            : <Plug size={16} style={{ color: '#a8a3ff' }} />}
-                      </div>
-                      <div className="min-w-0 flex-1 text-left">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{p.name}</span>
-                          {connected && <StatusPill kind="connected" />}
-                        </div>
-                        <div className="text-[11px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
-                          {connected
-                            ? <span className="font-mono uppercase tracking-wider" style={{ color: '#6a6a86' }}>composio · oauth</span>
-                            : <>via Composio <span style={{ color: '#55556a' }}>·</span> <span className="font-mono" style={{ color: '#a8a3ff' }}>{p.actions.length}</span> actions</>}
-                        </div>
-                      </div>
-                    </button>
+                      provider={p}
+                      account={account}
+                      busy={busy === p.id}
+                      onConnect={() => void connect(p)}
+                      onDisconnect={() => account && void disconnect(account.id, p.name)}
+                    />
                   )
                 })}
               </div>
@@ -414,17 +285,31 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
 }
 
 function ApiKeyCard({
-  provider, connected, busy, saved, value, onChange, onSave,
+  provider, account, busy, saved, value, onChange, onSave, onDisconnect,
 }: {
-  provider:  OAuthProvider
-  connected: boolean
-  busy:      boolean
-  saved:     boolean
-  value:     string
-  onChange:  (v: string) => void
-  onSave:    () => void
+  provider:     OAuthProvider
+  account?:     ConnectedAccount
+  busy:         boolean
+  saved:        boolean
+  value:        string
+  onChange:     (v: string) => void
+  onSave:       () => void
+  onDisconnect: () => void
 }) {
-  const setup = provider.apiKeySetup ?? {}
+  const setup     = provider.apiKeySetup ?? {}
+  const connected = !!account
+  // When already connected, the paste form is gated behind a "Rotate" toggle.
+  // Showing it unconditionally caused the audit's "Vercel shows CONNECTED +
+  // paste form simultaneously" finding (2026-05-16 p2.5).
+  const [showRotate, setShowRotate] = useState(!connected)
+
+  // If connection state flips (e.g. successful save → load returns the
+  // freshly-saved account row → `account` becomes defined), collapse the
+  // form back to its tidy state.
+  useEffect(() => {
+    setShowRotate(!connected)
+  }, [connected])
+
   return (
     <div
       className="p-3.5 flex flex-col gap-2.5"
@@ -464,64 +349,295 @@ function ApiKeyCard({
             <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{provider.name}</span>
             <StatusPill kind={connected ? 'connected' : 'manual'} />
           </div>
-          <div className="text-[11px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
-            {connected ? 'Key encrypted · paste to rotate' : <span className="font-mono uppercase tracking-wider" style={{ color: '#6a6a86' }}>direct · api key</span>}
+          <div className="text-[11px] mt-0.5 flex items-center gap-1.5 min-w-0" style={{ color: '#9090b0' }}>
+            {account ? (
+              <>
+                <span className="font-mono truncate" style={{ color: '#a8a3ff' }}>
+                  {account.businessSlug ?? 'shared'}
+                </span>
+                <span style={{ color: '#55556a' }}>·</span>
+                <span className="truncate">{new Date(account.createdAt).toLocaleDateString()}</span>
+              </>
+            ) : (
+              <span className="font-mono uppercase tracking-wider" style={{ color: '#6a6a86' }}>direct · api key</span>
+            )}
           </div>
         </div>
+        {connected && !showRotate && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowRotate(true)}
+              className="text-[11px] px-2 py-1 rounded-md transition-colors"
+              style={{
+                color:      '#e8e8f0',
+                background: 'rgba(255,255,255,0.04)',
+                border:     '1px solid rgba(255,255,255,0.08)',
+              }}
+              title="Paste a new key to rotate"
+            >
+              Rotate
+            </button>
+            <button
+              type="button"
+              onClick={onDisconnect}
+              disabled={busy}
+              className="text-[11px] flex items-center px-1.5 py-1 rounded-md transition-colors disabled:opacity-50"
+              style={{
+                color:      '#e8e8f0',
+                background: 'rgba(255,255,255,0.04)',
+                border:     '1px solid rgba(255,255,255,0.08)',
+              }}
+              onMouseEnter={e => {
+                if (!busy) {
+                  e.currentTarget.style.background = 'rgba(239,68,68,0.10)'
+                  e.currentTarget.style.borderColor = 'rgba(239,68,68,0.30)'
+                }
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              }}
+              title="Disconnect"
+              aria-label="Disconnect"
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+            </button>
+          </div>
+        )}
       </div>
-      {setup.instructions && (
-        <p className="text-[11px] leading-snug" style={{ color: '#9090b0' }}>{setup.instructions}</p>
+      {/* Paste form: only when not connected, or when explicitly rotating. */}
+      {showRotate && (
+        <>
+          {setup.instructions && (
+            <p className="text-[11px] leading-snug" style={{ color: '#9090b0' }}>{setup.instructions}</p>
+          )}
+          <div className="flex items-stretch gap-2">
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={value}
+              onChange={e => onChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSave() } }}
+              placeholder={`paste ${connected ? 'new ' : ''}${provider.name.toLowerCase()} key`}
+              className="flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors"
+              style={{
+                background:  'rgba(5,5,16,0.55)',
+                border:      '1px solid rgba(255,255,255,0.08)',
+                color:       '#e8e8f0',
+                outline:     'none',
+              }}
+              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(108,99,255,0.40)' }}
+              onBlur={e =>  { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
+              disabled={busy}
+            />
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={busy || value.trim().length === 0}
+              className="text-[11px] px-3 rounded-lg transition-all disabled:opacity-50 font-medium"
+              style={{
+                background: saved
+                  ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.06))'
+                  : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.10))',
+                color:      '#e8e8f0',
+                border:     saved ? '1px solid rgba(34,197,94,0.30)' : '1px solid rgba(108,99,255,0.30)',
+                boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+              }}
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : saved ? 'Saved' : connected ? 'Rotate' : 'Save'}
+            </button>
+            {connected && (
+              <button
+                type="button"
+                onClick={() => setShowRotate(false)}
+                className="text-[11px] px-2 rounded-lg transition-colors"
+                style={{
+                  color:      '#9090b0',
+                  background: 'rgba(255,255,255,0.03)',
+                  border:     '1px solid rgba(255,255,255,0.08)',
+                }}
+                title="Cancel"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {setup.credentialsUrl && !connected && (
+            <a
+              href={setup.credentialsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px]"
+              style={{ color: '#a8a3ff' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#c4c0ff' }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#a8a3ff' }}
+            >
+              Where to get this <ExternalLink size={10} />
+            </a>
+          )}
+        </>
       )}
-      <div className="flex items-stretch gap-2">
-        <input
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSave() } }}
-          placeholder={`paste ${provider.name.toLowerCase()} key`}
-          className="flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors"
-          style={{
-            background:  'rgba(5,5,16,0.55)',
-            border:      '1px solid rgba(255,255,255,0.08)',
-            color:       '#e8e8f0',
-            outline:     'none',
-          }}
-          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(108,99,255,0.40)' }}
-          onBlur={e =>  { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
-          disabled={busy}
-        />
+    </div>
+  )
+}
+
+/**
+ * Single tile rendering one logical OAuth platform. Was previously rendered
+ * in TWO places (top "Connected" list + the per-category section), which the
+ * audit (2026-05-16 p2.6) flagged as confusing 3-way duplication. Now lives
+ * here, the per-category section is its only home, and connection state +
+ * scope + date + Disconnect all live on the same tile.
+ */
+function OAuthTile({ provider, account, busy, onConnect, onDisconnect }: {
+  provider:     OAuthProvider
+  account?:     ConnectedAccount
+  busy:         boolean
+  onConnect:    () => void
+  onDisconnect: () => void
+}) {
+  const connected = !!account
+  return (
+    <div
+      className="group p-3.5 flex items-center gap-3 transition-all"
+      style={{
+        background:           connected
+          ? 'linear-gradient(135deg, rgba(34,197,94,0.05), rgba(255,255,255,0.02))'
+          : 'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '16px',
+        boxShadow:
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+        cursor: connected ? 'default' : 'pointer',
+      }}
+      onClick={() => { if (!connected && !busy) onConnect() }}
+      onMouseEnter={e => {
+        if (busy || connected) return
+        e.currentTarget.style.boxShadow =
+          '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(108,99,255,0.22)'
+        e.currentTarget.style.transform = 'translateY(-1px)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.boxShadow =
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
+        e.currentTarget.style.transform = 'translateY(0)'
+      }}
+    >
+      <div
+        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+        style={{
+          background: connected
+            ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.04))'
+            : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+          border: connected
+            ? '1px solid rgba(34,197,94,0.20)'
+            : '1px solid rgba(108,99,255,0.20)',
+          boxShadow: '0 1px 0 0 rgba(255,255,255,0.06) inset',
+        }}
+      >
+        {busy
+          ? <Loader2 size={16} className="animate-spin" style={{ color: '#9090b0' }} />
+          : connected
+            ? <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
+            : <Plug size={16} style={{ color: '#a8a3ff' }} />}
+      </div>
+      <div className="min-w-0 flex-1 text-left">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{provider.name}</span>
+          {connected && <StatusPill kind="connected" />}
+        </div>
+        <div className="text-[11px] mt-0.5 flex items-center gap-1.5 min-w-0" style={{ color: '#9090b0' }}>
+          {account ? (
+            <>
+              <span className="font-mono truncate" style={{ color: '#a8a3ff' }} title="Connection scope">
+                {account.businessSlug ?? 'shared'}
+              </span>
+              <span style={{ color: '#55556a' }}>·</span>
+              <span className="truncate" title="Connected on">
+                {new Date(account.createdAt).toLocaleDateString()}
+              </span>
+            </>
+          ) : (
+            <>via Composio <span style={{ color: '#55556a' }}>·</span> <span className="font-mono" style={{ color: '#a8a3ff' }}>{provider.actions.length}</span> actions</>
+          )}
+        </div>
+      </div>
+      {connected && (
         <button
           type="button"
-          onClick={onSave}
-          disabled={busy || value.trim().length === 0}
-          className="text-[11px] px-3 rounded-lg transition-all disabled:opacity-50 font-medium"
+          onClick={e => { e.stopPropagation(); onDisconnect() }}
+          disabled={busy}
+          className="shrink-0 text-[11px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
           style={{
-            background: saved
-              ? 'linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.06))'
-              : 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.10))',
             color:      '#e8e8f0',
-            border:     saved ? '1px solid rgba(34,197,94,0.30)' : '1px solid rgba(108,99,255,0.30)',
-            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+            background: 'rgba(255,255,255,0.04)',
+            border:     '1px solid rgba(255,255,255,0.08)',
           }}
+          onMouseEnter={e => {
+            if (busy) return
+            e.currentTarget.style.background = 'rgba(239,68,68,0.10)'
+            e.currentTarget.style.borderColor = 'rgba(239,68,68,0.30)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+          }}
+          title="Disconnect"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : saved ? 'Saved' : 'Save'}
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+          Disconnect
         </button>
-      </div>
-      {setup.credentialsUrl && (
-        <a
-          href={setup.credentialsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px]"
-          style={{ color: '#a8a3ff' }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#c4c0ff' }}
-          onMouseLeave={e => { e.currentTarget.style.color = '#a8a3ff' }}
-        >
-          Where to get this <ExternalLink size={10} />
-        </a>
       )}
+    </div>
+  )
+}
+
+/**
+ * One-line summary chip showing "N platforms connected in {scope}" at the
+ * top of the page. Replaces the audit-flagged top "Connected" duplicate list
+ * with a glanceable count.
+ */
+function ConnectedSummary({ count, scope }: { count: number; scope: 'admin' | 'shared' | 'business' }) {
+  if (count === 0) {
+    return (
+      <div
+        className="px-3.5 py-2.5 flex items-center gap-2 text-[11px]"
+        style={{
+          background:           'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+          backdropFilter:       'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border:               '1px solid rgba(255,255,255,0.06)',
+          borderRadius:         '14px',
+          color:                '#9090b0',
+        }}
+      >
+        <Plug size={12} style={{ color: '#9090b0' }} />
+        <span>Nothing connected here yet — pick a platform below to start.</span>
+      </div>
+    )
+  }
+  const scopeLabel = scope === 'admin' ? 'admin scope' : scope === 'business' ? 'this business' : 'shared scope'
+  return (
+    <div
+      className="px-3.5 py-2.5 flex items-center gap-2.5 text-[12px]"
+      style={{
+        background:           'linear-gradient(135deg, rgba(34,197,94,0.06), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border:               '1px solid rgba(34,197,94,0.18)',
+        borderRadius:         '14px',
+        color:                '#e8e8f0',
+      }}
+    >
+      <CheckCircle2 size={13} style={{ color: '#4ade80' }} />
+      <span>
+        <span className="font-medium">{count}</span>
+        <span style={{ color: '#9090b0' }}> {count === 1 ? 'platform' : 'platforms'} connected in </span>
+        <span className="font-mono" style={{ color: '#a8a3ff' }}>{scopeLabel}</span>
+      </span>
     </div>
   )
 }
