@@ -392,15 +392,43 @@ export async function buildGraph(forceRebuild = false): Promise<GraphData> {
       })
     }
 
-    // Tasks (assets)
-    const { data: tasks } = await db.from('tasks').select('id,title,assignee,project_id,created_at').limit(100)
+    // Tasks (assets) — emit edges to whichever parents are set:
+    //   - project_id  → asset→project   (canonical lineage)
+    //   - business_slug → asset→business (direct lineage; survives when no
+    //     intermediate project row exists, which is the common case today
+    //     where the board sees board cards without a project layer)
+    //
+    // Migration 025 added `business_slug` to tasks. Before this fix the graph
+    // builder ignored it, so the audit at /graph showed 11 asset nodes with
+    // ZERO edges (2026-05-16 audit P2.6). With this fix every board card
+    // bound to a business renders an edge — graph stops being orphans-only.
+    //
+    // Cast through `unknown` matches the same pattern used for businesses /
+    // projects above — column exists in the DB but isn't always in Supabase's
+    // inferred TS types.
+    type TaskRow = {
+      id:             string
+      title:          string | null
+      assignee:       string | null
+      project_id:     string | null
+      business_slug:  string | null
+      created_at:     string | null
+    }
+    const { data: tasks } = await (db as unknown as {
+      from: (t: string) => { select: (c: string) => { limit: (n: number) => Promise<{ data: TaskRow[] | null }> } }
+    }).from('tasks').select('id,title,assignee,project_id,business_slug,created_at').limit(100)
     for (const t of tasks ?? []) {
       nodes.push({
         id: `asset-${t.id}`, type: 'asset', label: t.title ?? 'Asset',
         metadata: {}, position3d: { x: (Math.random() - 0.5) * 120, y: (Math.random() - 0.5) * 120, z: (Math.random() - 0.5) * 120 },
         clusterId: 0, pageRank: 0, connections: 0, createdAt: t.created_at ?? iso(),
       })
-      if (t.project_id) edges.push({ id: uid(), source: `asset-${t.id}`, target: `proj-${t.project_id}`, relation: 'belongs_to', weight: 0.6, createdAt: t.created_at ?? iso() })
+      if (t.project_id) {
+        edges.push({ id: uid(), source: `asset-${t.id}`, target: `proj-${t.project_id}`, relation: 'belongs_to', weight: 0.6, createdAt: t.created_at ?? iso() })
+      }
+      if (t.business_slug) {
+        edges.push({ id: uid(), source: `asset-${t.id}`, target: `biz-${t.business_slug}`, relation: 'belongs_to', weight: 0.7, createdAt: t.created_at ?? iso() })
+      }
     }
 
     // If we got nothing meaningful, use mock
