@@ -646,7 +646,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div>
       <h2 className="text-[10px] font-mono uppercase tracking-[0.18em] mb-2.5 flex items-center gap-2" style={{ color: '#9090b0' }}>
-        <span style={{ color: '#a8a3ff' }}>{'//'}</span>
         <span>{title}</span>
         <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
       </h2>

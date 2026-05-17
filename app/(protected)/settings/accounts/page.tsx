@@ -83,11 +83,10 @@ export default async function AccountsSettingsPage(props: { searchParams: Promis
           </div>
           <div className="min-w-0">
             <h1
-              className="text-xl font-semibold flex items-baseline gap-2"
+              className="text-xl font-semibold"
               style={{ color: '#e8e8f0' }}
             >
-              <span className="font-mono" style={{ color: '#a8a3ff' }}>{'>'}</span>
-              <span>Connected Accounts</span>
+              Connected Accounts
             </h1>
             <p className="text-sm mt-1 max-w-2xl" style={{ color: '#9090b0' }}>
               OAuth connections brokered through Composio (tokens live in Composio) and direct API-key platforms (key encrypted in DB with{' '}

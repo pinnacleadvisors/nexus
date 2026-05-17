@@ -48,8 +48,6 @@ export default async function BusinessChatPage(props: { params: Promise<{ slug: 
       <div className="max-w-5xl mx-auto">
         <div className="mb-5">
           <h1 className="text-xl font-semibold" style={{ color: '#e8e8f0' }}>
-            <span className="font-mono" style={{ color: '#a8a3ff' }}>{'>'}</span>
-            {' '}
             {biz.name ?? biz.slug} — copilot
           </h1>
           <p className="text-sm mt-1" style={{ color: '#9090b0' }}>
