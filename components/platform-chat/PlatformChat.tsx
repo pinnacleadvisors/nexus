@@ -70,6 +70,28 @@ interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
+/** Stream-side hard cap. Slightly tighter than the server's MAX_DURATION_GUARD_MS
+ *  so the client gives up first and the server's `continue` event has time to
+ *  flush before the connection is torn down. */
+const STREAM_TIMEOUT_MS = 295_000
+
+/**
+ * Unified shape `pollUntilDone` and `streamUntilDone` both return. The
+ * `cancelled` flag means the operator clicked Cancel; `continueWithPoll`
+ * means the stream couldn't complete (Vercel timeout or recoverable error)
+ * and the caller should fall through to `pollUntilDone(jobId, sessionId)`.
+ */
+interface StreamOrPollResult {
+  text:                   string
+  durationMs:             number
+  approval_requests?:     ApprovalRequest[]
+  tool_calls?:            ToolCall[]
+  crashed?:               CrashedInfo
+  edit_plans?:            EditPlan[]
+  edit_group_completes?:  EditGroupComplete[]
+  cancelled?:             boolean
+  continueWithPoll?:      boolean
+}
 
 /**
  * Walk the message list chronologically and build a per-plan_id snapshot
@@ -355,10 +377,25 @@ export default function PlatformChat() {
       // reflects this turn's load.
       if (enq.usage) setUsage(enq.usage)
 
-      // Step 2 — poll until done. Each poll is <500ms; the loop runs until
-      // the gateway reports status='done' or 'error', or we hit the 5-min
-      // cap, OR the operator clicks Cancel.
-      const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      // Step 2 — stream the reply (SSE) when enabled, else fall back to
+      // poll. The SSE bridge inner-polls the gateway at 250ms cadence
+      // (vs 2.5s poll) and pushes text deltas as they arrive. On Vercel
+      // function timeout or any mid-stream error, streamUntilDone returns
+      // continueWithPoll=true so we transparently pick up via the existing
+      // poll path with the same jobId — the gateway job is unaffected.
+      let finalResult: StreamOrPollResult
+      const streamEnabled = process.env.NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED === '1'
+      if (streamEnabled) {
+        const streamed = await streamUntilDone(enq.jobId, enq.sessionId)
+                                .catch(err => { console.warn('[platform-chat] stream failed, falling back to poll:', err); return null })
+        if (streamed && !streamed.continueWithPoll) {
+          finalResult = streamed
+        } else {
+          finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+        }
+      } else {
+        finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      }
       if (finalResult.cancelled) {
         setMessages(prev => [...prev, {
           role:    'assistant',
@@ -397,7 +434,7 @@ export default function PlatformChat() {
   async function pollUntilDone(
     jobId: string,
     sessionId: string,
-  ): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; cancelled?: boolean }> {
+  ): Promise<StreamOrPollResult> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -452,6 +489,138 @@ export default function PlatformChat() {
       setPendingPermissions(j.pending_permission_requests ?? [])
     }
     throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the gateway — check Coolify logs for the claude-gateway service.`)
+  }
+
+  /**
+   * Stream `/api/platform-chat/stream` via SSE. Mirrors the parser in
+   * `lib/claw/gateway-call.ts` L103-149: double-newline frame, eventName
+   * / dataLine split, JSON.parse each `data:` line. Updates `partial` on
+   * each `delta` event so the streaming bubble grows in real time.
+   *
+   * Returns a result with `continueWithPoll: true` whenever the stream
+   * couldn't deliver a complete reply (Vercel maxDuration, recoverable
+   * gateway error, network drop). Caller transparently falls back to
+   * `pollUntilDone(jobId, sessionId)` using the same jobId — the gateway
+   * job continues server-side regardless of what happens to the stream.
+   */
+  async function streamUntilDone(
+    jobId: string,
+    sessionId: string,
+  ): Promise<StreamOrPollResult> {
+    const start = Date.now()
+    const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
+    const ac  = new AbortController()
+    // Watcher: if the operator clicks Cancel mid-stream, abort the reader.
+    // The gateway job continues server-side — same semantics as poll cancel.
+    const cancelWatch = setInterval(() => { if (cancelRef.current) ac.abort() }, 200)
+    // Outer timeout — purely defensive; the server's own maxDuration
+    // guard emits `continue` long before this fires.
+    const timeoutTimer = setTimeout(() => ac.abort(), STREAM_TIMEOUT_MS)
+
+    let res: Response
+    try {
+      res = await fetch(`/api/platform-chat/stream?${qs}`, {
+        cache:   'no-store',
+        headers: { 'Accept': 'text/event-stream' },
+        signal:  ac.signal,
+      })
+    } catch {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      if (cancelRef.current) return { text: '', durationMs: Date.now() - start, cancelled: true }
+      // Network failure / abort before headers — fall back to poll.
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    }
+
+    if (res.status === 401) {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      const here = window.location.pathname + window.location.search
+      window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+      throw new Error('session expired during stream')
+    }
+    if (!res.ok || !res.body) {
+      // 503 streaming_disabled, 404 not_found, 400 invalid — fall back.
+      // Logged at the call site so the operator sees the reason in console.
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      console.warn(`[platform-chat] stream returned ${res.status} — falling back to poll`)
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    }
+
+    const reader  = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer    = ''
+    let final: StreamOrPollResult | null = null
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (cancelRef.current) {
+          await reader.cancel().catch(() => { /* already done */ })
+          return { text: '', durationMs: Date.now() - start, cancelled: true }
+        }
+        buffer += decoder.decode(value, { stream: true })
+
+        let idx: number
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          // Skip comments (start with `:`) — used for keep-alive heartbeats.
+          if (block.startsWith(':')) continue
+
+          let eventName = 'message'
+          let dataLine  = ''
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim()
+            else if (line.startsWith('data:')) dataLine += line.slice(5).trim()
+          }
+          if (!dataLine) continue
+          let parsed: Record<string, unknown> = {}
+          try { parsed = JSON.parse(dataLine) } catch { continue }
+
+          if (eventName === 'delta' && typeof parsed.text === 'string') {
+            const chunk = parsed.text
+            setPartial(prev => prev + chunk)
+          } else if (eventName === 'done') {
+            final = {
+              text:                 typeof parsed.text === 'string' ? parsed.text : '',
+              durationMs:           typeof parsed.durationMs === 'number' ? parsed.durationMs : Date.now() - start,
+              approval_requests:    Array.isArray(parsed.approval_requests)    ? parsed.approval_requests    as ApprovalRequest[]    : undefined,
+              tool_calls:           Array.isArray(parsed.tool_calls)           ? parsed.tool_calls           as ToolCall[]           : undefined,
+              edit_plans:           Array.isArray(parsed.edit_plans)           ? parsed.edit_plans           as EditPlan[]           : undefined,
+              edit_group_completes: Array.isArray(parsed.edit_group_completes) ? parsed.edit_group_completes as EditGroupComplete[] : undefined,
+              crashed:              parsed.crashed as CrashedInfo | undefined,
+            }
+            // Surface any pending permission requests one final time —
+            // matches the poll path's behaviour.
+            const perms = Array.isArray(parsed.pending_permission_requests) ? parsed.pending_permission_requests as PermissionRequest[] : []
+            setPendingPermissions(perms)
+            break
+          } else if (eventName === 'continue') {
+            // Vercel function approaching maxDuration — fall back to poll.
+            return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+          } else if (eventName === 'error') {
+            // Typed code on the error event tells us whether the gateway
+            // job is still alive (gateway_error / mid_stream → still
+            // running → poll fallback) or whether the route refused
+            // (streaming_disabled / not_found → poll fallback too — same
+            // behaviour, but logged so operator sees why).
+            const code = typeof parsed.code === 'string' ? parsed.code : 'gateway_error'
+            const msg  = typeof parsed.message === 'string' ? parsed.message : 'stream error'
+            console.warn(`[platform-chat] stream error code=${code} message=${msg} — falling back to poll`)
+            return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+          }
+        }
+        if (final) break
+      }
+    } catch (err) {
+      if (cancelRef.current) return { text: '', durationMs: Date.now() - start, cancelled: true }
+      console.warn('[platform-chat] stream reader threw — falling back to poll:', err)
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    } finally {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+    }
+
+    return final ?? { text: '', durationMs: Date.now() - start, continueWithPoll: true }
   }
 
   // Permission-broker handlers — POST to the decide route which flips the
@@ -638,7 +807,11 @@ export default function PlatformChat() {
         </div>
         <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
           <TerminalIcon size={11} />
-          <span className="flex-1 min-w-0 truncate">Async polling + persistent sessions + approval cards. SSE streaming is still deferred.</span>
+          <span className="flex-1 min-w-0 truncate">
+            {process.env.NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED === '1'
+              ? 'SSE streaming + persistent sessions + approval cards. Falls back to async poll if the stream drops.'
+              : 'Async polling + persistent sessions + approval cards. SSE streaming is wired but disabled — flip NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED=1 to enable.'}
+          </span>
           {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
           <ContextIndicator usage={usage} />
         </div>

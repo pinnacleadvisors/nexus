@@ -28,16 +28,15 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
-import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
-import { parseIterationPlans } from '@/lib/chat/iteration-plan'
-import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
-import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { listPendingForJob, type PermissionRequestRow } from '@/lib/chat/permission-requests'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
-import { createTask } from '@/lib/views/tasks'
-import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
-import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
 import { parseCrash } from '@/lib/chat/crash'
+import {
+  parseTurnBlocks,
+  persistCompletedTurn,
+  recordCompletedTurnAccounting,
+  type ParsedTurnBlocks,
+} from '@/lib/chat/persist-completed-turn'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15   // Single GET to gateway, default poll budget is small.
@@ -105,13 +104,12 @@ export async function GET(req: NextRequest) {
   // Phase 4 — when the job lands `done` and the caller passes sessionId,
   // persist the assistant reply (with parsed approvals as metadata) so
   // the conversation is durable across page reloads.
+  // Extracted into lib/chat/persist-completed-turn.ts so the new SSE
+  // bridge at /api/platform-chat/stream uses the same logic.
   let displayText        = result.text ?? ''
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
-  // Edit-plan + group-complete arrays surface in the poll response so the
-  // client can render EditPlanCards inline. Populated inside the
-  // status==='done' branch; default to empty so the response shape is stable.
-  let editPlans          = [] as ReturnType<typeof parseEditPlanBlocks>['plans']
-  let editGroupCompletes = [] as ReturnType<typeof parseEditPlanBlocks>['group_completes']
+  let editPlans          = [] as ParsedTurnBlocks['edit_plans']
+  let editGroupCompletes = [] as ParsedTurnBlocks['edit_group_completes']
 
   // Crash detection — covers two failure shapes:
   //   1. status='error' with jobError set (CLI exited with code != 0)
@@ -126,124 +124,42 @@ export async function GET(req: NextRequest) {
   const isCrashed = !!crash
 
   if (result.status === 'done' && result.text) {
-    const parsed = parseAssistantMessage(result.text)
-    displayText      = parsed.text
-    approvalRequests = parsed.approval_requests
+    const sessionIdParam = new URL(req.url).searchParams.get('sessionId')?.trim()
+    const sessionIdValid = sessionIdParam && /^[0-9a-f-]{36}$/i.test(sessionIdParam) ? sessionIdParam : null
+    const owned          = sessionIdValid ? await getSession(userId, sessionIdValid) : null
 
-    // Phase 9 — extract any `manual-task` fenced blocks the agent emitted
-    // and insert them into operator_tasks. Strip the blocks from displayText
-    // so they don't render raw to the operator (the Tasks panel shows them).
-    const taskParse = parseManualTaskBlocks(displayText)
-    displayText = taskParse.text
-
-    // Bug-hunt loop (PR-1) — extract iteration-plan + bug-hunt-finding blocks.
-    // iteration-plan blocks: the inner ApprovalRequest is added to the
-    //   approval_requests array so the existing ApprovalCard UI renders it
-    //   (extra context — iteration number, intent — appears in metadata).
-    // bug-hunt-finding blocks: each becomes a row in bug_hunt_findings, but
-    //   ONLY when the session_id maps to an active session owned by the user
-    //   (server-side override defeats prompt-injection cross-session writes).
-    const iterParse    = parseIterationPlans(displayText)
-    displayText        = iterParse.text
-    const findingParse = parseBugHuntFindings(displayText)
-    displayText        = findingParse.text
-    // Edit-plan blocks — the agent proposes chunked multi-turn edits here.
-    // The EditPlanCard renders these as approval cards with file-level
-    // granularity; the enqueue-side resume hint reads them on subsequent
-    // turns to re-anchor the agent on the next un-completed group.
-    const editPlanParse = parseEditPlanBlocks(displayText)
-    displayText         = editPlanParse.text
-    editPlans           = editPlanParse.plans
-    editGroupCompletes  = editPlanParse.group_completes
-    // The agent's iteration-plan items render as ApprovalCards via the normal
-    // protocol. Append the inner approval requests so the chat surfaces them.
-    for (const p of iterParse.plans) approvalRequests = [...approvalRequests, p.approval]
-
-    const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
-    if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
-      const owned = await getSession(session.userId, sessionId)
-      if (owned) {
-        for (const t of taskParse.tasks) {
-          await createTask({
-            userId:           session.userId,
-            scope:            'admin',        // platform-chat = admin scope
-            title:            t.title,
-            description:      t.description ?? null,
-            dueAt:            t.due_at ?? null,
-            source:           'agent',
-            sourceSessionId:  sessionId,
-          })
-        }
-        // Insert findings — but only for sessions owned by the user. The
-        // session_id in the block is trusted ONLY after we verify ownership.
-        const ownedBugHuntSessions = new Map<string, boolean>()
-        async function ownsBugHunt(bhId: string): Promise<boolean> {
-          if (ownedBugHuntSessions.has(bhId)) return ownedBugHuntSessions.get(bhId)!
-          const row = await getBugHuntSession(userId, bhId)
-          const ok = !!row
-          ownedBugHuntSessions.set(bhId, ok)
-          return ok
-        }
-        for (const f of findingParse.findings) {
-          if (!(await ownsBugHunt(f.session_id))) continue
-          await insertFinding({
-            sessionId:  f.session_id,
-            iteration:  f.iteration,
-            severity:   f.severity,
-            category:   f.category,
-            title:      f.title,
-            detail:     f.detail ?? null,
-            sourcePath: f.source_path ?? null,
-          })
-        }
-        // Bump iteration counters for any iteration-plan blocks that target
-        // a session this user owns — the operator's approval implicitly
-        // marks "iteration N is now live".
-        const bumpedSessions = new Set<string>()
-        for (const p of iterParse.plans) {
-          if (bumpedSessions.has(p.session_id)) continue
-          if (!(await ownsBugHunt(p.session_id))) continue
-          await bumpIteration(userId, p.session_id)
-          bumpedSessions.add(p.session_id)
-        }
-        await appendMessage({
-          sessionId,
-          role:    'assistant',
-          content: displayText,
-          metadata: {
-            durationMs:        result.durationMs,
-            jobId,
-            approval_requests: approvalRequests,
-            tool_calls:        result.toolCalls,    // Phase 2b — persisted with the message
-            manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
-            iteration_plans:   iterParse.plans.length > 0 ? iterParse.plans : undefined,
-            findings_inserted: findingParse.findings.length || undefined,
-            edit_plans:        editPlanParse.plans.length > 0 ? editPlanParse.plans : undefined,
-            edit_group_completes: editPlanParse.group_completes.length > 0 ? editPlanParse.group_completes : undefined,
-            // Crash flag survives page reload — the system-prompt builder
-            // reads this on the next turn to inject the "previous turn
-            // crashed" hint into the dispatch.
-            crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
-          },
-        })
-      }
+    if (owned && sessionIdValid) {
+      // Happy path — full parse + persist + accounting in one helper call.
+      const persisted = await persistCompletedTurn({
+        userId,
+        sessionId:   sessionIdValid,
+        jobId,
+        gatewayText: result.text,
+        toolCalls:   result.toolCalls,
+        durationMs:  result.durationMs,
+        crashed:     crash,
+      })
+      displayText        = persisted.displayText
+      approvalRequests   = persisted.approval_requests
+      editPlans          = persisted.edit_plans
+      editGroupCompletes = persisted.edit_group_completes
+    } else {
+      // Defensive — sessionId missing or unowned. Still parse for the
+      // response shape and still record accounting (spend was committed
+      // at enqueue time regardless of who reads the result), but skip
+      // the persistence + side-effects path.
+      const parsed = parseTurnBlocks(result.text)
+      displayText        = parsed.displayText
+      approvalRequests   = parsed.approval_requests
+      editPlans          = parsed.edit_plans
+      editGroupCompletes = parsed.edit_group_completes
+      recordCompletedTurnAccounting({
+        userId,
+        parsed,
+        durationMs:     result.durationMs ?? null,
+        toolCallsCount: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+      })
     }
-
-    // (handled inside the done-branch)
-    // Record the gateway turn for plan-window accounting. Fire-and-forget.
-    // Use the most-relevant bug-hunt session_id (first one referenced in
-    // the assistant message) so the session-slice math attributes correctly.
-    const huntTag = iterParse.plans[0]?.session_id ?? findingParse.findings[0]?.session_id
-    const sessionTag = huntTag ? `bug-hunt-${huntTag}-iter` : 'platform-chat'
-    const toolCallsCount = Array.isArray(result.toolCalls) ? result.toolCalls.length : 0
-    void insertGatewayTurn({
-      userId:         session.userId,
-      plan:           'claude-max',
-      model:          'opus',          // platform-copilot defaults to opus
-      sessionTag,
-      durationMs:     result.durationMs ?? null,
-      toolCallsCount,
-    })
   }
 
   // If the job ended with status='error' (gateway CLI died without
