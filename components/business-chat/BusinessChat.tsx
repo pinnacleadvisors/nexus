@@ -101,6 +101,28 @@ interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
+/** Stream-side hard cap. Slightly tighter than the server's MAX_DURATION_GUARD_MS
+ *  so the client gives up first and the server's `continue` event has time to
+ *  flush before the connection is torn down. */
+const STREAM_TIMEOUT_MS = 295_000
+
+/**
+ * Unified shape `pollUntilDone` and `streamUntilDone` both return. The
+ * `cancelled` flag means the operator clicked Cancel; `continueWithPoll`
+ * means the stream couldn't complete (Vercel timeout or recoverable error)
+ * and the caller should fall through to `pollUntilDone(jobId, sessionId)`.
+ */
+interface StreamOrPollResult {
+  text:                   string
+  durationMs:             number
+  approval_requests?:     ApprovalRequest[]
+  tool_calls?:            ToolCall[]
+  crashed?:               CrashedInfo
+  edit_plans?:            EditPlan[]
+  edit_group_completes?:  EditGroupComplete[]
+  cancelled?:             boolean
+  continueWithPoll?:      boolean
+}
 
 interface Props {
   slug: string
@@ -322,7 +344,25 @@ export default function BusinessChat({ slug, name }: Props) {
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
       if (enq.usage) setUsage(enq.usage)
 
-      const finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      // Stream the reply (SSE) when enabled, else fall back to poll. The
+      // SSE bridge inner-polls the gateway at 250ms (vs 2.5s poll) and
+      // pushes text deltas as they arrive. On Vercel function timeout or
+      // any mid-stream error, streamUntilDone returns continueWithPoll=true
+      // so we transparently pick up via the existing poll path with the
+      // same jobId — the gateway job is unaffected.
+      let finalResult: StreamOrPollResult
+      const streamEnabled = process.env.NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED === '1'
+      if (streamEnabled) {
+        const streamed = await streamUntilDone(enq.jobId, enq.sessionId)
+                                .catch(err => { console.warn(`[business-chat:${slug}] stream failed, falling back to poll:`, err); return null })
+        if (streamed && !streamed.continueWithPoll) {
+          finalResult = streamed
+        } else {
+          finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+        }
+      } else {
+        finalResult = await pollUntilDone(enq.jobId, enq.sessionId)
+      }
       if (finalResult.cancelled) {
         setMessages(prev => [...prev, {
           role:    'assistant',
@@ -350,7 +390,7 @@ export default function BusinessChat({ slug, name }: Props) {
     }
   }
 
-  async function pollUntilDone(jobId: string, sessionId: string): Promise<{ text: string; durationMs: number; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; cancelled?: boolean }> {
+  async function pollUntilDone(jobId: string, sessionId: string): Promise<StreamOrPollResult> {
     const start = Date.now()
     const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
     while (Date.now() - start < POLL_TIMEOUT_MS) {
@@ -400,6 +440,121 @@ export default function BusinessChat({ slug, name }: Props) {
       setPendingPermissions(j.pending_permission_requests ?? [])
     }
     throw new Error(`timed out waiting for response (>${Math.round(POLL_TIMEOUT_MS / 60_000)} min). The agent may still be running on the business gateway — check Coolify logs.`)
+  }
+
+  /**
+   * Stream `/api/businesses/[slug]/chat/stream` via SSE — mirror of the
+   * platform-chat stream client. Same wire format (ready / delta /
+   * heartbeat / done / continue / error). Returns continueWithPoll=true
+   * on any recoverable failure so the caller can transparently fall
+   * back to pollUntilDone(jobId, sessionId) using the same jobId.
+   * See components/platform-chat/PlatformChat.tsx for design notes.
+   */
+  async function streamUntilDone(
+    jobId: string,
+    sessionId: string,
+  ): Promise<StreamOrPollResult> {
+    const start = Date.now()
+    const qs = `jobId=${encodeURIComponent(jobId)}&sessionId=${encodeURIComponent(sessionId)}`
+    const ac  = new AbortController()
+    // Cancel watcher — operator's Cancel button aborts the reader.
+    // The gateway job continues server-side; client falls back to poll
+    // if it ever needs to re-attach.
+    const cancelWatch = setInterval(() => { if (cancelRef.current) ac.abort() }, 200)
+    const timeoutTimer = setTimeout(() => ac.abort(), STREAM_TIMEOUT_MS)
+
+    let res: Response
+    try {
+      res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/stream?${qs}`, {
+        cache:   'no-store',
+        headers: { 'Accept': 'text/event-stream' },
+        signal:  ac.signal,
+      })
+    } catch {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      if (cancelRef.current) return { text: '', durationMs: Date.now() - start, cancelled: true }
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    }
+
+    if (res.status === 401) {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      const here = window.location.pathname + window.location.search
+      window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
+      throw new Error('session expired during stream')
+    }
+    if (!res.ok || !res.body) {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+      console.warn(`[business-chat:${slug}] stream returned ${res.status} — falling back to poll`)
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    }
+
+    const reader  = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer    = ''
+    let final: StreamOrPollResult | null = null
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (cancelRef.current) {
+          await reader.cancel().catch(() => { /* already done */ })
+          return { text: '', durationMs: Date.now() - start, cancelled: true }
+        }
+        buffer += decoder.decode(value, { stream: true })
+
+        let idx: number
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          if (block.startsWith(':')) continue   // SSE comment — heartbeat
+
+          let eventName = 'message'
+          let dataLine  = ''
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim()
+            else if (line.startsWith('data:')) dataLine += line.slice(5).trim()
+          }
+          if (!dataLine) continue
+          let parsed: Record<string, unknown> = {}
+          try { parsed = JSON.parse(dataLine) } catch { continue }
+
+          if (eventName === 'delta' && typeof parsed.text === 'string') {
+            const chunk = parsed.text
+            setPartial(prev => prev + chunk)
+          } else if (eventName === 'done') {
+            final = {
+              text:                 typeof parsed.text === 'string' ? parsed.text : '',
+              durationMs:           typeof parsed.durationMs === 'number' ? parsed.durationMs : Date.now() - start,
+              approval_requests:    Array.isArray(parsed.approval_requests)    ? parsed.approval_requests    as ApprovalRequest[]    : undefined,
+              tool_calls:           Array.isArray(parsed.tool_calls)           ? parsed.tool_calls           as ToolCall[]           : undefined,
+              edit_plans:           Array.isArray(parsed.edit_plans)           ? parsed.edit_plans           as EditPlan[]           : undefined,
+              edit_group_completes: Array.isArray(parsed.edit_group_completes) ? parsed.edit_group_completes as EditGroupComplete[] : undefined,
+              crashed:              parsed.crashed as CrashedInfo | undefined,
+            }
+            const perms = Array.isArray(parsed.pending_permission_requests) ? parsed.pending_permission_requests as PermissionRequest[] : []
+            setPendingPermissions(perms)
+            break
+          } else if (eventName === 'continue') {
+            return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+          } else if (eventName === 'error') {
+            const code = typeof parsed.code === 'string' ? parsed.code : 'gateway_error'
+            const msg  = typeof parsed.message === 'string' ? parsed.message : 'stream error'
+            console.warn(`[business-chat:${slug}] stream error code=${code} message=${msg} — falling back to poll`)
+            return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+          }
+        }
+        if (final) break
+      }
+    } catch (err) {
+      if (cancelRef.current) return { text: '', durationMs: Date.now() - start, cancelled: true }
+      console.warn(`[business-chat:${slug}] stream reader threw — falling back to poll:`, err)
+      return { text: '', durationMs: Date.now() - start, continueWithPoll: true }
+    } finally {
+      clearInterval(cancelWatch); clearTimeout(timeoutTimer)
+    }
+
+    return final ?? { text: '', durationMs: Date.now() - start, continueWithPoll: true }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -522,7 +677,12 @@ export default function BusinessChat({ slug, name }: Props) {
           </div>
           <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
             <TerminalIcon size={11} />
-            <span className="flex-1 min-w-0 truncate">Scoped to <span className="font-mono">business:{slug}</span> — per-business + Shared fallback.</span>
+            <span className="flex-1 min-w-0 truncate">
+              Scoped to <span className="font-mono">business:{slug}</span> — per-business + Shared fallback.
+              {process.env.NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED === '1'
+                ? ' SSE streaming on; falls back to poll if the stream drops.'
+                : ' Async polling — flip NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED=1 to enable streaming.'}
+            </span>
             {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
             <ContextIndicator usage={usage} />
           </div>

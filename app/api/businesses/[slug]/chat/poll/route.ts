@@ -14,12 +14,15 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { parseAssistantMessage } from '@/lib/chat/approval'
-import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
-import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { listPendingForJob, type PermissionRequestRow } from '@/lib/chat/permission-requests'
 import { appendMessage, getSession } from '@/lib/chat/sessions'
-import { createTask } from '@/lib/views/tasks'
 import { parseCrash } from '@/lib/chat/crash'
+import {
+  parseTurnBlocks,
+  persistCompletedTurn,
+  recordCompletedTurnAccounting,
+  type ParsedTurnBlocks,
+} from '@/lib/chat/persist-completed-turn'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15
@@ -62,8 +65,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
 
   let displayText        = result.text ?? ''
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
-  let editPlans          = [] as ReturnType<typeof parseEditPlanBlocks>['plans']
-  let editGroupCompletes = [] as ReturnType<typeof parseEditPlanBlocks>['group_completes']
+  let editPlans          = [] as ParsedTurnBlocks['edit_plans']
+  let editGroupCompletes = [] as ParsedTurnBlocks['edit_group_completes']
 
   // Crash detection — see app/api/platform-chat/poll/route.ts for design notes.
   const crashedRaw = result.jobError || (result.status === 'error' ? result.error : undefined)
@@ -71,51 +74,47 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   const isCrashed = !!crash
 
   if (result.status === 'done' && result.text) {
-    const parsed = parseAssistantMessage(result.text)
-    displayText      = parsed.text
-    approvalRequests = parsed.approval_requests
+    const sessionIdParam = new URL(req.url).searchParams.get('sessionId')?.trim()
+    const sessionIdValid = sessionIdParam && /^[0-9a-f-]{36}$/i.test(sessionIdParam) ? sessionIdParam : null
+    // Defence-in-depth — the session must belong to THIS business, not
+    // just to the user. A malicious sessionId from another scope (admin
+    // or a different business) would otherwise persist under the wrong row.
+    const owned = sessionIdValid ? await getSession(session.userId, sessionIdValid) : null
+    const scopeMatches = owned?.scope === `business:${slug}`
 
-    // Phase 9 — extract `manual-task` blocks. Scope is overwritten to the
-    // session's scope so a malicious response can't write to other scopes.
-    const taskParse = parseManualTaskBlocks(displayText)
-    displayText = taskParse.text
-    // Multi-turn edit plans — mirror of platform-chat poll.
-    const editPlanParse = parseEditPlanBlocks(displayText)
-    displayText         = editPlanParse.text
-    editPlans           = editPlanParse.plans
-    editGroupCompletes  = editPlanParse.group_completes
-
-    const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim()
-    if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
-      const owned = await getSession(session.userId, sessionId)
-      if (owned && owned.scope === `business:${slug}`) {
-        for (const t of taskParse.tasks) {
-          await createTask({
-            userId:          session.userId,
-            scope:           `business:${slug}`,
-            title:           t.title,
-            description:     t.description ?? null,
-            dueAt:           t.due_at ?? null,
-            source:          'agent',
-            sourceSessionId: sessionId,
-          })
-        }
-        await appendMessage({
-          sessionId,
-          role:    'assistant',
-          content: displayText,
-          metadata: {
-            durationMs:        result.durationMs,
-            jobId,
-            approval_requests: approvalRequests,
-            tool_calls:        result.toolCalls,
-            manual_tasks:      taskParse.tasks.length > 0 ? taskParse.tasks : undefined,
-            edit_plans:           editPlans.length > 0 ? editPlans : undefined,
-            edit_group_completes: editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
-            crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
-          },
-        })
-      }
+    if (owned && scopeMatches && sessionIdValid) {
+      const persisted = await persistCompletedTurn({
+        userId:             session.userId,
+        sessionId:          sessionIdValid,
+        jobId,
+        gatewayText:        result.text,
+        toolCalls:          result.toolCalls,
+        durationMs:         result.durationMs,
+        crashed:            crash,
+        taskScope:          `business:${slug}`,
+        sessionTagFallback: `business-chat-${slug}`,
+      })
+      displayText        = persisted.displayText
+      approvalRequests   = persisted.approval_requests
+      editPlans          = persisted.edit_plans
+      editGroupCompletes = persisted.edit_group_completes
+    } else {
+      // Defensive — sessionId missing, unowned, or cross-scope. Still
+      // parse for the response shape and still record accounting (the
+      // spend was committed at enqueue time regardless of who reads the
+      // result), but skip the persistence + side-effects path.
+      const parsed = parseTurnBlocks(result.text)
+      displayText        = parsed.displayText
+      approvalRequests   = parsed.approval_requests
+      editPlans          = parsed.edit_plans
+      editGroupCompletes = parsed.edit_group_completes
+      recordCompletedTurnAccounting({
+        userId:             session.userId,
+        parsed,
+        durationMs:         result.durationMs ?? null,
+        toolCallsCount:     Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+        sessionTagFallback: `business-chat-${slug}`,
+      })
     }
   }
 

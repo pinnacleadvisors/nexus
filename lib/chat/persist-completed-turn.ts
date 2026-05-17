@@ -98,6 +98,16 @@ export interface PersistCompletedTurnInput {
   /** Already-fetched pending permission requests for this jobId. Surfaced
    *  in the response only — not persisted (they live in their own table). */
   pendingPermissions?:  PermissionRequestRow[]
+  /** Scope tag stored on operator_tasks rows that this turn emits via
+   *  `manual-task` blocks. Defaults to `'admin'` for backward compat with
+   *  the original platform-chat extraction. Business-chat passes
+   *  `business:<slug>` so the Tasks panel for the right scope surfaces them. */
+  taskScope?:           string
+  /** Fallback sessionTag for plan-window accounting when the turn does NOT
+   *  reference a bug-hunt session_id. Defaults to `'platform-chat'`.
+   *  Business-chat passes `business-chat-<slug>` so per-business spend
+   *  attribution stays correct. */
+  sessionTagFallback?:  string
 }
 
 export interface PersistCompletedTurnOutput extends ParsedTurnBlocks {
@@ -117,13 +127,15 @@ export async function persistCompletedTurn(
   input: PersistCompletedTurnInput,
 ): Promise<PersistCompletedTurnOutput> {
   const parsed = parseTurnBlocks(input.gatewayText)
+  const taskScope = input.taskScope ?? 'admin'
 
   // Stage 1 — manual tasks. The session is already verified owned by the
-  // caller; insert under admin scope (platform-chat) with the back-link.
+  // caller; insert under the caller-specified scope (admin for platform
+  // chat, `business:<slug>` for business chat) with the back-link.
   for (const t of parsed.manual_tasks) {
     await createTask({
       userId:           input.userId,
-      scope:            'admin',
+      scope:            taskScope,
       title:            t.title,
       description:      t.description ?? null,
       dueAt:            t.due_at ?? null,
@@ -199,12 +211,14 @@ export async function persistCompletedTurn(
 
   // Stage 4 — gateway-turn accounting (fire-and-forget; never throws into
   // the response path). Tag by bug-hunt session id when one is referenced
-  // this turn so plan-window math attributes correctly.
+  // this turn so plan-window math attributes correctly; otherwise use the
+  // caller-supplied fallback so per-business spend attribution stays clean.
   recordCompletedTurnAccounting({
-    userId:           input.userId,
+    userId:             input.userId,
     parsed,
-    durationMs:       input.durationMs ?? null,
-    toolCallsCount:   Array.isArray(input.toolCalls) ? input.toolCalls.length : 0,
+    durationMs:         input.durationMs ?? null,
+    toolCallsCount:     Array.isArray(input.toolCalls) ? input.toolCalls.length : 0,
+    sessionTagFallback: input.sessionTagFallback ?? 'platform-chat',
   })
 
   return {
@@ -225,14 +239,20 @@ export async function persistCompletedTurn(
  * spend was committed at enqueue time regardless of who reads the result).
  */
 export function recordCompletedTurnAccounting(args: {
-  userId:         string
-  parsed:         Pick<ParsedTurnBlocks, 'iteration_plans' | 'findings'>
-  durationMs:     number | null
-  toolCallsCount: number
+  userId:             string
+  parsed:             Pick<ParsedTurnBlocks, 'iteration_plans' | 'findings'>
+  durationMs:         number | null
+  toolCallsCount:     number
+  /** Used when no bug-hunt session is referenced this turn. Defaults to
+   *  `'platform-chat'` for backward compat. Business chat passes
+   *  `business-chat-<slug>`. */
+  sessionTagFallback?: string
 }): void {
   const huntTag = args.parsed.iteration_plans[0]?.session_id
               ?? args.parsed.findings[0]?.session_id
-  const sessionTag = huntTag ? `bug-hunt-${huntTag}-iter` : 'platform-chat'
+  const sessionTag = huntTag
+    ? `bug-hunt-${huntTag}-iter`
+    : (args.sessionTagFallback ?? 'platform-chat')
   void insertGatewayTurn({
     userId:         args.userId,
     plan:           'claude-max',
