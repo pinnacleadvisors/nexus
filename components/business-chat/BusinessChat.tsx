@@ -27,6 +27,7 @@ import ContextIndicator, { type ContextUsageView } from '@/components/platform-c
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
+import McpStatusStrip from '@/components/chat/McpStatusStrip'
 import { pickPendingAction } from '@/lib/chat/action-bar'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
@@ -420,19 +421,24 @@ export default function BusinessChat({ slug, name }: Props) {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
-            <Briefcase size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
-            <span style={{ color: '#e8e8f0' }}>{name} copilot</span>
-            <span style={{ color: '#55556a' }}>—</span>
-            <span className="truncate" style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
+        <div className="px-4 py-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
+              <Briefcase size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
+              <span style={{ color: '#e8e8f0' }}>{name} copilot</span>
+              <span style={{ color: '#55556a' }}>—</span>
+              <span className="truncate" style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
+            </div>
+            <ViewsDropdown
+              scope={viewScope}
+              activeView={activeView}
+              onOpen={setActiveView}
+              badges={{ tasks: tasksBadge, approvals: approvalsBadge }}
+            />
           </div>
-          <ViewsDropdown
-            scope={viewScope}
-            activeView={activeView}
-            onOpen={setActiveView}
-            badges={{ tasks: tasksBadge, approvals: approvalsBadge }}
-          />
+          {/* MCP awareness strip (audit 2026-05-16 §6.6) — shows what's
+              powering this chat before the operator types. */}
+          <McpStatusStrip scope={`business:${slug}`} />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">

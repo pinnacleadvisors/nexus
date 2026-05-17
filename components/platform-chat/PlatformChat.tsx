@@ -21,6 +21,7 @@ import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from './EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from './PermissionPromptCard'
 import FloatingActionBar from './FloatingActionBar'
+import McpStatusStrip from '@/components/chat/McpStatusStrip'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
 import { pickPendingAction } from '@/lib/chat/action-bar'
@@ -504,21 +505,26 @@ export default function PlatformChat() {
       {/* Chat column (right of sidebar) */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header strip — explains scope + Views dropdown on the right */}
-        <div className="px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-          <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
-            <Sparkles size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
-            <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
-            <span style={{ color: '#55556a' }}>—</span>
-            <span className="truncate" style={{ color: '#9090b0' }}>
-              scoped to Nexus itself, uses admin-scope connections (Vercel, GitHub, Slack, Stripe, …) via the hard-isolation MCP
-            </span>
+        <div className="px-4 py-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
+              <Sparkles size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
+              <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
+              <span style={{ color: '#55556a' }}>—</span>
+              <span className="truncate" style={{ color: '#9090b0' }}>
+                scoped to Nexus itself, uses admin-scope connections (Vercel, GitHub, Slack, Stripe, …) via the hard-isolation MCP
+              </span>
+            </div>
+            <ViewsDropdown
+              scope="admin"
+              activeView={activeView}
+              onOpen={setActiveView}
+              badges={{ tasks: tasksBadge, approvals: approvalsBadge, 'bug-hunt': bugHuntBadge }}
+            />
           </div>
-          <ViewsDropdown
-            scope="admin"
-            activeView={activeView}
-            onOpen={setActiveView}
-            badges={{ tasks: tasksBadge, approvals: approvalsBadge, 'bug-hunt': bugHuntBadge }}
-          />
+          {/* MCP awareness strip (audit 2026-05-16 §6.6) — shows what's
+              powering this chat before the operator types. */}
+          <McpStatusStrip scope="platform" />
         </div>
 
         {/* Message list */}
