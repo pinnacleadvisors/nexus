@@ -11,6 +11,7 @@ import ActiveRunsPanel from '@/components/dashboard/ActiveRunsPanel'
 import PendingReviewsPanel from '@/components/dashboard/PendingReviewsPanel'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import FleetOverview from '@/components/dashboard/FleetOverview'
+import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -206,6 +207,9 @@ export default function DashboardPage() {
 
       {/* ── Fleet overview: per-business CEO glance (audit 2026-05-16 §7.1) */}
       <FleetOverview />
+
+      {/* ── Cross-business approval inbox (audit 2026-05-16 §7.2 + §8.11) */}
+      <FleetApprovalInbox />
 
       {/* ── Mission Control row: runs + reviews + spend ────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
