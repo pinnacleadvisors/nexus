@@ -17,24 +17,16 @@
  * highlighted, so navigation stays consistent in both directions.
  */
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Settings as SettingsIcon, ExternalLink } from 'lucide-react'
 import AlertsPanel from '@/components/dashboard/AlertsPanel'
-import GatewayStatusPill from '@/components/dashboard/GatewayStatusPill'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import SettingsTabs, { type SettingsTabId } from '@/components/settings/SettingsTabs'
+import AiProviderList from '@/components/settings/AiProviderList'
 
-type ContentTabId = Exclude<SettingsTabId, 'businesses'>
-
-interface GatewayStatus {
-  provider:       'gateway' | 'openclaw' | 'api' | 'none'
-  gatewayUrl?:    string
-  gatewayHealthy: boolean
-  loggedIn?:      boolean
-  queueDepth?:    number
-}
+type ContentTabId = Exclude<SettingsTabId, 'businesses' | 'accounts' | 'agents'>
 
 function resolveTab(value: string | null): ContentTabId {
   if (value === 'alerts' || value === 'access') return value
@@ -57,16 +49,29 @@ function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <div className="p-6 min-h-full" style={{ backgroundColor: '#050508' }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6 flex items-center gap-3">
-          <SettingsIcon size={22} style={{ color: '#6c63ff' }} />
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: '#e8e8f0' }}>
-              Settings
-            </h1>
-            <p className="text-sm mt-0.5" style={{ color: '#9090b0' }}>
-              Platform-level config. For development tasks, head to <Link href="/manage-platform" className="underline" style={{ color: '#6c63ff' }}>the dev console</Link>.
+    <div
+      className="p-6 min-h-full"
+      style={{
+        backgroundColor: '#050508',
+        backgroundImage:
+          'radial-gradient(1200px 600px at 10% -10%, rgba(108,99,255,0.10), transparent 60%), ' +
+          'radial-gradient(900px 500px at 100% 100%, rgba(108,99,255,0.06), transparent 60%)',
+      }}
+    >
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-5 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+            style={{
+              background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+              border:     '1px solid rgba(108,99,255,0.20)',
+              boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+            }}>
+            <SettingsIcon size={18} style={{ color: '#a8a3ff' }} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold" style={{ color: '#e8e8f0' }}>Settings</h1>
+            <p className="text-sm mt-1 max-w-2xl" style={{ color: '#9090b0' }}>
+              Platform config. Dev tasks live in <Link href="/manage-platform" className="underline" style={{ color: '#a8a3ff' }}>the dev console</Link>.
             </p>
           </div>
         </div>
@@ -80,62 +85,16 @@ export default function SettingsPage() {
 }
 
 function AiTab() {
-  const [status, setStatus] = useState<GatewayStatus | null>(null)
-  useEffect(() => {
-    void fetch('/api/gateway-status').then(r => r.ok ? r.json() : null).then(setStatus).catch(() => {})
-  }, [])
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold mb-2" style={{ color: '#e8e8f0' }}>
-          Provider chain
-        </h2>
-        <p className="text-xs mb-3" style={{ color: '#9090b0' }}>
-          Resolution order: Claude Code gateway → OpenClaw → ANTHROPIC_API_KEY. The pill below shows which one is active right now.
-        </p>
-        <GatewayStatusPill />
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold mb-2" style={{ color: '#e8e8f0' }}>
-          Today&apos;s spend
+        <h2 className="text-[10px] font-mono uppercase tracking-[0.18em] mb-2.5 flex items-center gap-2" style={{ color: '#9090b0' }}>
+          <span>Today&apos;s spend</span>
+          <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
         </h2>
         <TodaySpendWidget />
       </div>
-
-      <div
-        className="p-4 rounded-xl border"
-        style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
-      >
-        <h2 className="text-sm font-semibold mb-2" style={{ color: '#e8e8f0' }}>
-          Configure
-        </h2>
-        <ul className="space-y-2 text-sm" style={{ color: '#c0c0d0' }}>
-          <li className="flex items-center gap-2">
-            <span style={{ color: '#55556a' }}>•</span>
-            <span>OpenClaw config: </span>
-            <Link href="/tools/claw" className="underline" style={{ color: '#6c63ff' }}>
-              /tools/claw <ExternalLink size={11} className="inline" />
-            </Link>
-          </li>
-          <li className="flex items-center gap-2">
-            <span style={{ color: '#55556a' }}>•</span>
-            <span>Gateway URL + bearer: set via Doppler (<code style={{ color: '#6c63ff' }}>CLAUDE_CODE_GATEWAY_URL</code>, <code style={{ color: '#6c63ff' }}>CLAUDE_CODE_BEARER_TOKEN</code>).</span>
-          </li>
-          <li className="flex items-center gap-2">
-            <span style={{ color: '#55556a' }}>•</span>
-            <span>Cost cap: Doppler <code style={{ color: '#6c63ff' }}>USER_DAILY_USD_LIMIT</code> (default $25).</span>
-          </li>
-        </ul>
-        {status && (
-          <div className="mt-3 pt-3 border-t text-xs" style={{ borderColor: '#24243e', color: '#55556a' }}>
-            Provider: <span style={{ color: '#e8e8f0' }}>{status.provider}</span>
-            {status.gatewayUrl && <> · URL: <span style={{ color: '#e8e8f0' }}>{status.gatewayUrl}</span></>}
-            {status.queueDepth !== undefined && <> · Queue: <span style={{ color: '#e8e8f0' }}>{status.queueDepth}</span></>}
-          </div>
-        )}
-      </div>
+      <AiProviderList businessSlug={null} />
     </div>
   )
 }
