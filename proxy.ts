@@ -48,7 +48,14 @@ const _clerk = clerkMiddleware(async (auth, req) => {
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
   // If Clerk is not configured at all, pass through cleanly.
   // The layout will render the "Setup Required" page.
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  //
+  // Gate on BOTH keys. Half-configured (publishable set, secret missing) is
+  // the failure mode that produces the "auth() called but clerkMiddleware
+  // not detected" crash in page.tsx: clerkMiddleware needs the secret key
+  // to validate sessions and throws here when it's missing, the catch below
+  // swallows it, async-local-storage never gets set, and the page render
+  // then trips Clerk's middleware-detection guard.
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
     return NextResponse.next()
   }
 
@@ -59,7 +66,10 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
   // download the response as a file instead of rendering it.
   try {
     return await _clerk(req, event)
-  } catch {
+  } catch (err) {
+    // Log so the next "Clerk auth() not detected" Sentry alert has a paired
+    // root-cause line in the function logs instead of silent fallthrough.
+    console.error('[proxy] clerkMiddleware threw — falling through to next():', err instanceof Error ? err.message : err)
     return NextResponse.next()
   }
 }

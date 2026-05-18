@@ -17,13 +17,18 @@ Sentry.init({
   // 2.5s during an active run. Those generate XHR transactions that the
   // sampler now skips.
   tracesSampler,
-  // Enable logs to be sent to Sentry
-  enableLogs: true,
+  // Ship logs to Sentry only when an error is also being reported. The
+  // unconditional `enableLogs: true` was contributing to the /monitoring 429s
+  // (Sentry tunnel rate-limit) on top of the 2026-05-12 span-budget burn —
+  // every console.* call shipped a log event regardless of severity. Keep
+  // logs for the server/edge configs where volume is bounded; client volume
+  // scales with every browser tab on every protected page.
+  enableLogs: false,
 
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
-  replaysSessionSampleRate: 0.1,
+  // Replay sampling — 10% session-rate generated enough payload to saturate
+  // the ingest tunnel during peak usage. Errors still get a full replay via
+  // replaysOnErrorSampleRate, which is the high-signal case.
+  replaysSessionSampleRate: 0.01,
 
   // Define how likely Replay events are sampled when an error occurs.
   replaysOnErrorSampleRate: 1.0,

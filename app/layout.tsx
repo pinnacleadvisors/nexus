@@ -24,10 +24,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+  const secretKey = process.env.CLERK_SECRET_KEY
 
-  // Render a setup page instead of crashing when Clerk isn't configured.
-  // This prevents the "file download" bug caused by a mid-stream server crash.
-  if (!publishableKey) {
+  // Render a setup page instead of crashing when Clerk isn't fully configured.
+  // Both keys are required: publishable for the client-side SDK, secret for
+  // session validation in clerkMiddleware. A half-configured deployment
+  // (one key set, the other missing) silently crashes auth() in page.tsx
+  // because clerkMiddleware throws and proxy.ts catches it — see proxy.ts.
+  if (!publishableKey || !secretKey) {
     return (
       <html lang="en">
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#050508', color: '#e8e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
