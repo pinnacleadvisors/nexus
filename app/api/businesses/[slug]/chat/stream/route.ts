@@ -41,7 +41,9 @@ import {
   type StreamEventContinue,
   type StreamEventError,
   type StreamErrorCode,
+  type StreamEventToolEvent,
 } from '@/lib/chat/stream-events'
+import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 300
@@ -162,6 +164,25 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
         writeSseEvent(controller, 'ready', ready)
 
         let lastEmittedLen = 0
+        // Phase 3 — progressive tool-call diff (see platform stream route
+        // for design notes; this is the same shape).
+        const lastEmittedToolCalls = new Map<string, { startedAt: number; finishedAt?: number }>()
+        const emitToolDiff = (snapshot: ToolCall[] | undefined): void => {
+          if (!Array.isArray(snapshot)) return
+          for (const call of snapshot) {
+            if (typeof call.id !== 'string') continue
+            const prev = lastEmittedToolCalls.get(call.id)
+            const finishedChanged = !!call.finishedAt && (!prev || !prev.finishedAt)
+            if (!prev || finishedChanged) {
+              const evt: StreamEventToolEvent = { call }
+              writeSseEvent(controller, 'tool_event', evt)
+              lastEmittedToolCalls.set(call.id, {
+                startedAt:  call.startedAt,
+                finishedAt: call.finishedAt,
+              })
+            }
+          }
+        }
 
         while (!closed) {
           if (Date.now() - start > MAX_DURATION_GUARD_MS) {
@@ -195,7 +216,12 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
             lastEmittedLen = result.partialText.length
           }
 
+          // Phase 3 — emit progressive tool-call events.
+          emitToolDiff(result.partialToolCalls)
+
           if (result.status === 'done') {
+            // Final tool-event sweep to cover the same-tick race.
+            emitToolDiff(result.partialToolCalls)
             const text = result.text ?? ''
             let pendingPermissions: Awaited<ReturnType<typeof listPendingForJob>> = []
             try { pendingPermissions = await listPendingForJob(userId, jobId) }

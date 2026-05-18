@@ -158,6 +158,11 @@ export default function PlatformChat() {
   // tick and rendered as a tentative assistant bubble while busy. Cleared
   // when the final message lands (or the turn is cancelled).
   const [partial, setPartial] = useState<string>('')
+  // Phase 3 — in-flight tool calls observed during this turn. Keyed by
+  // call.id so the SSE `tool_event` handler upserts in place when a
+  // tool's tool_result lands (Wrench icon flips to CheckCircle). Rendered
+  // ABOVE the partial-text bubble. Cleared on send() / cancel.
+  const [inflightToolCalls, setInflightToolCalls] = useState<ToolCall[]>([])
 
   // Phase 4 — session state. activeSessionId is null until either the
   // operator creates/picks one explicitly, OR the first send() auto-creates
@@ -346,6 +351,7 @@ export default function PlatformChat() {
     setError(null)
     cancelRef.current = false   // reset flag for the new turn
     setPartial('')               // clear stale partial text from a prior run
+    setInflightToolCalls([])     // clear stale in-flight tool calls
     setPendingPermissions([])    // clear any leftover permission cards
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
@@ -415,6 +421,7 @@ export default function PlatformChat() {
         edit_group_completes:  finalResult.edit_group_completes,
       }])
       setPartial('')   // final landed, clear tentative bubble
+      setInflightToolCalls([])   // final tool_calls live on the message now
       // Refresh sidebar (title may have been auto-derived from first message,
       // and last_message_at definitely changed).
       void reloadSessions()
@@ -580,6 +587,19 @@ export default function PlatformChat() {
           if (eventName === 'delta' && typeof parsed.text === 'string') {
             const chunk = parsed.text
             setPartial(prev => prev + chunk)
+          } else if (eventName === 'tool_event' && parsed.call && typeof (parsed.call as { id?: unknown }).id === 'string') {
+            // Phase 3 — upsert this tool call into the inflight map. The
+            // SSE bridge sends an event whenever a call starts (Wrench)
+            // or finishes (CheckCircle), so the ToolCallCard render flips
+            // state in place without us tracking it explicitly here.
+            const call = parsed.call as ToolCall
+            setInflightToolCalls(prev => {
+              const idx = prev.findIndex(c => c.id === call.id)
+              if (idx === -1) return [...prev, call]
+              const next = prev.slice()
+              next[idx] = call
+              return next
+            })
           } else if (eventName === 'done') {
             final = {
               text:                 typeof parsed.text === 'string' ? parsed.text : '',
@@ -731,10 +751,12 @@ export default function PlatformChat() {
               </div>
             </div>
           )}
-          {/* Phase 2a — tentative assistant bubble showing partial text
-              accumulated by the running job. Updates on each 2.5s poll;
-              replaced by the final MessageBubble once status='done'. */}
-          {busy && partial && (
+          {/* Phase 2a + Phase 3 — tentative assistant bubble showing partial
+              text + in-flight tool calls. Tool calls render ABOVE the text
+              (Wrench → CheckCircle as each tool_result lands), mirroring
+              the layout of the final MessageBubble below. Both clear when
+              status='done' and the final bubble takes over. */}
+          {busy && (partial || inflightToolCalls.length > 0) && (
             <div className="flex justify-start">
               <div
                 className="max-w-[85%] rounded-2xl px-4 py-3 text-sm"
@@ -747,7 +769,12 @@ export default function PlatformChat() {
                 <div className="text-[10px] uppercase tracking-[0.14em] mb-1" style={{ color: '#a8a3ff' }}>
                   Streaming
                 </div>
-                <div className="whitespace-pre-wrap">{partial}</div>
+                {inflightToolCalls.length > 0 && (
+                  <div className="mb-2">
+                    {inflightToolCalls.map(call => <ToolCallCard key={call.id} call={call} />)}
+                  </div>
+                )}
+                {partial && <div className="whitespace-pre-wrap">{partial}</div>}
               </div>
             </div>
           )}

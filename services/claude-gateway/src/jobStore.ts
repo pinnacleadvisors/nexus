@@ -19,7 +19,7 @@
  * be retried.
  */
 import { randomUUID } from 'node:crypto'
-import type { RunResult } from './spawn.js'
+import type { RunResult, ToolCallRecord } from './spawn.js'
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -43,6 +43,16 @@ export interface JobRecord {
    * without needing SSE.
    */
   partialText?: string
+  /**
+   * Phase 3 — tool calls observed so far while the job is still running.
+   * Keyed by ToolCallRecord.id internally so the same record is updated
+   * in place when its tool_result lands (avoids duplicate entries). The
+   * SSE bridge diffs this map against its last snapshot to emit only
+   * the changed call as a `tool_event`, instead of resending the whole
+   * array. GET /api/jobs/:id surfaces it as an array for compatibility
+   * with the existing toolCalls shape.
+   */
+  partialToolCalls?: Map<string, ToolCallRecord>
 }
 
 export interface JobStoreOptions {
@@ -90,6 +100,17 @@ export class JobStore {
     const job = this.jobs.get(jobId)
     if (!job || (job.status !== 'pending' && job.status !== 'running')) return
     job.partialText = (job.partialText ?? '') + delta
+  }
+
+  /** Phase 3 — upsert a tool-call record observed while the job is still
+   *  running. Same record is updated in place when its tool_result lands
+   *  (matched by id), so the snapshot grows then mutates rather than
+   *  duplicating entries. */
+  upsertPartialToolCall(jobId: string, record: ToolCallRecord): void {
+    const job = this.jobs.get(jobId)
+    if (!job || (job.status !== 'pending' && job.status !== 'running')) return
+    if (!job.partialToolCalls) job.partialToolCalls = new Map()
+    job.partialToolCalls.set(record.id, record)
   }
 
   markDone(jobId: string, result: RunResult): void {
