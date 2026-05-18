@@ -40,6 +40,17 @@ export interface StreamEventDelta {
   text: string
 }
 
+/**
+ * Phase 3 — progressive tool calls. Emitted whenever a tool call starts
+ * (`startedAt` set, `output` undefined) OR finishes (`finishedAt` set,
+ * `output` populated). The client maintains a Map keyed by `call.id` and
+ * upserts on each event so the in-progress ToolCallCard updates from
+ * Wrench → CheckCircle as the gateway observes the tool_result.
+ */
+export interface StreamEventToolEvent {
+  call: ToolCall
+}
+
 export interface StreamEventHeartbeat {
   /** Optional epoch ms — purely for observability. */
   at?: number

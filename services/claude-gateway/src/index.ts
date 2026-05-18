@@ -271,7 +271,13 @@ app.post('/api/jobs', async c => {
       // so the GET /api/jobs/:id endpoint can return partial text while
       // the job is still running. Lets the chat UI render progressive
       // output without needing SSE.
-      onDelta:   delta => jobs.appendPartialText(jobId, delta),
+      onDelta:     delta  => jobs.appendPartialText(jobId, delta),
+      // Phase 3 — pipe tool-use / tool-result events into the job store
+      // the same way. SSE bridges (app/api/platform-chat/stream and
+      // app/api/businesses/[slug]/chat/stream) diff this snapshot per
+      // tick and emit a `tool_event` for each new or just-finished
+      // call, so the chat UI's ToolCallCard renders progressively.
+      onToolEvent: record => jobs.upsertPartialToolCall(jobId, record),
       // PR #189 — surface the gateway jobId to the permission-broker MCP
       // so it can correlate pending tool-permission requests with the
       // running chat turn.
@@ -320,7 +326,12 @@ app.get('/api/jobs/:jobId', async c => {
     result:     job.result,
     // Phase 2a — partial text accumulated while the job is still running.
     // Clients use this to render progressive output between polls.
-    partialText: job.partialText,
+    partialText:      job.partialText,
+    // Phase 3 — tool calls observed so far. Stored as a Map internally
+    // for in-place updates; serialised as an array on the wire so the
+    // shape matches the final `result.toolCalls` array. SSE bridges
+    // diff against this snapshot per tick to emit `tool_event` deltas.
+    partialToolCalls: job.partialToolCalls ? [...job.partialToolCalls.values()] : undefined,
   })
 })
 

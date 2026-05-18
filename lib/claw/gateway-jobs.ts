@@ -174,6 +174,13 @@ export interface JobStatusResult {
   partialText?: string
   /** Tool calls observed during the turn (Phase 2b — chat renders as cards). */
   toolCalls?: ToolCall[]
+  /** Phase 3 — tool calls observed SO FAR while the job is still running.
+   *  Includes in-flight calls (startedAt set, finishedAt undefined) plus
+   *  finished ones. SSE bridges diff this snapshot per tick to emit
+   *  `tool_event` deltas; the final `toolCalls` array on done is a
+   *  superset (and matches when the run completes cleanly). Optional
+   *  because older gateway images (pre-Phase-3 deploy) don't emit it. */
+  partialToolCalls?: ToolCall[]
   /** Native CLI error when status === 'error'. */
   jobError?:  string
   durationMs?: number
@@ -208,23 +215,25 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
     const data = (parsed ?? {}) as {
       status?:    JobStatus
       result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number; toolCalls?: ToolCall[] }
-      partialText?: string
+      partialText?:      string
+      partialToolCalls?: ToolCall[]
       createdAt?:  number
       startedAt?:  number
       finishedAt?: number
     }
     return {
-      ok:          true,
-      status:      data.status,
-      text:        data.result?.content,
-      partialText: data.partialText,
-      toolCalls:   data.result?.toolCalls,
-      jobError:    data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
-      durationMs:  data.result?.durationMs,
-      createdAt:   data.createdAt,
-      startedAt:   data.startedAt,
-      finishedAt:  data.finishedAt,
-      http:        res.status,
+      ok:               true,
+      status:           data.status,
+      text:             data.result?.content,
+      partialText:      data.partialText,
+      partialToolCalls: data.partialToolCalls,
+      toolCalls:        data.result?.toolCalls,
+      jobError:         data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
+      durationMs:       data.result?.durationMs,
+      createdAt:        data.createdAt,
+      startedAt:        data.startedAt,
+      finishedAt:       data.finishedAt,
+      http:             res.status,
     }
   } catch (err) {
     const formatted = formatFetchError(err, url)

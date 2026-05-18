@@ -135,6 +135,9 @@ export default function BusinessChat({ slug, name }: Props) {
   const [busy,     setBusy]     = useState(false)
   const [error,    setError]    = useState<string | null>(null)
   const [partial,  setPartial]  = useState<string>('')
+  // Phase 3 — in-flight tool calls observed during the running turn.
+  // See components/platform-chat/PlatformChat.tsx for design notes.
+  const [inflightToolCalls, setInflightToolCalls] = useState<ToolCall[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const cancelRef = useRef(false)
 
@@ -322,6 +325,7 @@ export default function BusinessChat({ slug, name }: Props) {
     setError(null)
     cancelRef.current = false
     setPartial('')
+    setInflightToolCalls([])
     setPendingPermissions([])
     const nextMessages: Message[] = [...messages, { role: 'user', content: text }]
     setMessages(nextMessages)
@@ -382,6 +386,7 @@ export default function BusinessChat({ slug, name }: Props) {
         edit_group_completes: finalResult.edit_group_completes,
       }])
       setPartial('')
+      setInflightToolCalls([])
       void reloadSessions()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error — check your connection and try again')
@@ -522,6 +527,16 @@ export default function BusinessChat({ slug, name }: Props) {
           if (eventName === 'delta' && typeof parsed.text === 'string') {
             const chunk = parsed.text
             setPartial(prev => prev + chunk)
+          } else if (eventName === 'tool_event' && parsed.call && typeof (parsed.call as { id?: unknown }).id === 'string') {
+            // Phase 3 — see PlatformChat.tsx for design notes.
+            const call = parsed.call as ToolCall
+            setInflightToolCalls(prev => {
+              const idx = prev.findIndex(c => c.id === call.id)
+              if (idx === -1) return [...prev, call]
+              const next = prev.slice()
+              next[idx] = call
+              return next
+            })
           } else if (eventName === 'done') {
             final = {
               text:                 typeof parsed.text === 'string' ? parsed.text : '',
@@ -618,7 +633,9 @@ export default function BusinessChat({ slug, name }: Props) {
               </div>
             </div>
           )}
-          {busy && partial && (
+          {/* Phase 2a + Phase 3 — tentative bubble with partial text +
+              progressively-arriving tool calls. Mirrors PlatformChat. */}
+          {busy && (partial || inflightToolCalls.length > 0) && (
             <div className="flex justify-start">
               <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm" style={{
                 background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
@@ -626,7 +643,12 @@ export default function BusinessChat({ slug, name }: Props) {
                 color:      '#c8c8d8',
               }}>
                 <div className="text-[10px] uppercase tracking-[0.14em] mb-1" style={{ color: '#a8a3ff' }}>Streaming</div>
-                <div className="whitespace-pre-wrap">{partial}</div>
+                {inflightToolCalls.length > 0 && (
+                  <div className="mb-2">
+                    {inflightToolCalls.map(call => <ToolCallCard key={call.id} call={call} />)}
+                  </div>
+                )}
+                {partial && <div className="whitespace-pre-wrap">{partial}</div>}
               </div>
             </div>
           )}

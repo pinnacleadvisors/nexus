@@ -16,6 +16,18 @@ export interface RunArgs {
    */
   onDelta?:   (delta: string) => void
   /**
+   * Optional tool-event callback. Fires twice per tool call:
+   *   1. when the CLI's `assistant` event surfaces a `tool_use` block
+   *      (record has id+name+input+startedAt; output is still undefined)
+   *   2. when the matching `tool_result` block arrives (record gains
+   *      output, isError, finishedAt)
+   * Callers (chat SSE bridges) use this to render progressive
+   * "Wrench → CheckCircle" cards in real time instead of waiting for
+   * the whole turn to complete. The final RunResult.toolCalls still
+   * contains the same set so non-streaming callers behave unchanged.
+   */
+  onToolEvent?: (record: ToolCallRecord) => void
+  /**
    * Gateway jobId — injected into the child env as NEXUS_JOB_ID. Consumed by
    * the mcp-permission-broker (PR #189) so it can correlate a pending CLI
    * permission request to the right chat turn. When omitted, the broker
@@ -279,12 +291,16 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
           // Phase 2b — capture tool_use blocks. Matched to the eventual
           // tool_result block via the same tool_use_id when it lands.
           if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
-            toolCalls.set(block.id, {
+            const record: ToolCallRecord = {
               id:        block.id,
               name:      block.name,
               input:     block.input,
               startedAt: Date.now(),
-            })
+            }
+            toolCalls.set(block.id, record)
+            if (args.onToolEvent) {
+              try { args.onToolEvent(record) } catch { /* swallow */ }
+            }
           }
         }
       }
@@ -300,6 +316,9 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
               rec.output     = block.content
               rec.isError    = block.is_error === true
               rec.finishedAt = Date.now()
+              if (args.onToolEvent) {
+                try { args.onToolEvent(rec) } catch { /* swallow */ }
+              }
             }
           }
         }

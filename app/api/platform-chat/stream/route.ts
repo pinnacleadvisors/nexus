@@ -59,7 +59,9 @@ import {
   type StreamEventContinue,
   type StreamEventError,
   type StreamErrorCode,
+  type StreamEventToolEvent,
 } from '@/lib/chat/stream-events'
+import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 300                // Vercel Pro ceiling.
@@ -171,6 +173,27 @@ export async function GET(req: NextRequest) {
         writeSseEvent(controller, 'ready', ready)
 
         let lastEmittedLen = 0
+        // Phase 3 — per-call cursor used to emit `tool_event` SSE deltas.
+        // Stores the most recent (startedAt, finishedAt) we've sent. A
+        // record is new when its id isn't in the map; an update is when
+        // its finishedAt transitions from undefined → set (output landed).
+        const lastEmittedToolCalls = new Map<string, { startedAt: number; finishedAt?: number }>()
+        const emitToolDiff = (snapshot: ToolCall[] | undefined): void => {
+          if (!Array.isArray(snapshot)) return
+          for (const call of snapshot) {
+            if (typeof call.id !== 'string') continue
+            const prev = lastEmittedToolCalls.get(call.id)
+            const finishedChanged = !!call.finishedAt && (!prev || !prev.finishedAt)
+            if (!prev || finishedChanged) {
+              const evt: StreamEventToolEvent = { call }
+              writeSseEvent(controller, 'tool_event', evt)
+              lastEmittedToolCalls.set(call.id, {
+                startedAt:  call.startedAt,
+                finishedAt: call.finishedAt,
+              })
+            }
+          }
+        }
 
         // Inner-poll loop. Bounded by:
         //   - status === 'done' / 'error'  → break + handle below
@@ -215,7 +238,20 @@ export async function GET(req: NextRequest) {
             lastEmittedLen = result.partialText.length
           }
 
+          // Phase 3 — emit progressive tool-call events for new and just-
+          // finished calls. Older gateway images (pre-Phase-3 deploy) omit
+          // partialToolCalls; this branch then no-ops and the final
+          // result.toolCalls still lands via the `done` event as before.
+          emitToolDiff(result.partialToolCalls)
+
           if (result.status === 'done') {
+            // One final tool-event sweep — covers the race where a tool
+            // finished in the same poll tick that the run completed.
+            // The `done` event below carries the authoritative tool_calls
+            // list (parsed by persistCompletedTurn), so the client uses
+            // that as the final state; this sweep just keeps progressive
+            // animation smooth in the streaming bubble until done lands.
+            emitToolDiff(result.partialToolCalls)
             // Persist + parse. We deliberately ALWAYS persist on `done` —
             // never on `continue` — so the client never sees a double-
             // write race when it falls back to poll mid-stream.
