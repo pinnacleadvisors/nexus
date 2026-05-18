@@ -9,6 +9,7 @@ import { WorkQueue, QueueFullError } from './queue.js'
 import { runClaude } from './spawn.js'
 import { isSafeSlug } from './agentSpec.js'
 import { JobStore } from './jobStore.js'
+import { probeAllMcpTools, invalidateMcpToolCache } from './mcpProbe.js'
 
 const PORT          = Number(process.env.CLAUDE_GATEWAY_PORT ?? 3000)
 const BEARER        = process.env.CLAUDE_GATEWAY_BEARER ?? ''
@@ -91,6 +92,47 @@ app.get('/health', async c => {
     repoPath:     REPO_PATH,
     jobsTracked:  jobs.size(),
   })
+})
+
+/**
+ * GET /admin/mcp-tools — live tool counts per configured MCP server.
+ *
+ * Powers V2 of the chat MCP awareness strip (audit 2026-05-16 §6.6).
+ * V1 (PR #202) ships the static manifest. V2 confirms each MCP actually
+ * starts inside this container and reports its tool count via
+ * `tools/list`.
+ *
+ * Bearer-auth + ALLOWED_USER_IDS gated. Cheaper than the HMAC-signed
+ * routes since it's read-only and the result is cached for 5 minutes;
+ * but still gated so the bearer alone can't enumerate config secrets.
+ *
+ * Query:
+ *   ?refresh=1 — bypass cache + re-probe every MCP
+ *
+ * Response:
+ *   { ok: true, reports: McpToolReport[] }
+ */
+app.get('/admin/mcp-tools', async c => {
+  const auth   = c.req.header('authorization') ?? ''
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : null
+  if (!bearer || bearer !== BEARER) {
+    return c.json({ ok: false, error: 'unauthorized' }, 401)
+  }
+  if (USER_ID_GATE_ACTIVE) {
+    const userId = c.req.header('x-nexus-user-id') ?? ''
+    if (!userId || !ALLOWED_USER_IDS.has(userId)) {
+      return c.json({ ok: false, error: 'user not allowed' }, 403)
+    }
+  }
+  const refresh = c.req.query('refresh') === '1'
+  if (refresh) invalidateMcpToolCache()
+  try {
+    const reports = await probeAllMcpTools()
+    return c.json({ ok: true, reports })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'probe failed'
+    return c.json({ ok: false, error: message }, 500)
+  }
 })
 
 app.post('/api/sessions/:sessionId/messages', async c => {

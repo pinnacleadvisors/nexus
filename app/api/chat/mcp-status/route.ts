@@ -19,7 +19,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { listBusinessesForUser } from '@/lib/business/db'
-import { getPlatformMcpSummary, getBusinessMcpSummary } from '@/lib/chat/mcp-summary'
+import { getPlatformMcpSummary, getBusinessMcpSummary, mergeLiveMcpReports } from '@/lib/chat/mcp-summary'
+import { fetchLiveMcpTools } from '@/lib/chat/gateway-mcp-tools'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 10
@@ -49,8 +50,18 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // V2: ?live=1 opts into a gateway probe. Defaults to manifest-only so
+  // the existing UI / V1 callers keep their current behaviour.
+  const wantLive = new URL(req.url).searchParams.get('live') === '1'
+
   if (scope.kind === 'platform') {
-    return NextResponse.json({ ok: true, summary: getPlatformMcpSummary() })
+    let summary = getPlatformMcpSummary()
+    if (wantLive) {
+      const probe = await fetchLiveMcpTools({ userId })
+      if (probe.reports) summary = mergeLiveMcpReports(summary, probe.reports)
+      else if (probe.error) summary = { ...summary, liveError: probe.error }
+    }
+    return NextResponse.json({ ok: true, summary })
   }
 
   // Per-business: verify the operator owns this business before disclosing
@@ -61,12 +72,15 @@ export async function GET(req: NextRequest) {
   if (!biz) {
     return NextResponse.json({ ok: false, error: 'business not found' }, { status: 404 })
   }
-  return NextResponse.json({
-    ok:      true,
-    summary: getBusinessMcpSummary({
-      slug:        biz.slug,
-      niche:       biz.niche,
-      moneyModel:  biz.money_model?.thesis ?? null,
-    }),
+  let summary = getBusinessMcpSummary({
+    slug:       biz.slug,
+    niche:      biz.niche,
+    moneyModel: biz.money_model?.thesis ?? null,
   })
+  if (wantLive) {
+    const probe = await fetchLiveMcpTools({ userId, businessSlug: biz.slug })
+    if (probe.reports) summary = mergeLiveMcpReports(summary, probe.reports)
+    else if (probe.error) summary = { ...summary, liveError: probe.error }
+  }
+  return NextResponse.json({ ok: true, summary })
 }

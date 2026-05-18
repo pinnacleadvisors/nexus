@@ -17,18 +17,26 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Plug, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 
 interface McpSummaryEntry {
-  id:      string
-  name:    string
-  summary: string
-  status:  'verified' | 'placeholder' | 'admin-builtin'
-  envVars: readonly string[]
+  id:          string
+  name:        string
+  summary:     string
+  status:      'verified' | 'placeholder' | 'admin-builtin'
+  envVars:     readonly string[]
+  /** V2 fields — present when ?live=1 succeeded. */
+  toolCount?:  number | null
+  liveStatus?: 'ready' | 'timeout' | 'spawn_error' | 'protocol_error' | 'not-in-config'
+  toolNames?:  string[]
+  liveError?:  string
 }
 
 interface McpSummary {
-  scope:   'platform' | { business: string }
-  profile: string
-  entries: McpSummaryEntry[]
-  note:    string
+  scope:     'platform' | { business: string }
+  profile:   string
+  entries:   McpSummaryEntry[]
+  note:      string
+  /** V2: 'live' when the gateway probe enriched this; 'manifest' otherwise. */
+  source:    'live' | 'manifest'
+  liveError?: string
 }
 
 interface ApiOk  { ok: true;  summary: McpSummary }
@@ -46,14 +54,28 @@ export default function McpStatusStrip({ scope }: {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/chat/mcp-status?scope=${encodeURIComponent(scope)}`, {
+        // Two-step load: first render the manifest fast, then enrich with
+        // live counts when the gateway probe returns. V1 callers / gateway-
+        // unreachable paths still get a usable strip on the first response.
+        const manifestRes = await fetch(`/api/chat/mcp-status?scope=${encodeURIComponent(scope)}`, {
           cache:  'no-store',
           signal: AbortSignal.timeout(10_000),
         })
-        if (!res.ok) throw new Error(`mcp-status HTTP ${res.status}`)
-        const j = (await res.json()) as ApiOk | ApiErr
-        if (cancelled) return
-        if (!j.ok) { setError(j.error); return }
+        if (manifestRes.ok) {
+          const j = (await manifestRes.json()) as ApiOk | ApiErr
+          if (!cancelled && j.ok) setSummary(j.summary)
+        }
+
+        // Live probe — graceful degrade if it errors or takes too long.
+        // 10s budget client-side (gateway has its own 5s timeout +
+        // 5-min cache, so a cold first hit is the worst case).
+        const liveRes = await fetch(`/api/chat/mcp-status?scope=${encodeURIComponent(scope)}&live=1`, {
+          cache:  'no-store',
+          signal: AbortSignal.timeout(15_000),
+        })
+        if (!liveRes.ok) return   // keep the manifest-only summary already set
+        const j = (await liveRes.json()) as ApiOk | ApiErr
+        if (cancelled || !j.ok) return
         setSummary(j.summary)
       } catch (e) {
         if (cancelled) return
@@ -123,6 +145,20 @@ export default function McpStatusStrip({ scope }: {
             </span>
           )}
         </div>
+        {summary.source === 'live' && (
+          <span
+            className="font-mono shrink-0 px-1 py-0.5 rounded"
+            style={{
+              color:      '#4ade80',
+              background: 'rgba(34,197,94,0.10)',
+              border:     '1px solid rgba(34,197,94,0.22)',
+              fontSize:   '8px',
+            }}
+            title="Live tool counts from the gateway probe (cached 5 min)"
+          >
+            LIVE
+          </span>
+        )}
         <span className="font-mono shrink-0" style={{ color: '#55556a' }}>
           {summary.entries.length} MCP{summary.entries.length === 1 ? '' : 's'}
         </span>
@@ -155,10 +191,23 @@ export default function McpStatusStrip({ scope }: {
 }
 
 function McpChip({ entry }: { entry: McpSummaryEntry }) {
+  // V2: live status overrides manifest status when present.
+  // ready=green, timeout/spawn_error/protocol_error=red, not-in-config=amber.
   const dot =
-    entry.status === 'verified'      ? '#4ade80' :
-    entry.status === 'admin-builtin' ? '#a8a3ff' :
-    /* placeholder */                  '#fbbf24'
+    entry.liveStatus === 'ready'           ? '#4ade80' :
+    entry.liveStatus === 'timeout'         ? '#ef4444' :
+    entry.liveStatus === 'spawn_error'     ? '#ef4444' :
+    entry.liveStatus === 'protocol_error'  ? '#ef4444' :
+    entry.liveStatus === 'not-in-config'   ? '#fbbf24' :
+    entry.status     === 'verified'        ? '#4ade80' :
+    entry.status     === 'admin-builtin'   ? '#a8a3ff' :
+    /* placeholder */                        '#fbbf24'
+  const titleParts = [entry.summary]
+  if (typeof entry.toolCount === 'number') {
+    titleParts.push(`${entry.toolCount} tool${entry.toolCount === 1 ? '' : 's'}`)
+  } else if (entry.liveStatus && entry.liveStatus !== 'ready') {
+    titleParts.push(`probe: ${entry.liveStatus}${entry.liveError ? ` — ${entry.liveError}` : ''}`)
+  }
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-mono whitespace-nowrap shrink-0"
@@ -168,26 +217,42 @@ function McpChip({ entry }: { entry: McpSummaryEntry }) {
         color:      '#e8e8f0',
         fontSize:   '9px',
       }}
-      title={entry.summary}
+      title={titleParts.join(' · ')}
     >
       <span
         className="w-1 h-1 rounded-full"
         style={{ background: dot, boxShadow: `0 0 4px ${dot}80` }}
       />
       {entry.name}
+      {typeof entry.toolCount === 'number' && entry.liveStatus === 'ready' && (
+        <span style={{ color: '#9090b0' }}>·{entry.toolCount}</span>
+      )}
     </span>
   )
 }
 
 function McpRow({ entry }: { entry: McpSummaryEntry }) {
+  // V2: when a live probe is present, surface its status alongside the
+  // manifest status. The expanded row gets a "live: ready · 12 tools" line
+  // OR "live: timeout — <err>" when the gateway couldn't reach the MCP.
   const StatusIcon =
-    entry.status === 'verified'      ? CheckCircle2 :
-    entry.status === 'admin-builtin' ? CheckCircle2 :
-    /* placeholder */                  AlertTriangle
+    entry.liveStatus === 'ready'          ? CheckCircle2 :
+    entry.liveStatus === 'timeout'        ? AlertTriangle :
+    entry.liveStatus === 'spawn_error'    ? AlertTriangle :
+    entry.liveStatus === 'protocol_error' ? AlertTriangle :
+    entry.liveStatus === 'not-in-config'  ? AlertTriangle :
+    entry.status     === 'verified'       ? CheckCircle2 :
+    entry.status     === 'admin-builtin'  ? CheckCircle2 :
+    /* placeholder */                       AlertTriangle
   const statusColor =
-    entry.status === 'verified'      ? '#4ade80' :
-    entry.status === 'admin-builtin' ? '#a8a3ff' :
-    /* placeholder */                  '#fbbf24'
+    entry.liveStatus === 'ready'          ? '#4ade80' :
+    entry.liveStatus === 'timeout'        ? '#ef4444' :
+    entry.liveStatus === 'spawn_error'    ? '#ef4444' :
+    entry.liveStatus === 'protocol_error' ? '#ef4444' :
+    entry.liveStatus === 'not-in-config'  ? '#fbbf24' :
+    entry.status     === 'verified'       ? '#4ade80' :
+    entry.status     === 'admin-builtin'  ? '#a8a3ff' :
+    /* placeholder */                       '#fbbf24'
   return (
     <div className="flex items-start gap-2">
       <StatusIcon size={10} style={{ color: statusColor }} className="mt-0.5 shrink-0" />
@@ -202,6 +267,34 @@ function McpRow({ entry }: { entry: McpSummaryEntry }) {
         {entry.envVars.length > 0 && (
           <div className="font-mono mt-0.5" style={{ color: '#55556a' }}>
             {entry.envVars.join(' · ')}
+          </div>
+        )}
+        {/* V2: live probe detail line — only when ?live=1 returned data. */}
+        {entry.liveStatus && (
+          <div className="font-mono mt-0.5 flex items-center gap-1.5" style={{ color: statusColor }}>
+            <span style={{ opacity: 0.7 }}>live:</span>
+            <span>{entry.liveStatus}</span>
+            {typeof entry.toolCount === 'number' && (
+              <>
+                <span style={{ color: '#55556a' }}>·</span>
+                <span>{entry.toolCount} tool{entry.toolCount === 1 ? '' : 's'}</span>
+              </>
+            )}
+            {entry.liveError && (
+              <>
+                <span style={{ color: '#55556a' }}>·</span>
+                <span style={{ color: '#fbbf24' }}>{entry.liveError}</span>
+              </>
+            )}
+          </div>
+        )}
+        {/* V2: tool names — first 6, with a "+N" overflow hint */}
+        {entry.toolNames && entry.toolNames.length > 0 && (
+          <div className="font-mono mt-0.5" style={{ color: '#9090b0', fontSize: '9px' }}>
+            {entry.toolNames.slice(0, 6).join(' · ')}
+            {entry.toolNames.length > 6 && (
+              <span style={{ color: '#55556a' }}> · +{entry.toolNames.length - 6} more</span>
+            )}
           </div>
         )}
       </div>
