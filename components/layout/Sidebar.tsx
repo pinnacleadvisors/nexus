@@ -13,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Library,
   FileText,
   Inbox,
   Brain,
@@ -121,21 +120,16 @@ function useBusinessesForSidebar(): BusinessLink[] {
   return list
 }
 
-// Five top-level surfaces, mapped to the operator's mental model:
-//   Mission Control = Watch     (default landing)
-//   Ideas           = Capture
-//   Pipeline        = Decide    (board + automation library + swarm)
-//   Knowledge       = Learn     (graph + memory)
-//   Toolbox         = Reusable assets (agents, tools, snippets)
-//   Settings        = Admin     (everything that lived under Manage Platform)
 // Top-level surfaces, mapped to the operator's mental model:
 //   Mission Control = Watch       (default landing)
 //   Businesses      = Per-business copilots + management
 //   Ideas / Signals = Capture
 //   Pipeline        = Decide       (board + automation library + swarm)
 //   Knowledge       = Learn        (graph + memory)
-//   Toolbox         = Reusable assets (agents, tools, snippets)
-//   Settings        = Admin        (everything that lived under Manage Platform)
+//   Settings        = Admin        (AI providers, agents, connectors, businesses, etc.)
+//
+// The Toolbox link was retired when /tools was deleted — agents now live at
+// /settings/agents and connectors at /settings/accounts.
 //
 // `Businesses` is rendered as a dynamic group when businesses exist —
 // children are per-business chat sub-items so the operator reaches a
@@ -149,7 +143,6 @@ const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
-  { type: 'link', href: '/tools',           label: 'Toolbox',         icon: Library },
   { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
@@ -186,7 +179,6 @@ function isActive(pathname: string, href: string) {
   if (href === '/board')           return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
   if (href === '/graph')           return pathname === '/graph'
   if (href === '/learn')           return pathname === '/learn' || pathname.startsWith('/learn/')
-  if (href === '/tools')           return pathname === '/tools' || pathname.startsWith('/tools/')
   if (href === '/manage-platform') return pathname === '/manage-platform' || pathname.startsWith('/manage-platform/')
   if (href === '/settings')        return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')

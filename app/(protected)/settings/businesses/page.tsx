@@ -3,42 +3,35 @@
 /**
  * Settings → Businesses
  *
- * Phase A — minimal CRUD for the `businesses` table:
- *   - List all businesses owned by the current user
- *   - One-click insert from `lib/business/seeds.ts` (Ledger Lane / Inkbound)
- *   - Edit Slack channel + webhook URL inline (most common change)
- *   - Pause / activate / archive
- *
- * Deeper editing (money_model JSON, KPIs JSON, brand_voice) is Phase B —
- * for now those come from the seed and rarely change.
+ * One liquid-glass card per business with the four fields the operator
+ * actually changes (status, Slack channel, Slack webhook, money model
+ * preview). JSON config is in a collapsible details — deeper editing is still
+ * Phase B. Visual treatment matches /settings/accounts so the two pages feel
+ * like one product.
  */
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { Briefcase, Loader2, AlertCircle, Plus, X } from 'lucide-react'
 import { BUSINESS_SEEDS } from '@/lib/business/seeds'
-import type { BusinessRow, BusinessStatus } from '@/lib/business/types'
+import type { BusinessRow } from '@/lib/business/types'
 import SettingsTabs from '@/components/settings/SettingsTabs'
+import { BusinessCard } from '@/components/settings/BusinessesCard'
 
-interface ApiList { ok: boolean; businesses: BusinessRow[] }
+interface ApiList   { ok: boolean; businesses: BusinessRow[] }
 interface ApiUpsert { ok: boolean; business: BusinessRow; error?: string; slack_warning?: string; slack_verified?: boolean }
 
 export default function BusinessesPage() {
-  const [rows, setRows]     = useState<BusinessRow[]>([])
-  const [loading, setLoad]  = useState(true)
-  const [err, setErr]       = useState<string | null>(null)
-  // Per-business warnings (e.g. failed Slack webhook verification). Keyed by slug.
+  const [rows, setRows]                   = useState<BusinessRow[]>([])
+  const [loading, setLoad]                = useState(true)
+  const [err, setErr]                     = useState<string | null>(null)
   const [slackWarnings, setSlackWarnings] = useState<Record<string, string>>({})
-  // Per-business "verified just now" flag. Honesty check: the green tick
-  // only appears after the API confirms a real successful POST to Slack
-  // during this session, not just because a URL is stored in the row.
   const [slackVerified, setSlackVerified] = useState<Record<string, number>>({})
   const [verifyingSlug, setVerifyingSlug] = useState<string | null>(null)
 
   async function refresh() {
-    setLoad(true)
-    setErr(null)
+    setLoad(true); setErr(null)
     try {
-      const res = await fetch('/api/businesses')
+      const res  = await fetch('/api/businesses')
       const data = (await res.json()) as ApiList
       if (!data.ok) throw new Error('list failed')
       setRows(data.businesses)
@@ -54,51 +47,33 @@ export default function BusinessesPage() {
   async function insertSeed(slug: string) {
     const seed = BUSINESS_SEEDS.find(s => s.slug === slug)
     if (!seed) return
-    const res = await fetch('/api/businesses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(seed),
+    const res  = await fetch('/api/businesses', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body:   JSON.stringify(seed),
     })
     const data = (await res.json()) as ApiUpsert
-    if (!data.ok) {
-      setErr(data.error ?? 'insert failed')
-      return
-    }
+    if (!data.ok) { setErr(data.error ?? 'insert failed'); return }
     await refresh()
   }
 
-  async function patchBusiness(
-    slug:   string,
-    patch:  Partial<BusinessRow>,
-    opts?: { forceSlackVerify?: boolean },
-  ) {
+  async function patchBusiness(slug: string, patch: Partial<BusinessRow>, opts?: { forceSlackVerify?: boolean }) {
     const current = rows.find(r => r.slug === slug)
     if (!current) return
     if (opts?.forceSlackVerify) setVerifyingSlug(slug)
-    const res = await fetch('/api/businesses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...current,
-        ...patch,
-        ...(opts?.forceSlackVerify ? { force_slack_verify: true } : {}),
-      }),
+    const res  = await fetch('/api/businesses', {
+      method:  'POST', headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...current, ...patch, ...(opts?.forceSlackVerify ? { force_slack_verify: true } : {}) }),
     })
     const data = (await res.json()) as ApiUpsert
     if (opts?.forceSlackVerify) setVerifyingSlug(null)
-    if (!data.ok) {
-      setErr(data.error ?? 'update failed')
-      return
-    }
+    if (!data.ok) { setErr(data.error ?? 'update failed'); return }
     setSlackWarnings(prev => {
       const next = { ...prev }
       if (data.slack_warning) next[slug] = data.slack_warning
       else delete next[slug]
       return next
     })
-    if (data.slack_verified) {
-      setSlackVerified(prev => ({ ...prev, [slug]: Date.now() }))
-    }
+    if (data.slack_verified) setSlackVerified(prev => ({ ...prev, [slug]: Date.now() }))
     await refresh()
   }
 
@@ -106,169 +81,127 @@ export default function BusinessesPage() {
   const seedsToOffer = BUSINESS_SEEDS.filter(s => !ownedSlugs.has(s.slug))
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <SettingsTabs activeTab="businesses" />
-
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Businesses</h1>
-        <p className="text-sm text-zinc-500">
-          One row per business the operator runs. Daily cron at 04:00 UTC (11:00 ICT for Asia/Bangkok)
-          dispatches the <code>business-operator</code> agent for each <code>active</code> row.
-        </p>
-      </header>
-
-      {err && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          {err}
+    <div
+      className="p-6 min-h-full"
+      style={{
+        backgroundColor: '#050508',
+        backgroundImage:
+          'radial-gradient(1200px 600px at 10% -10%, rgba(108,99,255,0.10), transparent 60%), ' +
+          'radial-gradient(900px 500px at 100% 100%, rgba(108,99,255,0.06), transparent 60%)',
+      }}
+    >
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-5 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+            style={{
+              background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+              border:     '1px solid rgba(108,99,255,0.20)',
+              boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+            }}>
+            <Briefcase size={18} style={{ color: '#a8a3ff' }} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold" style={{ color: '#e8e8f0' }}>Businesses</h1>
+            <p className="text-sm mt-1 max-w-2xl" style={{ color: '#9090b0' }}>
+              One row per business the operator runs. The daily cron at 04:00 UTC dispatches{' '}
+              <code className="font-mono" style={{ color: '#a8a3ff' }}>business-operator</code> for each active row.
+            </p>
+          </div>
         </div>
-      )}
 
-      {seedsToOffer.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">Seed templates</h2>
-          <div className="flex flex-wrap gap-2">
-            {seedsToOffer.map(s => (
-              <button
-                key={s.slug}
-                onClick={() => void insertSeed(s.slug)}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
-              >
-                + Insert <strong>{s.name}</strong> ({s.slug})
-              </button>
+        <SettingsTabs activeTab="businesses" />
+
+        {err && (
+          <div className="mb-4 flex items-start gap-2.5 px-3.5 py-2.5 text-sm"
+            style={{
+              background:           'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(239,68,68,0.02))',
+              backdropFilter:       'blur(28px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+              border:               '1px solid rgba(239,68,68,0.22)',
+              borderRadius:         '14px',
+              color:                '#e8e8f0',
+            }}>
+            <AlertCircle size={16} style={{ color: '#f87171' }} />
+            <div className="flex-1">{err}</div>
+            <button type="button" onClick={() => setErr(null)} aria-label="Dismiss" className="p-0.5">
+              <X size={14} style={{ color: '#9090b0' }} />
+            </button>
+          </div>
+        )}
+
+        {seedsToOffer.length > 0 && <SeedRow seeds={seedsToOffer} onInsert={s => void insertSeed(s)} />}
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm px-4 py-3"
+            style={{
+              color: '#9090b0',
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: '14px',
+            }}>
+            <Loader2 size={14} className="animate-spin" /> Loading businesses…
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rows.length === 0 && <EmptyState />}
+            {rows.map(r => (
+              <BusinessCard
+                key={r.slug}
+                row={r}
+                slackWarning={slackWarnings[r.slug]}
+                slackVerified={!!slackVerified[r.slug]}
+                verifying={verifyingSlug === r.slug}
+                onPatch={(patch, opts) => void patchBusiness(r.slug, patch, opts)}
+              />
             ))}
           </div>
-        </section>
-      )}
-
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">Current businesses</h2>
-        {loading && <p className="text-sm text-zinc-500">Loading…</p>}
-        {!loading && rows.length === 0 && (
-          <p className="text-sm text-zinc-500">No businesses yet — insert a seed above to get started.</p>
         )}
-        {rows.map(r => (
-          <div key={r.slug} className="space-y-3 rounded-lg border border-zinc-200 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium">{r.name}</h3>
-                <p className="text-xs text-zinc-500">slug: <code>{r.slug}</code> · niche: {r.niche}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={r.status}
-                  onChange={e => void patchBusiness(r.slug, { status: e.target.value as BusinessStatus })}
-                  className="rounded border border-zinc-300 px-2 py-1 text-sm"
-                >
-                  <option value="active">active</option>
-                  <option value="paused">paused</option>
-                  <option value="archived">archived</option>
-                </select>
-                <Link
-                  href={`/board?business=${encodeURIComponent(r.slug)}`}
-                  className="rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50"
-                >
-                  Board
-                </Link>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="text-sm">
-                <span className="block text-xs uppercase text-zinc-500">Slack channel (display)</span>
-                <input
-                  type="text"
-                  defaultValue={r.slack_channel ?? ''}
-                  onBlur={e => {
-                    const v = e.target.value.trim() || null
-                    if (v !== r.slack_channel) void patchBusiness(r.slug, { slack_channel: v })
-                  }}
-                  placeholder="#nexus-ledger-lane"
-                  className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
-                />
-              </label>
-              <label className="text-sm">
-                <span className="block text-xs uppercase text-zinc-500">Slack webhook URL</span>
-                <input
-                  type="password"
-                  defaultValue={r.slack_webhook_url ?? ''}
-                  onBlur={e => {
-                    const v = e.target.value.trim() || null
-                    if (v !== r.slack_webhook_url) void patchBusiness(r.slug, { slack_webhook_url: v })
-                  }}
-                  placeholder="https://hooks.slack.com/services/..."
-                  className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 font-mono text-xs"
-                />
-                {slackWarnings[r.slug] && (
-                  <p className="mt-1 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                    <span aria-hidden>⚠</span>
-                    <span className="flex-1">
-                      {slackWarnings[r.slug]}{' '}
-                      <button
-                        type="button"
-                        onClick={() => void patchBusiness(
-                          r.slug,
-                          { slack_webhook_url: r.slack_webhook_url },
-                          { forceSlackVerify: true },
-                        )}
-                        className="underline hover:no-underline"
-                      >
-                        Retry
-                      </button>
-                    </span>
-                  </p>
-                )}
-                {!slackWarnings[r.slug] && r.slack_webhook_url && (
-                  <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-                    {slackVerified[r.slug] ? (
-                      <span className="text-emerald-600">
-                        ✓ Verification message delivered to Slack. Check the channel.
-                      </span>
-                    ) : (
-                      <span className="text-zinc-500">
-                        Webhook saved. Press <strong>Send test</strong> to confirm a real message lands.
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      disabled={verifyingSlug === r.slug}
-                      onClick={() => void patchBusiness(
-                        r.slug,
-                        { slack_webhook_url: r.slack_webhook_url },
-                        { forceSlackVerify: true },
-                      )}
-                      className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] hover:bg-zinc-50 disabled:opacity-50"
-                    >
-                      {verifyingSlug === r.slug ? 'Sending…' : 'Send test'}
-                    </button>
-                  </div>
-                )}
-              </label>
-            </div>
-
-            <details className="text-sm">
-              <summary className="cursor-pointer text-zinc-600 hover:text-zinc-900">JSON config (read-only)</summary>
-              <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-                <pre className="overflow-x-auto rounded bg-zinc-50 p-2 text-xs">
-                  {JSON.stringify(r.money_model, null, 2)}
-                </pre>
-                <pre className="overflow-x-auto rounded bg-zinc-50 p-2 text-xs">
-                  {JSON.stringify(r.kpi_targets, null, 2)}
-                </pre>
-              </div>
-              <p className="mt-1 text-xs text-zinc-500">
-                Edit JSON directly in Supabase for now; structured editing UI is Phase B.
-              </p>
-            </details>
-
-            <div className="flex flex-wrap gap-3 text-xs text-zinc-500">
-              <span>timezone: {r.timezone}</span>
-              <span>daily run: {r.daily_cron_local_hour}:00</span>
-              <span>last run: {r.last_operator_at ? new Date(r.last_operator_at).toLocaleString() : 'never'}</span>
-              <span>gates: {r.approval_gates.length}</span>
-            </div>
-          </div>
-        ))}
-      </section>
+      </div>
     </div>
   )
 }
+
+function SeedRow({ seeds, onInsert }: { seeds: typeof BUSINESS_SEEDS; onInsert: (slug: string) => void }) {
+  return (
+    <div className="mb-4 p-3 flex flex-wrap items-center gap-2"
+      style={{
+        background:           'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '14px',
+      }}>
+      <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: '#9090b0' }}>Seed templates</span>
+      {seeds.map(s => (
+        <button key={s.slug} type="button" onClick={() => onInsert(s.slug)}
+          className="text-[11px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
+          style={{
+            background: 'linear-gradient(135deg, rgba(108,99,255,0.20), rgba(108,99,255,0.06))',
+            border:     '1px solid rgba(108,99,255,0.25)',
+            color:      '#e8e8f0',
+          }}>
+          <Plus size={11} /> {s.name} <span className="font-mono" style={{ color: '#a8a3ff' }}>· {s.slug}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <div className="px-3.5 py-4 text-sm text-center"
+      style={{
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '14px',
+        color: '#9090b0',
+      }}>
+      No businesses yet — pick a seed template above to get started.
+    </div>
+  )
+}
+

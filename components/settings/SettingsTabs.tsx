@@ -15,9 +15,9 @@
  */
 
 import Link from 'next/link'
-import { Server, Bell, Shield, Briefcase, Plug, type LucideIcon } from 'lucide-react'
+import { Server, Bell, Shield, Briefcase, Plug, Sparkles, type LucideIcon } from 'lucide-react'
 
-export type SettingsTabId = 'ai' | 'alerts' | 'access' | 'businesses' | 'accounts'
+export type SettingsTabId = 'ai' | 'agents' | 'alerts' | 'access' | 'businesses' | 'accounts'
 
 interface TabSpec {
   id:    SettingsTabId
@@ -27,11 +27,12 @@ interface TabSpec {
 }
 
 export const SETTINGS_TABS: TabSpec[] = [
-  { id: 'ai',         label: 'AI providers', icon: Server,    href: '/settings?tab=ai'         },
-  { id: 'alerts',     label: 'Alerts',       icon: Bell,      href: '/settings?tab=alerts'     },
-  { id: 'access',     label: 'Access',       icon: Shield,    href: '/settings?tab=access'     },
-  { id: 'accounts',   label: 'Accounts',     icon: Plug,      href: '/settings/accounts'       },
-  { id: 'businesses', label: 'Businesses',   icon: Briefcase, href: '/settings/businesses'     },
+  { id: 'ai',         label: 'AI providers', icon: Server,    href: '/settings?tab=ai'     },
+  { id: 'agents',     label: 'Agents',       icon: Sparkles,  href: '/settings/agents'     },
+  { id: 'accounts',   label: 'Connectors',   icon: Plug,      href: '/settings/accounts'   },
+  { id: 'businesses', label: 'Businesses',   icon: Briefcase, href: '/settings/businesses' },
+  { id: 'alerts',     label: 'Alerts',       icon: Bell,      href: '/settings?tab=alerts' },
+  { id: 'access',     label: 'Access',       icon: Shield,    href: '/settings?tab=access' },
 ]
 
 export default function SettingsTabs({ activeTab }: { activeTab: SettingsTabId }) {

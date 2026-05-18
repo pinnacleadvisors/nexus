@@ -22,8 +22,21 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { audit } from '@/lib/audit'
 import { encrypt } from '@/lib/crypto'
 import { createServerClient } from '@/lib/supabase'
-import { getProvider } from '@/lib/oauth/providers'
+import { getProvider as getOAuthProvider } from '@/lib/oauth/providers'
+import { getProvider as getAiProvider }    from '@/lib/ai/providers'
+import type { AiProvider }    from '@/lib/ai/providers'
+import type { AiProviderKey } from '@/lib/models/types'
 import { isValidScope } from '@/lib/claw/business-client'
+
+type ResolvedProvider = { kind: 'oauth' | 'ai'; id: string }
+
+function resolveProvider(platform: string): ResolvedProvider | null {
+  const o = getOAuthProvider(platform)
+  if (o?.apiKeySetup) return { kind: 'oauth', id: o.id }
+  const a: AiProvider | undefined = getAiProvider(platform as AiProviderKey)
+  if (a?.api) return { kind: 'ai', id: a.id }
+  return null
+}
 
 export const runtime = 'nodejs'
 
@@ -50,11 +63,8 @@ export async function POST(req: NextRequest) {
   if (typeof body.platform !== 'string' || !body.platform) {
     return NextResponse.json({ error: 'platform required' }, { status: 400 })
   }
-  const provider = getProvider(body.platform)
-  if (!provider) return NextResponse.json({ error: 'unknown platform' }, { status: 400 })
-  if (!provider.apiKeySetup) {
-    return NextResponse.json({ error: `platform '${provider.id}' is not an apiKeySetup provider` }, { status: 400 })
-  }
+  const provider = resolveProvider(body.platform)
+  if (!provider) return NextResponse.json({ error: `platform '${body.platform}' is not an apiKeySetup or AI provider` }, { status: 400 })
 
   if (typeof body.apiKey !== 'string' || body.apiKey.trim().length === 0) {
     return NextResponse.json({ error: 'apiKey required' }, { status: 400 })
@@ -135,8 +145,8 @@ export async function DELETE(req: NextRequest) {
   if (typeof body.platform !== 'string' || !body.platform) {
     return NextResponse.json({ error: 'platform required' }, { status: 400 })
   }
-  const provider = getProvider(body.platform)
-  if (!provider) return NextResponse.json({ error: 'unknown platform' }, { status: 400 })
+  const provider = resolveProvider(body.platform)
+  if (!provider) return NextResponse.json({ error: `unknown platform '${body.platform}'` }, { status: 400 })
 
   const businessSlug = body.businessSlug?.trim() || null
   if (businessSlug && !isValidScope(businessSlug)) {
