@@ -29,6 +29,16 @@ export interface McpSummaryEntry {
   /** The runtime env vars the MCP needs to function — useful for the operator
    *  to debug a "tool not found" by checking Doppler scope. */
   envVars:      readonly string[]
+  /** V2 (PR #204+): live tool count from the gateway. null when probe
+   *  failed, undefined when no probe was attempted (manifest-only render). */
+  toolCount?:   number | null
+  /** V2: live status from the gateway probe. undefined when no probe was
+   *  attempted. */
+  liveStatus?:  'ready' | 'timeout' | 'spawn_error' | 'protocol_error' | 'not-in-config'
+  /** First N tool names — surfaces in the expanded detail row. */
+  toolNames?:   string[]
+  /** Live-status error message, for the expanded row. */
+  liveError?:   string
 }
 
 export interface McpSummary {
@@ -37,6 +47,11 @@ export interface McpSummary {
   entries:      McpSummaryEntry[]
   /** Bullet point the strip uses for the "live counts deferred" disclaimer. */
   note:         string
+  /** V2 (this PR): whether live counts were merged. 'live' = gateway probe
+   *  succeeded, 'manifest' = static manifest only (gateway unreachable). */
+  source:       'live' | 'manifest'
+  /** When source='manifest', the reason the gateway probe wasn't used. */
+  liveError?:   string
 }
 
 /**
@@ -90,7 +105,8 @@ export function getPlatformMcpSummary(): McpSummary {
     scope:   'platform',
     profile: 'admin',
     entries: [...ADMIN_BUILTIN],
-    note:    'Manifested admin-scope MCPs. Live tool counts deferred to V2 (needs gateway list_tools endpoint).',
+    note:    'Manifested admin-scope MCPs.',
+    source:  'manifest',
   }
 }
 
@@ -117,6 +133,77 @@ export function getBusinessMcpSummary(input: {
     scope:   { business: input.slug },
     profile: m.profile,
     entries,
-    note:    `Manifested ${m.profile} profile (${m.mcps.length} MCPs). Live tool counts deferred to V2.`,
+    note:    `Manifested ${m.profile} profile (${m.mcps.length} MCPs).`,
+    source:  'manifest',
+  }
+}
+
+/**
+ * V2 (PR D V2): merge live tool counts from the gateway into a manifest-
+ * derived summary. Idempotent — pass the manifest summary plus the
+ * gateway reports and you get back a copy with toolCount + liveStatus
+ * populated per entry.
+ *
+ * Entries in the manifest but missing from the live reports get
+ * liveStatus='not-in-config' (the gateway's mcp.json doesn't list them
+ * — usually a build-time / Doppler env issue).
+ *
+ * Entries in the live reports but not in the manifest are appended at
+ * the end as 'admin-builtin' so the operator still sees them.
+ */
+export function mergeLiveMcpReports(
+  summary: McpSummary,
+  reports: Array<{
+    id:                 string
+    toolCount:          number | null
+    toolNames:          string[]
+    toolNamesTruncated: boolean
+    status:             'ready' | 'timeout' | 'spawn_error' | 'protocol_error'
+    error?:             string
+  }>,
+): McpSummary {
+  const reportById = new Map(reports.map(r => [r.id, r]))
+  const seenIds    = new Set<string>()
+
+  const enrichedEntries: McpSummaryEntry[] = summary.entries.map(e => {
+    seenIds.add(e.id)
+    const r = reportById.get(e.id)
+    if (!r) {
+      return { ...e, liveStatus: 'not-in-config' as const }
+    }
+    return {
+      ...e,
+      toolCount:  r.toolCount,
+      liveStatus: r.status,
+      toolNames:  r.toolNames,
+      liveError:  r.error,
+    }
+  })
+
+  // MCPs the gateway has running but the manifest doesn't list (e.g. extra
+  // hand-built admin servers that haven't been added to the lib catalog).
+  for (const r of reports) {
+    if (seenIds.has(r.id)) continue
+    enrichedEntries.push({
+      id:         r.id,
+      name:       r.id,   // unknown display name — show id verbatim
+      summary:    '(not in manifest — running in gateway only)',
+      status:     'admin-builtin',
+      envVars:    [],
+      toolCount:  r.toolCount,
+      liveStatus: r.status,
+      toolNames:  r.toolNames,
+      liveError:  r.error,
+    })
+  }
+
+  const totalLive = reports.filter(r => r.status === 'ready')
+    .reduce((sum, r) => sum + (r.toolCount ?? 0), 0)
+
+  return {
+    ...summary,
+    entries: enrichedEntries,
+    note:    `Live from gateway — ${reports.filter(r => r.status === 'ready').length}/${reports.length} probes ready · ${totalLive} tools total`,
+    source:  'live',
   }
 }
