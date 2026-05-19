@@ -37,23 +37,31 @@ interface SurveyBody {
   userId?:         string
 }
 
+// Regex-free for CodeQL — the user-supplied input is pre-bounded to 256
+// chars and the char-by-char loop is unambiguously O(n) with a known
+// constant ceiling. CodeQL's regex analyzer can't see runtime bounds, so
+// avoiding regex on user input is the cleanest way to keep CI clean.
 function slugify(s: string): string {
-  // Two anchored single-pattern replaces (no alternation) so each step is
-  // unambiguously linear-time — avoids the polynomial-regex pitfall when
-  // the input contains long runs of separator chars.
-  return s.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '')
-    .slice(0, 64)
+  const bounded = String(s).slice(0, 256).toLowerCase()
+  let out = ''
+  for (let i = 0; i < bounded.length; i++) {
+    const ch = bounded[i]
+    const isAlphanum = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+    if (isAlphanum) out += ch
+    else if (out.length > 0 && out[out.length - 1] !== '-') out += '-'
+  }
+  if (out.endsWith('-')) out = out.slice(0, -1)
+  return out.slice(0, 64)
 }
 
 function isGithubRepoUrl(s: string): boolean {
   try {
+    if (typeof s !== 'string' || s.length > 2000) return false
     const u = new URL(s)
     if (u.hostname !== 'github.com') return false
-    const parts = u.pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/')
-    return parts.length >= 2 && parts.every(Boolean)
+    // URL parser already canonicalised the path — split is regex-free.
+    const parts = u.pathname.split('/').filter(Boolean)
+    return parts.length >= 2
   } catch {
     return false
   }
