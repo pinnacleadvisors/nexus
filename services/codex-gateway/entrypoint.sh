@@ -11,6 +11,15 @@ REPO_PATH="${NEXUS_REPO_PATH:-/repo}"
 REPO_URL="${NEXUS_REPO_URL:-}"
 REPO_REF="${CODEX_GATEWAY_REPO_REF:-main}"
 
+# Self-heal /repo: if a previous boot wrote .claude/agents/ via the "no
+# NEXUS_REPO_URL" branch (or anything left non-git contents in the volume),
+# git clone refuses with "destination path already exists and is not empty".
+# Wipe the volume contents so clone can proceed.
+if [ ! -d "$REPO_PATH/.git" ] && [ -d "$REPO_PATH" ] && [ -n "$(ls -A "$REPO_PATH" 2>/dev/null || true)" ]; then
+  echo "[codex-gw] $REPO_PATH is non-empty but not a git repo — wiping for fresh clone"
+  find "$REPO_PATH" -mindepth 1 -delete 2>/dev/null || true
+fi
+
 if [ -d "$REPO_PATH/.git" ]; then
   echo "[codex-gw] refreshing repo at $REPO_PATH ($REPO_REF)"
   git -C "$REPO_PATH" fetch --depth 1 origin "$REPO_REF" || true
@@ -18,7 +27,12 @@ if [ -d "$REPO_PATH/.git" ]; then
   git -C "$REPO_PATH" reset --hard "origin/$REPO_REF" || true
 elif [ -n "$REPO_URL" ]; then
   echo "[codex-gw] cloning $REPO_URL ($REPO_REF) into $REPO_PATH"
-  git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$REPO_PATH"
+  # Clone needs the destination to be missing or empty. Mounted volumes
+  # start as empty directories — git clone is fine writing into them.
+  git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$REPO_PATH" || {
+    echo "[codex-gw] WARNING: git clone failed — continuing without agent specs"
+    mkdir -p "$REPO_PATH/.claude/agents"
+  }
 else
   echo "[codex-gw] no NEXUS_REPO_URL set and $REPO_PATH is empty — agent specs will be unavailable"
   mkdir -p "$REPO_PATH/.claude/agents"
