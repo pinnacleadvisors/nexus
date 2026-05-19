@@ -96,7 +96,9 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `STRIPE_WEBHOOK_SECRET` | 3 | Stripe → real revenue |
 | `RESEND_API_KEY` | 3 | Email alerts |
 | `ALERT_FROM_EMAIL` | 3 | Verified sender address |
-| `SENTRY_DSN` | 3 | Error tracking |
+| `SENTRY_DSN` | 3 | Error tracking (public ingest URL) |
+| `SENTRY_AUTH_TOKEN` | 3 | Sentry management API — issue/release queries from server routes. Pasted via Settings → Connectors → Sentry (admin scope) |
+| `POSTHOG_API_KEY` | 3 | PostHog Personal API Key — analytics queries, feature flag reads. Pasted via Settings → Connectors → PostHog (admin scope) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 5 | Google OAuth |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 5 | GitHub OAuth |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | 5 | Slack OAuth |

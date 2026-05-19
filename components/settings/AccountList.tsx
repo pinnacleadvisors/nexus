@@ -12,11 +12,22 @@
  */
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useClerk } from '@clerk/nextjs'
-import { CheckCircle2, Loader2, Plug, Power, AlertCircle, X, KeyRound, ExternalLink } from 'lucide-react'
+import {
+  CheckCircle2, Loader2, Plug, Power, AlertCircle, X, KeyRound, ExternalLink,
+  ArrowRight, Cpu, Brain, BookMarked, Workflow, Lightbulb, PenLine,
+} from 'lucide-react'
 import { OAUTH_PROVIDERS, type OAuthCategory, type OAuthProvider } from '@/lib/oauth/providers'
+import { INTERNAL_TOOLS, type InternalTool, type InternalToolStatus } from '@/lib/internal-tools'
 import { ADMIN_SCOPE } from '@/lib/claw/business-client'
+
+// Icon registry for internal-tool cards. Static map (not lookup-by-string at
+// runtime) so tree-shaking can drop anything the cards don't reference.
+const INTERNAL_ICONS: Record<string, React.ComponentType<{ size?: number; style?: React.CSSProperties }>> = {
+  Cpu, Brain, BookMarked, Workflow, Lightbulb, PenLine,
+}
 
 interface ConnectedAccount {
   id:           string
@@ -278,9 +289,129 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
               </div>
             </Section>
           ))}
+
+          {/* Internal tools — first-party feature shortcuts that previously
+              lived on the deleted /tools page (ce29955). Only surface in Admin
+              scope; per-business operators don't need to see platform-wide
+              tooling. */}
+          {currentScope === 'admin' && (
+            <Section title="Internal tools">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {INTERNAL_TOOLS.map(t => <InternalToolTile key={t.id} tool={t} />)}
+              </div>
+            </Section>
+          )}
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * Card for a first-party internal tool. Distinct from OAuthTile because there
+ * is no connection state to manage — just a label + description + a "Open"
+ * arrow that routes to the underlying deep-link page. Visual language stays
+ * intentionally close to OAuthTile so the section reads as part of the same
+ * surface, with the indigo→amber accent shift signalling "internal".
+ */
+function InternalToolTile({ tool }: { tool: InternalTool }) {
+  const Icon = INTERNAL_ICONS[tool.icon] ?? Plug
+  return (
+    <Link
+      href={tool.href}
+      className="group p-3.5 flex items-center gap-3 transition-all no-underline"
+      style={{
+        background:           'linear-gradient(135deg, rgba(245,158,11,0.05), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '16px',
+        boxShadow:
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.boxShadow =
+          '0 1px 0 0 rgba(255,255,255,0.08) inset, 0 24px 48px -24px rgba(245,158,11,0.22)'
+        e.currentTarget.style.transform = 'translateY(-1px)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.boxShadow =
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)'
+        e.currentTarget.style.transform = 'translateY(0)'
+      }}
+    >
+      <div
+        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+        style={{
+          background: 'linear-gradient(135deg, rgba(245,158,11,0.22), rgba(245,158,11,0.04))',
+          border:     '1px solid rgba(245,158,11,0.22)',
+          boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+        }}
+      >
+        <Icon size={16} style={{ color: '#fbbf24' }} />
+      </div>
+      <div className="min-w-0 flex-1 text-left">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{tool.name}</span>
+          <InternalStatusPill status={tool.status} />
+        </div>
+        <div className="text-[11px] mt-0.5 leading-snug line-clamp-2" style={{ color: '#9090b0' }}>
+          {tool.description}
+        </div>
+      </div>
+      <ArrowRight
+        size={14}
+        className="shrink-0 transition-transform"
+        style={{ color: '#9090b0' }}
+      />
+    </Link>
+  )
+}
+
+function InternalStatusPill({ status }: { status: InternalToolStatus }) {
+  const map: Record<InternalToolStatus, { label: string; dot: string; glow: string; text: string; bg: string; border: string }> = {
+    live: {
+      label:  'LIVE',
+      dot:    '#fbbf24',
+      glow:   '0 0 8px rgba(251,191,36,0.5)',
+      text:   '#fbbf24',
+      bg:     'rgba(245,158,11,0.10)',
+      border: 'rgba(245,158,11,0.25)',
+    },
+    beta: {
+      label:  'BETA',
+      dot:    '#a8a3ff',
+      glow:   '0 0 8px rgba(168,163,255,0.5)',
+      text:   '#a8a3ff',
+      bg:     'rgba(108,99,255,0.10)',
+      border: 'rgba(108,99,255,0.22)',
+    },
+    experimental: {
+      label:  'EXPERIMENTAL',
+      dot:    '#9090b0',
+      glow:   'none',
+      text:   '#9090b0',
+      bg:     'rgba(255,255,255,0.04)',
+      border: 'rgba(255,255,255,0.10)',
+    },
+  }
+  const s = map[status]
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] font-mono tracking-[0.12em] shrink-0"
+      style={{
+        background:   s.bg,
+        border:       `1px solid ${s.border}`,
+        borderRadius: '999px',
+        color:        s.text,
+      }}
+    >
+      <span
+        className="w-1 h-1 rounded-full"
+        style={{ background: s.dot, boxShadow: s.glow }}
+      />
+      {s.label}
+    </span>
   )
 }
 
