@@ -128,6 +128,15 @@ if [ $do_typecheck = 1 ] && [ $do_vercel = 1 ]; then
     printf 'installing root deps (npm install)...\n'
     npm install --no-audit --no-fund >/dev/null
   fi
+  # Drop stale typed-route validator artefacts before tsc runs. Next.js
+  # generates .next/types/validator.ts with one `typeof import()` per
+  # page.tsx it finds; tsconfig.json includes that path. If a previous
+  # build mapped a route that has since been deleted (e.g. /tools/page.tsx
+  # → ce29955), the stale validator still imports the missing module and
+  # tsc fails with TS2307 "Cannot find module .../page.js" until next
+  # build regenerates it. Vercel does its own fresh build, so wiping the
+  # local artefacts here costs us nothing.
+  rm -rf .next/types .next/dev/types
   if npx tsc --noEmit; then
     ok "typecheck clean"
   else
