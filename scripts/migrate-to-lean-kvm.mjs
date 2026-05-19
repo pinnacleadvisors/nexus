@@ -20,15 +20,17 @@
  *      set, find an app with the same name on the source Coolify and STOP
  *      it (never deletes — keeps the rollback path open).
  *
- * Inputs (env, sourced from Doppler):
- *   TARGET_COOLIFY_URL          (defaults to COOLIFY_KVM4_URL if unset)
- *   TARGET_COOLIFY_TOKEN        (defaults to COOLIFY_KVM4_API_TOKEN)
- *   TARGET_COOLIFY_PROJECT_UUID (defaults to COOLIFY_PROJECT_ID_NEXUS_BUSINESSES)
- *   TARGET_COOLIFY_SERVER_UUID  (defaults to COOLIFY_KVM4_SERVER_UUID)
- *   GIT_REPOSITORY              (defaults to https://github.com/pinnacleadvisors/nexus)
- *   GIT_BRANCH                  (defaults to main)
- *   SOURCE_COOLIFY_URL          (optional — KVM2 Coolify URL for --stop-source)
- *   SOURCE_COOLIFY_TOKEN        (optional)
+ * Inputs (env, sourced from Doppler — these are the established Nexus names):
+ *   COOLIFY_KVM4_URL                    target Coolify host
+ *   COOLIFY_KVM4_API_TOKEN              target Coolify PAT
+ *   COOLIFY_KVM4_SERVER_UUID            target server uuid
+ *   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES target project uuid (any Coolify project works;
+ *                                       the name is historical — same project hosts
+ *                                       the lean-mode apps too)
+ *   GIT_REPOSITORY                      defaults to https://github.com/pinnacleadvisors/nexus
+ *   GIT_BRANCH                          defaults to main
+ *   SOURCE_COOLIFY_URL                  optional — source Coolify URL for --stop-source
+ *   SOURCE_COOLIFY_TOKEN                optional
  *   Plus every env referenced in each Compose file (CLAUDE_GATEWAY_BEARER,
  *   COOLIFY_API_KEY, NEXUS_SANDBOX_TOKEN, etc. — see service compose files)
  *
@@ -70,11 +72,13 @@ if (!DRY_RUN && !APPLY) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// Reads the established COOLIFY_KVM4_* names that already live in Doppler.
+// No alias prefix — keep one set of names, not two.
 const TARGET = {
-  url:         process.env.TARGET_COOLIFY_URL         ?? process.env.COOLIFY_KVM4_URL,
-  token:       process.env.TARGET_COOLIFY_TOKEN       ?? process.env.COOLIFY_KVM4_API_TOKEN,
-  projectUuid: process.env.TARGET_COOLIFY_PROJECT_UUID ?? process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES,
-  serverUuid:  process.env.TARGET_COOLIFY_SERVER_UUID  ?? process.env.COOLIFY_KVM4_SERVER_UUID,
+  url:         process.env.COOLIFY_KVM4_URL,
+  token:       process.env.COOLIFY_KVM4_API_TOKEN,
+  projectUuid: process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES,
+  serverUuid:  process.env.COOLIFY_KVM4_SERVER_UUID,
 }
 const SOURCE = {
   url:   process.env.SOURCE_COOLIFY_URL,
@@ -85,8 +89,13 @@ const GIT_BRANCH     = process.env.GIT_BRANCH     ?? 'main'
 
 const missingTarget = Object.entries(TARGET).filter(([_, v]) => !v).map(([k]) => k)
 if (missingTarget.length > 0) {
-  console.error(`Missing target config: ${missingTarget.join(', ')}`)
-  console.error('Set TARGET_COOLIFY_* or COOLIFY_KVM4_* in Doppler.')
+  const ENV_NAMES = {
+    url:         'COOLIFY_KVM4_URL',
+    token:       'COOLIFY_KVM4_API_TOKEN',
+    projectUuid: 'COOLIFY_PROJECT_ID_NEXUS_BUSINESSES',
+    serverUuid:  'COOLIFY_KVM4_SERVER_UUID',
+  }
+  console.error(`Missing Doppler env: ${missingTarget.map(k => ENV_NAMES[k]).join(', ')}`)
   process.exit(2)
 }
 if (STOP_SOURCE && (!SOURCE.url || !SOURCE.token)) {
@@ -163,11 +172,13 @@ async function migrateService(svc) {
   if (existing) {
     const status = String(existing.status ?? '?').toLowerCase()
     log(`already on target  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
-    if (status.includes('exited') || status.includes('failed') || status.includes('unhealthy')) {
-      log(`  ⚠️  app exists but is unhealthy — script won't re-deploy existing apps.`)
+    // Anything that isn't actively "running:healthy" deserves a hint —
+    // covers exited / failed / unhealthy / starting / fresh-but-undeployed.
+    if (!status.includes('running:healthy')) {
+      log(`  ⚠️  app is not running:healthy — script won't re-deploy existing apps.`)
       log(`     check logs in Coolify UI, or trigger a manual redeploy:`)
-      log(`       curl -X POST '${TARGET.url}/api/v1/applications/${existing.uuid}/deploy' \\`)
-      log(`            -H "Authorization: Bearer $TARGET_COOLIFY_TOKEN"`)
+      log(`       curl -X GET '${TARGET.url}/api/v1/deploy?uuid=${existing.uuid}&force=true' \\`)
+      log(`            -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"`)
     }
     return { name: svc.name, action: 'skipped', uuid: existing.uuid, status }
   }
@@ -237,7 +248,10 @@ async function migrateService(svc) {
   }
 
   try {
-    await coolify(TARGET, 'POST', `/applications/${uuid}/deploy`)
+    // Coolify v4 deploy endpoint is top-level (GET /deploy?uuid=…), NOT
+    // /applications/{uuid}/deploy (which 404s). Force=true does a fresh build
+    // without cache — good for first deploy since there's nothing to cache.
+    await coolify(TARGET, 'GET', `/deploy?uuid=${uuid}&force=true`)
     log('deploy triggered')
   } catch (err) {
     log(`❌ deploy failed: ${err.message}`)
