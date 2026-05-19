@@ -6,14 +6,16 @@
 
 ### Target Coolify (KVM4) — required
 
-| Env var | Source | Notes |
-|---|---|---|
-| `TARGET_COOLIFY_URL` *(or `COOLIFY_KVM4_URL`)* | Doppler | e.g. `https://coolify.coolifycloudtunnel.uk` |
-| `TARGET_COOLIFY_TOKEN` *(or `COOLIFY_KVM4_API_TOKEN`)* | Doppler | Personal Access Token from Coolify → Keys & Tokens |
-| `TARGET_COOLIFY_PROJECT_UUID` *(or `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES`)* | Doppler | uuid of the project that holds the lean stack — create a `nexus-lean` project in Coolify UI if you want a clean separation from the per-business project |
-| `TARGET_COOLIFY_SERVER_UUID` *(or `COOLIFY_KVM4_SERVER_UUID`)* | Doppler | uuid of the KVM4 server in Coolify |
-| `GIT_REPOSITORY` | optional | Defaults to `https://github.com/pinnacleadvisors/nexus` |
-| `GIT_BRANCH` | optional | Defaults to `main` |
+All four target env vars are the established Nexus names — already in Doppler from the per-business provisioning work. No new vars to set.
+
+| Env var | Notes |
+|---|---|
+| `COOLIFY_KVM4_URL` | e.g. `https://coolify.coolifycloudtunnel.uk` |
+| `COOLIFY_KVM4_API_TOKEN` | Personal Access Token from Coolify → Keys & Tokens |
+| `COOLIFY_PROJECT_ID_NEXUS_BUSINESSES` | uuid of the Coolify project that holds the lean stack (historical name — same project hosts the per-business apps + the new lean-mode apps; if you want them separated, create a new project and point this at the new uuid) |
+| `COOLIFY_KVM4_SERVER_UUID` | uuid of the KVM4 server in Coolify |
+| `GIT_REPOSITORY` (optional) | Defaults to `https://github.com/pinnacleadvisors/nexus` |
+| `GIT_BRANCH` (optional) | Defaults to `main` |
 
 ### Source Coolify (KVM2) — only if you pass `--stop-source`
 
@@ -99,7 +101,8 @@ Idempotent — re-runs detect existing apps by name and skip create.
 | `403 — repository not accessible` | Coolify's GitHub App lacks access to `pinnacleadvisors/nexus` | Install / re-authorise the Coolify GitHub App; grant repo access |
 | `coolify POST /applications/public → 422` | Required field missing or invalid | Check the script output's `body:` line — Coolify returns field-level errors. Common: `project_uuid` for the wrong server, `server_uuid` for the wrong project. The endpoint is `/applications/public` for public repos + Docker Compose builds; `/applications/dockercompose` is **deprecated** and accepts only inline base64 Compose, not git-cloned builds — don't switch back to it. |
 | `coolify POST /applications/public → 401` | Token missing repo access | The GitHub App / Public Source linked in Coolify UI doesn't have access to the repo. Re-authorise via Coolify → Sources |
-| Service shows `already on target  status=exited:unhealthy` | App was created but never deployed cleanly, or runtime crashed | The migration script intentionally won't redeploy existing apps. Either trigger a manual redeploy from Coolify UI, or `curl -X POST <url>/api/v1/applications/<uuid>/deploy -H "Authorization: Bearer $TARGET_COOLIFY_TOKEN"` — the script prints this command in the hint line. Inspect logs in Coolify UI to find the root cause (usually missing env vars or build failure) |
+| Service shows `already on target  status=<not running:healthy>` | App was created but never deployed cleanly, runtime crashed, or first deploy was triggered with missing env vars | The migration script intentionally won't redeploy existing apps. Either trigger a manual redeploy from Coolify UI, or `curl -X GET '<url>/api/v1/deploy?uuid=<uuid>&force=true' -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"` — the script prints this exact command in the hint line. Inspect logs in Coolify UI to find the root cause (usually missing env vars or build failure) |
+| `coolify POST /applications/{uuid}/deploy → 404` | Wrong deploy endpoint | Coolify v4's deploy endpoint is **top-level**: `GET /api/v1/deploy?uuid={uuid}` (or `POST /api/v1/deploy` with `{uuid, force}` body) — NOT nested under `/applications/`. Already fixed in the migration script; mentioned here as a forensic note in case anyone copies the curl out of an old log |
 | Env var present in compose but listed as "missing" | Not set in Doppler | Add it to the appropriate Doppler config and re-run |
 | Status stuck at "starting" past 5min | Long build (first deploy of nexus-app is the slowest — `npm ci` + Next.js build) | Wait it out in the Coolify UI, OR re-run the script — it'll detect the app exists and skip create, but won't re-poll. Use Coolify UI for monitoring large builds |
 | `--stop-source` finds nothing | KVM2 deployed bare-Docker, not via Coolify | SSH to KVM2 and `docker compose -f services/codex-gateway/docker-compose.yaml down` manually after the target is healthy |
