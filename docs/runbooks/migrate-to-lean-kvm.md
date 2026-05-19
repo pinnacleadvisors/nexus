@@ -34,15 +34,17 @@ curl -s "$COOLIFY_KVM4_URL/api/v1/projects" \
 
 If KVM2's codex-gateway was deployed bare-Docker (no Coolify) you can skip the source flag and SSH-stop it manually after the cutover.
 
-### Per-service envs
+### Per-service envs — only `DOPPLER_TOKEN` matters
 
-Each service's compose file references env vars (e.g. `${CLAUDE_GATEWAY_BEARER}`). The script collects these references from the compose body and bulk-sets them on the new Coolify app using whatever's in `process.env`. Run via Doppler so they're all injected:
+Each Compose file's `environment:` section is now a single entry: `DOPPLER_TOKEN`. The container's ENTRYPOINT wraps the real command in `doppler run --`, which fetches every other secret (CLAUDE_GATEWAY_BEARER, MEMORY_HQ_TOKEN, etc.) from Doppler at boot — no Coolify env hand-editing needed for the actual secrets.
+
+See [`docs/runbooks/doppler-coolify-sync.md`](doppler-coolify-sync.md) for the Doppler service token setup procedure. The migrate script's existing env-extraction logic still works — it just sees one var per service (DOPPLER_TOKEN) and pushes that.
 
 ```bash
 doppler run -- node scripts/migrate-to-lean-kvm.mjs --dry-run
 ```
 
-Missing values surface in the dry-run output — fix in Doppler before applying.
+Expected dry-run line: `envs: 1 present, 0 missing` for each service (only DOPPLER_TOKEN).
 
 ### Git source registered in Coolify (one-time)
 

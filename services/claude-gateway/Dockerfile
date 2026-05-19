@@ -18,10 +18,17 @@ WORKDIR /app
 
 # git is required so the entrypoint can clone the Nexus repo on boot — that
 # clone supplies .claude/agents/<slug>.md specs to the spawned claude CLI.
-# bash + ca-certificates round out the runtime essentials.
+# bash + ca-certificates + curl round out the runtime essentials. curl + gnupg
+# are also needed to bootstrap the Doppler CLI (next layer).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates bash \
+ && apt-get install -y --no-install-recommends git ca-certificates bash curl gnupg \
  && rm -rf /var/lib/apt/lists/*
+
+# Doppler CLI — secrets pulled at container startup, so the only env var that
+# needs to live in Coolify is DOPPLER_TOKEN. Everything else (CLAUDE_GATEWAY_BEARER,
+# COMPOSIO_API_KEY, MEMORY_HQ_TOKEN, etc.) flows from Doppler at boot via
+# `doppler run --` (see ENTRYPOINT below). See docs/runbooks/doppler-coolify-sync.md.
+RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 
 # Install the claude CLI globally. Pinned to a known-good major; bump
 # manually after smoke-testing a new release.
@@ -56,4 +63,8 @@ ENV NEXUS_REPO_PATH=/repo
 ENV CLAUDE_GATEWAY_PORT=3000
 EXPOSE 3000
 
-ENTRYPOINT ["./entrypoint.sh"]
+# Wrap the entrypoint with `doppler run` so all secrets are fetched fresh from
+# Doppler at boot. --fallback writes a local cache after each successful pull;
+# if Doppler is down on a later restart, the cache is reused so the container
+# still starts (with whatever was current at the last pull).
+ENTRYPOINT ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "./entrypoint.sh"]

@@ -11,9 +11,13 @@
 
 FROM quay.io/podman/stable:latest
 
-# Node.js for the HTTP wrapper. Fedora base = dnf.
-RUN dnf install -y --setopt=install_weak_deps=False nodejs \
+# Node.js + curl (needed by the Doppler install script). Fedora base = dnf.
+RUN dnf install -y --setopt=install_weak_deps=False nodejs curl \
  && dnf clean all
+
+# Doppler CLI — fetches secrets at container start, so the only env Coolify
+# needs is DOPPLER_TOKEN. See docs/runbooks/doppler-coolify-sync.md.
+RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 
 WORKDIR /app
 COPY server.mjs ./
@@ -25,4 +29,5 @@ EXPOSE 8080
 # would defeat the purpose.
 USER podman
 
-CMD ["node", "server.mjs"]
+# Doppler-wrapped — NEXUS_SANDBOX_TOKEN + any other config arrive via Doppler.
+CMD ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "node", "server.mjs"]

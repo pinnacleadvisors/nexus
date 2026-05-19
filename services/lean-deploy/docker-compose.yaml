@@ -19,50 +19,24 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      # ── Lean mode flag ──────────────────────────────────────────────
-      LEAN_MODE: "1"
-      LEAN_USER_DAILY_USD_LIMIT: "${LEAN_USER_DAILY_USD_LIMIT:-5}"
-      LLM_PROVIDER: "${LLM_PROVIDER:-claude}"
-
-      # ── Clerk auth + owner gate ─────────────────────────────────────
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}"
-      CLERK_SECRET_KEY:                  "${CLERK_SECRET_KEY}"
-      ALLOWED_USER_IDS:                  "${ALLOWED_USER_IDS}"
-
-      # ── Supabase (free tier in lean mode) ───────────────────────────
-      NEXT_PUBLIC_SUPABASE_URL:      "${NEXT_PUBLIC_SUPABASE_URL}"
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
-      SUPABASE_SERVICE_ROLE_KEY:     "${SUPABASE_SERVICE_ROLE_KEY}"
-
-      # ── Single shared Claude Code gateway ───────────────────────────
-      CLAUDE_CODE_GATEWAY_URL:  "${CLAUDE_CODE_GATEWAY_URL:-http://claude-gateway:3000}"
-      CLAUDE_CODE_BEARER_TOKEN: "${CLAUDE_CODE_BEARER_TOKEN}"
-
-      # ── Codex gateway ───────────────────────────────────────────────
-      CODEX_GATEWAY_URL:    "${CODEX_GATEWAY_URL:-http://codex-gateway:3000}"
-      CODEX_GATEWAY_BEARER: "${CODEX_GATEWAY_BEARER}"
-
-      # ── LLM provider alternates (Mimo + Ollama) ─────────────────────
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      MIMO_API_KEY:      "${MIMO_API_KEY:-}"
-      MIMO_BASE_URL:     "${MIMO_BASE_URL:-https://api.mimo.ai/v1}"
-      OLLAMA_BASE_URL:   "${OLLAMA_BASE_URL:-http://ollama:11434}"
-
-      # ── Sandbox service (rootless Podman) ───────────────────────────
-      NEXUS_SANDBOX_URL:   "${NEXUS_SANDBOX_URL:-http://nexus-sandbox:8080}"
-      NEXUS_SANDBOX_TOKEN: "${NEXUS_SANDBOX_TOKEN}"
-
-      # ── memory-hq + Composio (cross-project graph + OAuth broker) ───
-      MEMORY_HQ_TOKEN:   "${MEMORY_HQ_TOKEN:-}"
-      MEMORY_HQ_REPO:    "${MEMORY_HQ_REPO:-pinnacleadvisors/memory-hq}"
-      COMPOSIO_API_KEY:  "${COMPOSIO_API_KEY:-}"
-
-      # ── Stripe (revenue tracking, optional in lean mode) ────────────
-      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
-
-      # ── Misc ─────────────────────────────────────────────────────────
-      NEXUS_OPS_TOKEN: "${NEXUS_OPS_TOKEN}"
-      CRON_SECRET:     "${CRON_SECRET:-}"
+      # Doppler-sourced — only DOPPLER_TOKEN needs to be in Coolify. Every
+      # other env var (Clerk, Supabase, gateway bearers, LLM providers,
+      # Stripe, etc.) flows from Doppler at boot via `doppler run --` in the
+      # CMD.
+      #
+      # Vars expected at runtime (all in Doppler):
+      #   LEAN_MODE, LEAN_USER_DAILY_USD_LIMIT, LLM_PROVIDER,
+      #   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, ALLOWED_USER_IDS,
+      #   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      #   SUPABASE_SERVICE_ROLE_KEY,
+      #   CLAUDE_CODE_GATEWAY_URL, CLAUDE_CODE_BEARER_TOKEN,
+      #   CODEX_GATEWAY_URL, CODEX_GATEWAY_BEARER,
+      #   ANTHROPIC_API_KEY, MIMO_API_KEY, MIMO_BASE_URL, OLLAMA_BASE_URL,
+      #   NEXUS_SANDBOX_URL, NEXUS_SANDBOX_TOKEN,
+      #   MEMORY_HQ_TOKEN, MEMORY_HQ_REPO, COMPOSIO_API_KEY,
+      #   STRIPE_WEBHOOK_SECRET, NEXUS_OPS_TOKEN, CRON_SECRET
+      # See docs/runbooks/doppler-coolify-sync.md.
+      DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
 
     expose:
       - "3000"

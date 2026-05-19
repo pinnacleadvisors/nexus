@@ -18,19 +18,17 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      CODEX_GATEWAY_PORT:     "3000"
-      CODEX_GATEWAY_BEARER:   "${CODEX_GATEWAY_BEARER}"
-      NEXUS_REPO_URL:         "${NEXUS_REPO_URL}"
-      CODEX_GATEWAY_REPO_REF: "${CODEX_GATEWAY_REPO_REF:-main}"
-      CODEX_MODEL:            "${CODEX_MODEL:-}"
-      QUEUE_MAX_DEPTH:        "${QUEUE_MAX_DEPTH:-4}"
-      REQUEST_TIMEOUT_MS:     "${REQUEST_TIMEOUT_MS:-180000}"
-      # Auth — see services/codex-gateway/README.md step 4. Defaults are empty
-      # so Coolify-side absence is tolerated; entrypoint.sh detects which path
-      # is active and falls back to the persistent volume when none are set.
-      CODEX_AUTH_JSON:        "${CODEX_AUTH_JSON:-}"
-      CODEX_AUTH_JSON_FORCE:  "${CODEX_AUTH_JSON_FORCE:-0}"
-      CODEX_API_KEY:          "${CODEX_API_KEY:-}"
+      # Doppler-sourced — only DOPPLER_TOKEN needs to be set in Coolify.
+      # All secrets (CODEX_GATEWAY_BEARER, CODEX_AUTH_JSON, etc.) flow from
+      # Doppler at boot via `doppler run --` in the ENTRYPOINT.
+      #
+      # Vars expected at runtime (all in Doppler):
+      #   CODEX_GATEWAY_PORT, CODEX_GATEWAY_BEARER, NEXUS_REPO_URL,
+      #   CODEX_GATEWAY_REPO_REF, CODEX_MODEL, QUEUE_MAX_DEPTH,
+      #   REQUEST_TIMEOUT_MS, CODEX_AUTH_JSON, CODEX_AUTH_JSON_FORCE,
+      #   CODEX_API_KEY
+      # See docs/runbooks/doppler-coolify-sync.md.
+      DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
     volumes:
       - codex_home:/root/.codex
       - nexus_repo:/repo

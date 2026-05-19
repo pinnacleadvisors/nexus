@@ -18,31 +18,20 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      CLAUDE_GATEWAY_PORT:    "3000"
-      CLAUDE_GATEWAY_BEARER:  "${CLAUDE_GATEWAY_BEARER}"
-      NEXUS_REPO_URL:         "${NEXUS_REPO_URL}"
-      CLAUDE_GATEWAY_REPO_REF: "${CLAUDE_GATEWAY_REPO_REF:-main}"
-      QUEUE_MAX_DEPTH:        "${QUEUE_MAX_DEPTH:-8}"
-      REQUEST_TIMEOUT_MS:     "${REQUEST_TIMEOUT_MS:-600000}"
-      # Composio MCP auth — picked up by entrypoint.sh and written into
-      # ~/.claude/settings.json under env. When COMPOSIO_API_KEY is unset
-      # the MCP is not registered (graceful degrade — Claude still runs with
-      # built-in tools). When BOTH COMPOSIO_API_KEY and
-      # SUPABASE_SERVICE_ROLE_KEY are set, the entrypoint builds + registers
-      # the hard-isolation wrapper (services/mcp-composio-admin/) from /repo
-      # instead of @composio/rube-mcp. See entrypoint.sh for the logic.
-      COMPOSIO_API_KEY:           "${COMPOSIO_API_KEY:-}"
-      NEXT_PUBLIC_SUPABASE_URL:   "${NEXT_PUBLIC_SUPABASE_URL:-}"
-      SUPABASE_SERVICE_ROLE_KEY:  "${SUPABASE_SERVICE_ROLE_KEY:-}"
-      NEXUS_OPERATOR_USER_ID:     "${NEXUS_OPERATOR_USER_ID:-}"
-      MCP_USE_RUBE_FALLBACK:      "${MCP_USE_RUBE_FALLBACK:-0}"
-      # memory-hq MCP — gives the platform-copilot durable cross-session
-      # learnings (atoms, entities, MOCs) via the memory-hq graph. Optional
-      # but recommended. Entrypoint builds + registers it alongside the
-      # composio MCP when MEMORY_HQ_TOKEN is set. NEXUS_BASE_URL is needed
-      # for the writes (which go through POST /api/memory/event).
-      MEMORY_HQ_TOKEN:            "${MEMORY_HQ_TOKEN:-}"
-      NEXUS_BASE_URL:             "${NEXUS_BASE_URL:-}"
+      # Doppler is the single source of truth for secrets. The container's
+      # ENTRYPOINT wraps the real command in `doppler run --`, which pulls
+      # every var below from Doppler at boot and injects them into process.env.
+      # The only env Coolify needs to provide is DOPPLER_TOKEN (a service
+      # token scoped to the Doppler config that holds these secrets).
+      #
+      # Vars expected at runtime (all populated in Doppler):
+      #   CLAUDE_GATEWAY_PORT, CLAUDE_GATEWAY_BEARER, NEXUS_REPO_URL,
+      #   CLAUDE_GATEWAY_REPO_REF, QUEUE_MAX_DEPTH, REQUEST_TIMEOUT_MS,
+      #   COMPOSIO_API_KEY, NEXT_PUBLIC_SUPABASE_URL,
+      #   SUPABASE_SERVICE_ROLE_KEY, NEXUS_OPERATOR_USER_ID,
+      #   MCP_USE_RUBE_FALLBACK, MEMORY_HQ_TOKEN, NEXUS_BASE_URL
+      # See docs/runbooks/doppler-coolify-sync.md for setup.
+      DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
     volumes:
       - claude_home:/root/.claude
       - nexus_repo:/repo

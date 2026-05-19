@@ -30,10 +30,16 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 # git is here for any in-app shell-out that reads the repo (memory-hq CLI,
-# molecularmemory_local skill) — small footprint, big convenience.
+# molecularmemory_local skill). curl + gnupg bootstrap the Doppler CLI.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates \
+ && apt-get install -y --no-install-recommends git ca-certificates curl gnupg \
  && rm -rf /var/lib/apt/lists/*
+
+# Doppler CLI — secrets land in process.env at container start via `doppler run`.
+# Single source of truth = Doppler; Coolify only needs DOPPLER_TOKEN.
+# See docs/runbooks/doppler-coolify-sync.md.
+RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
+
 COPY --from=build /app /app
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "npm", "run", "start"]
