@@ -240,6 +240,25 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       envVar: 'CONVERTKIT_API_KEY',
     },
   },
+  {
+    // Platform-level transactional email. Single key powers every business —
+    // alert digests, approval prompts, daily reports. Read from env
+    // (RESEND_API_KEY) by lib/email/resend.ts today; storing the key here
+    // makes it visible/rotatable in the Admin scope of /settings/accounts
+    // alongside the rest of the connector inventory.
+    id: 'resend',
+    name: 'Resend',
+    toolkitSlug: 'RESEND', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'email',
+    logo: '/logos/resend.svg',
+    actions: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',    apiKeySetup: {
+      instructions: 'Resend dashboard → API Keys → Create API Key. Scope to "Full access" if agents will send + read, or "Sending access" for send-only. Paste the key below — it is shown once.',
+      credentialsUrl: 'https://resend.com/api-keys',
+      envVar: 'RESEND_API_KEY',
+    },
+  },
 
   // ── Communication ───────────────────────────────────────────────────────
   {
@@ -464,6 +483,40 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     ],
     sharePolicy: 'per-business',
     scopePolicy: 'per-business',  },
+  {
+    // Platform-wide product analytics. One personal API key reads events +
+    // dashboards across every business; the ingest path uses a public project
+    // key embedded in the client bundle (not stored here). Admin-only.
+    id: 'posthog',
+    name: 'PostHog',
+    toolkitSlug: 'POSTHOG', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'analytics',
+    logo: '/logos/posthog.svg',
+    actions: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',    apiKeySetup: {
+      instructions: 'PostHog → Account → Personal API Keys → Create personal API key. Scope to "Read" for analytics queries or "All access" if agents will also write feature flags. Paste below.',
+      credentialsUrl: 'https://us.posthog.com/settings/user-api-keys',
+      envVar: 'POSTHOG_API_KEY',
+    },
+  },
+  {
+    // Platform-wide error tracking. SENTRY_DSN (public, ingest-only) lives in
+    // the client bundle; the API token here is separate and used by server
+    // routes that QUERY Sentry (issue list, release health, etc.). Admin-only.
+    id: 'sentry',
+    name: 'Sentry',
+    toolkitSlug: 'SENTRY', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'analytics',
+    logo: '/logos/sentry.svg',
+    actions: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',    apiKeySetup: {
+      instructions: 'Sentry → Settings → Account → API → Auth Tokens → Create New Token. Scopes needed: project:read, event:read. The DSN (public ingest URL) is separate — set it via SENTRY_DSN env var.',
+      credentialsUrl: 'https://sentry.io/settings/account/api/auth-tokens/',
+      envVar: 'SENTRY_AUTH_TOKEN',
+    },
+  },
 ] as const
 
 export function getProvider(id: string): OAuthProvider | undefined {
