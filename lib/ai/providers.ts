@@ -88,7 +88,7 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     docsUrl:  'https://platform.openai.com/docs',
     modes:    ['subscription', 'api'],
     subscription: {
-      envVars:      ['CODEX_GATEWAY_URL', 'CODEX_GATEWAY_BEARER'],
+      envVars:      ['CODEX_GATEWAY_URL', 'CODEX_GATEWAY_BEARER_TOKEN'],
       instructions: 'ChatGPT Plus / Pro plan drained via the Codex CLI gateway on KVM2. Auth rotation ~30 days — see docs/runbooks/codex-gateway-auth-rotation.md.',
       setupUrl:     '/manage-platform',
     },

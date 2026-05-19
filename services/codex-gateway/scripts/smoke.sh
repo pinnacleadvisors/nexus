@@ -27,7 +27,7 @@ if [ -z "$HOST" ]; then
   read -r HOST
 fi
 if [ -z "$BEARER" ]; then
-  printf 'CODEX_GATEWAY_BEARER: '
+  printf 'CODEX_GATEWAY_BEARER_TOKEN: '
   # silent read so the bearer doesn't end up in scrollback
   stty -echo
   read -r BEARER
@@ -156,7 +156,7 @@ case "$signed_code" in
     echo "✘ 401 with reason=$reason" >&2
     case "$reason" in
       bad-bearer)
-        echo "  Cause: BEARER doesn't match server's CODEX_GATEWAY_BEARER." >&2
+        echo "  Cause: BEARER doesn't match server's CODEX_GATEWAY_BEARER_TOKEN." >&2
         echo "  Fix:   re-copy without trailing whitespace; verify Doppler / Coolify env." >&2 ;;
       bad-signature)
         echo "  Cause: HMAC mismatch — usually trailing whitespace in BEARER." >&2
