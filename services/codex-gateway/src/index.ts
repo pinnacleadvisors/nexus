@@ -11,7 +11,11 @@ import { isSafeSlug } from './agentSpec.js'
 import { JobStore } from './jobStore.js'
 
 const PORT          = Number(process.env.CODEX_GATEWAY_PORT ?? 3000)
-const BEARER        = process.env.CODEX_GATEWAY_BEARER ?? ''
+// Canonical name is CODEX_GATEWAY_BEARER_TOKEN — matches the Nexus-side env
+// var, matches Doppler. CODEX_GATEWAY_BEARER is kept as a fallback for
+// pre-rename containers/configs and will be removed once everything is on the
+// new name.
+const BEARER        = process.env.CODEX_GATEWAY_BEARER_TOKEN ?? process.env.CODEX_GATEWAY_BEARER ?? ''
 const REPO_PATH     = process.env.NEXUS_REPO_PATH ?? '/repo'
 const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
 const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 120_000)
@@ -31,7 +35,7 @@ const ALLOWED_USER_IDS = new Set(
 const USER_ID_GATE_ACTIVE = ALLOWED_USER_IDS.size > 0
 
 if (!BEARER) {
-  console.error('[gateway] CODEX_GATEWAY_BEARER is required — refusing to start')
+  console.error('[gateway] CODEX_GATEWAY_BEARER_TOKEN is required — refusing to start')
   process.exit(1)
 }
 

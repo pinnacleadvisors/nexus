@@ -74,7 +74,7 @@ After redeploying any one app, hit its `/health` endpoint (or check Coolify logs
 | Service | Dockerfile/Containerfile | Compose env section | Vars from Doppler |
 |---|---|---|---|
 | `claude-gateway` | [services/claude-gateway/Dockerfile](../../services/claude-gateway/Dockerfile) | `DOPPLER_TOKEN` only | CLAUDE_GATEWAY_BEARER, COMPOSIO_API_KEY, MEMORY_HQ_TOKEN, SUPABASE_SERVICE_ROLE_KEY, etc. |
-| `codex-gateway` | [services/codex-gateway/Dockerfile](../../services/codex-gateway/Dockerfile) | `DOPPLER_TOKEN` only | CODEX_GATEWAY_BEARER, CODEX_AUTH_JSON, etc. |
+| `codex-gateway` | [services/codex-gateway/Dockerfile](../../services/codex-gateway/Dockerfile) | `DOPPLER_TOKEN` only | CODEX_GATEWAY_BEARER_TOKEN, CODEX_AUTH_JSON, etc. |
 | `nexus-sandbox` | [services/nexus-sandbox/Containerfile](../../services/nexus-sandbox/Containerfile) | `DOPPLER_TOKEN` only | NEXUS_SANDBOX_TOKEN, SANDBOX_* tuning vars |
 | `nexus-app` | [services/lean-deploy/Dockerfile](../../services/lean-deploy/Dockerfile) | `DOPPLER_TOKEN` only | Everything (Clerk, Supabase, gateway bearers, etc.) |
 

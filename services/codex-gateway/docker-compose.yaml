@@ -19,11 +19,11 @@ services:
     restart: unless-stopped
     environment:
       # Doppler-sourced — only DOPPLER_TOKEN needs to be set in Coolify.
-      # All secrets (CODEX_GATEWAY_BEARER, CODEX_AUTH_JSON, etc.) flow from
-      # Doppler at boot via `doppler run --` in the ENTRYPOINT.
+      # All secrets (CODEX_GATEWAY_BEARER_TOKEN, CODEX_AUTH_JSON, etc.) flow
+      # from Doppler at boot via `doppler run --` in the ENTRYPOINT.
       #
       # Vars expected at runtime (all in Doppler):
-      #   CODEX_GATEWAY_PORT, CODEX_GATEWAY_BEARER, NEXUS_REPO_URL,
+      #   CODEX_GATEWAY_PORT, CODEX_GATEWAY_BEARER_TOKEN, NEXUS_REPO_URL,
       #   CODEX_GATEWAY_REPO_REF, CODEX_MODEL, QUEUE_MAX_DEPTH,
       #   REQUEST_TIMEOUT_MS, CODEX_AUTH_JSON, CODEX_AUTH_JSON_FORCE,
       #   CODEX_API_KEY

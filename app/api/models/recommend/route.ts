@@ -68,7 +68,7 @@ async function detectConnectedProviders(userId: string): Promise<AiProviderKey[]
 
   // Codex / OpenAI — gateway is per-business container env, so we look for
   // the shared env vars as a proxy. Future: query connected_accounts.
-  if (process.env.CODEX_GATEWAY_URL && process.env.CODEX_GATEWAY_BEARER) out.push('openai')
+  if (process.env.CODEX_GATEWAY_URL && process.env.CODEX_GATEWAY_BEARER_TOKEN) out.push('openai')
   if (!out.includes('openai') && process.env.OPENAI_API_KEY) out.push('openai')
 
   // Per-business / per-user keys via connected_accounts (api-key flow).

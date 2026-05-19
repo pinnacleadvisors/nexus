@@ -1,7 +1,9 @@
 # Nexus — Environment Variables
 
 > Names only. Values live in Doppler. Never commit values.
-> Get Doppler access: `doppler setup` → select project: nexus, config: dev
+> Setup: `doppler setup --project nexus --config <prd|stg|dev>` then run scripts via `doppler run --`.
+>
+> **Comprehensive inventory + per-environment placement strategy is at the bottom of this file** ([jump](#doppler-inventory--environment-strategy)). The sections below remain organised by topic; the inventory aggregates them with security classification.
 
 ## Required (platform won't start without these)
 
@@ -234,7 +236,7 @@ Set on the Coolify service running the codex gateway on KVM2 (NOT on Nexus / Ver
 
 | Var | Purpose |
 |-----|---------|
-| `CODEX_GATEWAY_BEARER` | Same value as Nexus's `CODEX_GATEWAY_BEARER_TOKEN`. Bearer + HMAC validation on inbound. |
+| `CODEX_GATEWAY_BEARER_TOKEN` | Bearer + HMAC validation on inbound. Same name + value as Nexus-side. (Legacy alias `CODEX_GATEWAY_BEARER` is still honoured by the gateway for a transition period — see [services/codex-gateway/src/index.ts](../../services/codex-gateway/src/index.ts).) |
 | `ALLOWED_USER_IDS` | Comma-separated Clerk user IDs. Same defence-in-depth gate as claude-gateway. Mirror the Vercel-side allowlist. |
 | `NEXUS_REPO_URL` | Git URL the entrypoint clones into `/repo` so spawned `codex` sessions can read `.claude/agents/`. |
 | `CODEX_GATEWAY_REPO_REF` | Branch / tag to check out (default `main`). |
@@ -266,7 +268,7 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `MEMORY_HQ_TOKEN` | **New (Phase MCP)** — when set, entrypoint builds + registers `@nexus/mcp-memory` alongside the Composio MCP. Gives platform-copilot durable cross-session memory (write atoms / entities / MOCs into the memory-hq graph, search past learnings). Optional but recommended — same value as Vercel-side `MEMORY_HQ_TOKEN`. |
 | `NEXUS_BASE_URL` | Required when `MEMORY_HQ_TOKEN` is set. The memory-hq MCP routes writes through `POST <NEXUS_BASE_URL>/api/memory/event`. Same value as Vercel-side `NEXUS_BASE_URL`. |
 | `CODEX_GATEWAY_URL` | **New (Phase 2c)** — base URL of the codex-gateway on KVM2. When set together with `CODEX_GATEWAY_BEARER_TOKEN`, the entrypoint builds + registers `@nexus/mcp-codex-delegate` so the platform-copilot can call `delegate_to_codex` directly. Same value as Vercel-side `CODEX_GATEWAY_URL`. |
-| `CODEX_GATEWAY_BEARER_TOKEN` | **New (Phase 2c)** — bearer for the codex-delegate MCP's calls to the codex-gateway. Same value as Vercel-side `CODEX_GATEWAY_BEARER_TOKEN` (which itself must match the gateway-side `CODEX_GATEWAY_BEARER`). |
+| `CODEX_GATEWAY_BEARER_TOKEN` | **New (Phase 2c)** — bearer for the codex-delegate MCP's calls to the codex-gateway. Same value across all three sides (Vercel / Nexus app, claude-gateway container, codex-gateway container). |
 | `CODEX_DELEGATE_TIMEOUT_MS` | Optional — total poll budget per `delegate_to_codex` call (default 300000 = 5 min). |
 | `CODEX_DELEGATE_POLL_MS` | Optional — interval between poll ticks (default 3000 = 3s). |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
@@ -358,3 +360,131 @@ where the secret must be present.
 | `VERCEL_LOG_DRAIN_KEEP_ALL`   | Doppler (optional) | Set to `1` to disable the `error/warn/4xx-5xx/tagged` Supabase sampler and persist every line. Use only for short-window debugging — drives `log_events` writes at full firehose rate. |
 | `VERCEL_LOG_DRAIN_KEEP_TAGS`  | Doppler (optional) | Comma-separated case-insensitive substrings. Any log message containing one is indexed even when its level is `info`. Defaults to `qa-bot,agent,swarm,runs,business-operator`. R2 archive keeps every line regardless. |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | Doppler | Already required for Phase 17/18 assets. The drain reuses the same bucket — raw NDJSON shards land at `logs/<deployment_id>/YYYY-MM-DD/HH.jsonl`. |
+
+---
+
+## Doppler inventory & environment strategy
+
+> Source of truth: the Doppler project `nexus`. Three configs: `prd`, `stg`, `dev`.
+> Snapshot inventory taken 2026-05-19 — re-run `doppler secrets --config <env> --only-names` for a fresh listing.
+
+### Configs — when each is used
+
+| Config | Used by | Notes |
+|---|---|---|
+| `prd` | Production Coolify apps (claude-gateway, codex-gateway, nexus-sandbox, nexus-app) + the migrate-to-lean-kvm script in lean mode | Real production values. Live Stripe, real Clerk keys, real Supabase project. |
+| `stg` | (Reserved) — no current consumer in lean mode | Test versions of services where they differ from prd. In solo lean mode this can mirror prd; will diverge once paying users land and you need a staging instance. |
+| `dev` | Local dev (`doppler run --` on your laptop) | Same secrets as prd OR test versions where they differ. Has the extra var `ALLOWED_USER_IDS` (intentional — dev sometimes needs broader access). |
+
+### Sensitivity tiers
+
+| Tier | What it means | Example vars |
+|---|---|---|
+| **L1 — low** | Public values, config defaults, URLs. Leak = no compromise. | `NEXT_PUBLIC_*`, `CLAUDE_CODE_GATEWAY_URL`, `MEMORY_HQ_REPO`, `LEAN_MODE` |
+| **L2 — medium** | Bearers + internal HMAC secrets + scoped tokens (read-only PATs, scoped Coolify tokens). Leak = service abuse, not full takeover. | `CLAUDE_CODE_BEARER_TOKEN`, `CODEX_GATEWAY_BEARER_TOKEN`, `NEXUS_OPS_TOKEN`, `MEMORY_HQ_TOKEN`, `CRON_SECRET`, Inngest keys |
+| **L3 — high** | Service-role keys, OAuth tokens, root API keys, the encryption key. Leak = full data access or unbounded spend. | `SUPABASE_SERVICE_ROLE_KEY`, `CLERK_SECRET_KEY`, `ENCRYPTION_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_AUTH_JSON`, `ANTHROPIC_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `COOLIFY_KVM*_API_TOKEN`, `VERCEL_TOKEN`, `DOPPLER_TOKEN` |
+
+### Per-env placement strategy
+
+**Default rule for lean mode (solo, single tenant)**:
+
+- L1 vars: same value in all three envs. Cheap to copy, harmless if duplicated.
+- L2 vars: same value across envs OK; rotate them quarterly regardless.
+- L3 vars where the underlying service has separate instances per env (e.g. separate Supabase staging project, separate Clerk staging app): per-env values. Otherwise: same value across envs.
+
+**For solo lean mode you almost certainly have ONE of each backing service** (Supabase, Clerk, Stripe). So most L3 vars are the same value across all three Doppler configs today — that's fine. When you onboard paying users and split into real-prod / staging-mirror, that's the moment to fork the L3 values per env.
+
+### Critical gap discovered in the inventory snapshot
+
+| Var | prd | stg | dev | Recommendation |
+|---|---|---|---|---|
+| **`ALLOWED_USER_IDS`** | ❌ missing | ✅ | ✅ | **Add to `prd` immediately.** Without it, anyone with a Clerk account can access protected routes on the deployed app. This is the owner-only gate enforced by [`proxy.ts`](../../proxy.ts). Value: your single Clerk user id (`user_…`). |
+
+### Lean-mode vars NOT YET in any Doppler config
+
+These were added to the codebase in [#223](https://github.com/pinnacleadvisors/exus/pull/223) and need adding to at least `prd`:
+
+| Var | Tier | Used by | Notes |
+|---|---|---|---|
+| `LEAN_USER_DAILY_USD_LIMIT` | L1 | nexus-app | Default `5`. Hard daily cap. |
+| `LLM_PROVIDER` | L1 | nexus-app | `claude` / `mimo` / `ollama`. Defaults to `claude`. |
+| `NEXUS_SANDBOX_URL` | L1 | nexus-app | `http://nexus-sandbox:8080` on the lean Coolify network |
+| `NEXUS_SANDBOX_TOKEN` | L2 | nexus-app + nexus-sandbox | Bearer for `POST /api/sandbox/exec`. Generate: `openssl rand -hex 32`. |
+| `SANDBOX_PORT` | L1 | nexus-sandbox | `8080` |
+| `SANDBOX_DEFAULT_IMAGE` | L1 | nexus-sandbox | `alpine` |
+| `SANDBOX_DEFAULT_TIMEOUT_MS` | L1 | nexus-sandbox | `60000` |
+| `SANDBOX_MAX_OUTPUT_BYTES` | L1 | nexus-sandbox | `262144` |
+| `SANDBOX_MAX_MEMORY` | L1 | nexus-sandbox | `512m` |
+| `SANDBOX_MAX_CPUS` | L1 | nexus-sandbox | `1` |
+| `SANDBOX_ALLOW_HOST_NETWORK` | L1 | nexus-sandbox | `0` (default off) |
+| `MIMO_API_KEY` | L3 | nexus-app | Only required when `LLM_PROVIDER=mimo` (see [`lib/llm/providers/mimo.ts`](../../lib/llm/providers/mimo.ts)) |
+| `MIMO_BASE_URL` | L1 | nexus-app | `https://api.mimo.ai/v1` |
+| `OLLAMA_BASE_URL` | L1 | nexus-app | `http://ollama:11434` |
+
+### Vars where the Doppler key name does NOT match the canonical code name
+
+Tracked here so future grep-and-replace can clean them up safely:
+
+| Code name (canonical) | Old / alt names still honoured | Status |
+|---|---|---|
+| `CODEX_GATEWAY_BEARER_TOKEN` | `CODEX_GATEWAY_BEARER` (legacy in `services/codex-gateway/src/index.ts` as a fallback) | Doppler has `_TOKEN` form. Gateway code accepts both during transition. Remove the fallback in a follow-up PR once all consumers are confirmed on `_TOKEN`. |
+| `CLAUDE_CODE_BEARER_TOKEN` | `CLAUDE_GATEWAY_BEARER` (used inside `services/claude-gateway/` container only) | Intentional duplication — same value, different name on each side of the connection. Document it; don't try to unify (would require changing the in-container entrypoint logic). |
+
+### Vars that should be in `prd` ONLY (production-only operations)
+
+These grant production-infra access. If a developer's laptop is compromised, you don't want these in the dev Doppler config they've been running:
+
+| Var | Why prd-only |
+|---|---|
+| `COOLIFY_KVM2_API_TOKEN`, `COOLIFY_KVM4_API_TOKEN` | Full Coolify management. Could destroy production apps. Today these are in **all three** envs — consider moving stg/dev to a read-only Coolify token or removing entirely. |
+| `VERCEL_TOKEN` | Full Vercel project access. Same risk. |
+| `INNGEST_DEPLOYMENT_PROTECTION_KEY` | Production cron triggering. |
+| `STRIPE_WEBHOOK_SECRET` (live) | Real revenue events. Use Stripe **test mode** secrets in stg/dev. |
+| `RESEND_API_KEY` | Sends real email. Use a separate test inbox or test-mode key in stg/dev. |
+| `VERCEL_LOG_DRAIN_SECRET` | HMAC on production log ingestion. |
+
+### Vars that are SAME value across all three envs by design
+
+L1 config defaults + L2 internal bearers where you have one underlying service:
+
+- `CLAW_DAILY_DISPATCH_CAP`, `COST_ALERT_PER_RUN_USD`, `MAX_PLAN_5H_TURNS_CEILING`, `PRO_PLAN_5H_TURNS_CEILING`
+- `CLAUDE_CODE_GATEWAY_URL`, `CODEX_GATEWAY_URL`, `NEXUS_BASE_URL`, `NEXUS_BROKER_URL`, `FIRECRAWL_API_URL`, `N8N_BASE_URL`
+- `MEMORY_HQ_REPO`, `MOLECULAR_BACKEND`
+- `LEAN_MODE`, `LLM_PROVIDER`, `GATEWAY_ALLOW_SELF_SIGNED_HOSTS`, `PROTECTED_UUIDS`
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (assuming one Supabase + one Clerk app for lean mode)
+
+### Vars where stg/dev SHOULD diverge from prd (and currently don't, but the divergence is cheap when you need it)
+
+| Var | Recommended dev/stg value | Why |
+|---|---|---|
+| `ALLOWED_USER_IDS` | Wider list (multiple owner ids + team members in dev) | Production locks to owner only; dev can include teammates |
+| `STRIPE_WEBHOOK_SECRET` | Stripe **test mode** secret | Avoid charging real cards from dev |
+| `RESEND_API_KEY` | Separate dev-only sender or domain | Avoid spamming real users from dev |
+| `NEXUS_SLACK_WEBHOOK_URL` | A separate #dev-alerts channel | Production alerts shouldn't share a channel with dev noise |
+
+### How to add missing vars to Doppler
+
+```bash
+# Add LEAN_USER_DAILY_USD_LIMIT to prd
+doppler secrets set LEAN_USER_DAILY_USD_LIMIT=5 --config prd --project nexus
+
+# Add ALLOWED_USER_IDS to prd (CRITICAL gap)
+doppler secrets set ALLOWED_USER_IDS=user_xxxxxxxxxxxxxxxxxxxx --config prd --project nexus
+
+# Multi-env in one go (set in all three)
+for env in prd stg dev; do
+  doppler secrets set LLM_PROVIDER=claude --config $env --project nexus
+done
+```
+
+After adding, redeploy the affected Coolify apps so they pick up the new values via `doppler run --`.
+
+### Inventory diff vs current Doppler state (snapshot 2026-05-19)
+
+```
+prd: 95 vars (missing ALLOWED_USER_IDS — see Critical gap above)
+stg: 76 vars (subset of dev; lacks most COMPOSIO_AUTH_CONFIG_* + CODEX_AUTH_JSON*)
+dev: 96 vars (superset of prd + ALLOWED_USER_IDS)
+```
+
+The stg config is intentionally sparse in lean mode — no deployed staging instance yet. When you onboard paying users and need a staging deploy, mirror prd to stg first, then diverge the Stripe / Clerk / Resend keys to test-mode values.
