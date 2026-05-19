@@ -28,12 +28,17 @@ WORKDIR /app
 # so the layer caches independently of the playwright npm install.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      git ca-certificates bash \
+      git ca-certificates bash curl gnupg \
       libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
       libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
       libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
       fonts-liberation fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/*
+
+# Doppler CLI — secrets pulled at container startup via `doppler run --` in
+# the ENTRYPOINT. Single source of truth = Doppler; only DOPPLER_TOKEN needs
+# to be set on the Coolify side. See docs/runbooks/doppler-coolify-sync.md.
+RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 
 # Install the codex CLI globally. Pinned to latest; bump manually after
 # smoke-testing a new release. The package is published by OpenAI and
@@ -73,4 +78,7 @@ ENV NEXUS_REPO_PATH=/repo
 ENV CODEX_GATEWAY_PORT=3000
 EXPOSE 3000
 
-ENTRYPOINT ["./entrypoint.sh"]
+# Wrap the entrypoint with `doppler run` so secrets land in process.env at
+# boot. --fallback caches secrets locally for resilience against Doppler API
+# outages on subsequent restarts.
+ENTRYPOINT ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "./entrypoint.sh"]

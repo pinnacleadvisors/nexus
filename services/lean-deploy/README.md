@@ -47,37 +47,25 @@ in the manual checklist).
 
 ---
 
-## Required environment variables
+## Environment variables — all via Doppler
 
-Set these as **shared variables** in Coolify (Project → Variables) so all four
-apps inherit them. They're also documented in
-[`memory/platform/SECRETS.md`](../../memory/platform/SECRETS.md).
+Coolify holds **one** env var per app: `DOPPLER_TOKEN`. Every other secret flows from Doppler at boot via `doppler run --` (baked into each service's Dockerfile/Containerfile ENTRYPOINT).
 
-| Var | Required by | Notes |
-|---|---|---|
-| `LEAN_MODE=1` | nexus-app | Flips feature flags. Always `1` here. |
-| `LEAN_USER_DAILY_USD_LIMIT` | nexus-app | Global daily $ cap (default 5) |
-| `LLM_PROVIDER` | nexus-app | `claude` (default), `mimo`, or `ollama` |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | nexus-app | Clerk dashboard |
-| `CLERK_SECRET_KEY` | nexus-app | Clerk dashboard |
-| `ALLOWED_USER_IDS` | nexus-app | Your Clerk user id — owner gate |
-| `NEXT_PUBLIC_SUPABASE_URL` | nexus-app | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | nexus-app | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | nexus-app | Supabase service-role key |
-| `CLAUDE_CODE_GATEWAY_URL` | nexus-app | `http://claude-gateway:3000` (internal) |
-| `CLAUDE_CODE_BEARER_TOKEN` | both | Shared bearer for nexus-app ↔ claude-gateway |
-| `CLAUDE_GATEWAY_BEARER` | claude-gateway | Same value as above (named for the gateway side) |
-| `CODEX_GATEWAY_URL` | nexus-app | `http://codex-gateway:3000` (internal) |
-| `CODEX_GATEWAY_BEARER` | both | Shared bearer for nexus-app ↔ codex-gateway |
-| `CODEX_AUTH_JSON` | codex-gateway | Paste your `~/.codex/auth.json` here |
-| `NEXUS_SANDBOX_URL` | nexus-app | `http://nexus-sandbox:8080` (internal) |
-| `NEXUS_SANDBOX_TOKEN` | both | Shared bearer for nexus-app ↔ nexus-sandbox |
-| `MEMORY_HQ_TOKEN` | nexus-app, claude-gateway | GitHub PAT with `repo` scope on memory-hq |
-| `COMPOSIO_API_KEY` | nexus-app, claude-gateway | Composio OAuth broker |
-| `NEXUS_OPS_TOKEN` | nexus-app | Bearer for ops curl (provisioning, etc.) |
-| `MIMO_API_KEY` | nexus-app | Optional (only when `LLM_PROVIDER=mimo`) |
-| `OLLAMA_BASE_URL` | nexus-app | Optional (only when `LLM_PROVIDER=ollama`) |
-| `STRIPE_WEBHOOK_SECRET` | nexus-app | Optional in lean mode |
+Setup:
+1. Doppler UI → create one read-only service token scoped to your production config
+2. Coolify UI → each of the four apps → Environment Variables → `DOPPLER_TOKEN` = the token value
+3. Redeploy
+
+The full list of secrets the apps expect (all populated in Doppler) lives in each service's `docker-compose.yaml` comment block. Common required keys:
+
+- **Platform**: `LEAN_MODE=1`, `LEAN_USER_DAILY_USD_LIMIT`, `LLM_PROVIDER`
+- **Clerk**: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `ALLOWED_USER_IDS`
+- **Supabase**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- **Gateways**: `CLAUDE_CODE_GATEWAY_URL`, `CLAUDE_CODE_BEARER_TOKEN`, `CLAUDE_GATEWAY_BEARER`, `CODEX_GATEWAY_URL`, `CODEX_GATEWAY_BEARER`, `CODEX_AUTH_JSON`
+- **Sandbox**: `NEXUS_SANDBOX_URL`, `NEXUS_SANDBOX_TOKEN`
+- **Other**: `MEMORY_HQ_TOKEN`, `COMPOSIO_API_KEY`, `NEXUS_OPS_TOKEN`, `STRIPE_WEBHOOK_SECRET`, optional `MIMO_API_KEY`, `OLLAMA_BASE_URL`
+
+Full procedure + rotation workflow + failure modes: [`docs/runbooks/doppler-coolify-sync.md`](../../docs/runbooks/doppler-coolify-sync.md).
 
 ---
 
