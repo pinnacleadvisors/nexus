@@ -1,0 +1,28 @@
+# Nexus sandbox — rootless Podman in a container, exposed via HTTP.
+#
+# Used by the `skill-trainer` agent (and any future "execute untrusted code"
+# loop) to run ephemeral scripts in isolation. Base image is the upstream
+# `quay.io/podman/stable` which is pre-configured for nested rootless Podman
+# on Fedora — saves us the slirp4netns / subuid / subgid setup dance.
+#
+# Compose runs this with `privileged: true` because nested Podman needs
+# CAP_SYS_ADMIN to set up user namespaces. Acceptable for lean mode (one
+# tenant, owner-trusted). Document the trade-off in README.md.
+
+FROM quay.io/podman/stable:latest
+
+# Node.js for the HTTP wrapper. Fedora base = dnf.
+RUN dnf install -y --setopt=install_weak_deps=False nodejs \
+ && dnf clean all
+
+WORKDIR /app
+COPY server.mjs ./
+
+EXPOSE 8080
+
+# Run as the pre-configured `podman` user (UID 1000) from the base image.
+# Rootless Podman works out of the box for this user; switching to root
+# would defeat the purpose.
+USER podman
+
+CMD ["node", "server.mjs"]

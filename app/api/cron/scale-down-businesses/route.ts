@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { audit } from '@/lib/audit'
 import { createServerClient } from '@/lib/supabase'
 import { isConfigured as isCoolifyConfigured, listApps, stopApp, CoolifyError } from '@/lib/coolify/client'
+import { isLeanMode } from '@/lib/lean-mode'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 60
@@ -99,6 +100,12 @@ export async function GET(req: NextRequest) {
     skipped: [],
     errors:  [],
     reason:  '',
+  }
+
+  // Lean-mode short-circuit — no per-business Coolify apps exist to scale down.
+  if (isLeanMode()) {
+    report.reason = 'lean-mode'
+    return NextResponse.json(report, { status: 200 })
   }
 
   if (!isCoolifyConfigured()) {

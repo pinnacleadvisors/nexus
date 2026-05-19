@@ -432,15 +432,17 @@ export async function POST(req: NextRequest) {
   }
 
   // ── SECONDARY: Anthropic API key (with model routing + caching) ──────────
-  if (process.env.ANTHROPIC_API_KEY) {
+  // Now provider-agnostic via lib/llm/provider.ts — set LLM_PROVIDER=mimo or
+  // LLM_PROVIDER=ollama in Doppler to swap. Claude is the default.
+  if (process.env.ANTHROPIC_API_KEY || process.env.LLM_PROVIDER) {
     try {
-      const { anthropic } = await import('@ai-sdk/anthropic')
+      const { getLlm } = await import('@/lib/llm/provider')
       const modelMessages = await convertToModelMessages(windowedMessages)
 
       // Use the advisor model (e.g. Opus) for strategic consulting.
       // The executor model is stored client-side and passed to agent dispatch calls.
       const sdkResult = streamText({
-        model: anthropic(advisorModel),
+        model: getLlm({ model: advisorModel }),
         system,
         messages: modelMessages,
         onError: ({ error }) => {
