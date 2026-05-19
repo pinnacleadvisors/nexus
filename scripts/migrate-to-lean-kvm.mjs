@@ -24,9 +24,13 @@
  *   COOLIFY_KVM4_URL                    target Coolify host
  *   COOLIFY_KVM4_API_TOKEN              target Coolify PAT
  *   COOLIFY_KVM4_SERVER_UUID            target server uuid
- *   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES target project uuid (any Coolify project works;
- *                                       the name is historical — same project hosts
- *                                       the lean-mode apps too)
+ *   COOLIFY_PROJECT_ID_NEXUS_PLATFORM   project uuid for the lean-mode stack
+ *                                       (the "Nexus Platform" project — NOT
+ *                                       COOLIFY_PROJECT_ID_NEXUS_BUSINESSES,
+ *                                       which is the per-business project)
+ *                                       If unset, the script auto-discovers
+ *                                       the project named "Nexus Platform"
+ *                                       via GET /projects.
  *   GIT_REPOSITORY                      defaults to https://github.com/pinnacleadvisors/nexus
  *   GIT_BRANCH                          defaults to main
  *   SOURCE_COOLIFY_URL                  optional — source Coolify URL for --stop-source
@@ -72,12 +76,14 @@ if (!DRY_RUN && !APPLY) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-// Reads the established COOLIFY_KVM4_* names that already live in Doppler.
-// No alias prefix — keep one set of names, not two.
+// Reads the established COOLIFY_KVM4_* names already in Doppler.
+// project_uuid is resolved at runtime — see resolveProject() below.
 const TARGET = {
   url:         process.env.COOLIFY_KVM4_URL,
   token:       process.env.COOLIFY_KVM4_API_TOKEN,
-  projectUuid: process.env.COOLIFY_PROJECT_ID_NEXUS_BUSINESSES,
+  projectUuid: null, // populated by resolveProject() before main()
+  projectId:   null, // numeric — used for cross-project app detection
+  projectName: null, // for logging
   serverUuid:  process.env.COOLIFY_KVM4_SERVER_UUID,
 }
 const SOURCE = {
@@ -87,12 +93,11 @@ const SOURCE = {
 const GIT_REPOSITORY = process.env.GIT_REPOSITORY ?? 'https://github.com/pinnacleadvisors/nexus'
 const GIT_BRANCH     = process.env.GIT_BRANCH     ?? 'main'
 
-const missingTarget = Object.entries(TARGET).filter(([_, v]) => !v).map(([k]) => k)
+const missingTarget = ['url', 'token', 'serverUuid'].filter(k => !TARGET[k])
 if (missingTarget.length > 0) {
   const ENV_NAMES = {
     url:         'COOLIFY_KVM4_URL',
     token:       'COOLIFY_KVM4_API_TOKEN',
-    projectUuid: 'COOLIFY_PROJECT_ID_NEXUS_BUSINESSES',
     serverUuid:  'COOLIFY_KVM4_SERVER_UUID',
   }
   console.error(`Missing Doppler env: ${missingTarget.map(k => ENV_NAMES[k]).join(', ')}`)
@@ -134,6 +139,77 @@ async function findAppByName(creds, name) {
   return list.find(a => a.name === name) ?? null
 }
 
+/**
+ * Like findAppByName, but also detects when an app with the matching name
+ * lives in a DIFFERENT project than the target. Returns:
+ *   { app, inTargetProject: true }    — in target project, safe to treat as existing
+ *   { app, inTargetProject: false }   — exists in another project (DANGER — surface it)
+ *   null                              — no such app anywhere
+ *
+ * Coolify's GET /applications doesn't include project_uuid directly. Each
+ * app has an `environment_id` (number) and `repository_project_id` (number).
+ * We resolve the target project's numeric `id` once at startup, then compare.
+ */
+async function findAppInProject(creds, name, targetProjectId) {
+  const apps = await coolify(creds, 'GET', '/applications')
+  const list = Array.isArray(apps) ? apps : (apps?.data ?? [])
+  const byName = list.filter(a => a.name === name)
+  if (byName.length === 0) return null
+
+  // For each candidate, fetch detail to compare project membership. Usually
+  // there's at most one — but if multiple, we prefer the in-target one.
+  for (const candidate of byName) {
+    try {
+      const detail = await coolify(creds, 'GET', `/applications/${candidate.uuid}`)
+      const projId = detail?.repository_project_id ?? detail?.project_id ?? null
+      if (projId != null && projId === targetProjectId) {
+        return { app: candidate, inTargetProject: true }
+      }
+    } catch { /* fall through to "not in target" verdict */ }
+  }
+  // Found by name but none in target project
+  return { app: byName[0], inTargetProject: false, totalMatches: byName.length }
+}
+
+/**
+ * Resolve the target project — env override first, then auto-discover the
+ * project named "Nexus Platform" via GET /projects. Returns { id, uuid, name }.
+ * Throws with a clear message on missing / ambiguous discovery.
+ */
+async function resolveProject(creds) {
+  const fromEnv = process.env.COOLIFY_PROJECT_ID_NEXUS_PLATFORM
+  if (fromEnv) {
+    try {
+      const p = await coolify(creds, 'GET', `/projects/${fromEnv}`)
+      return { id: p?.id, uuid: fromEnv, name: p?.name ?? '(unnamed)', source: 'env' }
+    } catch (err) {
+      throw new Error(
+        `COOLIFY_PROJECT_ID_NEXUS_PLATFORM=${fromEnv} but the project doesn't exist: ${err.message}`,
+      )
+    }
+  }
+  // Auto-discover by name. Case-insensitive, allows "Nexus Platform" / "nexus-platform" / etc.
+  const projects = await coolify(creds, 'GET', '/projects')
+  const list = Array.isArray(projects) ? projects : (projects?.data ?? [])
+  const matches = list.filter(p => /^\s*nexus[\s_-]*platform\s*$/i.test(String(p?.name ?? '')))
+  if (matches.length === 0) {
+    const available = list.map(p => `"${p?.name ?? '?'}" (${p?.uuid ?? '?'})`).join(', ')
+    throw new Error(
+      'No project named "Nexus Platform" found in target Coolify.\n' +
+      `  Available projects: ${available || '(none)'}\n` +
+      '  Fix: set COOLIFY_PROJECT_ID_NEXUS_PLATFORM in Doppler with the project uuid,\n' +
+      '       or rename the target project in Coolify UI to "Nexus Platform".'
+    )
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Multiple projects match "Nexus Platform": ${matches.map(p => p.name).join(', ')}. ` +
+      'Set COOLIFY_PROJECT_ID_NEXUS_PLATFORM in Doppler explicitly.'
+    )
+  }
+  return { id: matches[0].id, uuid: matches[0].uuid, name: matches[0].name, source: 'discovered' }
+}
+
 async function readComposeFile(dir) {
   for (const filename of ['docker-compose.yaml', 'docker-compose.yml']) {
     const p = path.join(REPO_ROOT, dir, filename)
@@ -168,12 +244,15 @@ async function migrateService(svc) {
   const log = (msg) => console.log(`  [${svc.name}] ${msg}`)
   console.log(`\n→ ${svc.name}  (${svc.dir})`)
 
-  const existing = await findAppByName(TARGET, svc.name)
-  if (existing) {
+  // Look up by name + verify project membership. An app named ${svc.name}
+  // existing in a DIFFERENT project means somebody (probably an earlier run
+  // of this script with the wrong project_uuid) created it in the wrong
+  // place — surface loudly so the operator can clean up.
+  const found = await findAppInProject(TARGET, svc.name, TARGET.projectId)
+  if (found && found.inTargetProject) {
+    const existing = found.app
     const status = String(existing.status ?? '?').toLowerCase()
-    log(`already on target  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
-    // Anything that isn't actively "running:healthy" deserves a hint —
-    // covers exited / failed / unhealthy / starting / fresh-but-undeployed.
+    log(`already in '${TARGET.projectName}'  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
     if (!status.includes('running:healthy')) {
       log(`  ⚠️  app is not running:healthy — script won't re-deploy existing apps.`)
       log(`     check logs in Coolify UI, or trigger a manual redeploy:`)
@@ -181,6 +260,14 @@ async function migrateService(svc) {
       log(`            -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"`)
     }
     return { name: svc.name, action: 'skipped', uuid: existing.uuid, status }
+  }
+  if (found && !found.inTargetProject) {
+    log(`❌ app named '${svc.name}' exists in a DIFFERENT project (uuid=${found.app.uuid}).`)
+    log(`   The script targets project '${TARGET.projectName}' (id=${TARGET.projectId}).`)
+    log(`   Recovery: delete the misplaced app, then re-run this script.`)
+    log(`     curl -X DELETE '${TARGET.url}/api/v1/applications/${found.app.uuid}' \\`)
+    log(`          -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"`)
+    return { name: svc.name, action: 'failed', stage: 'wrong-project', uuid: found.app.uuid, error: 'app exists in different project' }
   }
 
   const compose = await readComposeFile(svc.dir)
@@ -314,7 +401,23 @@ function redactId(id) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('migrate-to-lean-kvm')
-  console.log(`  target:        host=${redactUrl(TARGET.url)}  project=${redactId(TARGET.projectUuid)}  server=${redactId(TARGET.serverUuid)}`)
+  console.log(`  target host:   ${redactUrl(TARGET.url)}`)
+  console.log(`  target server: ${redactId(TARGET.serverUuid)}`)
+
+  // Resolve the target project BEFORE anything else so we know we're pointing
+  // at "Nexus Platform", not "nexus-businesses" or some other project.
+  let project
+  try {
+    project = await resolveProject(TARGET)
+  } catch (err) {
+    console.error(`\n❌ Could not resolve target project:\n  ${err.message}`)
+    process.exit(2)
+  }
+  TARGET.projectUuid = project.uuid
+  TARGET.projectId   = project.id
+  TARGET.projectName = project.name
+  console.log(`  target project: '${project.name}'  uuid=${redactId(project.uuid)}  (source: ${project.source})`)
+
   console.log(`  source:        host=${redactUrl(SOURCE.url)}  (${STOP_SOURCE ? 'will stop' : 'leave running'})`)
   console.log(`  git:           ${GIT_REPOSITORY}#${GIT_BRANCH}`)
   console.log(`  mode:          ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}`)
