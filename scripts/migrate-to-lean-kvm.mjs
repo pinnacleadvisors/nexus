@@ -161,8 +161,15 @@ async function migrateService(svc) {
 
   const existing = await findAppByName(TARGET, svc.name)
   if (existing) {
+    const status = String(existing.status ?? '?').toLowerCase()
     log(`already on target  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
-    return { name: svc.name, action: 'skipped', uuid: existing.uuid }
+    if (status.includes('exited') || status.includes('failed') || status.includes('unhealthy')) {
+      log(`  ⚠️  app exists but is unhealthy — script won't re-deploy existing apps.`)
+      log(`     check logs in Coolify UI, or trigger a manual redeploy:`)
+      log(`       curl -X POST '${TARGET.url}/api/v1/applications/${existing.uuid}/deploy' \\`)
+      log(`            -H "Authorization: Bearer $TARGET_COOLIFY_TOKEN"`)
+    }
+    return { name: svc.name, action: 'skipped', uuid: existing.uuid, status }
   }
 
   const compose = await readComposeFile(svc.dir)
@@ -178,17 +185,24 @@ async function migrateService(svc) {
     return { name: svc.name, action: 'dry-run', envs: present.length, missing }
   }
 
-  // Create the Compose application. Git-based so Coolify clones the repo and
-  // builds from the service's subdirectory using its own docker-compose file.
+  // Create the application. Use /applications/public for repo-cloned Compose
+  // builds — the /applications/dockercompose endpoint is deprecated and
+  // accepts only inline (base64) Compose, not git-based.
+  //
+  // When the repo flips to private + a Coolify GitHub App is registered,
+  // switch this to POST /applications/private-github-app and add the field
+  // `github_app_uuid: <uuid>` (from Coolify Sources page). The rest of the
+  // shape stays the same.
   let created
   try {
-    created = await coolify(TARGET, 'POST', '/applications/dockercompose', {
+    created = await coolify(TARGET, 'POST', '/applications/public', {
       name:                     svc.name,
       project_uuid:             TARGET.projectUuid,
       server_uuid:              TARGET.serverUuid,
       environment_name:         'production',
       git_repository:           GIT_REPOSITORY,
       git_branch:               GIT_BRANCH,
+      build_pack:               'dockercompose',
       base_directory:           `/${svc.dir}`,
       docker_compose_location:  `/${compose.filename}`,
       instant_deploy:           false,
