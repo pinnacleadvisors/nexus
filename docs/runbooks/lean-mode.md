@@ -79,7 +79,7 @@ When you're ready to physically migrate hosting (separate from flipping the flag
 
 2. **Import the Compose stack into Coolify**:
    - Coolify → new application → Docker Compose
-   - Point at `services/lean-deploy/docker-compose.yml` from the GitHub repo
+   - Point at `services/lean-deploy/docker-compose.yaml` from the GitHub repo
    - Bind the Doppler secrets (use Coolify's "shared variables" feature or paste in `.env`)
    - Apply, deploy
 
@@ -120,6 +120,6 @@ Use the up-to-date list at the end of [`task_plan-lean-mode.md`](../../task_plan
 ## See also
 
 - [`lib/lean-mode.ts`](../../lib/lean-mode.ts) — the flag itself
-- [`services/lean-deploy/docker-compose.yml`](../../services/lean-deploy/docker-compose.yml) — the lean Coolify stack
+- [`services/lean-deploy/docker-compose.yaml`](../../services/lean-deploy/docker-compose.yaml) — the lean Coolify stack
 - [`task_plan-lean-mode.md`](../../task_plan-lean-mode.md) — full pivot plan + progress
 - [`docs/adr/006-lean-mode-pivot.md`](../adr/006-lean-mode-pivot.md) — decision record
