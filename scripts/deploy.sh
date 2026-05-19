@@ -41,9 +41,15 @@
 #   ./scripts/deploy.sh                         # interactive picker
 #   ./scripts/deploy.sh --all
 #   ./scripts/deploy.sh --vercel
+#   ./scripts/deploy.sh --nexus-app             # the Next.js platform itself, on KVM4 (lean mode)
+#   ./scripts/deploy.sh --nexus-sandbox         # rootless-Podman exec sandbox, KVM4
 #   ./scripts/deploy.sh --claude --codex
 #   ./scripts/deploy.sh --firecrawl
 #   ./scripts/deploy.sh --skip-typecheck --all  # bypass tsc gate
+#
+# Lean-mode default = everything on KVM4. The codex-gateway --codex flag
+# below defaults to KVM4 (where the new lean stack lives) and falls back
+# to KVM2 if COOLIFY_KVM4_CODEX_UUID is unset.
 #
 # NOTE: cloudflared (the tunnel connector) does NOT need to be redeployed
 # when testing platform features. It's a stateless tunnel daemon — it routes
@@ -65,43 +71,54 @@ warn() { printf '%s⚠%s %s\n' "$Y" "$X" "$1"; }
 err()  { printf '%s✘%s %s\n' "$R" "$X" "$1" >&2; }
 hdr()  { printf '\n%s── %s ──%s\n' "$B" "$1" "$X"; }
 
-do_vercel=0; do_claude=0; do_codex=0; do_qa=0; do_firecrawl=0; do_typecheck=1; interactive=1
+do_vercel=0; do_nexus_app=0; do_nexus_sandbox=0
+do_claude=0; do_codex=0; do_qa=0; do_firecrawl=0
+do_typecheck=1; interactive=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --all)
       do_vercel=1
       # In --all mode, only auto-include a Coolify service if its UUID env
-      # var is set. Lets you skip services you haven't deployed yet (e.g.
-      # qa-runner) without configuring placeholder env vars. Explicit
-      # --claude / --codex / --qa / --firecrawl still hard-requires the UUID.
-      [ -n "${COOLIFY_KVM4_CLAUDE_UUID:-}"    ] && do_claude=1
-      [ -n "${COOLIFY_KVM4_QA_UUID:-}"        ] && do_qa=1
-      [ -n "${COOLIFY_KVM4_FIRECRAWL_UUID:-}" ] && do_firecrawl=1
-      [ -n "${COOLIFY_KVM2_CODEX_UUID:-}"     ] && do_codex=1
+      # var is set. Lets you skip services you haven't deployed yet without
+      # configuring placeholder env vars. Explicit --<service> still hard-
+      # requires the UUID.
+      [ -n "${COOLIFY_KVM4_NEXUS_APP_UUID:-}"     ] && do_nexus_app=1
+      [ -n "${COOLIFY_KVM4_NEXUS_SANDBOX_UUID:-}" ] && do_nexus_sandbox=1
+      [ -n "${COOLIFY_KVM4_CLAUDE_UUID:-}"        ] && do_claude=1
+      [ -n "${COOLIFY_KVM4_QA_UUID:-}"            ] && do_qa=1
+      [ -n "${COOLIFY_KVM4_FIRECRAWL_UUID:-}"     ] && do_firecrawl=1
+      # codex-gateway lean-mode lives on KVM4; KVM2 is the legacy location.
+      # Prefer KVM4 if its UUID is set, fall back to KVM2.
+      [ -n "${COOLIFY_KVM4_CODEX_UUID:-}" ] || [ -n "${COOLIFY_KVM2_CODEX_UUID:-}" ] && do_codex=1
       interactive=0
       ;;
-    --vercel)         do_vercel=1;    interactive=0 ;;
-    --claude)         do_claude=1;    interactive=0 ;;
-    --codex)          do_codex=1;     interactive=0 ;;
-    --qa)             do_qa=1;        interactive=0 ;;
-    --firecrawl)      do_firecrawl=1; interactive=0 ;;
+    --vercel)         do_vercel=1;          interactive=0 ;;
+    --nexus-app)      do_nexus_app=1;       interactive=0 ;;
+    --nexus-sandbox)  do_nexus_sandbox=1;   interactive=0 ;;
+    --claude)         do_claude=1;          interactive=0 ;;
+    --codex)          do_codex=1;           interactive=0 ;;
+    --qa)             do_qa=1;              interactive=0 ;;
+    --firecrawl)      do_firecrawl=1;       interactive=0 ;;
     --skip-typecheck) do_typecheck=0 ;;
-    -h|--help)        sed -n '2,52p' "$0"; exit 0 ;;
+    -h|--help)        sed -n '2,58p' "$0"; exit 0 ;;
     *) err "unknown flag: $1"; exit 2 ;;
   esac
   shift
 done
 
 if [ $interactive = 1 ]; then
-  read -rp "Deploy Vercel?              (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_vercel=1
+  read -rp "Deploy nexus-app     (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_nexus_app=1
+  read -rp "Deploy nexus-sandbox (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_nexus_sandbox=1
   read -rp "Deploy claude-gateway (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_claude=1
-  read -rp "Deploy codex-gateway  (KVM2)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_codex=1
+  read -rp "Deploy codex-gateway  (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_codex=1
   read -rp "Deploy qa-runner      (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_qa=1
   read -rp "Deploy firecrawl      (KVM4)? (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_firecrawl=1
+  read -rp "Deploy Vercel?               (y/N) " a; [[ "$a" =~ ^[Yy] ]] && do_vercel=1
 fi
 
-if [ $do_vercel = 0 ] && [ $do_claude = 0 ] && [ $do_codex = 0 ] && [ $do_qa = 0 ] && [ $do_firecrawl = 0 ]; then
+if [ $do_vercel = 0 ] && [ $do_nexus_app = 0 ] && [ $do_nexus_sandbox = 0 ] \
+  && [ $do_claude = 0 ] && [ $do_codex = 0 ] && [ $do_qa = 0 ] && [ $do_firecrawl = 0 ]; then
   warn "nothing selected — exiting"
   exit 0
 fi
@@ -201,9 +218,27 @@ if [ $do_vercel = 1 ]; then
   fi
 fi
 
+# ─── nexus-app (KVM4) — the Next.js platform itself in lean mode ────────────
+if [ $do_nexus_app = 1 ]; then
+  require_env COOLIFY_KVM4_URL              "e.g. https://coolify.coolifycloudtunnel.uk"
+  require_env COOLIFY_KVM4_API_TOKEN        "Coolify → Security → API Tokens"
+  require_env COOLIFY_KVM4_NEXUS_APP_UUID   "Coolify → nexus-app resource URL → last UUID"
+  deploy_coolify "nexus-app (KVM4)" \
+    "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_NEXUS_APP_UUID"
+fi
+
+# ─── nexus-sandbox (KVM4) — rootless-Podman exec sandbox ────────────────────
+if [ $do_nexus_sandbox = 1 ]; then
+  require_env COOLIFY_KVM4_URL
+  require_env COOLIFY_KVM4_API_TOKEN
+  require_env COOLIFY_KVM4_NEXUS_SANDBOX_UUID  "Coolify → nexus-sandbox resource URL → last UUID"
+  deploy_coolify "nexus-sandbox (KVM4)" \
+    "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_NEXUS_SANDBOX_UUID"
+fi
+
 # ─── claude-gateway (KVM4) ──────────────────────────────────────────────────
 if [ $do_claude = 1 ]; then
-  require_env COOLIFY_KVM4_URL          "e.g. http://<kvm4-ip>:8000"
+  require_env COOLIFY_KVM4_URL          "e.g. https://coolify.coolifycloudtunnel.uk"
   require_env COOLIFY_KVM4_API_TOKEN    "Coolify → Security → API Tokens"
   require_env COOLIFY_KVM4_CLAUDE_UUID  "Coolify → claude-gateway resource URL → last UUID"
   deploy_coolify "claude-gateway (KVM4)" \
@@ -228,21 +263,32 @@ if [ $do_firecrawl = 1 ]; then
     "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_FIRECRAWL_UUID"
 fi
 
-# ─── codex-gateway (KVM2) ───────────────────────────────────────────────────
+# ─── codex-gateway — KVM4 (lean mode) preferred, KVM2 (legacy) fallback ─────
 if [ $do_codex = 1 ]; then
-  require_env COOLIFY_KVM2_URL          "e.g. http://72.62.244.75:8000"
-  require_env COOLIFY_KVM2_API_TOKEN    "Coolify on KVM2 → Security → API Tokens"
-  require_env COOLIFY_KVM2_CODEX_UUID   "Coolify → codex-gateway resource URL → last UUID"
-  deploy_coolify "codex-gateway (KVM2)" \
-    "$COOLIFY_KVM2_URL" "$COOLIFY_KVM2_API_TOKEN" "$COOLIFY_KVM2_CODEX_UUID"
+  if [ -n "${COOLIFY_KVM4_CODEX_UUID:-}" ]; then
+    require_env COOLIFY_KVM4_URL
+    require_env COOLIFY_KVM4_API_TOKEN
+    deploy_coolify "codex-gateway (KVM4)" \
+      "$COOLIFY_KVM4_URL" "$COOLIFY_KVM4_API_TOKEN" "$COOLIFY_KVM4_CODEX_UUID"
+  elif [ -n "${COOLIFY_KVM2_CODEX_UUID:-}" ]; then
+    require_env COOLIFY_KVM2_URL         "legacy KVM2 Coolify URL (lean mode targets KVM4 instead)"
+    require_env COOLIFY_KVM2_API_TOKEN   "Coolify on KVM2 → Security → API Tokens"
+    deploy_coolify "codex-gateway (KVM2 — legacy)" \
+      "$COOLIFY_KVM2_URL" "$COOLIFY_KVM2_API_TOKEN" "$COOLIFY_KVM2_CODEX_UUID"
+  else
+    err "codex-gateway deploy requested but neither COOLIFY_KVM4_CODEX_UUID nor COOLIFY_KVM2_CODEX_UUID is set"
+    exit 3
+  fi
 fi
 
 # ─── done ───────────────────────────────────────────────────────────────────
 hdr "done"
 ok "all selected deploys triggered"
 printf '\nWatch logs:\n'
-[ $do_vercel    = 1 ] && printf '  vercel:    vercel logs --token $VERCEL_TOKEN --follow\n'
-[ $do_claude    = 1 ] && printf '  claude:    %s → claude-gateway → Logs\n' "$COOLIFY_KVM4_URL"
-[ $do_codex     = 1 ] && printf '  codex:     %s → codex-gateway → Logs\n' "$COOLIFY_KVM2_URL"
-[ $do_qa        = 1 ] && printf '  qa:        %s → qa-runner → Logs\n' "$COOLIFY_KVM4_URL"
-[ $do_firecrawl = 1 ] && printf '  firecrawl: %s → firecrawl → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_vercel        = 1 ] && printf '  vercel:        vercel logs --token $VERCEL_TOKEN --follow\n'
+[ $do_nexus_app     = 1 ] && printf '  nexus-app:     %s → nexus-app → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_nexus_sandbox = 1 ] && printf '  nexus-sandbox: %s → nexus-sandbox → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_claude        = 1 ] && printf '  claude:        %s → claude-gateway → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_codex         = 1 ] && printf '  codex:         %s → codex-gateway → Logs\n' "${COOLIFY_KVM4_URL:-${COOLIFY_KVM2_URL:-}}"
+[ $do_qa            = 1 ] && printf '  qa:            %s → qa-runner → Logs\n' "$COOLIFY_KVM4_URL"
+[ $do_firecrawl     = 1 ] && printf '  firecrawl:     %s → firecrawl → Logs\n' "$COOLIFY_KVM4_URL"
