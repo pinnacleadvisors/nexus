@@ -38,9 +38,13 @@ interface SurveyBody {
 }
 
 function slugify(s: string): string {
+  // Two anchored single-pattern replaces (no alternation) so each step is
+  // unambiguously linear-time — avoids the polynomial-regex pitfall when
+  // the input contains long runs of separator chars.
   return s.toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
     .slice(0, 64)
 }
 
@@ -48,7 +52,7 @@ function isGithubRepoUrl(s: string): boolean {
   try {
     const u = new URL(s)
     if (u.hostname !== 'github.com') return false
-    const parts = u.pathname.replace(/^\/+|\/+$/g, '').split('/')
+    const parts = u.pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/')
     return parts.length >= 2 && parts.every(Boolean)
   } catch {
     return false
@@ -111,11 +115,14 @@ This is part of the open-orchestration survey — Nexus continuously evaluates t
   // Dispatch via the existing claude-session pipeline. We pass swarm: false
   // because the work is sequential (scrape → extract → write) — splitting
   // into parallel sub-tasks doesn't help.
+  //
+  // Base URL is read from a fixed env var (never from the incoming request's
+  // Host header) so the fetch target can't be redirected by header injection.
   let dispatchId: string | null = null
   try {
-    const origin = req.nextUrl.origin
+    const baseUrl = (process.env.NEXUS_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '')
     const opsToken = process.env.NEXUS_OPS_TOKEN
-    const dispatchRes = await fetch(`${origin}/api/claude-session/dispatch`, {
+    const dispatchRes = await fetch(`${baseUrl}/api/claude-session/dispatch`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',

@@ -270,11 +270,24 @@ async function migrateService(svc) {
   return { name: svc.name, action: 'created', uuid, status: lastStatus }
 }
 
+// Redact env-sourced values in the startup log. We want enough to confirm
+// "yes, configuration is loaded and pointing at the right host/project",
+// without printing full URLs or UUIDs that may identify private infra.
+function redactUrl(u) {
+  if (!u) return '(unset)'
+  try { return new URL(u).host } catch { return '(invalid)' }
+}
+function redactId(id) {
+  if (!id) return '(unset)'
+  if (id.length <= 12) return '***'
+  return `${id.slice(0, 6)}…${id.slice(-4)}`
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('migrate-to-lean-kvm')
-  console.log(`  target:        ${TARGET.url}  project=${TARGET.projectUuid}  server=${TARGET.serverUuid}`)
-  console.log(`  source:        ${SOURCE.url ?? '(none)'}  (${STOP_SOURCE ? 'will stop' : 'leave running'})`)
+  console.log(`  target:        host=${redactUrl(TARGET.url)}  project=${redactId(TARGET.projectUuid)}  server=${redactId(TARGET.serverUuid)}`)
+  console.log(`  source:        host=${redactUrl(SOURCE.url)}  (${STOP_SOURCE ? 'will stop' : 'leave running'})`)
   console.log(`  git:           ${GIT_REPOSITORY}#${GIT_BRANCH}`)
   console.log(`  mode:          ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}`)
   if (ONLY) console.log(`  service filter: ${ONLY}`)
