@@ -98,14 +98,14 @@ export default function ClawStatusPage() {
     <div className="p-6 min-h-full" style={{ backgroundColor: '#050508' }}>
       {/* Back nav */}
       <Link
-        href="/tools"
+        href="/tools/claw"
         className="inline-flex items-center gap-1.5 text-xs mb-6 no-underline"
         style={{ color: '#9090b0' }}
         onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#e8e8f0')}
         onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.color = '#9090b0')}
       >
         <ArrowLeft size={13} />
-        Back to Tools
+        Back to OpenClaw config
       </Link>
 
       {/* Header */}

@@ -3,7 +3,7 @@
 /**
  * Platform Settings — four tabs covering everything that *isn't* a feature.
  * Replaces the previous "Manage Platform" sidebar slot (which is actually the
- * dev console — kept at /manage-platform under Toolbox, see /tools).
+ * dev console — kept at /manage-platform as its own sidebar entry).
  *
  * Tabs:
  *   AI         — provider chain, cost cap, gateway health
