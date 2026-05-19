@@ -140,35 +140,24 @@ async function findAppByName(creds, name) {
 }
 
 /**
- * Like findAppByName, but also detects when an app with the matching name
- * lives in a DIFFERENT project than the target. Returns:
- *   { app, inTargetProject: true }    — in target project, safe to treat as existing
- *   { app, inTargetProject: false }   — exists in another project (DANGER — surface it)
- *   null                              — no such app anywhere
+ * Look up an app by name. Returns the first match, or null.
  *
- * Coolify's GET /applications doesn't include project_uuid directly. Each
- * app has an `environment_id` (number) and `repository_project_id` (number).
- * We resolve the target project's numeric `id` once at startup, then compare.
+ * Why not stricter project-membership filtering: Coolify's GET /applications
+ * doesn't return a usable project identifier, and the documented
+ * `repository_project_id` on GET /applications/{uuid} doesn't match the
+ * target project's numeric `id` reliably (turns out to be a different
+ * relationship — Coolify's data model links apps to Environments, not
+ * directly to Projects, and the cleanest mapping isn't exposed via API).
+ *
+ * Trust model: the operator sets COOLIFY_PROJECT_ID_NEXUS_PLATFORM
+ * explicitly. We pass that on create so new apps land in the right place.
+ * If two apps share a name across projects, we operate on whichever the
+ * API returns first — flagged in the warning below.
  */
-async function findAppInProject(creds, name, targetProjectId) {
+async function findMatchingApps(creds, name) {
   const apps = await coolify(creds, 'GET', '/applications')
   const list = Array.isArray(apps) ? apps : (apps?.data ?? [])
-  const byName = list.filter(a => a.name === name)
-  if (byName.length === 0) return null
-
-  // For each candidate, fetch detail to compare project membership. Usually
-  // there's at most one — but if multiple, we prefer the in-target one.
-  for (const candidate of byName) {
-    try {
-      const detail = await coolify(creds, 'GET', `/applications/${candidate.uuid}`)
-      const projId = detail?.repository_project_id ?? detail?.project_id ?? null
-      if (projId != null && projId === targetProjectId) {
-        return { app: candidate, inTargetProject: true }
-      }
-    } catch { /* fall through to "not in target" verdict */ }
-  }
-  // Found by name but none in target project
-  return { app: byName[0], inTargetProject: false, totalMatches: byName.length }
+  return list.filter(a => a.name === name)
 }
 
 /**
@@ -244,15 +233,23 @@ async function migrateService(svc) {
   const log = (msg) => console.log(`  [${svc.name}] ${msg}`)
   console.log(`\n→ ${svc.name}  (${svc.dir})`)
 
-  // Look up by name + verify project membership. An app named ${svc.name}
-  // existing in a DIFFERENT project means somebody (probably an earlier run
-  // of this script with the wrong project_uuid) created it in the wrong
-  // place — surface loudly so the operator can clean up.
-  const found = await findAppInProject(TARGET, svc.name, TARGET.projectId)
-  if (found && found.inTargetProject) {
-    const existing = found.app
+  // Look up by name. The operator's COOLIFY_PROJECT_ID_NEXUS_PLATFORM tells
+  // us where new apps should land; the trust model is that they verified
+  // the existing apps live there already (Coolify UI is the authoritative
+  // view). If multiple matches exist across projects, surface a soft
+  // warning but operate on whichever the API returns first.
+  const matches = await findMatchingApps(TARGET, svc.name)
+  if (matches.length > 0) {
+    if (matches.length > 1) {
+      log(`⚠️  ${matches.length} apps named '${svc.name}' exist across projects — likely cross-project duplicates from earlier runs.`)
+      log(`    operating on the first (uuid=${matches[0].uuid}). Inspect Coolify UI to clean up the others:`)
+      for (const m of matches.slice(1)) {
+        log(`      - extra match: uuid=${m.uuid}  status=${m.status ?? '?'}`)
+      }
+    }
+    const existing = matches[0]
     const status = String(existing.status ?? '?').toLowerCase()
-    log(`already in '${TARGET.projectName}'  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
+    log(`already on target  uuid=${existing.uuid}  status=${existing.status ?? '?'}`)
     if (!status.includes('running:healthy')) {
       log(`  ⚠️  app is not running:healthy — script won't re-deploy existing apps.`)
       log(`     check logs in Coolify UI, or trigger a manual redeploy:`)
@@ -260,14 +257,6 @@ async function migrateService(svc) {
       log(`            -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"`)
     }
     return { name: svc.name, action: 'skipped', uuid: existing.uuid, status }
-  }
-  if (found && !found.inTargetProject) {
-    log(`❌ app named '${svc.name}' exists in a DIFFERENT project (uuid=${found.app.uuid}).`)
-    log(`   The script targets project '${TARGET.projectName}' (id=${TARGET.projectId}).`)
-    log(`   Recovery: delete the misplaced app, then re-run this script.`)
-    log(`     curl -X DELETE '${TARGET.url}/api/v1/applications/${found.app.uuid}' \\`)
-    log(`          -H "Authorization: Bearer $COOLIFY_KVM4_API_TOKEN"`)
-    return { name: svc.name, action: 'failed', stage: 'wrong-project', uuid: found.app.uuid, error: 'app exists in different project' }
   }
 
   const compose = await readComposeFile(svc.dir)
