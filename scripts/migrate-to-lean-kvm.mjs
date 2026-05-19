@@ -126,7 +126,7 @@ async function findAppByName(creds, name) {
 }
 
 async function readComposeFile(dir) {
-  for (const filename of ['docker-compose.yml', 'docker-compose.yaml']) {
+  for (const filename of ['docker-compose.yaml', 'docker-compose.yml']) {
     const p = path.join(REPO_ROOT, dir, filename)
     try {
       const body = await fs.readFile(p, 'utf8')
