@@ -85,6 +85,24 @@ node .claude/skills/molecularmemory_local/cli.mjs reindex
 node .claude/skills/molecularmemory_local/cli.mjs graph
 ```
 
+## After PR merge — the branch is terminated
+
+**One PR per branch. PR merged = branch dead. New work = new branch off `origin/main`.**
+
+Pushing more commits to a branch whose PR already shipped leaves them stranded — invisible in code review, never deployed. The 2026-05-19 incident (rename commit lost from the merged #223; recovered via cherry-pick in #224) is documented in [`docs/runbooks/git-multi-agent-collaboration.md`](docs/runbooks/git-multi-agent-collaboration.md).
+
+Three layers of defence prevent this:
+
+1. **Repo setting** — admin enables auto-delete head branches on merge: `gh repo edit pinnacleadvisors/nexus --enable-auto-delete-branches`. Second push to a merged branch then fails because the remote branch is gone.
+2. **Local hook** — `.githooks/pre-push` queries `gh pr view <branch> --json state` and blocks pushes when state is `MERGED`. Enable per-clone (and per-worktree) with: `git config core.hooksPath .githooks`.
+3. **This rule** — if you're about to push and you can't remember whether the PR merged, run `gh pr view <branch> --json state,mergedAt` first.
+
+Stranded-commit recovery procedure: see the runbook.
+
+Conflict-resolution playbook (which files to take union vs regenerate vs theirs/ours): see the runbook's [conflict-resolution table](docs/runbooks/git-multi-agent-collaboration.md#conflict-resolution-playbook).
+
+Parallel-agent worktree pattern: see the runbook's [worktree section](docs/runbooks/git-multi-agent-collaboration.md#worktree-pattern-parallel-agents).
+
 ---
 
 # Long-Horizon Task Protocol

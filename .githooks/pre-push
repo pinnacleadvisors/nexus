@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# .githooks/pre-push — block push to a branch whose PR has been merged.
+#
+# Prevents the "stranded commit" failure mode: an agent (human or AI) keeps
+# pushing to a branch whose PR already shipped, and the new commits land in
+# the remote but are invisible in code review + never reach production.
+#
+# Setup (one-time per clone):
+#   git config core.hooksPath .githooks
+#
+# Bypass (emergencies only):
+#   git push --no-verify
+#
+# Quietly no-ops when:
+#   - the ref being pushed is main / master / develop / trunk
+#   - gh CLI is unavailable (no way to query PR state)
+#   - the branch has no PR yet (first push of a new branch)
+#
+# See docs/runbooks/git-multi-agent-collaboration.md for the full protocol.
+
+set -e
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$remote_ref" ] && continue
+
+  branch="${remote_ref#refs/heads/}"
+
+  # Protected branches — never block; that's branch-protection's concern.
+  case "$branch" in
+    main|master|develop|trunk) continue ;;
+  esac
+
+  # gh is the only way to check PR state without baking in a token.
+  # Skip cleanly if missing so devs without gh aren't blocked.
+  if ! command -v gh >/dev/null 2>&1; then
+    continue
+  fi
+
+  # Empty output = no PR for this branch yet (first push of a new branch).
+  state=$(gh pr view "$branch" --json state --jq '.state' 2>/dev/null || echo "")
+
+  case "$state" in
+    MERGED)
+      echo ""
+      echo "❌ pre-push: branch '$branch' has a MERGED PR. Stranded-commit guard."
+      echo ""
+      echo "   Once a PR merges, that branch is terminated. New work goes on a fresh"
+      echo "   branch off origin/main. See:"
+      echo "     docs/runbooks/git-multi-agent-collaboration.md"
+      echo ""
+      echo "   Quick recovery for the commit(s) about to be pushed:"
+      echo "     git fetch origin main"
+      echo "     git checkout -b <new-branch-name> origin/main"
+      echo "     git cherry-pick ${local_sha:0:10}"
+      echo "     git push -u origin <new-branch-name>"
+      echo "     gh pr create --base main"
+      echo ""
+      echo "   Real emergency bypass: git push --no-verify"
+      echo ""
+      exit 1
+      ;;
+    CLOSED)
+      echo "⚠️  pre-push: branch '$branch' has a CLOSED (not merged) PR."
+      echo "   Pushing anyway in 3s. Ctrl-C to abort, or --no-verify to skip the wait."
+      sleep 3
+      ;;
+  esac
+done
+
+exit 0
