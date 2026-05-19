@@ -11,25 +11,39 @@ import type { NextConfig } from 'next'
 const IS_PROD = process.env.NODE_ENV === 'production'
 const SCRIPT_DEV_ONLY = IS_PROD ? '' : " 'unsafe-eval'"
 
+// Clerk custom production-domain allowlist — set in env when you upgrade
+// from the dev instance to a Clerk production instance (paid plan +
+// verified domain). Leave unset in lean / pre-revenue mode; the dev
+// instance lives on `*.clerk.accounts.dev` which is already allowed
+// below.
+const CLERK_PROD_DOMAIN = process.env.NEXT_PUBLIC_CLERK_FRONTEND_DOMAIN
+  ? `https://${process.env.NEXT_PUBLIC_CLERK_FRONTEND_DOMAIN}`
+  : ''
+
 const CSP = [
   "default-src 'self'",
   // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts + Cloudflare Turnstile (Clerk bot protection)
-  `script-src 'self' 'unsafe-inline'${SCRIPT_DEV_ONLY} https://clerk.nexus.pinnacleadvisors.com https://*.clerk.accounts.dev https://challenges.cloudflare.com`,
+  [
+    `script-src 'self' 'unsafe-inline'${SCRIPT_DEV_ONLY}`,
+    'https://*.clerk.accounts.dev',
+    'https://challenges.cloudflare.com',
+    CLERK_PROD_DOMAIN,
+  ].filter(Boolean).join(' '),
   // Styles: self + inline (Tailwind CSS utility classes are inline)
   "style-src 'self' 'unsafe-inline'",
   // Images: self + data URIs + Clerk avatar CDN + common asset CDNs
   "img-src 'self' data: blob: https://img.clerk.com https://*.supabase.co",
   // Fonts: self
   "font-src 'self' data:",
-  // API + WebSocket connections
+  // API + WebSocket connections.
   //
-  // Clerk note: script-src loads clerk.js from our custom frontend domain
-  // (clerk.nexus.pinnacleadvisors.com), but the SDK then makes background
-  // XHRs back to that same domain to refresh the session token (~60s TTL).
-  // If connect-src omits the custom domain, refreshes fail silently and
-  // every API route guarded by `auth()` 401s after the first minute. Keep
-  // script-src and connect-src in sync for both the custom domain and
-  // clerk-telemetry.com (Clerk SDK's analytics endpoint).
+  // Clerk note: when the app is on Clerk's dev instance, the SDK loads from
+  // and calls back to `*.clerk.accounts.dev` — covered by the wildcard
+  // below. When you upgrade to a Clerk production instance, set
+  // NEXT_PUBLIC_CLERK_FRONTEND_DOMAIN (e.g. `clerk.<your-domain>`); both
+  // script-src and connect-src pick it up. Without this CSP entry, the
+  // SDK's background session refreshes (~60s TTL) fail silently and every
+  // protected route 401s after the first minute.
   [
     "connect-src 'self'",
     'https://api.anthropic.com',
@@ -38,7 +52,7 @@ const CSP = [
     'https://api.openai.com',
     'https://*.clerk.com',
     'https://*.clerk.accounts.dev',
-    'https://clerk.nexus.pinnacleadvisors.com',
+    CLERK_PROD_DOMAIN,
     'https://clerk-telemetry.com',
     'https://challenges.cloudflare.com',
     'https://inngest.com',
