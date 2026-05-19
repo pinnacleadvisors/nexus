@@ -15,6 +15,7 @@
  */
 
 import { createServerClient } from '@/lib/supabase'
+import { isLeanMode, leanModeDailyUsdLimit } from '@/lib/lean-mode'
 
 const DEFAULT_USER_DAILY_USD     = 25
 const DEFAULT_BUSINESS_DAILY_USD = 10
@@ -73,6 +74,26 @@ export async function assertUnderCostCap(
   userId: string,
   businessSlug?: string | null,
 ): Promise<CostCapResult> {
+  // Lean mode collapses the per-business + per-user tiered model into a single
+  // global daily cap. The business cap is irrelevant when there's one tenant.
+  if (isLeanMode()) {
+    const cap = leanModeDailyUsdLimit()
+    const db = createServerClient()
+    if (!db) return { ok: true, spentUsd: 0, capUsd: cap, scope: 'user' }
+    try {
+      const { data } = await db
+        .from('token_events')
+        .select('cost_usd')
+        .eq('user_id', userId)
+        .gte('created_at', startOfDayIso())
+      const rows = (data ?? []) as Array<{ cost_usd: number | null }>
+      const spent = rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0)
+      return { ok: spent < cap, spentUsd: spent, capUsd: cap, scope: 'user' }
+    } catch {
+      return { ok: true, spentUsd: 0, capUsd: cap, scope: 'user' }
+    }
+  }
+
   const userCap = getCap('USER_DAILY_USD_LIMIT', DEFAULT_USER_DAILY_USD)
   const bizCap  = getCap('USER_BUSINESS_DAILY_USD_LIMIT', DEFAULT_BUSINESS_DAILY_USD)
   const db = createServerClient()
@@ -170,6 +191,14 @@ export async function checkKillSwitch(businessSlug: string): Promise<KillSwitchR
     last7dSignups:      0,
     pivotHistoryLength: 0,
     firstProductLiveAt: null,
+  }
+
+  // Lean mode disables the per-business experiment kill-switch entirely —
+  // there are no autonomous business experiments running, just the solo owner
+  // iterating on platform code. Global cost-guard (`assertUnderCostCap`) still
+  // applies and is the only ceiling that matters.
+  if (isLeanMode()) {
+    return { kill: false, details: empty }
   }
 
   const db = createServerClient()

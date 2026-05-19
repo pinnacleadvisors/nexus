@@ -42,6 +42,7 @@ import { authenticateOps } from '@/lib/auth/ops-auth'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/providers'
 import { decrypt } from '@/lib/crypto'
 import { createServerClient } from '@/lib/supabase'
+import { isLeanMode } from '@/lib/lean-mode'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 60
@@ -164,6 +165,16 @@ export async function POST(
   req: NextRequest,
   context: { params: Promise<{ slug: string }> },
 ) {
+  // Lean-mode short-circuit — per-business provisioning is a scale-mode-only
+  // concern. Return 200 + soft error per retry-storm rule (the operator UI
+  // and any scripted caller can distinguish via the `ok` field).
+  if (isLeanMode()) {
+    return NextResponse.json(
+      { ok: false, error: 'Per-business provisioning disabled in lean mode', mode: 'lean' },
+      { status: 200 },
+    )
+  }
+
   const rl = await rateLimit(req, { limit: 5, window: '5 m', prefix: 'businesses:provision' })
   if (!rl.success) return rateLimitResponse(rl)
 

@@ -7,5 +7,6 @@
 | [003](003-protected-route-matcher.md) | Widened middleware matcher for `(protected)/` route group | Accepted | 2026-05-03 |
 | [004](004-skip-gsd.md) | Skip GSD (Get-Shit-Done) skill — overlaps with claude-evolve + memory-hq | Accepted | 2026-05-06 |
 | [005](005-claude-code-aesthetic-redesign.md) | Claude-Code-aesthetic redesign + liquid glass design system | Proposed | 2026-05-15 |
+| [006](006-lean-mode-pivot.md) | Lean-mode pivot via feature flag — single-KVM Coolify, dormant multi-tenant code | Accepted | 2026-05-19 |
 | — | Solopreneur autonomous experiment with strategic-irreversibles-only gating ([runbook](../runbooks/solopreneur-experiment.md)) | Accepted | 2026-05-09 |
 | — | Cloudflare DNS over Namecheap API for per-business DNS automation (no IP-allowlist friction) — see [`docs/runbooks/namecheap-to-cloudflare-dns.md`](../runbooks/namecheap-to-cloudflare-dns.md) | Accepted | 2026-05-09 |

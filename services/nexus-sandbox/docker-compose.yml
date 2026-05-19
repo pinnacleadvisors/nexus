@@ -1,0 +1,50 @@
+# Coolify resource template — rootless-Podman sandbox.
+#
+# Exposes POST /exec on port 8080. Auth via NEXUS_SANDBOX_TOKEN bearer.
+# Network alias `nexus-sandbox` makes it resolvable from nexus-app on the
+# shared `coolify` network.
+
+services:
+  nexus-sandbox:
+    build:
+      context: .
+      dockerfile: Containerfile
+    pull_policy: build
+    restart: unless-stopped
+
+    # Nested Podman needs CAP_SYS_ADMIN for user-namespace setup.
+    # Lean-mode trade-off: ONE tenant (the owner), so the blast radius of
+    # a sandbox escape is the host itself — the same blast radius the owner
+    # already has. When scale mode returns, swap this for a stricter setup
+    # (gVisor or Firecracker) before letting customer code anywhere near it.
+    privileged: true
+
+    environment:
+      SANDBOX_PORT:             "8080"
+      NEXUS_SANDBOX_TOKEN:      "${NEXUS_SANDBOX_TOKEN}"
+      # Per-exec defaults (any can be overridden in the POST body)
+      SANDBOX_DEFAULT_IMAGE:    "${SANDBOX_DEFAULT_IMAGE:-alpine}"
+      SANDBOX_DEFAULT_TIMEOUT_MS: "${SANDBOX_DEFAULT_TIMEOUT_MS:-60000}"
+      SANDBOX_MAX_OUTPUT_BYTES: "${SANDBOX_MAX_OUTPUT_BYTES:-262144}"  # 256 KB
+      SANDBOX_MAX_MEMORY:       "${SANDBOX_MAX_MEMORY:-512m}"
+      SANDBOX_MAX_CPUS:         "${SANDBOX_MAX_CPUS:-1}"
+      # Set to "1" to allow `--network=host` execs (off by default — exec
+      # bodies that request `network: 'host'` get rejected unless this is on).
+      SANDBOX_ALLOW_HOST_NETWORK: "${SANDBOX_ALLOW_HOST_NETWORK:-0}"
+
+    expose:
+      - "8080"
+    networks:
+      default: {}
+      coolify:
+        aliases:
+          - nexus-sandbox
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+
+networks:
+  coolify:
+    external: true

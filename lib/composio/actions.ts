@@ -19,6 +19,7 @@ import { executeAction, ComposioError } from './client'
 import { createServerClient } from '@/lib/supabase'
 import { getProvider } from '@/lib/oauth/providers'
 import { ADMIN_SCOPE } from '@/lib/claw/business-client'
+import { isLeanMode } from '@/lib/lean-mode'
 
 export class ConnectedAccountMissingError extends Error {
   platform: string
@@ -53,6 +54,21 @@ async function findActiveAccount(
 ): Promise<AccountRow | null> {
   const db = createServerClient()
   if (!db) return null
+
+  // Lean mode — skip the per-business exact match and go straight to the
+  // user-default row. There's one tenant; partitioning by business_slug is
+  // overhead. Admin scope still goes through the strict admin path below.
+  if (isLeanMode() && businessSlug !== ADMIN_SCOPE) {
+    type DefaultChain = { eq: (c: string, v: unknown) => DefaultChain; is: (c: string, v: null) => DefaultChain; limit: (n: number) => Promise<{ data: AccountRow[] | null }> }
+    const def = await ((db.from('connected_accounts' as never) as unknown as {
+      select: (cols: string) => DefaultChain
+    }).select('id, composio_account_id')
+      .eq('user_id', userId)
+      .eq('platform', platform)
+      .eq('status', 'active')
+      .is('business_slug', null) as DefaultChain).limit(1)
+    return def.data?.[0] ?? null
+  }
 
   type Chain = { eq: (col: string, val: unknown) => Chain; limit: (n: number) => Promise<{ data: AccountRow[] | null }> }
   const exact = await ((db.from('connected_accounts' as never) as unknown as {
