@@ -36,13 +36,13 @@ Missing values surface in the dry-run output — fix in Doppler before applying.
 
 ### Git source registered in Coolify (one-time)
 
-Coolify needs a "Private Git Source" registered for `pinnacleadvisors/nexus`:
+Coolify needs a Git Source registered for `pinnacleadvisors/nexus`:
 
-1. Coolify UI → Sources → New Source → GitHub App (or Public if the repo is public)
-2. Connect the GitHub App; grant repo access
-3. The script doesn't need the source UUID — Coolify resolves the repo by URL — but the UI auth has to exist or builds fail with "repository not accessible"
-
-If the repo is private (which it should be), you must use the GitHub App flow. Personal Access Token doesn't work for builds in Coolify v4.
+1. Coolify UI → Sources → New Source
+   - **Public Repository** (current — works while the repo is public)
+   - **GitHub App** (switch to this once the repo is private; grant repo access)
+2. The script targets `POST /applications/public` and passes `git_repository` + `git_branch` — Coolify resolves against the registered Public Source automatically.
+3. When the repo flips to private: change the endpoint in `scripts/migrate-to-lean-kvm.mjs` from `/applications/public` to `/applications/private-github-app` and add the field `github_app_uuid: <uuid>` from the Sources page. Inline comment in the script flags this.
 
 ## Usage
 
@@ -97,7 +97,9 @@ Idempotent — re-runs detect existing apps by name and skip create.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `403 — repository not accessible` | Coolify's GitHub App lacks access to `pinnacleadvisors/nexus` | Install / re-authorise the Coolify GitHub App; grant repo access |
-| `coolify POST /applications/dockercompose → 422` | Required field missing or invalid | Check the script output's `body:` line — Coolify returns field-level errors. Common: `project_uuid` for the wrong server, `server_uuid` for the wrong project |
+| `coolify POST /applications/public → 422` | Required field missing or invalid | Check the script output's `body:` line — Coolify returns field-level errors. Common: `project_uuid` for the wrong server, `server_uuid` for the wrong project. The endpoint is `/applications/public` for public repos + Docker Compose builds; `/applications/dockercompose` is **deprecated** and accepts only inline base64 Compose, not git-cloned builds — don't switch back to it. |
+| `coolify POST /applications/public → 401` | Token missing repo access | The GitHub App / Public Source linked in Coolify UI doesn't have access to the repo. Re-authorise via Coolify → Sources |
+| Service shows `already on target  status=exited:unhealthy` | App was created but never deployed cleanly, or runtime crashed | The migration script intentionally won't redeploy existing apps. Either trigger a manual redeploy from Coolify UI, or `curl -X POST <url>/api/v1/applications/<uuid>/deploy -H "Authorization: Bearer $TARGET_COOLIFY_TOKEN"` — the script prints this command in the hint line. Inspect logs in Coolify UI to find the root cause (usually missing env vars or build failure) |
 | Env var present in compose but listed as "missing" | Not set in Doppler | Add it to the appropriate Doppler config and re-run |
 | Status stuck at "starting" past 5min | Long build (first deploy of nexus-app is the slowest — `npm ci` + Next.js build) | Wait it out in the Coolify UI, OR re-run the script — it'll detect the app exists and skip create, but won't re-poll. Use Coolify UI for monitoring large builds |
 | `--stop-source` finds nothing | KVM2 deployed bare-Docker, not via Coolify | SSH to KVM2 and `docker compose -f services/codex-gateway/docker-compose.yaml down` manually after the target is healthy |
