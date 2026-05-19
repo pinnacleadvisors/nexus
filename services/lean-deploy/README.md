@@ -87,8 +87,8 @@ apps inherit them. They're also documented in
 2. Add all variables above as **shared environment variables**.
 3. Create `claude-gateway` app — Compose at `services/claude-gateway/docker-compose.yaml`. Deploy.
 4. Create `codex-gateway` app — Compose at `services/codex-gateway/docker-compose.yaml`. Deploy.
-5. Create `nexus-sandbox` app — Compose at `services/nexus-sandbox/docker-compose.yml`. Deploy.
-6. Create `nexus-app` app — Compose at `services/lean-deploy/docker-compose.yml`. Deploy.
+5. Create `nexus-sandbox` app — Compose at `services/nexus-sandbox/docker-compose.yaml`. Deploy.
+6. Create `nexus-app` app — Compose at `services/lean-deploy/docker-compose.yaml`. Deploy.
 7. (Optional) Add the `ollama/ollama` image as a Coolify app for local LLM
    smoke tests. Attach to the `coolify` network with alias `ollama`.
 

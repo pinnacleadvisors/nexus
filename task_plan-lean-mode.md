@@ -93,7 +93,7 @@ PDCA gate: Phase 2 cannot start until Inventory is filled.
 - Parallel: yes
 
 ### Task 9 — Coolify Compose for the lean stack
-- File: `services/lean-deploy/docker-compose.yml` (new), `services/lean-deploy/README.md` (new)
+- File: `services/lean-deploy/docker-compose.yaml` (new), `services/lean-deploy/README.md` (new)
 - Change: Compose stack: `nexus-app` (Next.js standalone), `claude-gateway`, `codex-gateway`. Network bridge. Env from Doppler. Volumes for any local state. README documents Coolify import + DNS steps.
 - Verify: `docker compose config` validates; README walkthrough complete
 - Parallel: yes
@@ -101,7 +101,7 @@ PDCA gate: Phase 2 cannot start until Inventory is filled.
 ### Task 10 — Cutover playbook (no live cutover yet)
 - File: `docs/runbooks/lean-mode.md` (extend Task 3 skeleton)
 - Change: Document the actual cutover — Coolify import, env var setup, Cloudflare DNS swap, Stripe webhook URL rotation, parallel-run validation steps, decommission checklist for the old KVM + Vercel project. Cutover is a separate run, this just lays down the steps.
-- Verify: Steps reproducible; env-var list matches `services/lean-deploy/docker-compose.yml`
+- Verify: Steps reproducible; env-var list matches `services/lean-deploy/docker-compose.yaml`
 - Parallel: yes (must follow Task 3 + Task 9)
 
 ### Task 11 — LLM provider abstraction
@@ -123,7 +123,7 @@ PDCA gate: Phase 2 cannot start until Inventory is filled.
 - Parallel: yes (after Task 11)
 
 ### Task 14 — Rootless Podman sandbox service
-- File: `services/nexus-sandbox/Containerfile` (new), `services/nexus-sandbox/docker-compose.yml` (new), `services/nexus-sandbox/server.ts` (new), `services/nexus-sandbox/README.md` (new)
+- File: `services/nexus-sandbox/Containerfile` (new), `services/nexus-sandbox/docker-compose.yaml` (new), `services/nexus-sandbox/server.ts` (new), `services/nexus-sandbox/README.md` (new)
 - Change: Coolify app exposing `POST /exec` accepting `{ script: string, image: string, timeout_ms: number }`. Runs the script inside an ephemeral rootless Podman container (`podman run --rm --network=none ...`). Returns `{ stdout, stderr, exit_code, duration_ms }`. Hard kill at timeout. No persistent state. README documents KVM nesting requirement.
 - Verify: `curl POST /exec` with `{ script: "echo hello", image: "alpine" }` returns `{ stdout: "hello\n", exit_code: 0 }`
 - Parallel: yes
@@ -220,12 +220,12 @@ _TBD_
 - [x] **Task 6** — No-op for the current codebase. The grep for `payment_intent.create` + `metadata.business_slug` returned zero call sites; the Stripe webhook handler ([`app/api/webhooks/stripe/route.ts`](app/api/webhooks/stripe/route.ts)) is receive-only and ignores `business_slug`. Guard added to the lean-mode boundary list in the runbook so the future creation path inherits it.
 - [x] **Task 7** — `lib/cost-guard.ts`: `assertUnderCostCap` collapses to single global cap from `LEAN_USER_DAILY_USD_LIMIT`; `checkKillSwitch` returns `{ kill: false }` in lean mode
 - [x] **Task 8** — `lib/composio/actions.ts` `findActiveAccount` skips per-business exact match, goes straight to user-default in lean mode (admin scope still strict)
-- [x] **Task 9** — [`services/lean-deploy/`](services/lean-deploy/): Dockerfile + docker-compose.yml + README for the Nexus app on Coolify
+- [x] **Task 9** — [`services/lean-deploy/`](services/lean-deploy/): Dockerfile + docker-compose.yaml + README for the Nexus app on Coolify
 - [x] **Task 10** — Cutover playbook section added to [`docs/runbooks/lean-mode.md`](docs/runbooks/lean-mode.md) (Cloudflare TTL drop → Coolify import → smoke test → Stripe rotate → DNS swap → decommission)
 - [x] **Task 11** — [`lib/llm/provider.ts`](lib/llm/provider.ts) — `getLlm({ provider?, model? })` switch on `LLM_PROVIDER`. Chat route ([`app/api/chat/route.ts`](app/api/chat/route.ts)) migrated to use it
 - [x] **Task 12** — [`lib/llm/providers/mimo.ts`](lib/llm/providers/mimo.ts) stub with activation steps documented
 - [x] **Task 13** — [`lib/llm/providers/ollama.ts`](lib/llm/providers/ollama.ts) stub with activation steps documented
-- [x] **Task 14** — [`services/nexus-sandbox/`](services/nexus-sandbox/): Containerfile (quay.io/podman/stable) + docker-compose.yml (privileged) + server.mjs (pure node:builtins) + README
+- [x] **Task 14** — [`services/nexus-sandbox/`](services/nexus-sandbox/): Containerfile (quay.io/podman/stable) + docker-compose.yaml (privileged) + server.mjs (pure node:builtins) + README
 - [x] **Task 15** — [`app/api/sandbox/exec/route.ts`](app/api/sandbox/exec/route.ts) — thin proxy with two-mode auth + cost-guard + 200-on-soft-failure
 - [x] **Task 16** — [`.claude/agents/skill-trainer.md`](.claude/agents/skill-trainer.md) — closed upskilling loop (propose → exec → grade → 3 consecutive passes → SKILL.md draft → human verify)
 - [x] **Task 17 (partial)** — [`app/api/skills/[slug]/promote/route.ts`](app/api/skills/[slug]/promote/route.ts) — flips frontmatter `status: draft → verified` with audit log. **Board UI button deferred to manual checklist below.**
