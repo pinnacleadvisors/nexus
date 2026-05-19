@@ -136,8 +136,8 @@ Tracked automatically by `npm run migrate`. Update ✅/⬜ after each successful
 - [ ] Sign up at https://inngest.com → create an app called `nexus`
 - [ ] Add `INNGEST_EVENT_KEY` to Doppler — Inngest dashboard → App → Event Key
 - [ ] Add `INNGEST_SIGNING_KEY` to Doppler — Inngest dashboard → App → Signing Key
-- [ ] Add `NEXUS_BASE_URL` to Doppler — your Vercel deployment URL (e.g. `https://nexus.pinnacleadvisors.com`)
-- [ ] Register the Inngest endpoint in Inngest dashboard → Syncs → Add endpoint: `https://<your-vercel-domain>/api/inngest`
+- [ ] Add `NEXUS_BASE_URL` to Doppler — your deployment URL (e.g. `https://nexus.coolifycloudtunnel.uk` for lean-mode Coolify)
+- [ ] Register the Inngest endpoint in Inngest dashboard → Syncs → Add endpoint: `https://<your-domain>/api/inngest`
 - [ ] For local dev: run `npx inngest-cli@latest dev` alongside `npm run dev`
 
 ---
