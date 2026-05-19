@@ -28,11 +28,11 @@ interface RouteCheck {
 }
 
 const ROUTES: RouteCheck[] = [
-  { path: '/dashboard', heading: /dashboard|operations|kpi|revenue/i, settleMs: 1_000 },
-  { path: '/forge',     heading: /forge|idea|chat/i },
-  { path: '/board',     heading: /board|kanban|review/i, settleMs: 500 },
-  { path: '/tools',     heading: /tools|integrations|connections/i },
-  { path: '/graph',     heading: /graph|memory|knowledge/i, settleMs: 1_000 },
+  { path: '/dashboard',         heading: /dashboard|operations|kpi|revenue/i, settleMs: 1_000 },
+  { path: '/forge',             heading: /forge|idea|chat/i },
+  { path: '/board',             heading: /board|kanban|review/i, settleMs: 500 },
+  { path: '/settings/accounts', heading: /connectors|accounts|integrations|connect/i },
+  { path: '/graph',             heading: /graph|memory|knowledge/i, settleMs: 1_000 },
 ]
 
 test.describe.configure({ mode: 'serial' })
