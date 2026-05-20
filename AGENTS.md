@@ -310,6 +310,7 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
 - [ ] Icons verified to exist in lucide-react
 - [ ] No secrets committed (check with `git diff --staged`)
 - [ ] `ROADMAP.md` updated if a feature was completed or added
+- [ ] [`docs/runbooks/operator-commands.md`](docs/runbooks/operator-commands.md) updated if you added/renamed a script in `scripts/`, `.claude/skills/*/cli.mjs`, or changed any `package.json#scripts` interface. That file is the canonical operator reference — stale commands there get copy-pasted into terminals and run as-is.
 
 ### Retry-storm vulnerability checklist (run mentally for every change)
 
