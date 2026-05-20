@@ -98,26 +98,51 @@ function titleFor(cronPath) {
 }
 
 // ── cron-job.org API client ──────────────────────────────────────────────────
+//
+// Rate-limit handling:
+// cron-job.org's REST API rate-limits writes (PUT/PATCH/DELETE) per key —
+// in practice a burst of ~3 PUTs lands fine, the 4th gets a 429. Their docs
+// don't publish exact numbers, but ~1 req/sec sustained works.
+// On 429 we read `Retry-After` (seconds) when present and otherwise back off
+// exponentially: 3s, 5s, 8s. Up to 3 attempts.
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
 async function api(method, path, body) {
-  const res = await fetch(`${API_HOST}${path}`, {
-    method,
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${API_KEY}`,
-    },
-    body:   body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(20_000),
-  })
-  const text = await res.text()
-  let data
-  try { data = text ? JSON.parse(text) : null } catch { data = { raw: text.slice(0, 300) } }
-  if (!res.ok) {
-    const err = new Error(`cronjob.org ${method} ${path} → ${res.status}`)
-    err.status = res.status
-    err.body   = data
-    throw err
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(`${API_HOST}${path}`, {
+      method,
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${API_KEY}`,
+      },
+      body:   body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(20_000),
+    })
+    const text = await res.text()
+    let data
+    try { data = text ? JSON.parse(text) : null } catch { data = { raw: text.slice(0, 300) } }
+
+    if (res.status === 429 && attempt < 3) {
+      const ra = parseInt(res.headers.get('retry-after') || '', 10)
+      const waitMs = (Number.isFinite(ra) && ra > 0 ? ra : (3 + attempt * 2)) * 1000
+      console.log(`  · 429 from ${method} ${path} — sleeping ${waitMs}ms then retrying (attempt ${attempt + 1}/3)`)
+      await sleep(waitMs)
+      continue
+    }
+
+    if (!res.ok) {
+      const err = new Error(`cronjob.org ${method} ${path} → ${res.status}`)
+      err.status = res.status
+      err.body   = data
+      throw err
+    }
+    return data
   }
-  return data
+  // Should be unreachable — the loop either returns on 2xx or throws on non-429 error.
+  // Falling out means 3 consecutive 429s; surface a clear error.
+  const err = new Error(`cronjob.org ${method} ${path} → 429 (after 3 retries)`)
+  err.status = 429
+  throw err
 }
 
 async function listJobs() {
@@ -221,6 +246,11 @@ async function main() {
       if (err.body) console.log(`     body: ${JSON.stringify(err.body).slice(0, 300)}`)
       results.push({ title: s.title, action: 'failed', error: err.message })
     }
+    // Pace the next PUT to stay under cron-job.org's per-key write rate.
+    // Without this, a 10-job batch trips 429 around the 4th request.
+    // The api() retry-on-429 above will recover, but a baseline pace is
+    // cheaper than burning retries on every call.
+    await sleep(1500)
   }
 
   console.log('\n── summary ──')
