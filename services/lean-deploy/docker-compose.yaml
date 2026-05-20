@@ -16,6 +16,14 @@ services:
     build:
       context: ../..
       dockerfile: services/lean-deploy/Dockerfile
+      # Pass DOPPLER_TOKEN through to `next build` as a BuildKit secret so
+      # NEXT_PUBLIC_* vars (Clerk, Supabase, Sentry public DSN) are inlined
+      # into the client bundle with their real values instead of `undefined`.
+      # The secret value never lands in image layers or `docker history`.
+      # In Coolify: declare a build-time secret named `doppler_token` whose
+      # value is the same DOPPLER_TOKEN env var below.
+      secrets:
+        - doppler_token
     pull_policy: build
     restart: unless-stopped
     environment:
@@ -54,3 +62,10 @@ services:
 networks:
   coolify:
     external: true
+
+# BuildKit secret declaration — Coolify wires this from the app's build-time
+# secret of the same id (the operator sets it in the Coolify UI under
+# Build Secrets, pointing at the same DOPPLER_TOKEN value used at runtime).
+secrets:
+  doppler_token:
+    environment: DOPPLER_TOKEN

@@ -18,6 +18,15 @@ export const metadata: Metadata = {
   description: 'Business management and agent automation platform',
 }
 
+// Opt out of static prerender. The setup-gate below reads runtime env
+// (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY) which Doppler
+// injects at container start via `doppler run --`. Without this, Next.js
+// prerenders every protected route's HTML shell at build time — when those
+// env vars are NOT yet available — and bakes the "Setup Required" branch
+// into dashboard.html, board.html, etc. Forcing dynamic rendering makes
+// the gate evaluate per-request, where doppler-injected env is visible.
+export const dynamic = 'force-dynamic'
+
 export default function RootLayout({
   children,
 }: Readonly<{
