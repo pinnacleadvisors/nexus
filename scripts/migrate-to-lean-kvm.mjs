@@ -61,6 +61,12 @@ const SERVICES = [
   { name: 'codex-gateway',  dir: 'services/codex-gateway'  },
   { name: 'nexus-sandbox',  dir: 'services/nexus-sandbox'  },
   { name: 'nexus-app',      dir: 'services/lean-deploy'    },
+  // n8n — migrated from Hostinger KVM1 (expired 2026-05-22). SQLite-
+  // backed; pulls N8N_ENCRYPTION_KEY + N8N_BASIC_AUTH_* from Doppler.
+  // After the FIRST deploy, stop the container and restore the KVM1
+  // data tarball into the n8n_data volume before restarting. See
+  // docs/runbooks/n8n-kvm1-to-coolify.md for the operator procedure.
+  { name: 'n8n',            dir: 'services/n8n'            },
 ]
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
