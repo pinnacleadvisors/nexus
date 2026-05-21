@@ -130,22 +130,51 @@ You now have an offline copy. **Do NOT delete the KVM1 container or VPS yet** �
 
 Open the env-backup file and seed the values into Doppler so the new container can read them at boot.
 
-```bash
-# Required:
-doppler secrets set N8N_ENCRYPTION_KEY="<value from backup>"
-doppler secrets set N8N_BASIC_AUTH_USER="<value from backup>"
-doppler secrets set N8N_BASIC_AUTH_PASSWORD="<value from backup>"
+**Reserved-name aliases.** Doppler / Coolify reserve a handful of variable
+names (`TZ`, `WEBHOOK_URL`, etc.) and refuse to let you set them. The
+compose file works around this by reading from `N8N_`-prefixed Doppler
+keys and mapping them to the container env names n8n actually expects
+(see `services/n8n/docker-compose.yaml`). So you'll see two columns
+below: **Doppler key** is what you `doppler secrets set`; **container
+env** is what n8n reads at runtime (don't touch — set by the compose).
 
-# Optional overrides — defaults in the compose file are usually fine:
+```bash
+# Critical — without this, every credential in every workflow is
+# unreadable on the new instance. Extract from /home/node/.n8n/config:
+#   docker exec <old-n8n> cat /home/node/.n8n/config   →   .encryptionKey
+doppler secrets set N8N_ENCRYPTION_KEY="<value from /home/node/.n8n/config>"
+
+# Webhook URL — Doppler key is N8N_WEBHOOK_URL (bare WEBHOOK_URL reserved).
+# n8n reads this as `WEBHOOK_URL` via the compose alias.
+doppler secrets set N8N_WEBHOOK_URL="https://n8n.coolifycloudtunnel.uk/"
+
+# Timezone — Doppler key is N8N_TZ (bare TZ reserved). n8n reads both
+# TZ and GENERIC_TIMEZONE via the compose alias.
+doppler secrets set N8N_TZ="UTC"
+
+# Preserve KVM1 runtime flags (defaults in compose are sensible, but
+# matching the source instance avoids surprises):
+doppler secrets set N8N_WEBHOOK_SECRET="<value from env backup>"
+doppler secrets set N8N_PROXY_HOPS="<value from env backup, usually 1>"
+doppler secrets set N8N_RUNNERS_ENABLED="<value from env backup, usually true>"
+doppler secrets set N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS="<value from env backup>"
+doppler secrets set N8N_RELEASE_TYPE="<value from env backup, usually stable>"
+
+# Hostname (matches Cloudflare Tunnel route):
 doppler secrets set N8N_HOST="n8n.coolifycloudtunnel.uk"
-doppler secrets set WEBHOOK_URL="https://n8n.coolifycloudtunnel.uk/"
-doppler secrets set TZ="UTC"
+
+# Basic auth — OPTIONAL. Leave unset to skip auth (UI is gated by
+# Cloudflare Tunnel zero-trust). To enable:
+#   doppler secrets set N8N_BASIC_AUTH_ACTIVE="true"
+#   doppler secrets set N8N_BASIC_AUTH_USER="admin"
+#   doppler secrets set N8N_BASIC_AUTH_PASSWORD="$(openssl rand -base64 24)"
 ```
 
 Verify:
 
 ```bash
 doppler secrets get N8N_ENCRYPTION_KEY --plain | head -c 8     # first 8 chars only, confirms it's set
+doppler secrets get N8N_TZ N8N_WEBHOOK_URL --plain             # quick sanity check on the renamed pair
 ```
 
 ---

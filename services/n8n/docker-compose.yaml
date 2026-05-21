@@ -25,26 +25,51 @@ services:
       - "5678:5678"
     environment:
       # ── Auth ────────────────────────────────────────────────────────────
-      # Lock the public UI behind basic auth. Cloudflare Tunnel adds zero-trust
-      # gating in front; this is defense-in-depth.
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      # Basic auth is OPTIONAL. When N8N_BASIC_AUTH_ACTIVE is unset or 'false',
+      # the UI is reachable without a password — relying on Cloudflare Tunnel
+      # (zero-trust) or similar to gate access. To enable basic auth: set
+      # N8N_BASIC_AUTH_ACTIVE=true + N8N_BASIC_AUTH_USER + N8N_BASIC_AUTH_PASSWORD
+      # in Doppler. Default of empty string is recognized by n8n as "off".
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-false}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-}
 
       # ── Networking ──────────────────────────────────────────────────────
       # Public-facing host (Cloudflare Tunnel decides what this maps to).
       - N8N_HOST=${N8N_HOST:-n8n.coolifycloudtunnel.uk}
       - N8N_PROTOCOL=https
       - N8N_PORT=5678
+      # Trust a single proxy hop (Cloudflare Tunnel + cloudflared sidecar
+      # → n8n). Preserved from the KVM1 setup.
+      - N8N_PROXY_HOPS=${N8N_PROXY_HOPS:-1}
       # Webhook callbacks (Stripe, etc.) hit this URL. Without it n8n returns
       # 127.0.0.1 in webhook URLs which breaks all external integrations.
-      - WEBHOOK_URL=${WEBHOOK_URL:-https://n8n.coolifycloudtunnel.uk/}
+      # Doppler key is N8N_WEBHOOK_URL (the unprefixed `WEBHOOK_URL` is
+      # reserved by some Coolify / Doppler tooling). The container env that
+      # n8n actually reads stays `WEBHOOK_URL`.
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-https://n8n.coolifycloudtunnel.uk/}
+      # Signs webhook URLs so they stay stable across container restarts.
+      # Preserve the OLD value from KVM1 — without it, every external service
+      # holding a webhook URL (Stripe, Slack, ...) has to be re-registered.
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
 
       # ── Encryption ──────────────────────────────────────────────────────
       # MUST be the same value as the old KVM1 container, otherwise
-      # workflow credentials cannot be decrypted after migration. Pulled
-      # from Doppler.
+      # workflow credentials cannot be decrypted after migration. The OLD
+      # n8n auto-generated this and stored it at /home/node/.n8n/config —
+      # NOT as an env var. Read it via:
+      #   docker exec <old-container> cat /home/node/.n8n/config
+      # and seed into Doppler.
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+
+      # ── Runtime flags preserved from KVM1 ───────────────────────────────
+      # Task runners (n8n's newer execution architecture). Preserve the
+      # source value (typically true).
+      - N8N_RUNNERS_ENABLED=${N8N_RUNNERS_ENABLED:-true}
+      # Lockdown of the .n8n/config file mode (modern n8n default).
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=${N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS:-true}
+      # Release channel — `stable` (default) or `dev`.
+      - N8N_RELEASE_TYPE=${N8N_RELEASE_TYPE:-stable}
 
       # ── Database ────────────────────────────────────────────────────────
       # SQLite default — simplest path for migration. The whole
@@ -60,8 +85,11 @@ services:
       # - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
 
       # ── Timezone ────────────────────────────────────────────────────────
-      - GENERIC_TIMEZONE=${TZ:-UTC}
-      - TZ=${TZ:-UTC}
+      # Doppler key is N8N_TZ (the bare `TZ` collides with Doppler's reserved
+      # env var names). The container env that n8n / coreutils actually read
+      # stays `TZ` + `GENERIC_TIMEZONE`.
+      - GENERIC_TIMEZONE=${N8N_TZ:-UTC}
+      - TZ=${N8N_TZ:-UTC}
 
       # ── Execution policy ────────────────────────────────────────────────
       # Drop finished execution data older than 7 days — the SQLite file
