@@ -63,9 +63,10 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
 
       # ── Runtime flags preserved from KVM1 ───────────────────────────────
-      # Task runners (n8n's newer execution architecture). Preserve the
-      # source value (typically true).
-      - N8N_RUNNERS_ENABLED=${N8N_RUNNERS_ENABLED:-true}
+      # N8N_RUNNERS_ENABLED was preserved from KVM1 but n8n 2.21+ deprecated
+      # it — task runners are always-on now. Removed in 2026-05-21 after
+      # the new container logged a deprecation warning.
+      #
       # Lockdown of the .n8n/config file mode (modern n8n default).
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=${N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS:-true}
       # Release channel — `stable` (default) or `dev`.
@@ -94,9 +95,10 @@ services:
       # ── Execution policy ────────────────────────────────────────────────
       # Drop finished execution data older than 7 days — the SQLite file
       # otherwise grows unbounded. Adjust if a workflow needs longer audit.
+      # EXECUTIONS_DATA_PRUNE_TIMEOUT was deprecated by n8n 2.21+ (pruning
+      # runs on a fixed internal schedule now); removed 2026-05-21.
       - EXECUTIONS_DATA_PRUNE=true
       - EXECUTIONS_DATA_MAX_AGE=168     # hours = 7 days
-      - EXECUTIONS_DATA_PRUNE_TIMEOUT=3600
 
       # ── Telemetry off ───────────────────────────────────────────────────
       # n8n's anonymous usage telemetry pings external endpoints. Disable
