@@ -44,7 +44,10 @@ services:
       - N8N_PROXY_HOPS=${N8N_PROXY_HOPS:-1}
       # Webhook callbacks (Stripe, etc.) hit this URL. Without it n8n returns
       # 127.0.0.1 in webhook URLs which breaks all external integrations.
-      - WEBHOOK_URL=${WEBHOOK_URL:-https://n8n.coolifycloudtunnel.uk/}
+      # Doppler key is N8N_WEBHOOK_URL (the unprefixed `WEBHOOK_URL` is
+      # reserved by some Coolify / Doppler tooling). The container env that
+      # n8n actually reads stays `WEBHOOK_URL`.
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-https://n8n.coolifycloudtunnel.uk/}
       # Signs webhook URLs so they stay stable across container restarts.
       # Preserve the OLD value from KVM1 — without it, every external service
       # holding a webhook URL (Stripe, Slack, ...) has to be re-registered.
@@ -82,8 +85,11 @@ services:
       # - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
 
       # ── Timezone ────────────────────────────────────────────────────────
-      - GENERIC_TIMEZONE=${TZ:-UTC}
-      - TZ=${TZ:-UTC}
+      # Doppler key is N8N_TZ (the bare `TZ` collides with Doppler's reserved
+      # env var names). The container env that n8n / coreutils actually read
+      # stays `TZ` + `GENERIC_TIMEZONE`.
+      - GENERIC_TIMEZONE=${N8N_TZ:-UTC}
+      - TZ=${N8N_TZ:-UTC}
 
       # ── Execution policy ────────────────────────────────────────────────
       # Drop finished execution data older than 7 days — the SQLite file
