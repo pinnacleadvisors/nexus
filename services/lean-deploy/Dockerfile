@@ -8,9 +8,13 @@
 
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-# Copy lockfile first so dependency layer is cacheable
+# Copy lockfile first so dependency layer is cacheable.
 COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+# BuildKit cache mount for the npm download cache — same lockfile → instant
+# rehydrate from the cache (~5s) instead of redownloading every package
+# (~30s). Survives across builds inside the same BuildKit cache instance.
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --no-audit --no-fund
 
 
 FROM node:22-bookworm-slim AS build
@@ -21,9 +25,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # they bake in as undefined and CSP / Clerk / Supabase clients ship broken.
 # DOPPLER_TOKEN comes in as a BuildKit secret so it never lands in image
 # layers or `docker history`.
-RUN apt-get update \
+#
+# apt cache mounts skip the ~15s download of ca-certificates + curl + gnupg
+# on cached rebuilds. Debian's image installs a docker-clean hook that
+# trashes the cache after install; rm it so the mount stays warm.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
- && rm -rf /var/lib/apt/lists/* \
  && curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -36,7 +46,11 @@ COPY . .
 # Doppler. The fallback path still works because app/layout.tsx now reads env
 # at request time (force-dynamic), so missing build-time env only degrades
 # client-bundle NEXT_PUBLIC_* inlining, not server-side gating.
+#
+# .next/cache holds Next.js's incremental compilation cache. Mounting it
+# from BuildKit cache cuts cold next-build by ~10-20s on unchanged routes.
 RUN --mount=type=secret,id=doppler_token \
+    --mount=type=cache,target=/app/.next/cache,sharing=locked \
     if [ -s /run/secrets/doppler_token ]; then \
       DOPPLER_TOKEN=$(cat /run/secrets/doppler_token) \
         doppler run --fallback=/tmp/doppler.cache.json -- npm run build; \
@@ -52,15 +66,20 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 # git is here for any in-app shell-out that reads the repo (memory-hq CLI,
-# molecularmemory_local skill). curl + gnupg bootstrap the Doppler CLI.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl gnupg \
- && rm -rf /var/lib/apt/lists/*
+# molecularmemory_local skill). ca-certificates is here for outbound HTTPS.
+# curl + gnupg are NOT needed at runtime — Doppler binary is copied from
+# the build stage below, no need to re-curl it.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates
 
-# Doppler CLI — secrets land in process.env at container start via `doppler run`.
-# Single source of truth = Doppler; Coolify only needs DOPPLER_TOKEN.
-# See docs/runbooks/doppler-coolify-sync.md.
-RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
+# Doppler CLI — already installed in the build stage above. Copy the
+# binary instead of re-installing it (saves ~10s — the curl-and-shell
+# install path hits a CDN and runs an interactive prompt fallback).
+# /usr/local/bin/doppler is where the install script lands the binary.
+COPY --from=build /usr/local/bin/doppler /usr/local/bin/doppler
 
 COPY --from=build /app /app
 EXPOSE 3000
