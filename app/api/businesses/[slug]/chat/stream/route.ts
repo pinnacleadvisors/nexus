@@ -242,6 +242,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
                 pendingPermissions,
                 taskScope:          `business:${slug}`,
                 sessionTagFallback: `business-chat-${slug}`,
+                usage:              result.usage,
               })
               const done: StreamEventDone = {
                 text:                        persisted.displayText,

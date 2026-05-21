@@ -138,6 +138,7 @@ export async function GET(req: NextRequest) {
         toolCalls:   result.toolCalls,
         durationMs:  result.durationMs,
         crashed:     crash,
+        usage:       result.usage,
       })
       displayText        = persisted.displayText
       approvalRequests   = persisted.approval_requests
@@ -158,6 +159,7 @@ export async function GET(req: NextRequest) {
         parsed,
         durationMs:     result.durationMs ?? null,
         toolCallsCount: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+        usage:          result.usage,
       })
     }
   }

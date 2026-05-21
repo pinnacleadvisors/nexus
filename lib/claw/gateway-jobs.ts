@@ -184,6 +184,16 @@ export interface JobStatusResult {
   /** Native CLI error when status === 'error'. */
   jobError?:  string
   durationMs?: number
+  /** Token usage emitted by the CLI's terminal `result` event. Forwarded so
+   *  `recordCompletedTurnAccounting` can persist input/output token counts
+   *  to `gateway_turns` — substrate for the G1 cost-measurement spike and
+   *  for the plan-window math to work with real numbers, not nulls. */
+  usage?: {
+    input_tokens?:                number
+    output_tokens?:               number
+    cache_read_input_tokens?:     number
+    cache_creation_input_tokens?: number
+  }
   createdAt?:  number
   startedAt?:  number
   finishedAt?: number
@@ -214,7 +224,14 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
     }
     const data = (parsed ?? {}) as {
       status?:    JobStatus
-      result?:    { ok?: boolean; content?: string; error?: string; durationMs?: number; toolCalls?: ToolCall[] }
+      result?:    {
+        ok?:         boolean
+        content?:    string
+        error?:      string
+        durationMs?: number
+        toolCalls?:  ToolCall[]
+        usage?:      JobStatusResult['usage']
+      }
       partialText?:      string
       partialToolCalls?: ToolCall[]
       createdAt?:  number
@@ -230,6 +247,7 @@ export async function getGatewayJob(opts: JobStatusOpts): Promise<JobStatusResul
       toolCalls:        data.result?.toolCalls,
       jobError:         data.result?.ok === false ? data.result.error ?? 'job_failed' : undefined,
       durationMs:       data.result?.durationMs,
+      usage:            data.result?.usage,
       createdAt:        data.createdAt,
       startedAt:        data.startedAt,
       finishedAt:       data.finishedAt,
