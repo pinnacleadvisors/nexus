@@ -21,6 +21,7 @@ import type { ModelDefinition } from '@/lib/models/types'
 import {
   CardHeader, ModeTabs, SubscriptionBody, ApiKeyBody, CardFooter,
 } from './AiProviderCardSections'
+import ProviderPreferencesPanel from './ProviderPreferencesPanel'
 
 // Lucide doesn't export a type-safe map, so we accept any of the small set the
 // AI registry actually uses and fall back to Sparkles.
@@ -156,6 +157,13 @@ export default function AiProviderCard(props: AiProviderCardProps) {
           onCancel={() => setShowRotate(false)}
           onRevoke={() => void handleRevoke()}
           connectionDetail={connection.apiKey}
+        />
+      )}
+
+      {(provider.id === 'anthropic' || provider.id === 'openai') && (
+        <ProviderPreferencesPanel
+          providerId={provider.id}
+          providerName={provider.name}
         />
       )}
 
