@@ -36,6 +36,7 @@ import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
+import { dispatchCodexChatTurn } from '@/lib/chat/codex-direct-dispatch'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
 import { getActiveSession as getActiveBugHuntSession, listFindings } from '@/lib/bug-hunt/sessions'
 import { getPlanWindowUsage } from '@/lib/claw/plan-window'
@@ -273,7 +274,6 @@ export async function POST(req: NextRequest) {
   // because its iteration-plan / finding blocks REQUIRE Claude's typed
   // block emission to work at all.
   if (body.provider === 'codex' && !useBugHuntAgent) {
-    const { dispatchCodexChatTurn } = await import('@/lib/chat/codex-direct-dispatch')
     const cdx = await dispatchCodexChatTurn({
       userId:     session.userId,
       sessionId:  sessionRow.id,

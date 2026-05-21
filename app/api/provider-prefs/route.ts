@@ -104,5 +104,12 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: 'failed to persist preferences' }, { status: 500 })
   }
-  return NextResponse.json({ ok: true, prefs: result.written })
+  // `degraded: true` surfaces when migration 045 isn't applied yet — the row
+  // landed without metadata. UI can show a warning so the operator runs the
+  // migration. Status stays 200 because the write technically succeeded.
+  return NextResponse.json({
+    ok:     true,
+    prefs:  result.written,
+    ...(result.degraded ? { degraded: 'migration 045 not applied — re-run `doppler run -- npm run migrate` to persist metadata' } : {}),
+  })
 }

@@ -23,6 +23,7 @@ import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
+import { dispatchCodexChatTurn } from '@/lib/chat/codex-direct-dispatch'
 import { buildBusinessSystemPrompt } from '@/lib/chat/system-prompt-business'
 import { appendMessage, listSessions, createSession, deriveTitleFromMessage, listMessages } from '@/lib/chat/sessions'
 import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
@@ -160,7 +161,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
   // blocks (iteration-plan, approval-request) are unreliable on this path
   // — operator accepts the regression for cost savings.
   if (body.provider === 'codex') {
-    const { dispatchCodexChatTurn } = await import('@/lib/chat/codex-direct-dispatch')
     const cdx = await dispatchCodexChatTurn({
       userId:    session.userId,
       sessionId,
