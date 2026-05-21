@@ -133,13 +133,20 @@ export async function getProviderPrefs(userId: string, kind: string): Promise<Pr
 }
 
 /**
- * Validates the incoming prefs (dropping unknown / malformed fields) then
- * upserts the canonical `name='preferences'` row with `value=''` and the
- * merged metadata. Returns the sanitized prefs actually written.
+ * Validates the incoming prefs then upserts the canonical
+ * `name='preferences'` row.
+ *
+ * Resilient to a deployment whose migration 045 (the `metadata jsonb`
+ * column) has NOT been applied yet — first attempt writes WITH metadata,
+ * and if Postgres complains the column doesn't exist, retries WITHOUT.
+ * The row still lands so the operator's prefs row exists; the metadata
+ * payload is dropped until the migration runs (`doppler run -- npm run
+ * migrate`). `degraded: true` is returned in that case so callers can
+ * surface a hint.
  */
 export async function setProviderPrefs(
   userId: string, kind: string, prefs: ProviderPreferences,
-): Promise<{ ok: boolean; written: ProviderPreferences }> {
+): Promise<{ ok: boolean; written: ProviderPreferences; degraded?: boolean }> {
   const sanitized = sanitizePrefs(prefs)
   const db = createServerClient()
   if (!db) {
@@ -148,26 +155,51 @@ export async function setProviderPrefs(
     }
     return { ok: false, written: sanitized }
   }
+
   // value is NOT NULL — store a deliberate sentinel so the row is still
   // grep-able and never accidentally decrypted as a secret elsewhere.
-  const { error } = await (db.from('user_secrets' as never) as unknown as {
-    upsert: (row: unknown, opts: unknown) => Promise<{ error: { message: string } | null }>
-  }).upsert(
-    {
-      user_id:    userId,
-      kind,
-      name:       'preferences',
-      value:      'PREFERENCES_ROW_NOT_A_SECRET',
-      metadata:   sanitized,
-      updated_at: new Date().toISOString(),
-    },
+  const baseRow = {
+    user_id:    userId,
+    kind,
+    name:       'preferences',
+    value:      'PREFERENCES_ROW_NOT_A_SECRET',
+    updated_at: new Date().toISOString(),
+  }
+  const tbl = db.from('user_secrets' as never) as unknown as {
+    upsert: (row: unknown, opts: unknown) => Promise<{ error: { message: string; code?: string } | null }>
+  }
+
+  // Attempt 1 — with metadata.
+  const first = await tbl.upsert(
+    { ...baseRow, metadata: sanitized },
     { onConflict: 'user_id,kind,name' },
   )
-  if (error) {
-    console.warn('[user-secrets] setProviderPrefs failed:', error.message)
+  if (!first.error) return { ok: true, written: sanitized }
+
+  // Attempt 2 — drop metadata if Postgres says the column doesn't exist
+  // (migration 045 not applied yet). Code 42703 = undefined_column;
+  // PostgREST also surfaces the message "Could not find the 'metadata'
+  // column" via its schema cache. Either match triggers the fallback.
+  const msg = String(first.error.message ?? '').toLowerCase()
+  const missingCol = first.error.code === '42703'
+    || msg.includes("'metadata' column")
+    || msg.includes('column "metadata"')
+    || (msg.includes('metadata') && msg.includes('does not exist'))
+  if (!missingCol) {
+    console.warn('[user-secrets] setProviderPrefs failed:', first.error.message)
     return { ok: false, written: sanitized }
   }
-  return { ok: true, written: sanitized }
+
+  const second = await tbl.upsert(baseRow, { onConflict: 'user_id,kind,name' })
+  if (second.error) {
+    console.warn('[user-secrets] setProviderPrefs fallback also failed:', second.error.message)
+    return { ok: false, written: sanitized }
+  }
+  console.warn(
+    '[user-secrets] migration 045 not applied — provider prefs persisted WITHOUT metadata.',
+    'Run `doppler run -- npm run migrate` to enable.',
+  )
+  return { ok: true, written: sanitized, degraded: true }
 }
 
 export async function deleteSecrets(userId: string, kind: string): Promise<boolean> {

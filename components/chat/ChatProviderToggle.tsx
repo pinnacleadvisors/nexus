@@ -43,10 +43,17 @@ export default function ChatProviderToggle({
   /** Fires AFTER localStorage is updated so the parent can sync its state. */
   onChange?:  (next: ChatProvider) => void
 }) {
+  const [mounted,  setMounted]  = useState(false)
   const [provider, setProvider] = useState<ChatProvider>('claude')
 
+  // Hydration-safe initial state. SSR renders nothing (we don't know what
+  // localStorage holds yet), the client mounts, reads the persisted value,
+  // and only THEN renders the pill. Without this guard, React #418
+  // (hydration mismatch) fires whenever the persisted value isn't 'claude'
+  // because SSR HTML differs from client HTML on first paint.
   useEffect(() => {
     setProvider(readChatProvider(storageKey))
+    setMounted(true)
   }, [storageKey])
 
   function flip() {
@@ -54,6 +61,11 @@ export default function ChatProviderToggle({
     setProvider(next)
     try { window.localStorage.setItem(storageKey, next) } catch { /* ignore quota */ }
     onChange?.(next)
+  }
+
+  if (!mounted) {
+    // Skeleton with stable width so the input footer doesn't reflow on hydrate.
+    return <span aria-hidden="true" style={{ display: 'inline-block', width: 88, height: 16 }} />
   }
 
   const isCodex = provider === 'codex'

@@ -22,11 +22,15 @@ const CLERK_PROD_DOMAIN = process.env.NEXT_PUBLIC_CLERK_FRONTEND_DOMAIN
 
 const CSP = [
   "default-src 'self'",
-  // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts + Cloudflare Turnstile (Clerk bot protection)
+  // Scripts: self + Next.js inline bootstrap + Clerk hosted scripts + Cloudflare Turnstile
+  // (Clerk bot protection) + Cloudflare Insights (RUM beacon auto-injected by the
+  // Cloudflare proxy in front of coolifycloudtunnel.uk; without this entry the
+  // beacon spams console errors on every page load).
   [
     `script-src 'self' 'unsafe-inline'${SCRIPT_DEV_ONLY}`,
     'https://*.clerk.accounts.dev',
     'https://challenges.cloudflare.com',
+    'https://static.cloudflareinsights.com',
     CLERK_PROD_DOMAIN,
   ].filter(Boolean).join(' '),
   // Styles: self + inline (Tailwind CSS utility classes are inline)
