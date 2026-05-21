@@ -34,6 +34,9 @@ export const maxDuration = 30
 interface Body {
   messages?:  Array<{ role?: string; content?: string }>
   sessionId?: string
+  /** Phase 0 of task_plan-model-agnostic-chat.md — operator may opt this
+   *  turn into the Codex direct-dispatch path. Defaults to 'claude'. */
+  provider?: 'claude' | 'codex'
 }
 
 /** Sanity ceiling — anything past 2MB chars is runaway. Real check is token-based, see computeUsage(). */
@@ -149,11 +152,58 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     }, { status: 413 })
   }
 
-  const t0 = Date.now()
+  const t0         = Date.now()
+  const sessionTag = `business-chat-${slug}-${Date.now()}`
+
+  // Phase 0 of task_plan-model-agnostic-chat.md — operator may opt this
+  // turn into Codex direct-dispatch. Skips the async-job pattern. Typed
+  // blocks (iteration-plan, approval-request) are unreliable on this path
+  // — operator accepts the regression for cost savings.
+  if (body.provider === 'codex') {
+    const { dispatchCodexChatTurn } = await import('@/lib/chat/codex-direct-dispatch')
+    const cdx = await dispatchCodexChatTurn({
+      userId:    session.userId,
+      sessionId,
+      agentSlug: 'business-copilot',
+      message:   composite,
+      sessionTag,
+    })
+    audit(req, {
+      action:   'business_chat.codex_direct',
+      resource: 'chat',
+      userId:   session.userId,
+      metadata: { businessSlug: slug, ok: cdx.ok, sessionId, sessionTag, durationMs: cdx.durationMs, error: cdx.error },
+    })
+    if (!cdx.ok) {
+      return NextResponse.json({
+        ok:           false,
+        mode:         'codex-direct',
+        error:        cdx.error ?? 'codex dispatch failed',
+        fallbackHint: cdx.fallbackHint,
+        code:         'codex_error',
+      }, { status: 502 })
+    }
+    return NextResponse.json({
+      ok:        true,
+      mode:      'codex-direct',
+      sessionId,
+      sessionTag,
+      text:      cdx.text,
+      usage: {
+        tokensUsed:     compositeUsage.tokensUsed,
+        inputBudget:    compositeUsage.inputBudget,
+        contextTokens:  compositeUsage.contextTokens,
+        inputUsedPct:   compositeUsage.inputUsedPct,
+        contextUsedPct: compositeUsage.contextUsedPct,
+        model:          'gpt-5.5-codex',
+      },
+    })
+  }
+
   const enq = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
-    sessionTag:  `business-chat-${slug}-${Date.now()}`,
+    sessionTag,
     agentSlug:   'business-copilot',
     message:     composite,
     userId:      session.userId,

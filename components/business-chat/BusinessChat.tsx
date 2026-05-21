@@ -24,6 +24,7 @@ import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
+import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
@@ -88,8 +89,10 @@ function computeEditPlanResolutions(messages: Message[]): Map<string, EditPlanRe
   return out
 }
 
-interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; usage?: ContextUsageView }
-interface EnqueueFail { ok: false; error: string; code: string }
+interface EnqueueOkAsync  { ok: true;  mode?: undefined;       jobId: string; sessionId: string; usage?: ContextUsageView }
+interface EnqueueOkCodex  { ok: true;  mode: 'codex-direct';                  sessionId: string; sessionTag: string; text: string; usage?: ContextUsageView }
+type    EnqueueOk         = EnqueueOkAsync | EnqueueOkCodex
+interface EnqueueFail     { ok: false; error: string; code: string; fallbackHint?: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
 interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
@@ -333,10 +336,11 @@ export default function BusinessChat({ slug, name }: Props) {
     setBusy(true)
 
     try {
+      const provider = readChatProvider(`nexus:business-chat:${slug}:provider`)
       const enqRes = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId }),
+        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId, provider }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -344,9 +348,20 @@ export default function BusinessChat({ slug, name }: Props) {
         return
       }
       const enq = (await enqRes.json()) as EnqueueResponse
-      if (!enq.ok) { setError(enq.error); return }
+      if (!enq.ok) { setError(enq.fallbackHint ? `${enq.error} — ${enq.fallbackHint}` : enq.error); return }
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
       if (enq.usage) setUsage(enq.usage)
+
+      // Phase 0 of task_plan-model-agnostic-chat.md — Codex direct dispatch
+      // returns the assistant text inline. No jobId, no polling. Render as
+      // a plain bubble (typed blocks unreliable on this path).
+      if (enq.mode === 'codex-direct') {
+        setMessages(prev => [...prev, {
+          role:    'assistant',
+          content: enq.text,
+        }])
+        return
+      }
 
       // Stream the reply (SSE) when enabled, else fall back to poll. The
       // SSE bridge inner-polls the gateway at 250ms (vs 2.5s poll) and
@@ -705,6 +720,7 @@ export default function BusinessChat({ slug, name }: Props) {
                 ? ' SSE streaming on; falls back to poll if the stream drops.'
                 : ' Async polling — flip NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED=1 to enable streaming.'}
             </span>
+            <ChatProviderToggle storageKey={`nexus:business-chat:${slug}:provider`} />
             {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
             <ContextIndicator usage={usage} />
           </div>

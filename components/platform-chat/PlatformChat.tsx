@@ -34,6 +34,7 @@ import BugHuntView from '@/components/chat-views/BugHuntView'
 import HealthView from '@/components/chat-views/HealthView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
+import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 
 interface Message {
   role:       'user' | 'assistant'
@@ -57,8 +58,10 @@ interface Message {
   edit_group_completes?: EditGroupComplete[]
 }
 
-interface EnqueueOk   { ok: true;  jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
-interface EnqueueFail { ok: false; error: string; code: string }
+interface EnqueueOkAsync  { ok: true;  mode?: undefined;       jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
+interface EnqueueOkCodex  { ok: true;  mode: 'codex-direct';                  sessionId: string; sessionTag: string; text: string; usage?: ContextUsageView }
+type    EnqueueOk         = EnqueueOkAsync | EnqueueOkCodex
+interface EnqueueFail     { ok: false; error: string; code: string; fallbackHint?: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
 interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
@@ -362,10 +365,11 @@ export default function PlatformChat() {
       // Step 1 — enqueue. The route auto-creates a session when sessionId
       // is null and returns its id; subsequent turns include it so the
       // user + assistant messages persist into the same conversation.
+      const provider = readChatProvider('nexus:platform-chat:provider')
       const enqRes = await fetch('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId }),
+        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId, provider }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -374,7 +378,7 @@ export default function PlatformChat() {
       }
       const enq = (await enqRes.json()) as EnqueueResponse
       if (!enq.ok) {
-        setError(enq.error)
+        setError(enq.fallbackHint ? `${enq.error} — ${enq.fallbackHint}` : enq.error)
         return
       }
       // Bind the session id (may have been auto-created on this turn).
@@ -382,6 +386,18 @@ export default function PlatformChat() {
       // Surface context usage so the ContextIndicator in the input footer
       // reflects this turn's load.
       if (enq.usage) setUsage(enq.usage)
+
+      // Phase 0 of task_plan-model-agnostic-chat.md — Codex direct dispatch
+      // returns the assistant text in the enqueue response. No jobId, no
+      // polling. Render it as a plain bubble (typed blocks unreliable on
+      // this path — operator opted into the cost-savings trade).
+      if (enq.mode === 'codex-direct') {
+        setMessages(prev => [...prev, {
+          role:    'assistant',
+          content: enq.text,
+        }])
+        return
+      }
 
       // Step 2 — stream the reply (SSE) when enabled, else fall back to
       // poll. The SSE bridge inner-polls the gateway at 250ms cadence
@@ -839,6 +855,7 @@ export default function PlatformChat() {
               ? 'SSE streaming + persistent sessions + approval cards. Falls back to async poll if the stream drops.'
               : 'Async polling + persistent sessions + approval cards. SSE streaming is wired but disabled — flip NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED=1 to enable.'}
           </span>
+          <ChatProviderToggle storageKey="nexus:platform-chat:provider" />
           {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
           <ContextIndicator usage={usage} />
         </div>

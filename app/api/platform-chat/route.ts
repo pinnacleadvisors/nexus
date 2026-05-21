@@ -59,6 +59,11 @@ interface PlatformChatBody {
    *  under this session and the jobId is associated with it. When unset,
    *  the route auto-creates a new session and returns its id. */
   sessionId?: string
+  /** Phase 0 of task_plan-model-agnostic-chat.md — operator may opt this
+   *  turn into the Codex direct-dispatch path (cheaper, subscription-billed,
+   *  typed blocks unreliable). Defaults to 'claude' (the existing async-job
+   *  pattern that supports typed blocks). */
+  provider?: 'claude' | 'codex'
 }
 
 /**
@@ -261,6 +266,53 @@ export async function POST(req: NextRequest) {
     ? `bug-hunt-${activeHunt.id}-iter`
     : `platform-chat-${sessionRow.id}-${Date.now()}`
   const t0         = Date.now()
+
+  // Phase 0 of task_plan-model-agnostic-chat.md — operator may opt this
+  // turn into Codex direct-dispatch. Skips the async-job pattern (no
+  // jobId, no polling). Bug-hunt loop is explicitly forced back to Claude
+  // because its iteration-plan / finding blocks REQUIRE Claude's typed
+  // block emission to work at all.
+  if (body.provider === 'codex' && !useBugHuntAgent) {
+    const { dispatchCodexChatTurn } = await import('@/lib/chat/codex-direct-dispatch')
+    const cdx = await dispatchCodexChatTurn({
+      userId:     session.userId,
+      sessionId:  sessionRow.id,
+      agentSlug:  'platform-copilot',
+      message:    composite,
+      sessionTag,
+    })
+    audit(req, {
+      action:   'platform_chat.codex_direct',
+      resource: 'chat',
+      userId:   session.userId,
+      metadata: { ok: cdx.ok, sessionId: sessionRow.id, sessionTag, durationMs: cdx.durationMs, error: cdx.error },
+    })
+    if (!cdx.ok) {
+      return NextResponse.json({
+        ok:           false,
+        mode:         'codex-direct',
+        error:        cdx.error ?? 'codex dispatch failed',
+        fallbackHint: cdx.fallbackHint,
+        code:         'codex_error',
+      }, { status: 502 })
+    }
+    return NextResponse.json({
+      ok:        true,
+      mode:      'codex-direct',
+      sessionId: sessionRow.id,
+      sessionTag,
+      text:      cdx.text,
+      usage: {
+        tokensUsed:     compositeUsage.tokensUsed,
+        inputBudget:    compositeUsage.inputBudget,
+        contextTokens:  compositeUsage.contextTokens,
+        inputUsedPct:   compositeUsage.inputUsedPct,
+        contextUsedPct: compositeUsage.contextUsedPct,
+        model:          'gpt-5.5-codex',
+      },
+    })
+  }
+
   const enqueued = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
