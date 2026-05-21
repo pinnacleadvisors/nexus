@@ -15,9 +15,9 @@
  */
 
 import Link from 'next/link'
-import { Server, Bell, Shield, Briefcase, Plug, Sparkles, type LucideIcon } from 'lucide-react'
+import { Server, Bell, Shield, Briefcase, Plug, Sparkles, Wand2, type LucideIcon } from 'lucide-react'
 
-export type SettingsTabId = 'ai' | 'agents' | 'alerts' | 'access' | 'businesses' | 'accounts'
+export type SettingsTabId = 'ai' | 'agents' | 'skills' | 'alerts' | 'access' | 'businesses' | 'accounts'
 
 interface TabSpec {
   id:    SettingsTabId
@@ -29,6 +29,7 @@ interface TabSpec {
 export const SETTINGS_TABS: TabSpec[] = [
   { id: 'ai',         label: 'AI providers', icon: Server,    href: '/settings?tab=ai'     },
   { id: 'agents',     label: 'Agents',       icon: Sparkles,  href: '/settings/agents'     },
+  { id: 'skills',     label: 'Skills',       icon: Wand2,     href: '/settings?tab=skills' },
   { id: 'accounts',   label: 'Connectors',   icon: Plug,      href: '/settings/accounts'   },
   { id: 'businesses', label: 'Businesses',   icon: Briefcase, href: '/settings/businesses' },
   { id: 'alerts',     label: 'Alerts',       icon: Bell,      href: '/settings?tab=alerts' },
