@@ -25,11 +25,12 @@ import AlertsPanel from '@/components/dashboard/AlertsPanel'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import SettingsTabs, { type SettingsTabId } from '@/components/settings/SettingsTabs'
 import AiProviderList from '@/components/settings/AiProviderList'
+import SkillsList from '@/components/settings/SkillsList'
 
 type ContentTabId = Exclude<SettingsTabId, 'businesses' | 'accounts' | 'agents'>
 
 function resolveTab(value: string | null): ContentTabId {
-  if (value === 'alerts' || value === 'access') return value
+  if (value === 'alerts' || value === 'access' || value === 'skills') return value
   return 'ai'
 }
 
@@ -41,6 +42,7 @@ function SettingsContent() {
     <>
       <SettingsTabs activeTab={tab} />
       {tab === 'ai'     && <AiTab />}
+      {tab === 'skills' && <SkillsTab />}
       {tab === 'alerts' && <AlertsTab />}
       {tab === 'access' && <AccessTab />}
     </>
@@ -95,6 +97,17 @@ function AiTab() {
         <TodaySpendWidget />
       </div>
       <AiProviderList businessSlug={null} />
+    </div>
+  )
+}
+
+function SkillsTab() {
+  return (
+    <div className="space-y-4">
+      <p className="text-xs leading-relaxed max-w-2xl" style={{ color: '#9090b0' }}>
+        Skills are reusable capabilities Claude Code can invoke as <code className="font-mono" style={{ color: '#a8a3ff' }}>/&lt;slug&gt;</code>. Each lives at <code className="font-mono" style={{ color: '#a8a3ff' }}>.claude/skills/&lt;name&gt;/SKILL.md</code>. Hand-curated skills land as <strong>verified</strong>; <code className="font-mono" style={{ color: '#a8a3ff' }}>skill-trainer</code> auto-generated ones land as <strong>draft</strong> until promoted.
+      </p>
+      <SkillsList />
     </div>
   )
 }

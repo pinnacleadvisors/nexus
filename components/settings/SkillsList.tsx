@@ -1,0 +1,220 @@
+'use client'
+
+/**
+ * SkillsList — body for Settings → Skills tab.
+ *
+ * Lists every skill installed at .claude/skills/<name>/SKILL.md. Each row
+ * shows the slug, the operator-friendly name, the description from the
+ * frontmatter, and a status pill (verified vs draft). Hand-curated skills
+ * land as `verified`; skill-trainer auto-generated drafts await operator
+ * promotion.
+ *
+ * Read-only for V1. Future affordances: invocations counter, promote-to-
+ * verified button, last-used timestamp (needs a skill_invocations table).
+ */
+
+import { useEffect, useState } from 'react'
+import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles } from 'lucide-react'
+
+interface SkillRow {
+  slug:        string
+  name:        string
+  description: string
+  status:      'draft' | 'verified'
+  hasContent:  boolean
+  sizeBytes:   number
+  updatedAt:   string | null
+}
+
+interface SkillsResponse {
+  skills:   SkillRow[]
+  warning?: string
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024)        return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return '—'
+  const t   = new Date(iso).getTime()
+  const now = Date.now()
+  const sec = Math.max(0, Math.round((now - t) / 1000))
+  if (sec < 60)         return `${sec}s ago`
+  if (sec < 3600)       return `${Math.round(sec / 60)}m ago`
+  if (sec < 86_400)     return `${Math.round(sec / 3600)}h ago`
+  if (sec < 86_400 * 30) return `${Math.round(sec / 86_400)}d ago`
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+export default function SkillsList() {
+  const [skills,  setSkills]  = useState<SkillRow[]>([])
+  const [warning, setWarning] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err,     setErr]     = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await fetch('/api/skills')
+        if (!res.ok) throw new Error(`load failed: ${res.status}`)
+        const json = await res.json() as SkillsResponse
+        if (!cancelled) {
+          setSkills(json.skills)
+          setWarning(json.warning ?? null)
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : 'load failed')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  const verifiedCount = skills.filter(s => s.status === 'verified').length
+  const draftCount    = skills.filter(s => s.status === 'draft').length
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm px-4 py-3"
+        style={{
+          color:                '#9090b0',
+          background:           'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+          backdropFilter:       'blur(20px)',
+          border:               '1px solid rgba(255,255,255,0.06)',
+          borderRadius:         '14px',
+        }}>
+        <Loader2 size={14} className="animate-spin" /> Loading skills…
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 text-[11px] font-mono uppercase tracking-wider" style={{ color: '#9090b0' }}>
+        <span className="flex items-center gap-1.5">
+          <Sparkles size={12} style={{ color: '#a8a3ff' }} />
+          {skills.length} skill{skills.length === 1 ? '' : 's'}
+        </span>
+        <span style={{ color: '#55556a' }}>·</span>
+        <span style={{ color: '#4ade80' }}>{verifiedCount} verified</span>
+        {draftCount > 0 && (
+          <>
+            <span style={{ color: '#55556a' }}>·</span>
+            <span style={{ color: '#fbbf24' }}>{draftCount} draft</span>
+          </>
+        )}
+      </div>
+
+      {warning && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 text-sm"
+          style={{
+            background:           'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(251,191,36,0.02))',
+            border:               '1px solid rgba(251,191,36,0.22)',
+            borderRadius:         '14px',
+            color:                '#e8e8f0',
+          }}>
+          <AlertCircle size={16} style={{ color: '#fbbf24', marginTop: 1 }} />
+          <div className="flex-1 text-[12px]">{warning}</div>
+        </div>
+      )}
+
+      {err && (
+        <div className="flex items-start gap-2.5 px-3.5 py-2.5 text-sm"
+          style={{
+            background:           'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(239,68,68,0.02))',
+            border:               '1px solid rgba(239,68,68,0.22)',
+            borderRadius:         '14px',
+            color:                '#e8e8f0',
+          }}>
+          <AlertCircle size={16} style={{ color: '#f87171' }} />
+          <div className="flex-1">{err}</div>
+        </div>
+      )}
+
+      {skills.length === 0 && !err && (
+        <div className="text-sm px-4 py-6 text-center" style={{ color: '#9090b0' }}>
+          No skills found. New skills land at <code className="font-mono" style={{ color: '#a8a3ff' }}>.claude/skills/&lt;name&gt;/SKILL.md</code>.
+        </div>
+      )}
+
+      {skills.length > 0 && (
+        <div className="grid grid-cols-1 gap-2.5">
+          {skills.map(s => <SkillCard key={s.slug} skill={s} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SkillCard({ skill }: { skill: SkillRow }) {
+  const verified = skill.status === 'verified'
+  return (
+    <div className="p-3.5 flex flex-col gap-2"
+      style={{
+        background:           'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '14px',
+        boxShadow:            '0 1px 0 0 rgba(255,255,255,0.04) inset',
+      }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+            style={{
+              background: verified
+                ? 'linear-gradient(135deg, rgba(74,222,128,0.20), rgba(74,222,128,0.04))'
+                : 'linear-gradient(135deg, rgba(251,191,36,0.20), rgba(251,191,36,0.04))',
+              border: verified
+                ? '1px solid rgba(74,222,128,0.20)'
+                : '1px solid rgba(251,191,36,0.20)',
+            }}>
+            <FileText size={12} style={{ color: verified ? '#4ade80' : '#fbbf24' }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>{skill.name}</span>
+              <code className="px-1.5 py-0.5 rounded font-mono text-[10px]"
+                style={{ background: 'rgba(108,99,255,0.10)', color: '#a8a3ff', border: '1px solid rgba(108,99,255,0.20)' }}>
+                /{skill.slug}
+              </code>
+            </div>
+            {skill.description && (
+              <p className="text-[12px] mt-1 leading-relaxed" style={{ color: '#9090b0' }}>
+                {skill.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {verified ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono"
+              style={{ background: 'rgba(74,222,128,0.10)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.22)' }}>
+              <CheckCircle2 size={10} />
+              verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono"
+              style={{ background: 'rgba(251,191,36,0.10)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.22)' }}>
+              draft
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 text-[10px] font-mono pt-1 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)', color: '#55556a' }}>
+        <span>{formatBytes(skill.sizeBytes)}</span>
+        <span>·</span>
+        <span>updated {formatRelative(skill.updatedAt)}</span>
+        <span className="flex-1" />
+        <code style={{ color: '#9090b0' }}>.claude/skills/{skill.slug}/SKILL.md</code>
+      </div>
+    </div>
+  )
+}
