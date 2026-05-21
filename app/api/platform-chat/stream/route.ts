@@ -275,6 +275,7 @@ export async function GET(req: NextRequest) {
                 durationMs:  result.durationMs,
                 crashed:     crash,
                 pendingPermissions,
+                usage:       result.usage,
               })
               const done: StreamEventDone = {
                 text:                        persisted.displayText,

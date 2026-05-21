@@ -92,6 +92,15 @@ export interface PersistCompletedTurnInput {
   /** Tool calls captured during the turn — passed through to metadata. */
   toolCalls?:           ToolCall[]
   durationMs?:          number
+  /** Token usage from the gateway's terminal `result` event. Forwarded to
+   *  `insertGatewayTurn` so `gateway_turns` rows carry real token counts
+   *  instead of nulls (G1 cost-measurement substrate). */
+  usage?: {
+    input_tokens?:                number
+    output_tokens?:               number
+    cache_read_input_tokens?:     number
+    cache_creation_input_tokens?: number
+  }
   /** Pre-parsed crash info — when set, the message persists with
    *  `metadata.crashed` so the next-turn resume hint can fire. */
   crashed?:             CrashInfo | null
@@ -219,6 +228,7 @@ export async function persistCompletedTurn(
     durationMs:         input.durationMs ?? null,
     toolCallsCount:     Array.isArray(input.toolCalls) ? input.toolCalls.length : 0,
     sessionTagFallback: input.sessionTagFallback ?? 'platform-chat',
+    usage:              input.usage,
   })
 
   return {
@@ -247,6 +257,16 @@ export function recordCompletedTurnAccounting(args: {
    *  `'platform-chat'` for backward compat. Business chat passes
    *  `business-chat-<slug>`. */
   sessionTagFallback?: string
+  /** Token usage from the gateway result. When absent the row lands with
+   *  null tokens — preserve the legacy behaviour so older call sites that
+   *  haven't been updated still record a turn (better than silently
+   *  dropping the accounting row). */
+  usage?: {
+    input_tokens?:                number
+    output_tokens?:               number
+    cache_read_input_tokens?:     number
+    cache_creation_input_tokens?: number
+  }
 }): void {
   const huntTag = args.parsed.iteration_plans[0]?.session_id
               ?? args.parsed.findings[0]?.session_id
@@ -260,5 +280,7 @@ export function recordCompletedTurnAccounting(args: {
     sessionTag,
     durationMs:     args.durationMs,
     toolCallsCount: args.toolCallsCount,
+    inputTokens:    args.usage?.input_tokens  ?? null,
+    outputTokens:   args.usage?.output_tokens ?? null,
   })
 }

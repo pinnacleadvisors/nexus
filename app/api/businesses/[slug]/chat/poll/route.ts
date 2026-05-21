@@ -93,6 +93,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
         crashed:            crash,
         taskScope:          `business:${slug}`,
         sessionTagFallback: `business-chat-${slug}`,
+        usage:              result.usage,
       })
       displayText        = persisted.displayText
       approvalRequests   = persisted.approval_requests
@@ -114,6 +115,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
         durationMs:         result.durationMs ?? null,
         toolCallsCount:     Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
         sessionTagFallback: `business-chat-${slug}`,
+        usage:              result.usage,
       })
     }
   }
