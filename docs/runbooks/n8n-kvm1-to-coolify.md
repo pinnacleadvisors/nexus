@@ -65,6 +65,63 @@ scp 'root@<kvm1-ip>:/root/n8n-data-*.tar.gz'       /tmp/
 scp 'root@<kvm1-ip>:/root/n8n-env-backup-*.env'    /tmp/
 ```
 
+### If your laptop can't SSH to KVM1
+
+If you only have Hostinger Browser Terminal access (no SSH key set up on
+KVM1, password disabled / unknown), neither `scp` nor SFTP will work — and
+**Hostinger has no dashboard file-download feature for VPS** (their "Backups"
+are restore-only and stay on Hostinger's infrastructure). Two fallbacks:
+
+**Small tarball (≤ a few MB) — base64 paste-through.** Works without any
+SSH access at all:
+
+```bash
+# In Hostinger Browser Terminal on KVM1:
+base64 -w0 /root/n8n-data-$(date +%Y%m%d).tar.gz
+# Select all the output, copy.
+
+cat /root/n8n-env-backup-*.env
+# Plain text — just copy.
+```
+
+```bash
+# On your Mac, paste the base64 blob:
+pbpaste | base64 -d > /tmp/n8n-data-$(date +%Y%m%d).tar.gz
+tar tzf /tmp/n8n-data-*.tar.gz | head -5    # sanity check
+
+# And the env file:
+pbpaste > /tmp/n8n-env-backup-$(date +%Y%m%d).env
+grep N8N_ENCRYPTION_KEY /tmp/n8n-env-backup-*.env
+```
+
+**Larger tarball — one-shot HTTPS upload.** Works as long as KVM1 has
+outbound HTTPS:
+
+```bash
+# In Browser Terminal — returns a single-use download URL.
+curl -F "file=@/root/n8n-data-$(date +%Y%m%d).tar.gz" https://file.io
+# Open the URL in your Mac browser; downloads to ~/Downloads.
+```
+
+`file.io` URLs are single-use and expire on first download — safe for
+ephemeral secrets. `transfer.sh` is an alternative but has been flaky in
+2025-26.
+
+After the urgent bytes are local, set up real SSH access before continuing
+the runbook (you'll need it for step 7 verification and rollback):
+
+```bash
+# In the Browser Terminal:
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo 'ssh-ed25519 AAAA... your laptop public key ...' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Your laptop's public key is at `~/.ssh/id_ed25519.pub` (or `id_rsa.pub`).
+If you don't have one, generate it with `ssh-keygen -t ed25519`.
+
+---
+
 You now have an offline copy. **Do NOT delete the KVM1 container or VPS yet** — you may need to rerun this if the import has issues.
 
 ---
