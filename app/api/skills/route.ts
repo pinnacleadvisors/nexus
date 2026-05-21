@@ -60,47 +60,65 @@ function parseFrontmatter(raw: string): Record<string, string> {
 }
 
 async function readSkills(): Promise<{ skills: SkillRow[]; warning?: string }> {
-  const skillsDir = join(process.cwd(), '.claude', 'skills')
-  let entries: string[]
-  try {
-    entries = await readdir(skillsDir)
-  } catch {
-    return { skills: [], warning: '.claude/skills directory not present in this deployment artifact' }
-  }
+  // Overlay resolution (Task MA1/MA3 of task_plan-model-agnostic-platform.md):
+  // canonical location is `/skills/`; legacy is `.claude/skills/`. Read both,
+  // dedupe by slug (canonical wins), so the move can happen incrementally
+  // without breaking the tab UI mid-migration.
+  const sources: { dir: string; label: string }[] = [
+    { dir: join(process.cwd(), 'skills'),            label: 'skills'         },
+    { dir: join(process.cwd(), '.claude', 'skills'), label: '.claude/skills' },
+  ]
 
-  const rows: SkillRow[] = []
-  for (const slug of entries) {
-    // Skip hidden / non-directories cheaply by looking only at the SKILL.md.
-    const skillFile = join(skillsDir, slug, 'SKILL.md')
-    let raw: string
-    let mtime: Date | null = null
-    let sizeBytes = 0
+  const bySlug = new Map<string, SkillRow>()
+  const sourcesFound: string[] = []
+  for (const source of sources) {
+    let entries: string[]
     try {
-      const s = await stat(skillFile)
-      mtime    = s.mtime
-      sizeBytes = s.size
-      raw       = await readFile(skillFile, 'utf8')
+      entries = await readdir(source.dir)
+      sourcesFound.push(source.label)
     } catch {
-      // No SKILL.md → not a skill folder, skip silently.
       continue
     }
-    const fm = parseFrontmatter(raw)
-    const name        = (fm.name        ?? slug).trim()
-    const description = (fm.description ?? '').trim()
-    // Hand-curated skills omit `status`. skill-trainer auto-generated ones
-    // write `status: draft` until the operator promotes them. Treat absence
-    // as verified — the existing three skills in the repo are hand-curated.
-    const status      = (fm.status === 'draft') ? 'draft' : 'verified'
-    rows.push({
-      slug,
-      name,
-      description,
-      status,
-      hasContent: raw.length > 0,
-      sizeBytes,
-      updatedAt:  mtime ? mtime.toISOString() : null,
-    })
+    for (const slug of entries) {
+      if (bySlug.has(slug)) continue   // canonical source already populated this slug
+      // Skip hidden / non-directories cheaply by looking only at the SKILL.md.
+      const skillFile = join(source.dir, slug, 'SKILL.md')
+      let raw: string
+      let mtime: Date | null = null
+      let sizeBytes = 0
+      try {
+        const s = await stat(skillFile)
+        mtime    = s.mtime
+        sizeBytes = s.size
+        raw       = await readFile(skillFile, 'utf8')
+      } catch {
+        // No SKILL.md → not a skill folder, skip silently.
+        continue
+      }
+      const fm = parseFrontmatter(raw)
+      const name        = (fm.name        ?? slug).trim()
+      const description = (fm.description ?? '').trim()
+      // Hand-curated skills omit `status`. skill-trainer auto-generated ones
+      // write `status: draft` until the operator promotes them. Treat absence
+      // as verified — the existing three skills in the repo are hand-curated.
+      const status      = (fm.status === 'draft') ? 'draft' : 'verified'
+      bySlug.set(slug, {
+        slug,
+        name,
+        description,
+        status,
+        hasContent: raw.length > 0,
+        sizeBytes,
+        updatedAt:  mtime ? mtime.toISOString() : null,
+      })
+    }
   }
+
+  if (sourcesFound.length === 0) {
+    return { skills: [], warning: 'no skills directory present (checked /skills and .claude/skills)' }
+  }
+
+  const rows = Array.from(bySlug.values())
   // Verified first, then drafts, then alphabetical within each group.
   rows.sort((a, b) => {
     if (a.status !== b.status) return a.status === 'verified' ? -1 : 1
