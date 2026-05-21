@@ -56,9 +56,13 @@ docker run --rm \
 ls -lh n8n-data-*.tar.gz   # sanity-check size (usually 10MB–1GB depending on history)
 exit
 
-# From your local machine:
-scp root@<kvm1-ip>:/root/n8n-data-*.tar.gz /tmp/
-scp root@<kvm1-ip>:/root/n8n-env-backup-*.env /tmp/
+# From your local machine. Single-quote the remote path so zsh doesn't try
+# to glob-expand it locally — without the quotes you'd see
+# `zsh: no matches found: ...`, because zsh refuses to pass an unmatched
+# glob through to the receiving command (bash would). Quoting is also
+# correct in bash, so the same line works in either shell.
+scp 'root@<kvm1-ip>:/root/n8n-data-*.tar.gz'       /tmp/
+scp 'root@<kvm1-ip>:/root/n8n-env-backup-*.env'    /tmp/
 ```
 
 You now have an offline copy. **Do NOT delete the KVM1 container or VPS yet** — you may need to rerun this if the import has issues.
