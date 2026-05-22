@@ -19,6 +19,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
 | Diagnose codex-gateway 502 incidents | `npm run diagnose:codex` (add `--probe-dispatch` for a full dispatch test) |
 | Repair codex-gateway routing after KVM migration | `npm run repair:codex` (`--apply` to update Doppler + Cloudflare tunnel) |
+| Move a Cloudflare hostname between tunnels | `npm run migrate:tunnel -- --hostname=X --to-tunnel=Y --service=Z` (`--apply` to mutate) |
 | Write a fact to memory-hq | `doppler run -- node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom "<title>" --fact="..."` |
 | Pre-commit safety checks | `npm run check:all` |
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
@@ -229,6 +230,35 @@ Three things the script auto-fixes:
 - `User:User Details:Read`
 
 After `--apply` succeeds the script waits 5s for Cloudflare propagation, then probes `/health` and reports. Re-run `npm run diagnose:codex` to confirm the 502 is gone.
+
+### Migrate a Cloudflare hostname between tunnels
+
+When `repair:codex` says the existing tunnel ingress is "already correct" but `/health` still 502s, the hostname is routed via the WRONG tunnel — likely a stale tunnel running on the old host. Use `migrate:tunnel` to move the hostname to the correct tunnel:
+
+```bash
+npm run migrate:tunnel -- \
+  --hostname=codex-gw.coolifycloudtunnel.uk \
+  --to-tunnel=nexus-fleet \
+  --service=http://codex-gateway:3000               # dry-run by default
+
+npm run migrate:tunnel -- \
+  --hostname=codex-gw.coolifycloudtunnel.uk \
+  --to-tunnel=nexus-fleet \
+  --service=http://codex-gateway:3000 \
+  --apply                                            # actually mutate
+```
+
+The script:
+1. Resolves `--to-tunnel` by name (case-insensitive substring) — fails clearly if no match.
+2. Auto-detects the source tunnel by walking every active tunnel's ingress (override with `--from-tunnel=NAME` when needed).
+3. Removes the hostname entry from the source tunnel.
+4. Inserts the hostname entry into the target tunnel BEFORE its catch-all (preserves catch-all).
+5. Updates the DNS CNAME for the hostname to point at the target tunnel's `<id>.cfargotunnel.com`.
+6. Waits 8s for CF propagation and smoke-tests `https://<hostname>/health`.
+
+**Optional flags**: `--keep-source` (skip removal — useful for parallel-tunnel testing), `--skip-dns` (when DNS is already correct).
+
+**Token scopes**: same as `repair:codex` — see [`docs/runbooks/cloudflare-admin-token.md`](cloudflare-admin-token.md).
 
 ---
 

@@ -20,6 +20,8 @@
     "diagnose:codex:local": "node scripts/diagnose-codex-gateway.mjs",
     "repair:codex":         "doppler run -- node scripts/repair-codex-gateway-routing.mjs",
     "repair:codex:local":   "node scripts/repair-codex-gateway-routing.mjs",
+    "migrate:tunnel":       "doppler run -- node scripts/migrate-tunnel-hostname.mjs",
+    "migrate:tunnel:local": "node scripts/migrate-tunnel-hostname.mjs",
     "populate-memory": "doppler run -- node scripts/populate-memory.mjs",
     "populate-memory:local": "node scripts/populate-memory.mjs",
     "deploy": "doppler run -- ./scripts/deploy.sh",
