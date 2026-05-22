@@ -287,6 +287,22 @@ Multi-turn agents that iterate against a moving target — bug hunts, multi-file
 
 If your new agent matches an existing exemplar's shape, fork its spec into `.claude/agents/<slug>.md` and replace the domain-specific parts (block names, scope values, tool list). The invariants above are not negotiable — they're what keeps the loop reviewable and abortable.
 
+### Platform debug loop pattern
+
+A closed-loop variant of the Ralph pattern aimed at platform regressions: when an end-to-end verification surface goes red (a Playwright spec, a `/api/health/deep` upstream, a stack trace in `log_events`), a Codex-driven agent iterates "make a change → re-run the verification → grade → propose next iteration" until the verification is green or the cost cap fires. **Shipping in two stages** so the verification primitives prove value on their own before a loop agent depends on them:
+
+- **Phase 1 (this initiative — verification primitives only):** a root-level [`tests/playwright/`](tests/playwright/) Playwright suite covering critical operator flows + a new owner-only [`GET /api/health/deep`](app/api/health/deep/route.ts) endpoint returning per-provider liveness for `claude_gateway`, `codex_gateway`, `supabase`, `redis`. Both are operator-owned and useful immediately to humans investigating production issues.
+- **Phase 2+ (future initiative):** a `codex-debug-loop` agent (forked from [bug-hunt-loop](.claude/agents/bug-hunt-loop.md), retry semantics borrowed from [skill-trainer](.claude/agents/skill-trainer.md)) running inside a per-branch dev sandbox container (sibling to [`services/nexus-sandbox/`](services/nexus-sandbox/)), dispatching fix-attempts through the existing [codex-gateway](services/codex-gateway/) per [ADR 002](docs/adr/002-codex-gateway-sandbox.md). Plan: [`task_plan-codex-debug-loop.md`](task_plan-codex-debug-loop.md).
+
+When Phase 2 lands, the loop agent inherits every Ralph-loop invariant above (operator-gated kickoff, bounded iterations, cost-aware via `checkKillSwitch`, draft PRs only, no auto-merge) and adds two more specific to this pattern:
+
+| Extra invariant | What it means in practice |
+|---|---|
+| **Tests are operator-owned, not loop-writable** | The loop agent must NEVER edit files under `tests/playwright/` or `playwright.config.ts`. Phase 2 enforces this via filesystem permissions in the per-branch sandbox container; Phase 1 just establishes the directory boundary so future enforcement is a config flag, not a refactor. Otherwise the loop can game "passing" by deleting the failing test. |
+| **Verification is the grader, not the agent's self-assessment** | The loop's stop-decision reads the structured output of the Playwright suite + `/api/health/deep`, never the agent's own claim of "I think it's fixed." Mirrors skill-trainer's `passes_required: 3` semantic — the agent doesn't get to grade its own work. |
+
+`services/qa-runner/` (post-deploy production smoke against the live Vercel deploy) is a **distinct system** — same Playwright framework, different runtime and purpose. It stays the production safety net; `tests/playwright/` is the local + loop-time verification layer.
+
 ### Write Size Discipline (avoid Opus stream timeouts)
 
 Long single-shot Write/Edit/Bash payloads are the #1 cause of API stream errors on Opus. The PreToolUse hook `.claude/hooks/check-write-size.sh` enforces these limits — exceeding them blocks the call with a chunking instruction. Defaults: 300 lines / 10 KB per Write/Edit, 300 lines per Bash heredoc.
