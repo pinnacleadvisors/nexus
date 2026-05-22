@@ -1,5 +1,6 @@
 import Sidebar from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
+import CommandPalette from '@/components/layout/CommandPalette'
 import { GatewayStatusProvider } from '@/lib/hooks/useGatewayStatus'
 
 export default function ProtectedLayout({
@@ -17,6 +18,8 @@ export default function ProtectedLayout({
             {children}
           </main>
         </div>
+        {/* Ctrl+K / Cmd+K palette — Paperclip absorption Task C. */}
+        <CommandPalette />
       </div>
     </GatewayStatusProvider>
   )
