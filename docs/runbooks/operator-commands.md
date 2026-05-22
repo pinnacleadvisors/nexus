@@ -157,14 +157,24 @@ node scripts/populate-memory.mjs                 # populate from `populate-memor
 Run before every commit (and certainly before opening a PR).
 
 ```bash
-npm run check:all              # lint + tsc + retry-storm + sentry-config (one shot)
+npm run check:all              # lint + tsc + retry-storm + sentry-config + lockfile (one shot)
 npm run lint                   # eslint
 npx tsc --noEmit               # TypeScript only — fastest single check
 npm run check:retry-storm      # blocks the 6 grep-detectable retry-storm patterns
 npm run check:sentry-config    # blocks Sentry sample-rate regressions (2026-05-12 budget cap)
+npm run check:lockfile         # blocks package.json ↔ package-lock.json drift (PR-274 incident class)
 ```
 
 Every check exits non-zero on any finding. See [AGENTS.md "Pre-commit Checklist"](../../AGENTS.md) for the full mental checklist.
+
+### `check:lockfile` — what it catches
+
+Two-tier check:
+
+1. **Fast custom check** (< 100 ms) — every `package.json` dep must have BOTH a root-deps entry AND a `node_modules/<dep>` entry in the lockfile. Catches the specific PR-274 failure mode where a new dep was added but the lockfile only got the declaration line, not the resolved-URL + integrity entry.
+2. **Authoritative `npm ci --dry-run`** (3-5 s) — catches subtler drift: version mismatches, phantom entries, conflicting peer deps. Only runs if the fast check passes.
+
+On failure, the script prints which packages drifted + the exact `npm install` + `git add package-lock.json` sequence to fix it on the PR branch.
 
 ---
 
