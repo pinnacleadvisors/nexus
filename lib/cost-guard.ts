@@ -272,8 +272,8 @@ export async function checkKillSwitch(businessSlug: string): Promise<KillSwitchR
 // Reports per-agent / per-period spend alongside the existing user + business
 // USD/day kill switch (assertUnderCostCap above). NOT a new gate — the outer
 // safety stays as-is. Per-agent budgets are inner accounting + display only:
-// the /companies UI renders a BillerSpendCard per agent reading from this
-// helper.
+// the /businesses/[slug] UI renders a BillerSpendCard per agent reading from
+// this helper.
 //
 // experiment_metrics rows of kind='cash_spend' carry payload.usd as the
 // authoritative spend signal. When the dispatcher tags rows with
