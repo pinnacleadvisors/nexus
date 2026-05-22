@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
 import {
-  Lightbulb,
   Workflow,
   LayoutDashboard,
   Settings,
@@ -19,7 +18,6 @@ import {
   Terminal,
   Briefcase,
   MessageSquare,
-  ShieldCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -136,12 +134,15 @@ function useBusinessesForSidebar(): BusinessLink[] {
 // children are per-business chat sub-items so the operator reaches a
 // specific business's copilot in 1 click. Falls back to a flat link when
 // the list is empty (first-time-user state).
+// 2026-05-22 — Inbox absorbs three previous nav entries (Approvals, Signals,
+// Ideas) per the Paperclip-aesthetic absorption. Routes still exist for
+// backward-compat; they just don't have nav entries any more. Future PR
+// migrates the Ideas flow into a chat-driven create_business agent and the
+// Signals logic into a platform-copilot skill.
 const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/dashboard',       label: 'Mission Control', icon: LayoutDashboard },
-  { type: 'link', href: '/approvals',       label: 'Approvals',       icon: ShieldCheck },
+  { type: 'link', href: '/inbox',           label: 'Inbox',           icon: Inbox },
   { type: 'link', href: '/businesses',      label: 'Businesses',      icon: Briefcase },
-  { type: 'link', href: '/idea',            label: 'Ideas',           icon: Lightbulb },
-  { type: 'link', href: '/signals',         label: 'Signals',         icon: Inbox },
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
@@ -175,10 +176,8 @@ function buildNav(businesses: BusinessLink[]): NavItem[] {
 
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard')       return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
-  if (href === '/approvals')       return pathname === '/approvals'
+  if (href === '/inbox')           return pathname === '/inbox' || pathname === '/approvals' || pathname === '/signals'
   if (href === '/businesses')      return pathname === '/businesses' || pathname.startsWith('/businesses/')
-  if (href === '/idea')            return pathname === '/idea' || pathname.startsWith('/idea-library')
-  if (href === '/signals')         return pathname === '/signals' || pathname.startsWith('/signals/')
   if (href === '/board')           return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
   if (href === '/graph')           return pathname === '/graph'
   if (href === '/learn')           return pathname === '/learn' || pathname.startsWith('/learn/')
@@ -222,12 +221,15 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col h-full shrink-0 border-r relative',
+        'flex flex-col h-full shrink-0 border-r relative rounded-r-2xl overflow-hidden',
         collapsed ? 'transition-all duration-200' : (resize.isDragging ? '' : 'transition-all duration-100'),
       )}
       style={{
         backgroundColor: '#0d0d14',
         borderColor:     '#24243e',
+        // Soft outer shadow + rounded right edge gives the floating-panel look
+        // the operator asked for ("modern sleek" — Paperclip-aesthetic absorption).
+        boxShadow:       '4px 0 24px -8px rgba(0, 0, 0, 0.45)',
         // Collapsed uses fixed icon-rail width; expanded uses the resizable width.
         width:           collapsed ? '4rem' : `${resize.width}px`,
       }}
@@ -253,10 +255,13 @@ export default function Sidebar() {
         style={{ borderColor: '#24243e' }}
       >
         <div
-          className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0"
-          style={{ backgroundColor: '#6c63ff' }}
+          className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0"
+          style={{
+            background:  'linear-gradient(135deg, #7c75ff 0%, #6c63ff 50%, #5b54e6 100%)',
+            boxShadow:   '0 4px 14px -2px rgba(108, 99, 255, 0.45)',
+          }}
         >
-          <FileText size={16} className="text-white" />
+          <FileText size={17} className="text-white" />
         </div>
         {!collapsed && (
           <span className="font-bold text-lg tracking-tight" style={{ color: '#e8e8f0' }}>
