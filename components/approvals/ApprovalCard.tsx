@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { ShieldCheck, X, Check } from 'lucide-react'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { ShieldCheck, X, Check, Loader2 } from 'lucide-react'
 
 interface ApprovalRow {
   id:               string
@@ -35,13 +36,35 @@ const TYPE_COLOR: Record<string, string> = {
 }
 
 export default function ApprovalCard({ approval }: Props) {
-  // approve/reject NOT WIRED — handler placeholder until POST
-  // /api/approvals/[id]/decide route lands.
-  const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
-  function clickStub(action: 'approve' | 'reject') {
+  // Wired to POST /api/approvals/[id]/decide. Optimistic-then-refresh:
+  // disable buttons during the request, router.refresh() on success so the
+  // list re-fetches and the just-decided row drops out (or shows as decided).
+  const [busy, setBusy]   = useState<'approve' | 'reject' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+
+  async function decide(action: 'approve' | 'reject') {
+    if (busy || pending) return
     setBusy(action)
-    console.warn('[ApprovalCard] approve/reject not yet wired. Implement POST /api/approvals/[id]/decide.')
-    setTimeout(() => setBusy(null), 500)
+    setError(null)
+    try {
+      const res = await fetch(`/api/approvals/${approval.id}/decide`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ decision: action }),
+      })
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+      if (!j.ok) {
+        setError(j.error ?? `HTTP ${res.status}`)
+        return
+      }
+      startTransition(() => router.refresh())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'unknown_error')
+    } finally {
+      setBusy(null)
+    }
   }
 
   const label = TYPE_LABEL[approval.type] ?? approval.type
@@ -78,22 +101,31 @@ export default function ApprovalCard({ approval }: Props) {
         <div className="flex flex-shrink-0 gap-2">
           <button
             type="button"
-            disabled={busy !== null}
-            onClick={() => clickStub('reject')}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/40 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-rose-900/30 hover:border-rose-700 disabled:opacity-50"
+            disabled={busy !== null || pending}
+            onClick={() => decide('reject')}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/40 px-2.5 py-1 text-xs text-zinc-300 transition hover:bg-rose-900/30 hover:border-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <X className="h-3 w-3" /> Reject
+            {busy === 'reject' ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+            Reject
           </button>
           <button
             type="button"
-            disabled={busy !== null}
-            onClick={() => clickStub('approve')}
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-900/30 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-900/50 disabled:opacity-50"
+            disabled={busy !== null || pending}
+            onClick={() => decide('approve')}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-900/30 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Check className="h-3 w-3" /> Approve
+            {busy === 'approve' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+            Approve
           </button>
         </div>
       </div>
+      {error && (
+        <p className="mt-2 text-xs text-rose-400">
+          {error === 'approvals_table_missing'
+            ? 'Apply migration 050_approvals_first_class.sql to enable decisions.'
+            : error}
+        </p>
+      )}
     </article>
   )
 }
