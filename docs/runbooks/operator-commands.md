@@ -18,6 +18,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Run a DB migration | `npm run migrate` |
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
 | Diagnose codex-gateway 502 incidents | `npm run diagnose:codex` (add `--probe-dispatch` for a full dispatch test) |
+| Repair codex-gateway routing after KVM migration | `npm run repair:codex` (`--apply` to update Doppler + Cloudflare tunnel) |
 | Write a fact to memory-hq | `doppler run -- node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom "<title>" --fact="..."` |
 | Pre-commit safety checks | `npm run check:all` |
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
@@ -203,7 +204,35 @@ The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`do
 
 ---
 
-## 9. Diagnose codex-gateway 502 incidents
+## 9. Repair codex-gateway routing (post-KVM-migration)
+
+When `npm run diagnose:codex` returns `Cloudflare Tunnel cannot reach the codex-gateway container` AND Coolify says "Application not found" on the configured UUID, the gateway was migrated between KVMs but Doppler + Cloudflare didn't follow.
+
+```bash
+npm run repair:codex                       # DRY-RUN — prints the exact fixes
+npm run repair:codex -- --apply            # apply: updates Doppler UUID + Cloudflare tunnel ingress + DNS CNAME
+```
+
+Three things the script auto-fixes:
+
+1. **Doppler `COOLIFY_KVM4_CODEX_UUID`** — discovers the live codex-gateway on KVM4 by name-matching, updates the secret.
+2. **Cloudflare tunnel ingress** for `codex-gw.<your-domain>` — points the `service:` field at `http://codex-gateway:3000` on the right tunnel.
+3. **DNS CNAME** — repoints the CNAME at the correct `<tunnel-id>.cfargotunnel.com` if it's stale.
+
+**Required env (in Doppler `prd`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `CLOUDFLARE_API_TOKEN`.
+
+**Token scopes the operator needs** (see [`docs/runbooks/cloudflare-admin-token.md`](cloudflare-admin-token.md) for the click-by-click):
+- `Account:Cloudflare Tunnel:Edit`
+- `Account:Account Settings:Read`
+- `Zone:DNS:Edit` (specific zones only — not "All zones")
+- `Zone:Zone:Read` (same zones)
+- `User:User Details:Read`
+
+After `--apply` succeeds the script waits 5s for Cloudflare propagation, then probes `/health` and reports. Re-run `npm run diagnose:codex` to confirm the 502 is gone.
+
+---
+
+## 10. Diagnose codex-gateway 502 incidents
 
 ```bash
 npm run diagnose:codex                       # full read-only sweep — Coolify state + logs + /health + /health?deep=1
@@ -228,7 +257,7 @@ Hits four surfaces in one command and prints a verdict that maps the symptoms to
 
 ---
 
-## 10. Specialised / one-off scripts
+## 11. Specialised / one-off scripts
 
 Less-frequent commands that may show up during incidents, audits, or rollouts.
 
@@ -254,7 +283,7 @@ bash scripts/sync-vercel-env.sh
 
 ---
 
-## 11. Memory MCP server (recovery)
+## 12. Memory MCP server (recovery)
 
 If `memory_atom` / `memory_search` MCP tools return 503 inside a Claude Code session:
 
