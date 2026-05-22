@@ -16,7 +16,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Migrate Vercel crons → cron-job.org | `doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --apply` |
 | Move a Coolify app KVM2 → KVM4 | `doppler run -- node scripts/migrate-to-lean-kvm.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
-| Regenerate `lib/database.types.ts` after a migration | `doppler run -- npx supabase@latest gen types typescript --project-id "$SUPABASE_PROJECT_REF" --schema public > lib/database.types.ts` |
+| Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
 | Write a fact to memory-hq | `doppler run -- node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom "<title>" --fact="..."` |
 | Pre-commit safety checks | `npm run check:all` |
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
@@ -93,21 +93,22 @@ npm run migrate:local          # if you already have env set up locally
 The generated Supabase types live at [`lib/database.types.ts`](../../lib/database.types.ts) and are checked into the repo. App code that touches new columns / new tables either uses the untyped `as unknown as` shim pattern (see `lib/cost-guard.ts` / `lib/board/insert-task.ts`) OR depends on regenerated types. Regenerate after every migration that adds tables or columns so TS sees the new shape and the shims can be tightened in follow-up PRs.
 
 ```bash
-# Project ref = the slug at https://supabase.com/dashboard/project/<ref> — store in Doppler as SUPABASE_PROJECT_REF.
-doppler run -- npx supabase@latest gen types typescript \
-  --project-id "$SUPABASE_PROJECT_REF" \
-  --schema public \
-  > lib/database.types.ts
+npm run types:regen           # canonical — wraps the supabase CLI safely
+npm run types:regen:local     # if you already have SUPABASE_PROJECT_REF in your shell env
 ```
 
-**Pre-requisites**: `SUPABASE_PROJECT_REF` in Doppler. `npx supabase` will prompt for browser auth on first run if you haven't already logged the CLI in (`npx supabase login`).
+The wrapper at [`scripts/regenerate-database-types.mjs`](../../scripts/regenerate-database-types.mjs) runs the Supabase CLI with `npx --yes` (so the "Ok to proceed? (y)" install prompt doesn't get captured into the file), writes to a tempfile, validates the output starts with the expected TypeScript header, and atomically moves into place. A bad run leaves `lib/database.types.ts` untouched.
 
-**Success looks like**: `git diff lib/database.types.ts` shows the new tables/columns added; nothing else churns. Re-run `npx tsc --noEmit` — TS errors that depended on the missing types should resolve.
+**Pre-requisites**: `SUPABASE_PROJECT_REF` in Doppler — the project slug at `https://supabase.com/dashboard/project/<slug>` (just the slug, not the URL). `npx supabase login` once per machine if you haven't already.
+
+**Success looks like**: the script prints `Wrote /…/lib/database.types.ts — N bytes, M lines.` then `git diff lib/database.types.ts` shows the new tables/columns added (nothing else churns). Re-run `npx tsc --noEmit` — TS errors that depended on the missing types should resolve.
 
 **Common pitfalls**:
+- **2026-05-22 incident — npx prompt captured into file**: pre-script, the docs recommended `npx supabase@latest gen … > lib/database.types.ts`. npx wrote `Need to install the following packages: supabase@2.101.0\nOk to proceed? (y)` to stdout, which the shell redirect captured into the file. The new wrapper script's `--yes` + tempfile + header-validation prevents this from recurring. If you ever see the prompt text in your `database.types.ts`, revert the file (`git checkout lib/database.types.ts`) and re-run `npm run types:regen`.
 - Running before the migration is applied to the **remote** Supabase project produces an out-of-date file. Confirm `npm run migrate` against prod completed first.
 - Generated file uses absolute timestamps — re-run in CI / pre-commit produces noisy diffs. Commit only after a real schema change; otherwise revert.
-- If the command 401s, run `npx supabase login` in an interactive shell and retry.
+- If the command 401s, run `npx supabase login` in an interactive shell and retry. The CLI caches credentials per-machine.
+- If `SUPABASE_PROJECT_REF` is unset, the script exits with a clear error message instead of producing a broken file.
 
 ---
 
