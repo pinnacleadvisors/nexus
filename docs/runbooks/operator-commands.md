@@ -16,6 +16,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Migrate Vercel crons → cron-job.org | `doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --apply` |
 | Move a Coolify app KVM2 → KVM4 | `doppler run -- node scripts/migrate-to-lean-kvm.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
+| Regenerate `lib/database.types.ts` after a migration | `doppler run -- npx supabase@latest gen types typescript --project-id "$SUPABASE_PROJECT_REF" --schema public > lib/database.types.ts` |
 | Write a fact to memory-hq | `doppler run -- node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom "<title>" --fact="..."` |
 | Pre-commit safety checks | `npm run check:all` |
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
@@ -86,6 +87,27 @@ npm run migrate:local          # if you already have env set up locally
 ```
 
 **Pre-flight**: `node scripts/dryrun-044-backfill.mjs` (or similar `dryrun-NNN-*.mjs`) for migrations whose backfill needs validation before running. **Post-flight**: `node scripts/verify-044-applied.mjs` to confirm a specific migration landed.
+
+### Regenerate `lib/database.types.ts` after a migration
+
+The generated Supabase types live at [`lib/database.types.ts`](../../lib/database.types.ts) and are checked into the repo. App code that touches new columns / new tables either uses the untyped `as unknown as` shim pattern (see `lib/cost-guard.ts` / `lib/board/insert-task.ts`) OR depends on regenerated types. Regenerate after every migration that adds tables or columns so TS sees the new shape and the shims can be tightened in follow-up PRs.
+
+```bash
+# Project ref = the slug at https://supabase.com/dashboard/project/<ref> — store in Doppler as SUPABASE_PROJECT_REF.
+doppler run -- npx supabase@latest gen types typescript \
+  --project-id "$SUPABASE_PROJECT_REF" \
+  --schema public \
+  > lib/database.types.ts
+```
+
+**Pre-requisites**: `SUPABASE_PROJECT_REF` in Doppler. `npx supabase` will prompt for browser auth on first run if you haven't already logged the CLI in (`npx supabase login`).
+
+**Success looks like**: `git diff lib/database.types.ts` shows the new tables/columns added; nothing else churns. Re-run `npx tsc --noEmit` — TS errors that depended on the missing types should resolve.
+
+**Common pitfalls**:
+- Running before the migration is applied to the **remote** Supabase project produces an out-of-date file. Confirm `npm run migrate` against prod completed first.
+- Generated file uses absolute timestamps — re-run in CI / pre-commit produces noisy diffs. Commit only after a real schema change; otherwise revert.
+- If the command 401s, run `npx supabase login` in an interactive shell and retry.
 
 ---
 
