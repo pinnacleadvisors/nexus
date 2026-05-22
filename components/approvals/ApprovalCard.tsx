@@ -81,7 +81,7 @@ export default function ApprovalCard({ approval }: Props) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs ${color}`}>{label}</span>
-              <Link href={`/companies/${approval.business_slug}`} className="text-sm text-zinc-300 hover:text-zinc-100">
+              <Link href={`/businesses/${approval.business_slug}`} className="text-sm text-zinc-300 hover:text-zinc-100">
                 {approval.business_slug}
               </Link>
               <span className="text-xs text-zinc-600">·</span>

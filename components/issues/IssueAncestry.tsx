@@ -18,7 +18,7 @@ export default function IssueAncestry({ ancestry }: Props) {
   const crumbs: Array<{ label: string; href?: string; muted?: boolean }> = []
   crumbs.push({
     label: ancestry.business.name,
-    href:  `/companies/${ancestry.business.slug}`,
+    href:  `/businesses/${ancestry.business.slug}`,
   })
 
   // Parent goals — outermost first (reverse parent_goals order since they were

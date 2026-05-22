@@ -1,5 +1,5 @@
 /**
- * /companies/[slug]/org-chart — visual hierarchy view.
+ * /businesses/[slug]/org-chart — visual hierarchy view.
  *
  * Two-level tree, rendered in pure CSS/HTML (no react-flow dependency). When
  * an agents table lands in a future phase, swap this for an agent-hierarchy
@@ -71,7 +71,7 @@ export default async function OrgChartPage({ params }: PageProps) {
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8">
-      <Link href={`/companies/${slug}`} className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200">
+      <Link href={`/businesses/${slug}`} className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200">
         <ArrowLeft className="h-4 w-4" /> Company overview
       </Link>
 
@@ -138,7 +138,7 @@ export default async function OrgChartPage({ params }: PageProps) {
 function CompanyCard({ business, primary }: { business: BusinessRow; primary?: boolean }) {
   return (
     <Link
-      href={`/companies/${business.slug}`}
+      href={`/businesses/${business.slug}`}
       className={
         'block rounded-xl border bg-zinc-900/40 p-4 transition hover:bg-zinc-900/60 ' +
         (primary

@@ -1,5 +1,5 @@
 /**
- * /companies/[slug]/issues — threaded ticket feed (Paperclip absorption Task 3d).
+ * /businesses/[slug]/issues — threaded ticket feed (Paperclip absorption Task 3d).
  *
  * Server component. Lists issues for one business, grouped by status_category.
  * Click an issue → IssueDetail (separate page, deferred for follow-up PR).
@@ -64,7 +64,7 @@ export default async function CompanyIssuesPage({ params }: PageProps) {
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8">
-      <Link href={`/companies/${slug}`} className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200">
+      <Link href={`/businesses/${slug}`} className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200">
         <ArrowLeft className="h-4 w-4" /> Company overview
       </Link>
 
