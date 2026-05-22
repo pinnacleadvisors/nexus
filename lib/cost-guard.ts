@@ -266,3 +266,100 @@ export async function checkKillSwitch(businessSlug: string): Promise<KillSwitchR
     return { kill: false, details: empty }
   }
 }
+
+// ── Per-agent budget breakdown (Paperclip absorption Task 4g) ────────────────
+//
+// Reports per-agent / per-period spend alongside the existing user + business
+// USD/day kill switch (assertUnderCostCap above). NOT a new gate — the outer
+// safety stays as-is. Per-agent budgets are inner accounting + display only:
+// the /companies UI renders a BillerSpendCard per agent reading from this
+// helper.
+//
+// experiment_metrics rows of kind='cash_spend' carry payload.usd as the
+// authoritative spend signal. When the dispatcher tags rows with
+// payload.agent_slug we partition by it; absent rows are bucketed under
+// '__unattributed' so we don't silently drop usage.
+
+export type BudgetPeriod = 'day' | 'week' | 'month'
+
+const PERIOD_MS: Record<BudgetPeriod, number> = {
+  day:   24       * 60 * 60 * 1000,
+  week:  7  * 24  * 60 * 60 * 1000,
+  month: 30 * 24  * 60 * 60 * 1000,
+}
+
+export interface AgentBudgetResult {
+  agent_slug:    string
+  business_slug: string
+  period:        BudgetPeriod
+  spent_usd:     number
+  cap_usd:       number | null      // null = no cap configured
+  remaining_usd: number | null
+}
+
+function getAgentCap(agentSlug: string): number | null {
+  // Per-agent cap via env: AGENT_BUDGET_USD_DAY__<SLUG_UPPER_UNDERSCORE>
+  // e.g. AGENT_BUDGET_USD_DAY__SOLOPRENEUR_LOOP=5.00
+  // Falls back to AGENT_BUDGET_USD_DAY_DEFAULT, or null when unset.
+  const safe = agentSlug.replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase()
+  const specific = process.env[`AGENT_BUDGET_USD_DAY__${safe}`]
+  const fallback = process.env.AGENT_BUDGET_USD_DAY_DEFAULT
+  const raw = specific ?? fallback
+  if (!raw) return null
+  const n = parseFloat(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export async function getAgentBudget(args: {
+  agentSlug:    string
+  businessSlug: string
+  period?:      BudgetPeriod
+}): Promise<AgentBudgetResult> {
+  const period = args.period ?? 'day'
+  const sinceIso = new Date(Date.now() - PERIOD_MS[period]).toISOString()
+  const cap = getAgentCap(args.agentSlug)
+  const empty: AgentBudgetResult = {
+    agent_slug:    args.agentSlug,
+    business_slug: args.businessSlug,
+    period,
+    spent_usd:     0,
+    cap_usd:       cap,
+    remaining_usd: cap,
+  }
+
+  const db = createServerClient()
+  if (!db) return empty
+
+  try {
+    type AnyQuery = {
+      eq:  (c: string, v: string) => AnyQuery
+      gte: (c: string, v: string) => Promise<{ data: unknown; error: unknown }>
+    }
+    const exp = (db as unknown as {
+      from: (t: string) => { select: (c: string) => AnyQuery }
+    }).from('experiment_metrics')
+
+    const res = await exp
+      .select('payload')
+      .eq('business_slug', args.businessSlug)
+      .eq('kind', 'cash_spend')
+      .gte('ts', sinceIso)
+
+    const rows = ((res.data ?? []) as Array<{ payload?: Record<string, unknown> | null }>)
+    const spent = rows.reduce((s, r) => {
+      const p = r.payload ?? {}
+      const rowAgent = typeof p.agent_slug === 'string' ? (p.agent_slug as string) : '__unattributed'
+      if (rowAgent !== args.agentSlug) return s
+      const usd = typeof p.usd === 'number' ? (p.usd as number) : 0
+      return s + usd
+    }, 0)
+
+    return {
+      ...empty,
+      spent_usd:     spent,
+      remaining_usd: cap === null ? null : Math.max(0, cap - spent),
+    }
+  } catch {
+    return empty
+  }
+}

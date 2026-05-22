@@ -19,6 +19,8 @@ import {
   Terminal,
   Briefcase,
   MessageSquare,
+  Building2,
+  ShieldCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -137,7 +139,9 @@ function useBusinessesForSidebar(): BusinessLink[] {
 // the list is empty (first-time-user state).
 const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/dashboard',       label: 'Mission Control', icon: LayoutDashboard },
+  { type: 'link', href: '/approvals',       label: 'Approvals',       icon: ShieldCheck },
   { type: 'link', href: '/businesses',      label: 'Businesses',      icon: Briefcase },
+  { type: 'link', href: '/companies',       label: 'Companies',       icon: Building2 },
   { type: 'link', href: '/idea',            label: 'Ideas',           icon: Lightbulb },
   { type: 'link', href: '/signals',         label: 'Signals',         icon: Inbox },
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
@@ -173,6 +177,8 @@ function buildNav(businesses: BusinessLink[]): NavItem[] {
 
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard')       return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+  if (href === '/approvals')       return pathname === '/approvals'
+  if (href === '/companies')       return pathname === '/companies' || pathname.startsWith('/companies/')
   if (href === '/businesses')      return pathname === '/businesses' || pathname.startsWith('/businesses/')
   if (href === '/idea')            return pathname === '/idea' || pathname.startsWith('/idea-library')
   if (href === '/signals')         return pathname === '/signals' || pathname.startsWith('/signals/')

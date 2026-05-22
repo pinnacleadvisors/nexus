@@ -38,11 +38,29 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
+import { randomUUID } from 'node:crypto'
 import { createServerClient } from '@/lib/supabase'
 import { callGateway } from '@/lib/claw/gateway-call'
 import { resolveClawConfig } from '@/lib/claw/business-client'
 import { checkKillSwitch, type KillSwitchResult } from '@/lib/cost-guard'
 import type { BusinessRow } from '@/lib/business/types'
+import { claimIssue, releaseIssue } from '@/lib/issues/checkout'
+import { getIssueAncestry, renderAncestryPrompt } from '@/lib/goals/ancestry'
+
+/**
+ * Phase 4 follow-up — when USE_ISSUE_CHECKOUT=1 (default off), each tick
+ * tries to claim one pending issue from the new `issues` table (Phase 2
+ * migration 048) before dispatch and walks its ancestry (migration 052) to
+ * enrich the agent's prompt with the "why" chain. Two parallel ticks for the
+ * same business get different issues (SELECT ... FOR UPDATE SKIP LOCKED via
+ * the claim_issue stored function — migration 051).
+ *
+ * Reversible: unset the env var → tick goes back to today's behavior.
+ *
+ * The checkout uses a fresh randomUUID() as the run_id; invocationId stays
+ * the human-readable tick id used in metrics rows.
+ */
+const USE_ISSUE_CHECKOUT = process.env.USE_ISSUE_CHECKOUT === '1'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 60
@@ -250,6 +268,33 @@ async function runForBusiness(
   // 2. Resolve gate_state for the agent.
   const gateState = await loadGateState(slug)
 
+  // 2b. (Phase 4 follow-up — feature-flagged) Try to claim one issue for this
+  // business. Enriches the dispatch with the issue + ancestry chain when
+  // successful. When USE_ISSUE_CHECKOUT is off OR no claimable issue exists
+  // OR migration 051 isn't applied, claim returns null and the tick proceeds
+  // as before.
+  let checkout: { issue_id: string; run_id: string; ancestry_prompt: string | null } | null = null
+  if (USE_ISSUE_CHECKOUT) {
+    const db = createServerClient()
+    if (db) {
+      const checkoutRunId = randomUUID()
+      const claimed = await claimIssue(db, {
+        business_slug: slug,
+        run_id:        checkoutRunId,
+        agent_slug:    'solopreneur-loop',
+      })
+      if (claimed) {
+        const ancestry = await getIssueAncestry(db, claimed.issue_id)
+        const promptBlock = renderAncestryPrompt(ancestry)
+        checkout = {
+          issue_id:        claimed.issue_id,
+          run_id:          checkoutRunId,
+          ancestry_prompt: promptBlock || null,
+        }
+      }
+    }
+  }
+
   // 3. Build the dispatch payload. solopreneur-loop spec at
   // .claude/agents/solopreneur-loop.md sets the input contract; we mirror
   // it here so the agent receives inputs.business, inputs.gate_state,
@@ -272,6 +317,12 @@ async function runForBusiness(
     gate_state:          gateState,
     kill_switch_signal:  killResult.signal ?? null,
     invocation_id:       invocationId,
+    // Only present when USE_ISSUE_CHECKOUT=1 and a claim succeeded — agent
+    // can branch on its presence to decide whether to work the assigned issue
+    // vs. propose new ones.
+    checkout:            checkout
+      ? { issue_id: checkout.issue_id, run_id: checkout.run_id }
+      : null,
   }
 
   // Dry-run mode — log intent, skip the LLM dispatch entirely.
@@ -316,6 +367,9 @@ async function runForBusiness(
     'You are running a 4×/day tick of the autonomous solopreneur loop for the experiment business below.',
     'Follow your spec at .claude/agents/solopreneur-loop.md exactly — sense → decide → dispatch → evaluate → adapt.',
     'Return ONLY the JSON object described in your output contract — no prose, no markdown fences.',
+    // Ancestry block injected only when USE_ISSUE_CHECKOUT=1 claimed an issue.
+    // Empty string when absent — composes cleanly into the prompt.
+    checkout?.ancestry_prompt ?? '',
     '',
     'inputs:',
     JSON.stringify(inputs, null, 2),
@@ -334,6 +388,14 @@ async function runForBusiness(
 
   const durationMs = Date.now() - startedAt
   if (!dispatch.ok) {
+    // Release the issue lock if checkout claimed one — failed dispatch should
+    // not leave a stranded checkout that blocks the next tick.
+    if (checkout) {
+      const db = createServerClient()
+      if (db) {
+        await releaseIssue(db, { issue_id: checkout.issue_id, run_id: checkout.run_id })
+      }
+    }
     await writeMetric('tick', slug, {
       invocation_id: invocationId,
       dryRun:        false,
@@ -342,6 +404,7 @@ async function runForBusiness(
       status:        dispatch.status,
       error:         dispatch.error ?? null,
       duration_ms:   durationMs,
+      checkout:      checkout ? { issue_id: checkout.issue_id, released: true } : null,
     })
     return {
       outcome: {
@@ -380,6 +443,9 @@ async function runForBusiness(
     action_count:   actionCount,
     signal:         killResult.signal ?? null,
     response_chars: dispatch.text.length,
+    checkout:       checkout
+      ? { issue_id: checkout.issue_id, run_id: checkout.run_id, ancestry_attached: Boolean(checkout.ancestry_prompt) }
+      : null,
   })
 
   return {
