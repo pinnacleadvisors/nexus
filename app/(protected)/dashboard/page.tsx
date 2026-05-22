@@ -12,6 +12,7 @@ import PendingReviewsPanel from '@/components/dashboard/PendingReviewsPanel'
 import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import FleetOverview from '@/components/dashboard/FleetOverview'
 import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
+import BentoMissionControl from '@/components/dashboard/BentoMissionControl'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -204,6 +205,13 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Bento hero (Paperclip absorption phase 2 Task F) ───────────────
+       * 4 stat tiles + 24h heartbeat timeline. Additive — existing widgets
+       * stay below. Each tile fetches its own data so a single API hiccup
+       * doesn't blank the hero. Follow-up PR retires legacy widgets after
+       * operator confirms the new hero is sufficient. */}
+      <BentoMissionControl />
 
       {/* ── Fleet overview: per-business CEO glance (audit 2026-05-16 §7.1) */}
       <FleetOverview />
