@@ -14,6 +14,9 @@ import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import MissionPanel from '@/components/companies/MissionPanel'
 import GoalsTreePanel from '@/components/companies/GoalsTreePanel'
+import BillerSpendCard, { type BillerSpendRow } from '@/components/companies/BillerSpendCard'
+import BudgetPolicyCard, { type BudgetPolicy } from '@/components/companies/BudgetPolicyCard'
+import BudgetIncidentCard, { type BudgetIncident } from '@/components/companies/BudgetIncidentCard'
 import { ArrowLeft, Goal, ListTodo, ShieldCheck } from 'lucide-react'
 
 interface BusinessRow {
@@ -32,6 +35,91 @@ interface GoalRow {
   success_criteria:  string | null
   parent_goal_id:    string | null
   status:            string
+}
+
+interface BudgetData {
+  totalSpent24h: number
+  agentSpend:    BillerSpendRow[]
+  policies:      BudgetPolicy[]
+  incidents:     BudgetIncident[]
+}
+
+function buildPolicies(): BudgetPolicy[] {
+  const policies: BudgetPolicy[] = []
+  const userCap = parseFloat(process.env.USER_DAILY_USD_LIMIT ?? '25') || 25
+  const bizCap  = parseFloat(process.env.USER_BUSINESS_DAILY_USD_LIMIT ?? '10') || 10
+  policies.push({ label: 'User daily cap',     cap_usd: userCap, scope: 'user-day' })
+  policies.push({ label: 'Business daily cap', cap_usd: bizCap,  scope: 'business-day' })
+  const agentDefault = process.env.AGENT_BUDGET_USD_DAY_DEFAULT
+  if (agentDefault) {
+    const n = parseFloat(agentDefault)
+    if (Number.isFinite(n) && n > 0) {
+      policies.push({ label: 'Agent default cap', cap_usd: n, scope: 'agent-day' })
+    }
+  }
+  return policies
+}
+
+async function fetchBudget(slug: string): Promise<BudgetData> {
+  const db = createServerClient()
+  const empty: BudgetData = { totalSpent24h: 0, agentSpend: [], policies: buildPolicies(), incidents: [] }
+  if (!db) return empty
+
+  const since24hIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  interface AnyChain extends PromiseLike<{ data: unknown; error: { message: string } | null }> {
+    select: (cols: string) => AnyChain
+    eq:     (col: string, val: string) => AnyChain
+    gte:    (col: string, val: string) => AnyChain
+    order:  (col: string, opts: { ascending: boolean }) => AnyChain
+    limit:  (n: number) => AnyChain
+  }
+  const anyDb = db as unknown as { from: (table: string) => AnyChain }
+
+  const [spendRes, killRes] = await Promise.all([
+    anyDb.from('experiment_metrics')
+      .select('payload')
+      .eq('business_slug', slug)
+      .eq('kind', 'cash_spend')
+      .gte('ts', since24hIso),
+    anyDb.from('experiment_metrics')
+      .select('ts,payload')
+      .eq('business_slug', slug)
+      .eq('kind', 'kill_switch_check')
+      .gte('ts', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order('ts', { ascending: false })
+      .limit(20),
+  ])
+
+  const spendRows = (spendRes.data ?? []) as Array<{ payload?: { usd?: number; agent_slug?: string } | null }>
+  const perAgent = new Map<string, number>()
+  let total = 0
+  for (const r of spendRows) {
+    const usd = r.payload?.usd ?? 0
+    if (usd <= 0) continue
+    total += usd
+    const agent = r.payload?.agent_slug || '__unattributed'
+    perAgent.set(agent, (perAgent.get(agent) ?? 0) + usd)
+  }
+  const agentSpend: BillerSpendRow[] = Array.from(perAgent.entries())
+    .map(([agent_slug, spent_usd]) => ({ agent_slug, spent_usd, cap_usd: null }))
+    .sort((a, b) => b.spent_usd - a.spent_usd)
+
+  const killRows = (killRes.data ?? []) as Array<{
+    ts: string
+    payload?: { kill?: boolean; reason?: string; spentUsd?: number; capUsd?: number; scope?: string } | null
+  }>
+  const incidents: BudgetIncident[] = killRows
+    .filter(r => r.payload?.kill === true)
+    .map(r => ({
+      ts:        r.ts,
+      scope:     (r.payload?.scope as BudgetIncident['scope']) ?? 'business',
+      spent_usd: r.payload?.spentUsd ?? 0,
+      cap_usd:   r.payload?.capUsd   ?? 0,
+      reason:    r.payload?.reason ?? 'kill_switch',
+    }))
+
+  return { totalSpent24h: total, agentSpend, policies: buildPolicies(), incidents }
 }
 
 async function fetchData(slug: string): Promise<{ business: BusinessRow | null; goals: GoalRow[]; issueCount: number; pendingApprovals: number }> {
@@ -83,7 +171,10 @@ interface PageProps {
 
 export default async function CompanyDetailPage({ params }: PageProps) {
   const { slug } = await params
-  const { business, goals, issueCount, pendingApprovals } = await fetchData(slug)
+  const [{ business, goals, issueCount, pendingApprovals }, budget] = await Promise.all([
+    fetchData(slug),
+    fetchBudget(slug),
+  ])
   if (!business) notFound()
 
   return (
@@ -114,6 +205,11 @@ export default async function CompanyDetailPage({ params }: PageProps) {
                 </Link>
               </li>
               <li>
+                <Link href={`/companies/${slug}/org-chart`} className="flex items-center justify-between rounded-md px-2 py-1.5 text-zinc-300 hover:bg-zinc-800/60">
+                  <span className="flex items-center gap-2"><Goal className="h-4 w-4 text-zinc-500" /> Org chart</span>
+                </Link>
+              </li>
+              <li>
                 <Link href="/approvals" className="flex items-center justify-between rounded-md px-2 py-1.5 text-zinc-300 hover:bg-zinc-800/60">
                   <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-zinc-500" /> Pending approvals</span>
                   <span className={pendingApprovals > 0 ? 'text-amber-400' : 'text-zinc-500'}>{pendingApprovals}</span>
@@ -126,6 +222,10 @@ export default async function CompanyDetailPage({ params }: PageProps) {
               </li>
             </ul>
           </div>
+
+          <BillerSpendCard rows={budget.agentSpend} totalSpent={budget.totalSpent24h} period="day" />
+          <BudgetPolicyCard policies={budget.policies} />
+          <BudgetIncidentCard incidents={budget.incidents} />
         </aside>
       </div>
     </div>
