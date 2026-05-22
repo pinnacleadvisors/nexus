@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { z } from 'zod'
@@ -9,6 +10,51 @@ import { WorkQueue, QueueFullError } from './queue.js'
 import { runCodex } from './spawn.js'
 import { isSafeSlug } from './agentSpec.js'
 import { JobStore } from './jobStore.js'
+
+/**
+ * Quick `codex --version` probe to verify the CLI binary is reachable + the
+ * subprocess machinery works inside the container. Gates the "deep" /health
+ * variant. 3s timeout — fast enough that a Coolify probe with ?deep=1 still
+ * fits inside the typical 5s liveness budget.
+ *
+ * Why this exists: 2026-05-22 incident — chat pill switch returned `gateway 502`
+ * even though /health returned `ok: true, loggedIn: true`. The basic /health
+ * only stats `/root/.codex` — it never exercises the actual subprocess spawn
+ * path that dispatch uses. A broken codex CLI binary OR an OOM'd container
+ * during spawn both pass the basic health check but fail dispatch. The deep
+ * probe closes that gap.
+ */
+async function probeCliWorks(): Promise<{ ok: boolean; version?: string; error?: string; latencyMs: number }> {
+  const t0 = Date.now()
+  return await new Promise(resolve => {
+    let resolved = false
+    const done = (r: { ok: boolean; version?: string; error?: string }) => {
+      if (resolved) return
+      resolved = true
+      resolve({ ...r, latencyMs: Date.now() - t0 })
+    }
+
+    let proc
+    try {
+      proc = spawn('codex', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (err) {
+      done({ ok: false, error: err instanceof Error ? err.message : 'spawn_failed' })
+      return
+    }
+
+    let out = ''
+    let err = ''
+    const timer = setTimeout(() => { try { proc.kill('SIGKILL') } catch {} ; done({ ok: false, error: 'timeout_3s' }) }, 3000)
+    proc.stdout?.on('data', d => { out += d.toString('utf8') })
+    proc.stderr?.on('data', d => { err += d.toString('utf8') })
+    proc.on('error', e => { clearTimeout(timer); done({ ok: false, error: e.message }) })
+    proc.on('exit',  code => {
+      clearTimeout(timer)
+      if (code === 0) done({ ok: true,  version: out.trim() || undefined })
+      else            done({ ok: false, error: `exit_${code}: ${err.trim().slice(-200)}` })
+    })
+  })
+}
 
 const PORT          = Number(process.env.CODEX_GATEWAY_PORT ?? 3000)
 // Canonical name is CODEX_GATEWAY_BEARER_TOKEN — matches the Nexus-side env
@@ -87,14 +133,34 @@ app.get('/health', async c => {
   } catch {
     loggedIn = false
   }
-  return c.json({
-    ok:           true,
+
+  // ?deep=1 exercises the actual subprocess spawn path so callers can tell
+  // whether dispatch will succeed, not just whether the HTTP server is up.
+  // Without ?deep=1, behaviour matches pre-2026-05-22 — Coolify's liveness
+  // probe stays cheap.
+  const deep = c.req.query('deep') === '1'
+  let cliProbe: Awaited<ReturnType<typeof probeCliWorks>> | null = null
+  if (deep) {
+    cliProbe = await probeCliWorks()
+  }
+
+  // dispatchReady = the actual signal a caller cares about. /health returns
+  // ok:true (the HTTP server responded), but the pill-switch UI / Nexus side
+  // should branch on dispatchReady, not ok. When deep=0 we omit the field
+  // entirely so cached responses don't lie about a stale CLI probe.
+  const body: Record<string, unknown> = {
+    ok:          true,
     loggedIn,
-    queueDepth:   queue.depth,
-    queueMax:     QUEUE_MAX,
-    repoPath:     REPO_PATH,
-    jobsTracked:  jobs.size(),
-  })
+    queueDepth:  queue.depth,
+    queueMax:    QUEUE_MAX,
+    repoPath:    REPO_PATH,
+    jobsTracked: jobs.size(),
+  }
+  if (cliProbe) {
+    body.cliProbe       = cliProbe
+    body.dispatchReady  = loggedIn && cliProbe.ok
+  }
+  return c.json(body)
 })
 
 app.post('/api/sessions/:sessionId/messages', async c => {

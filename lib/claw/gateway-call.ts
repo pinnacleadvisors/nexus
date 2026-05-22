@@ -180,14 +180,43 @@ export async function callGateway(opts: GatewayCallOpts): Promise<GatewayCallRes
     })
     clearTimeout(timeout)
 
+    // Read text first so we can both diagnose AND attempt JSON parse. Reading
+    // a Response body twice errors; reading text and parsing locally lets us
+    // surface the raw payload on parse failure (the 2026-05-22 codex pill
+    // 502 incident: Coolify Traefik returned 502 with an HTML page that
+    // res.json() silently dropped → caller saw bare "gateway 502" with no
+    // diagnostic).
+    const rawText = await res.text().catch(() => '')
     let parsed: unknown = null
-    try { parsed = await res.json() } catch { /* non-JSON body — leave null */ }
+    if (rawText) {
+      try { parsed = JSON.parse(rawText) } catch { /* non-JSON body — keep rawText for diagnostics */ }
+    }
 
     if (!res.ok) {
-      const errText =
-        (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error: unknown }).error === 'string')
+      const parsedError =
+        parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error: unknown }).error === 'string'
           ? (parsed as { error: string }).error
-          : `gateway ${res.status}`
+          : null
+
+      // Distinguish our gateway's structured 502 (parsedError present) from a
+      // reverse-proxy 502 (no JSON body, often an HTML error page). The latter
+      // means the container is unreachable mid-request — usually OOM during
+      // codex CLI spawn, container restart during a Coolify deploy, or a
+      // Cloudflare tunnel hiccup. Distinct error code lets the caller decide
+      // whether to retry.
+      let errText: string
+      if (parsedError) {
+        errText = parsedError
+      } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+        const ct      = res.headers.get('content-type') ?? 'unknown'
+        const server  = res.headers.get('server')       ?? 'unknown'
+        const hint    = rawText
+          ? `non-JSON body (server=${server}, content-type=${ct}, first 120 chars: ${rawText.slice(0, 120).replace(/\s+/g, ' ')})`
+          : `empty body (server=${server}, content-type=${ct})`
+        errText = `gateway ${res.status} from reverse proxy — ${hint}. Likely container restart / OOM / tunnel hiccup — retry usually works.`
+      } else {
+        errText = rawText.slice(0, 200) || `gateway ${res.status}`
+      }
       return { ok: false, text: '', status: res.status, error: errText }
     }
 

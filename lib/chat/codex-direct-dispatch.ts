@@ -66,7 +66,16 @@ export async function dispatchCodexChatTurn(
   }
 
   const t0 = Date.now()
-  const result = await dispatchToCodexGateway({
+
+  // Single retry on transient proxy-level 5xx (502/503/504). Coolify Traefik
+  // returns these when the codex-gateway container is briefly unreachable —
+  // most commonly a container restart during a deploy, OR a Cloudflare tunnel
+  // hiccup. The 2026-05-22 chat-pill incident was exactly this: /health
+  // returned 200 moments before, dispatch returned bare "gateway 502" with
+  // no body. One retry with a 2s backoff catches that case without storming.
+  // We do NOT retry on 4xx (auth / agent-spec missing — terminal), nor on
+  // status=0 (timeout — second attempt will just time out again).
+  const dispatchOnce = () => dispatchToCodexGateway({
     agentSlug:   opts.agentSlug,
     message:     opts.message,
     env:         opts.contextEnv ?? {},
@@ -74,6 +83,16 @@ export async function dispatchCodexChatTurn(
     sessionTag:  opts.sessionTag,
     timeoutMs:   30_000,                       // ~15s slack vs Vercel Pro's 45s POST cap
   })
+
+  let result = await dispatchOnce()
+  const isTransient5xx = (r: typeof result): boolean =>
+    Boolean(r) && r!.ok === false && [502, 503, 504].includes(r!.status)
+
+  if (isTransient5xx(result)) {
+    console.warn(`[codex-direct-dispatch] transient ${result!.status} — retrying once after 2s. error=${result!.error}`)
+    await new Promise(r => setTimeout(r, 2000))
+    result = await dispatchOnce()
+  }
 
   if (!result) {
     return {
@@ -84,13 +103,25 @@ export async function dispatchCodexChatTurn(
     }
   }
   if (!result.ok) {
+    // Hint copy varies by failure mode so the operator sees something
+    // actionable rather than a bare "gateway 502". Order matters — check
+    // specific (404, transient 5xx after-retry) before falling through to
+    // generic.
+    let fallbackHint: string
+    if (result.status === 404) {
+      fallbackHint = 'codex-gateway is missing the agent spec — try Claude for now'
+    } else if ([502, 503, 504].includes(result.status)) {
+      fallbackHint = `Codex gateway returned ${result.status} on both attempts — likely OOM during CLI spawn or a tunnel issue. Check Coolify logs; switch to Claude to continue.`
+    } else if (result.status === 0) {
+      fallbackHint = 'Codex gateway timed out — switch to Claude to continue.'
+    } else {
+      fallbackHint = 'switch to Claude in the chat header to continue'
+    }
     return {
-      ok:           false,
-      mode:         'codex-direct',
-      error:        result.error ?? `codex-gateway returned ${result.status}`,
-      fallbackHint: result.status === 404
-        ? 'codex-gateway is missing the agent spec — try Claude for now'
-        : 'switch to Claude in the chat header to continue',
+      ok:    false,
+      mode:  'codex-direct',
+      error: result.error ?? `codex-gateway returned ${result.status}`,
+      fallbackHint,
     }
   }
 
