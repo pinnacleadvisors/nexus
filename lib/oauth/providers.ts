@@ -364,6 +364,9 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     // per-business container. Key is injected as CLOUDFLARE_API_TOKEN at
     // provision time. Per-domain tokens are recommended — one row per
     // (business, zone) so revoking one domain doesn't bring down others.
+    //
+    // PER-BUSINESS scope = DNS only. Use the "Edit zone DNS" template +
+    // restrict to the specific zone(s) this business owns. No tunnel access.
     id: 'cloudflare-dns',
     name: 'Cloudflare DNS',
     toolkitSlug: 'CLOUDFLARE', // unused — not a Composio toolkit. Kept for shape compat.
@@ -374,6 +377,46 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
     sharePolicy: 'per-business',
     scopePolicy: 'per-business',    apiKeySetup: {
       instructions: 'Cloudflare dashboard → My Profile → API Tokens → Create Token → use the "Edit zone DNS" template. Restrict to the specific zone(s) this business owns. Copy the secret token (only shown once) and paste below.',
+      credentialsUrl: 'https://dash.cloudflare.com/profile/api-tokens',
+      envVar: 'CLOUDFLARE_API_TOKEN',
+    },
+  },
+  {
+    // ADMIN-SCOPE Cloudflare connector — distinct from `cloudflare-dns` above.
+    // Used by platform-copilot (admin scope, shared claude-gateway) for tunnel
+    // ingress edits + cross-zone DNS work. Saved as the Default-scope row in
+    // connected_accounts; never per-business.
+    //
+    // Token scopes the operator must set when creating the token (least
+    // privilege — DON'T grant more):
+    //
+    //   Account permissions:
+    //     - Cloudflare Tunnel: Edit         (create/edit/delete tunnels + ingress)
+    //     - Account Settings:  Read         (account id lookup for tunnel APIs)
+    //
+    //   Zone permissions (restrict to specific zones — DO NOT use "All zones"):
+    //     - DNS:  Edit                       (CNAME upserts for tunnel hostnames)
+    //     - Zone: Read                       (zone id lookup)
+    //
+    //   User permissions:
+    //     - User Details: Read               (token-validity self-check)
+    //
+    //   Optional but recommended:
+    //     - Client IP filter: KVM4 server IP + operator dev-machine IP only
+    //     - TTL: 90 days, rotate via Doppler
+    //
+    // See docs/runbooks/cloudflare-admin-token.md for the click-by-click.
+    id: 'cloudflare',
+    name: 'Cloudflare (admin)',
+    toolkitSlug: 'CLOUDFLARE',
+    category: 'developer',
+    logo: '/logos/cloudflare.svg',
+    actions: [],
+    featuredFor: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',
+    apiKeySetup: {
+      instructions: 'Cloudflare dashboard → My Profile → API Tokens → Create Token → Custom token. Required permissions: Account:Cloudflare Tunnel:Edit + Account:Account Settings:Read + Zone:DNS:Edit + Zone:Zone:Read (restrict to the zones you actually manage) + User:User Details:Read. Recommend a client IP filter (KVM4 + your dev machine) and 90-day TTL. Full guide: docs/runbooks/cloudflare-admin-token.md.',
       credentialsUrl: 'https://dash.cloudflare.com/profile/api-tokens',
       envVar: 'CLOUDFLARE_API_TOKEN',
     },
