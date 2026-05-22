@@ -17,6 +17,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Move a Coolify app KVM2 → KVM4 | `doppler run -- node scripts/migrate-to-lean-kvm.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
+| Diagnose codex-gateway 502 incidents | `npm run diagnose:codex` (add `--probe-dispatch` for a full dispatch test) |
 | Write a fact to memory-hq | `doppler run -- node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom "<title>" --fact="..."` |
 | Pre-commit safety checks | `npm run check:all` |
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
@@ -202,7 +203,32 @@ The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`do
 
 ---
 
-## 9. Specialised / one-off scripts
+## 9. Diagnose codex-gateway 502 incidents
+
+```bash
+npm run diagnose:codex                       # full read-only sweep — Coolify state + logs + /health + /health?deep=1
+npm run diagnose:codex -- --probe-dispatch   # also fire a real dispatch (uses one Codex Pro plan call)
+npm run diagnose:codex -- --logs-lines=500   # pull 500 log lines instead of 200
+```
+
+Hits four surfaces in one command and prints a verdict that maps the symptoms to a most-likely root cause:
+
+| Symptom | Verdict and next steps |
+|---|---|
+| `Cloudflare` 502 + `/health` from outside fails | **`cloudflared` tunnel is down (configured outside Coolify)** — `docker ps \| grep cloudflared` on the Coolify host; check daemon + tunnel logs |
+| Coolify state ≠ `running` | Container down — Start it from the Coolify UI; check Doppler for required env |
+| ≥3 start markers in recent logs | Crash-loop — open Coolify UI logs and find the boot-time error |
+| `Killed` / `out of memory` in logs | OOM during codex CLI spawn — raise the memory limit in Coolify (try 1.5–2GB) |
+| `not logged in` / `auth.json` in logs | Codex auth.json expired — see [`docs/runbooks/codex-gateway-auth-rotation.md`](codex-gateway-auth-rotation.md) |
+| Basic `/health` 200 but `/health?deep=1` reports `dispatchReady:false` | CLI binary or env is broken — restart the container; re-check |
+
+**Required env (in Doppler `prd`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_KVM4_CODEX_UUID` (or `COOLIFY_KVM2_CODEX_UUID`), `CODEX_GATEWAY_URL`. `--probe-dispatch` additionally needs `CODEX_GATEWAY_BEARER_TOKEN` and one entry in `ALLOWED_USER_IDS`.
+
+**Important topology note**: the **Cloudflare Tunnel is configured OUTSIDE Coolify** (see comments in [`services/codex-gateway/docker-compose.yaml`](../../services/codex-gateway/docker-compose.yaml)). `cloudflared` runs as a separate container attached to the shared external `coolify` network, mapping `codex-gw.<your-domain>` → `codex-gateway:3000`. A Cloudflare 502 with `server=cloudflare` + an HTML body is almost never an issue Coolify can show — it means `cloudflared` itself can't reach the origin. SSH to the host and inspect the `cloudflared` container directly. The diagnostic script catches the symptom; the fix lives in the cloudflared sidecar's logs + config.
+
+---
+
+## 10. Specialised / one-off scripts
 
 Less-frequent commands that may show up during incidents, audits, or rollouts.
 
@@ -228,7 +254,7 @@ bash scripts/sync-vercel-env.sh
 
 ---
 
-## 10. Memory MCP server (recovery)
+## 11. Memory MCP server (recovery)
 
 If `memory_atom` / `memory_search` MCP tools return 503 inside a Claude Code session:
 
