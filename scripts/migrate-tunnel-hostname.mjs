@@ -8,9 +8,9 @@
  * ingress). Use when a service migrates between hosts and the old tunnel's
  * cloudflared can no longer reach the origin.
  *
- * 2026-05-22 use case: codex-gateway migrated KVM2/KVM3 → KVM4. The hostname
+ * 2026-05-22 use case: codex-gateway migrated KVM2 → KVM4. The hostname
  * codex-gw.coolifycloudtunnel.uk was still routed via the old
- * `openclaw_codex_kvm2` tunnel (cloudflared on KVM3). cloudflared on KVM3
+ * `openclaw_codex_kvm2` tunnel (cloudflared on KVM2). cloudflared on KVM2
  * can't reach codex-gateway:3000 because that container only exists on KVM4
  * now. The fix is to MOVE the hostname to `nexus-fleet` (cloudflared on
  * KVM4) which CAN resolve codex-gateway:3000 on the shared `coolify` network.
