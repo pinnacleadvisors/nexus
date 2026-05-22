@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "check:retry-storm": "node scripts/check-retry-storm.mjs",
+    "test:e2e":          "playwright test",
+    "test:e2e:headed":   "playwright test --headed",
     "check:sentry-config": "node scripts/check-sentry-config.mjs",
     "check:all": "npm run lint && npx tsc --noEmit && npm run check:retry-storm && npm run check:sentry-config",
     "migrate": "doppler run -- node scripts/migrate.mjs",
@@ -54,6 +56,7 @@
     "undici": "^8.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
