@@ -39,7 +39,7 @@ app/
 │   ├── content/          # Score + generate + variants (Tribe v2, auth-gated, writes experiment variants)
 │   ├── cron/             # Scheduled jobs: metric-optimiser (A9), ingest-metrics (A11), regression-sweep (C2), rebuild-graph (C8), sync-learning-cards (Phase 23), sync-memory, sweep-orphan-cards (2026-05-03), post-deploy-smoke (autonomous QA)
 │   ├── businesses/       # business_operators CRUD; PATCH triggers Slack verification + creates a "🔌 connected" board card (2026-05-03)
-│   ├── health/           # Owner-only health endpoints: /api/health/cron returns per-cron last-run + verdict
+│   ├── health/           # Owner-only health endpoints: /api/health/cron returns per-cron last-run + verdict; /api/health/deep returns per-provider liveness (claude_gateway, codex_gateway, supabase, redis)
 │   ├── dashboard/        # KPI + chart data
 │   ├── experiments/      # A/B experiment CRUD (C5)
 │   ├── gdrive/           # Google Drive upload
@@ -104,6 +104,9 @@ lib/
 ├── neuro-content/        # principles, templates, tones, types
 ├── video/                # kling.ts, runway.ts (partial: heygen, did pending)
 └── utils.ts              # cn() helper
+
+tests/
+└── playwright/           # Local + loop-time verification (operator-owned). Critical-flow specs run via `npx playwright test`. Separate from services/qa-runner (post-deploy production smoke). See task_plan-codex-debug-loop.md Phase 1.
 ```
 
 ## API Patterns
