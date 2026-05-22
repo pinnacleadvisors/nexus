@@ -256,6 +256,53 @@ export type Database = {
         }
         Relationships: []
       }
+      approvals: {
+        Row: {
+          business_slug: string
+          created_at: string
+          created_by_agent: string | null
+          decided_at: string | null
+          decided_by_user: string | null
+          decision_note: string | null
+          id: string
+          payload: Json
+          status: string
+          type: string
+        }
+        Insert: {
+          business_slug: string
+          created_at?: string
+          created_by_agent?: string | null
+          decided_at?: string | null
+          decided_by_user?: string | null
+          decision_note?: string | null
+          id?: string
+          payload?: Json
+          status?: string
+          type: string
+        }
+        Update: {
+          business_slug?: string
+          created_at?: string
+          created_by_agent?: string | null
+          decided_at?: string | null
+          decided_by_user?: string | null
+          decision_note?: string | null
+          id?: string
+          payload?: Json
+          status?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approvals_business_slug_fkey"
+            columns: ["business_slug"]
+            isOneToOne: false
+            referencedRelation: "business_operators"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -342,6 +389,110 @@ export type Database = {
           },
         ]
       }
+      bug_hunt_findings: {
+        Row: {
+          branch: string | null
+          category: string
+          created_at: string
+          detail: string | null
+          id: string
+          iteration: number
+          pr_url: string | null
+          resolved_at: string | null
+          session_id: string
+          severity: string
+          source_path: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          branch?: string | null
+          category: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          iteration: number
+          pr_url?: string | null
+          resolved_at?: string | null
+          session_id: string
+          severity?: string
+          source_path?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          branch?: string | null
+          category?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          iteration?: number
+          pr_url?: string | null
+          resolved_at?: string | null
+          session_id?: string
+          severity?: string
+          source_path?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bug_hunt_findings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bug_hunt_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bug_hunt_sessions: {
+        Row: {
+          budget_usd: number | null
+          codex_window_share_pct: number | null
+          created_at: string
+          ended_at: string | null
+          force_plan_window: boolean | null
+          id: string
+          iteration_count: number | null
+          max_iterations: number | null
+          plan_window_share_pct: number | null
+          scope: string
+          spent_usd: number | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          budget_usd?: number | null
+          codex_window_share_pct?: number | null
+          created_at?: string
+          ended_at?: string | null
+          force_plan_window?: boolean | null
+          id: string
+          iteration_count?: number | null
+          max_iterations?: number | null
+          plan_window_share_pct?: number | null
+          scope: string
+          spent_usd?: number | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          budget_usd?: number | null
+          codex_window_share_pct?: number | null
+          created_at?: string
+          ended_at?: string | null
+          force_plan_window?: boolean | null
+          id?: string
+          iteration_count?: number | null
+          max_iterations?: number | null
+          plan_window_share_pct?: number | null
+          scope?: string
+          spent_usd?: number | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       build_research: {
         Row: {
           created_at: string
@@ -381,15 +532,18 @@ export type Database = {
       business_operators: {
         Row: {
           approval_gates: Json
+          board_members: Json
           brand_voice: string | null
           created_at: string
           current_run_id: string | null
           daily_cron_local_hour: number
           kpi_targets: Json
           last_operator_at: string | null
+          mission: string | null
           money_model: Json
           name: string
           niche: string
+          parent_org_id: string | null
           slack_channel: string | null
           slack_webhook_url: string | null
           slack_webhook_url_enc: string | null
@@ -401,15 +555,18 @@ export type Database = {
         }
         Insert: {
           approval_gates?: Json
+          board_members?: Json
           brand_voice?: string | null
           created_at?: string
           current_run_id?: string | null
           daily_cron_local_hour?: number
           kpi_targets?: Json
           last_operator_at?: string | null
+          mission?: string | null
           money_model?: Json
           name: string
           niche: string
+          parent_org_id?: string | null
           slack_channel?: string | null
           slack_webhook_url?: string | null
           slack_webhook_url_enc?: string | null
@@ -421,15 +578,18 @@ export type Database = {
         }
         Update: {
           approval_gates?: Json
+          board_members?: Json
           brand_voice?: string | null
           created_at?: string
           current_run_id?: string | null
           daily_cron_local_hour?: number
           kpi_targets?: Json
           last_operator_at?: string | null
+          mission?: string | null
           money_model?: Json
           name?: string
           niche?: string
+          parent_org_id?: string | null
           slack_channel?: string | null
           slack_webhook_url?: string | null
           slack_webhook_url_enc?: string | null
@@ -446,6 +606,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "runs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_operators_parent_org_id_fkey"
+            columns: ["parent_org_id"]
+            isOneToOne: false
+            referencedRelation: "business_operators"
+            referencedColumns: ["slug"]
           },
         ]
       }
@@ -470,6 +637,110 @@ export type Database = {
           id?: string
           name?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          metadata: Json
+          role: string
+          session_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role: string
+          session_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_permission_requests: {
+        Row: {
+          created_at: string
+          decision: Json | null
+          id: string
+          job_id: string
+          resolved_at: string | null
+          status: string
+          tool_input: Json
+          tool_name: string
+          tool_use_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decision?: Json | null
+          id?: string
+          job_id: string
+          resolved_at?: string | null
+          status?: string
+          tool_input?: Json
+          tool_name: string
+          tool_use_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decision?: Json | null
+          id?: string
+          job_id?: string
+          resolved_at?: string | null
+          status?: string
+          tool_input?: Json
+          tool_name?: string
+          tool_use_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      chat_sessions: {
+        Row: {
+          agent_slug: string
+          created_at: string
+          id: string
+          last_message_at: string
+          scope: string
+          title: string | null
+          user_id: string
+        }
+        Insert: {
+          agent_slug?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          scope: string
+          title?: string | null
+          user_id: string
+        }
+        Update: {
+          agent_slug?: string
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          scope?: string
+          title?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -527,6 +798,117 @@ export type Database = {
         }
         Relationships: []
       }
+      connected_accounts: {
+        Row: {
+          business_slug: string | null
+          composio_account_id: string | null
+          created_at: string
+          encrypted_api_key: string | null
+          id: string
+          last_used_at: string | null
+          metadata: Json
+          platform: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          business_slug?: string | null
+          composio_account_id?: string | null
+          created_at?: string
+          encrypted_api_key?: string | null
+          id?: string
+          last_used_at?: string | null
+          metadata?: Json
+          platform: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          business_slug?: string | null
+          composio_account_id?: string | null
+          created_at?: string
+          encrypted_api_key?: string | null
+          id?: string
+          last_used_at?: string | null
+          metadata?: Json
+          platform?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      coolify_audit_log: {
+        Row: {
+          action: string
+          args_redacted: Json
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          job_id: string | null
+          result: string
+          scope: string
+          target_uuid: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          args_redacted?: Json
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          result: string
+          scope?: string
+          target_uuid?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          args_redacted?: Json
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          result?: string
+          scope?: string
+          target_uuid?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      coolify_kill_switch: {
+        Row: {
+          created_at: string
+          revoked_at: string | null
+          revoked_by: string | null
+          revoked_reason: string | null
+          singleton: boolean
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_reason?: string | null
+          singleton?: boolean
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          revoked_reason?: string | null
+          singleton?: boolean
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       daily_streaks: {
         Row: {
           current_streak: number
@@ -557,6 +939,30 @@ export type Database = {
           user_id?: string
           xp_today?: number
           xp_total?: number
+        }
+        Relationships: []
+      }
+      experiment_metrics: {
+        Row: {
+          business_slug: string
+          id: string
+          kind: string
+          payload: Json
+          ts: string
+        }
+        Insert: {
+          business_slug: string
+          id?: string
+          kind: string
+          payload?: Json
+          ts?: string
+        }
+        Update: {
+          business_slug?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          ts?: string
         }
         Relationships: []
       }
@@ -756,6 +1162,96 @@ export type Database = {
         }
         Relationships: []
       }
+      gateway_turns: {
+        Row: {
+          cost_estimate_usd: number | null
+          created_at: string
+          duration_ms: number | null
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          plan: string
+          session_tag: string | null
+          tool_calls_count: number | null
+          user_id: string
+        }
+        Insert: {
+          cost_estimate_usd?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          plan: string
+          session_tag?: string | null
+          tool_calls_count?: number | null
+          user_id: string
+        }
+        Update: {
+          cost_estimate_usd?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          plan?: string
+          session_tag?: string | null
+          tool_calls_count?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      goals: {
+        Row: {
+          business_slug: string
+          created_at: string
+          id: string
+          parent_goal_id: string | null
+          status: string
+          success_criteria: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          business_slug: string
+          created_at?: string
+          id?: string
+          parent_goal_id?: string | null
+          status?: string
+          success_criteria?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          business_slug?: string
+          created_at?: string
+          id?: string
+          parent_goal_id?: string | null
+          status?: string
+          success_criteria?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_business_slug_fkey"
+            columns: ["business_slug"]
+            isOneToOne: false
+            referencedRelation: "business_operators"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "goals_parent_goal_id_fkey"
+            columns: ["parent_goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ideas: {
         Row: {
           approx_monthly_cost: number
@@ -818,6 +1314,114 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      issue_comments: {
+        Row: {
+          author_agent: string | null
+          author_user: string | null
+          body: string
+          created_at: string
+          id: string
+          issue_id: string
+        }
+        Insert: {
+          author_agent?: string | null
+          author_user?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          issue_id: string
+        }
+        Update: {
+          author_agent?: string | null
+          author_user?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          issue_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_comments_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      issues: {
+        Row: {
+          assignee_agent: string | null
+          assignee_user: string | null
+          body: string | null
+          business_slug: string
+          checkout_run_id: string | null
+          created_at: string
+          execution_run_id: string | null
+          goal_id: string | null
+          id: string
+          parent_id: string | null
+          status: string
+          status_category: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_agent?: string | null
+          assignee_user?: string | null
+          body?: string | null
+          business_slug: string
+          checkout_run_id?: string | null
+          created_at?: string
+          execution_run_id?: string | null
+          goal_id?: string | null
+          id?: string
+          parent_id?: string | null
+          status?: string
+          status_category?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_agent?: string | null
+          assignee_user?: string | null
+          body?: string | null
+          business_slug?: string
+          checkout_run_id?: string | null
+          created_at?: string
+          execution_run_id?: string | null
+          goal_id?: string | null
+          id?: string
+          parent_id?: string | null
+          status?: string
+          status_category?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issues_business_slug_fkey"
+            columns: ["business_slug"]
+            isOneToOne: false
+            referencedRelation: "business_operators"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "issues_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "issues_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       kill_switches: {
         Row: {
@@ -912,6 +1516,27 @@ export type Database = {
           request_id?: string | null
           route?: string | null
           status?: number | null
+        }
+        Relationships: []
+      }
+      memory_cache: {
+        Row: {
+          cached_at: string
+          content: string
+          path: string
+          sha: string
+        }
+        Insert: {
+          cached_at?: string
+          content: string
+          path: string
+          sha: string
+        }
+        Update: {
+          cached_at?: string
+          content?: string
+          path?: string
+          sha?: string
         }
         Relationships: []
       }
@@ -1201,6 +1826,56 @@ export type Database = {
         }
         Relationships: []
       }
+      operator_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          done: boolean
+          due_at: string | null
+          id: string
+          scope: string
+          source: string
+          source_session_id: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          done?: boolean
+          due_at?: string | null
+          id?: string
+          scope: string
+          source?: string
+          source_session_id?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          done?: boolean
+          due_at?: string | null
+          id?: string
+          scope?: string
+          source?: string
+          source_session_id?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_tasks_source_session_id_fkey"
+            columns: ["source_session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plan_patterns: {
         Row: {
           created_at: string
@@ -1409,21 +2084,27 @@ export type Database = {
       run_events: {
         Row: {
           created_at: string
+          goal_id: string | null
           id: string
+          issue_id: string | null
           kind: string
           payload: Json
           run_id: string
         }
         Insert: {
           created_at?: string
+          goal_id?: string | null
           id?: string
+          issue_id?: string | null
           kind: string
           payload?: Json
           run_id: string
         }
         Update: {
           created_at?: string
+          goal_id?: string | null
           id?: string
+          issue_id?: string | null
           kind?: string
           payload?: Json
           run_id?: string
@@ -1872,6 +2553,7 @@ export type Database = {
         Row: {
           created_at: string
           kind: string
+          metadata: Json
           name: string
           updated_at: string
           user_id: string
@@ -1880,6 +2562,7 @@ export type Database = {
         Insert: {
           created_at?: string
           kind: string
+          metadata?: Json
           name: string
           updated_at?: string
           user_id: string
@@ -1888,6 +2571,7 @@ export type Database = {
         Update: {
           created_at?: string
           kind?: string
+          metadata?: Json
           name?: string
           updated_at?: string
           user_id?: string
@@ -2004,6 +2688,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_issue: {
+        Args: {
+          p_agent_slug?: string
+          p_business_slug: string
+          p_run_id: string
+        }
+        Returns: string
+      }
+      get_issue_ancestry: { Args: { p_issue_id: string }; Returns: Json }
       increment_agent_cost: {
         Args: { p_agent_id: string; p_cost: number; p_tokens: number }
         Returns: undefined
@@ -2044,6 +2737,10 @@ export type Database = {
           slug: string
           title: string
         }[]
+      }
+      release_issue: {
+        Args: { p_issue_id: string; p_run_id: string }
+        Returns: boolean
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

@@ -43,5 +43,23 @@
       "path": "/api/cron/codex-maintainer-tick",
       "schedule": "*/30 * * * *"
     }
-  ]
+  ],
+  "experimentalServices": {
+    "frontend": {
+      "routePrefix": "/",
+      "framework": "nextjs"
+    },
+    "claude-gateway": {
+      "entrypoint": "services/claude-gateway",
+      "routePrefix": "/_/claude-gateway"
+    },
+    "codex-gateway": {
+      "entrypoint": "services/codex-gateway",
+      "routePrefix": "/_/codex-gateway"
+    },
+    "qa-runner": {
+      "entrypoint": "services/qa-runner",
+      "routePrefix": "/_/qa-runner"
+    }
+  }
 }
