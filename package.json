@@ -16,6 +16,8 @@
     "migrate:local": "node scripts/migrate.mjs",
     "types:regen":   "doppler run -- node scripts/regenerate-database-types.mjs",
     "types:regen:local": "node scripts/regenerate-database-types.mjs",
+    "diagnose:codex":       "doppler run -- node scripts/diagnose-codex-gateway.mjs",
+    "diagnose:codex:local": "node scripts/diagnose-codex-gateway.mjs",
     "populate-memory": "doppler run -- node scripts/populate-memory.mjs",
     "populate-memory:local": "node scripts/populate-memory.mjs",
     "deploy": "doppler run -- ./scripts/deploy.sh",
