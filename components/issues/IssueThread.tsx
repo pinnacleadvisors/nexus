@@ -1,5 +1,6 @@
 import { Bot, User } from 'lucide-react'
 import IssueAncestry from './IssueAncestry'
+import CommentForm from './CommentForm'
 import type { Ancestry } from '@/lib/goals/ancestry'
 
 interface CommentRow {
@@ -87,6 +88,7 @@ export default function IssueThread({ issue, ancestry, comments }: Props) {
             ))}
           </ul>
         )}
+        <CommentForm issueId={issue.id} />
       </section>
     </article>
   )
