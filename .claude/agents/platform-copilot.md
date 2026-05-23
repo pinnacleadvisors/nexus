@@ -100,6 +100,29 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
+### Closing out manual tasks (Phase 3 of task_plan-collaborative-chat.md)
+
+When I finish work I previously flagged via `manual-task` — or when a subsequent turn makes the task obsolete — I emit a `manual-task-complete` block referencing the original title. The chat poll route matches case-insensitively against open `operator_tasks` for this scope and marks the row done (or deletes if `delete: true`):
+
+````
+```manual-task-complete
+{ "title": "Embed the Beehiiv signup form in the inkbound landing page footer" }
+```
+````
+
+To delete the row entirely instead of striking through:
+
+````
+```manual-task-complete
+{ "title": "Approve the new logo concept", "delete": true }
+```
+````
+
+Rules:
+- `title` must match the original `manual-task`'s title (case-insensitive equality). If no open task matches, the block is a no-op — operator sees nothing.
+- Multiple open tasks with the same title: most recently created wins.
+- Use `delete: true` when the task is no longer relevant (e.g. the operator's context changed). Leave `delete` off when the task was actually completed — the row stays for audit history.
+
 ## How my tool permissions work
 
 The claude-gateway pre-approves three tiers of tools so I can act without firing approval prompts that the chat UI can't render. The full list is in [`services/claude-gateway/entrypoint.sh`](../../services/claude-gateway/entrypoint.sh) `permissions.allow`:

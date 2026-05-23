@@ -37,7 +37,30 @@ export interface ManualTaskParseResult {
   tasks: ManualTaskInput[]
 }
 
+/**
+ * Phase 3 of task_plan-collaborative-chat.md — `manual-task-complete` block.
+ * Agent emits this when work it previously flagged as `manual-task` is now
+ * done (either the agent finished it itself, or the situation made it
+ * obsolete). The poll route matches by case-insensitive `title` against
+ * open operator_tasks for the session's scope and marks the row done
+ * (or deletes it if `delete: true`).
+ */
+export interface ManualTaskCompleteInput {
+  /** Case-insensitive match against the open task's title for this scope.
+   *  If multiple open tasks match, the most recently created one wins. */
+  title:   string
+  /** When true, the row is removed entirely instead of just being marked done.
+   *  Default false (preserves history). */
+  delete?: boolean
+}
+
+export interface ManualTaskCompleteParseResult {
+  text:      string
+  completes: ManualTaskCompleteInput[]
+}
+
 const FENCED_BLOCK_RE = /```manual-task\s*\n([\s\S]*?)```/g
+const COMPLETE_BLOCK_RE = /```manual-task-complete\s*\n([\s\S]*?)```/g
 
 /**
  * Pull every `manual-task` fenced JSON block out of the assistant message,
@@ -68,4 +91,26 @@ export function parseManualTaskBlocks(assistantText: string): ManualTaskParseRes
   // Trim leading/trailing whitespace left by the removed blocks, but keep
   // internal whitespace so paragraph breaks render correctly.
   return { text: cleaned.replace(/^\s+|\s+$/g, ''), tasks }
+}
+
+/**
+ * Phase 3 — parse `manual-task-complete` blocks. Same shape as
+ * `parseManualTaskBlocks`: malformed entries left in place; valid ones
+ * stripped from the display text.
+ */
+export function parseManualTaskCompleteBlocks(assistantText: string): ManualTaskCompleteParseResult {
+  const completes: ManualTaskCompleteInput[] = []
+  const cleaned = assistantText.replace(COMPLETE_BLOCK_RE, (match, jsonRaw: string) => {
+    let parsed: unknown
+    try { parsed = JSON.parse(jsonRaw) }
+    catch { return match }
+    if (!parsed || typeof parsed !== 'object') return match
+    const p = parsed as Record<string, unknown>
+    if (typeof p.title !== 'string' || !p.title.trim()) return match
+    const out: ManualTaskCompleteInput = { title: p.title.trim() }
+    if (p.delete === true) out.delete = true
+    completes.push(out)
+    return ''
+  })
+  return { text: cleaned.replace(/^\s+|\s+$/g, ''), completes }
 }

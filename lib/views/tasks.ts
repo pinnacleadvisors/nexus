@@ -108,3 +108,21 @@ export async function countOpenTasks(userId: string, scope: string): Promise<num
   const tasks = await listTasks(userId, scope, { done: false, limit: 100 })
   return tasks.length
 }
+
+/**
+ * Phase 3 of task_plan-collaborative-chat.md — find the most recent OPEN
+ * task whose title matches `title` (case-insensitive equality) within a
+ * scope. Returns null if no match. Used by the chat poll route to resolve
+ * `manual-task-complete` blocks the agent emits.
+ *
+ * Matching uses case-insensitive equality (not substring) to avoid
+ * accidental collisions when the agent intends a different task. If the
+ * agent's title doesn't match exactly, the complete is a no-op — the
+ * agent can re-issue with the precise title.
+ */
+export async function findOpenTaskByTitle(userId: string, scope: string, title: string): Promise<OperatorTaskRow | null> {
+  const tasks = await listTasks(userId, scope, { done: false, limit: 100 })
+  const needle = title.trim().toLowerCase()
+  // Most recently created open task wins on multiple matches.
+  return tasks.find(t => t.title.trim().toLowerCase() === needle) ?? null
+}
