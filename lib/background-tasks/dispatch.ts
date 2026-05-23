@@ -133,3 +133,44 @@ export async function countActiveBackgroundTasks(userId: string, scope: string):
   const tasks = await listBackgroundTasks(userId, scope, { statuses: ['pending', 'running'], limit: 100 })
   return tasks.length
 }
+
+// ── Phase 4 v2 dispatcher helpers ─────────────────────────────────────────
+// The dispatch endpoint (app/api/background-tasks/[id]/dispatch) calls these
+// to flip status as it runs the kind-specific handler.
+
+/** Load a single row by id, scoped to the owner. Used by dispatcher pre-flight. */
+export async function getBackgroundTask(userId: string, id: string): Promise<BackgroundTaskRow | null> {
+  const db = createServerClient()
+  if (!db) return null
+  const res = await (db.from('background_tasks' as never) as unknown as SelectChain<BackgroundTaskRow>)
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  return res.data?.[0] ?? null
+}
+
+async function patchStatus(userId: string, id: string, patch: Record<string, unknown>): Promise<BackgroundTaskRow | null> {
+  const db = createServerClient()
+  if (!db) return null
+  const res = await (db.from('background_tasks' as never) as unknown as UpdateChain<BackgroundTaskRow>)
+    .update(patch)
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select()
+    .single()
+  return res.data ?? null
+}
+
+export async function markBackgroundTaskRunning(userId: string, id: string): Promise<BackgroundTaskRow | null> {
+  return patchStatus(userId, id, { status: 'running', started_at: new Date().toISOString() })
+}
+
+export async function markBackgroundTaskDone(userId: string, id: string, result: unknown): Promise<BackgroundTaskRow | null> {
+  return patchStatus(userId, id, { status: 'done', result, finished_at: new Date().toISOString() })
+}
+
+export async function markBackgroundTaskError(userId: string, id: string, error: string): Promise<BackgroundTaskRow | null> {
+  return patchStatus(userId, id, { status: 'error', error: error.slice(0, 1000), finished_at: new Date().toISOString() })
+}
