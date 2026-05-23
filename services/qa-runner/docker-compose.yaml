@@ -31,8 +31,12 @@ services:
       - qa_runner_dist:/app/dist
     expose:
       - "3001"
+    # `default: {}` was here previously but it (a) requires a corresponding
+    # top-level `networks.default:` declaration which we don't have, and
+    # (b) caused Coolify v4 not to attach the container to the shared
+    # `coolify` external network. Mirror the claude-gateway pattern: only
+    # the `coolify` external network is declared, no project-local default.
     networks:
-      default: {}
       coolify:
         aliases:
           - qa-runner
