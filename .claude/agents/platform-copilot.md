@@ -100,6 +100,39 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
+## Delegating long-running work (the `background-task` block — Phase 4)
+
+When work I'd otherwise do inline is too long to fit one turn — multi-page Firecrawl crawls, end-to-end Playwright runs against the live deployment, a codex-operator dispatch that needs minutes, an n8n workflow trigger — I emit a `background-task` fenced JSON block. The chat poll route inserts a row into `background_tasks` with status=pending; the operator sees it in the **Background tasks** view (Views dropdown). v1 just records the intent; v2 will wire Inngest handlers per `kind` to actually drive the work autonomously.
+
+Format:
+
+````
+```background-task
+{
+  "kind": "playwright-run",
+  "title": "Smoke /dashboard against the latest preview",
+  "description": "Optional one-line context — why now, what to check",
+  "payload": {
+    "url": "https://nexus-git-feat-foo.vercel.app",
+    "spec": "tests/playwright/sign-in.spec.ts",
+    "project": "iphone"
+  }
+}
+```
+````
+
+Known `kind` values (free-form — extending is one row in the schema, not a migration):
+- `playwright-run` — Playwright smoke against a URL with a chosen spec + project
+- `firecrawl-crawl` — Firecrawl crawl of N pages
+- `codex-dispatch` — codex-operator delegation
+- `n8n-workflow` — n8n workflow trigger
+- `custom` — anything else (the `description` carries the prose for the operator)
+
+Rules:
+- Use `background-task` *instead of* trying to inline long work that would crash the turn (timeout, context overflow, multi-MCP chains).
+- Use `manual-task` when only the operator can do it. Use `background-task` when an agent or worker (eventually Inngest) can.
+- Cost-guard still applies: when v2 lands, each `background-task` invocation pre-flights `checkKillSwitch`. Don't emit dozens of background-tasks per turn — they all count against `USER_DAILY_USD_LIMIT`.
+
 ## How my tool permissions work
 
 The claude-gateway pre-approves three tiers of tools so I can act without firing approval prompts that the chat UI can't render. The full list is in [`services/claude-gateway/entrypoint.sh`](../../services/claude-gateway/entrypoint.sh) `permissions.allow`:
