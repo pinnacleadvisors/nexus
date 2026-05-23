@@ -25,6 +25,17 @@ RUN npm run build
 FROM mcr.microsoft.com/playwright:v1.49.0-noble AS runtime
 WORKDIR /app
 
+# Doppler CLI — secrets pulled at container startup, so the only env var
+# Coolify (or any orchestrator) needs to set is DOPPLER_TOKEN. Every other
+# secret (QA_RUNNER_HMAC_SECRET, BOT_*, NEXUS_BASE_URL, CLAUDE_GATEWAY_*)
+# flows from Doppler at boot via `doppler run --` (see ENTRYPOINT below).
+# Same pattern as services/claude-gateway/Dockerfile. See AGENTS.md
+# §"Docker images — Doppler as the source of truth".
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+ && curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install only production deps. Playwright's browsers are already in the
 # base image — `npx playwright install` is unnecessary and would re-download.
 COPY package.json ./
@@ -43,4 +54,9 @@ EXPOSE 3001
 # Single-worker Playwright by default to bound RAM on small VPS tiers.
 ENV PLAYWRIGHT_WORKERS=1
 
+# Wrap the runtime command with `doppler run` so all secrets are fetched
+# fresh from Doppler at boot. --fallback writes a local cache after each
+# successful pull; if Doppler is down on a restart, the cache is reused so
+# the container still starts (with whatever was current at the last pull).
+ENTRYPOINT ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--"]
 CMD ["node", "dist/index.js"]
