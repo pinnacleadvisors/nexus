@@ -144,6 +144,18 @@ Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.
 - AI priority in `/api/chat`: Claude Code gateway (self-hosted on Hostinger+Coolify, plan-billed via 20x Max — see `services/claude-gateway/`) → OpenClaw (Claude Pro subscription, legacy fallback) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 
+### Per-agent hooks in `agent_library.hooks` (Phase 6 of collaborative-chat)
+
+Migration 055 added a `hooks jsonb default '{}'` column to `agent_library`. Each agent can carry its own Claude-Code-shape hooks block (PreToolUse / UserPromptSubmit / SessionStart / etc.) — same JSON shape as `~/.claude/settings.json` `hooks` keys. When the claude-gateway spawns the agent (PR #281 wiring), it merges:
+
+1. The repo-wide hooks from `/repo/.claude/hooks/*.sh` (`check-write-size.sh`, `skill-router.sh`)
+2. The agent-specific hooks from `agent_library.hooks` for the spawned slug
+3. (Future) The operator's own hooks from their own `~/.claude/settings.json` if mounted
+
+Result is written to `/root/.claude/settings.json` at boot. v1 = column exists with default `{}` (no behavioural change). The follow-up entrypoint wiring lands in its own PR so this migration can apply independently. When that lands, agent_library rows can opt into custom hooks via `update agent_library set hooks = '...' where slug = '...'`.
+
+Why per-agent: some agents (e.g. `business-operator` running cyclic crons) want very different hook behaviour than `platform-copilot` (interactive). The repo-wide hooks are the floor; the column lets each agent opt up.
+
 ### Docker images and docker-compose — Doppler as the source of truth
 
 **Rule:** when you create a new `Dockerfile` or `docker-compose.yaml` for a Nexus service that ships on Coolify, **the only secret Coolify (or any orchestrator) should need to set is `DOPPLER_TOKEN`.** Every other env var is fetched from Doppler at container boot by wrapping the runtime command in `doppler run --`.
