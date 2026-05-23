@@ -12,9 +12,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon } from 'lucide-react'
+import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon, Menu } from 'lucide-react'
 import ApprovalCard from './ApprovalCard'
-import SessionSidebar, { type SessionSummary } from './SessionSidebar'
+import { type SessionSummary } from './SessionSidebar'
+import MobileAwareSessionSidebar from './MobileAwareSessionSidebar'
 import ToolCallCard from './ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
@@ -195,6 +196,10 @@ export default function PlatformChat() {
   // Phase 1 of task_plan-collaborative-chat.md — per-turn mode + model.
   const { value: chatMode,  setValue: setChatMode  } = useChatMode('nexus:platform-chat:mode')
   const { value: chatModel, setValue: setChatModel } = useChatModel('nexus:platform-chat:model')
+
+  // Phase 2C — mobile session sidebar reveal state. Closed by default; the
+  // hamburger button in the chat header toggles it. Desktop ignores this.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   // Pending CLI tool-permission requests from the broker MCP (PR #189).
   // Refreshes on every poll tick while the turn is running; cleared when
@@ -719,25 +724,52 @@ export default function PlatformChat() {
   return (
     <div className="flex h-[calc(100vh-200px)] min-h-[500px]">
       {/* Phase 4 — session sidebar (left rail) */}
-      <SessionSidebar
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        loading={sessionsLoading}
-        onSelect={setActiveSessionId}
-        onNew={handleNewChat}
-        onDelete={handleDeleteSession}
-      />
+      <div className="hidden md:flex md:h-full">
+        <MobileAwareSessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          loading={sessionsLoading}
+          onSelect={setActiveSessionId}
+          onNew={handleNewChat}
+          onDelete={handleDeleteSession}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
+      </div>
+      {/* Mobile-only sidebar — drawer with hamburger reveal. */}
+      <div className="md:hidden">
+        <MobileAwareSessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          loading={sessionsLoading}
+          onSelect={setActiveSessionId}
+          onNew={handleNewChat}
+          onDelete={handleDeleteSession}
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
+      </div>
 
       {/* Chat column (right of sidebar) */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header strip — explains scope + Views dropdown on the right */}
         <div className="px-4 py-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-3">
+            {/* Phase 2C — hamburger to reveal session sidebar on mobile. */}
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open chat sessions"
+              title="Chat sessions"
+              className="md:hidden shrink-0 p-2 min-h-[44px] min-w-[44px] rounded-lg flex items-center justify-center transition-colors"
+              style={{ color: '#9090b0', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Menu size={16} />
+            </button>
             <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
               <Sparkles size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
               <span style={{ color: '#e8e8f0' }}>Platform copilot</span>
-              <span style={{ color: '#55556a' }}>—</span>
-              <span className="truncate" style={{ color: '#9090b0' }}>
+              <span className="hidden sm:inline" style={{ color: '#55556a' }}>—</span>
+              <span className="hidden sm:inline truncate" style={{ color: '#9090b0' }}>
                 scoped to Nexus itself, uses admin-scope connections (Vercel, GitHub, Slack, Stripe, …) via the hard-isolation MCP
               </span>
             </div>

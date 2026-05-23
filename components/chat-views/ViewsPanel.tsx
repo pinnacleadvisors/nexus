@@ -1,18 +1,26 @@
 'use client'
 
 /**
- * ViewsPanel — slide-in side panel container that hosts the active view.
+ * ViewsPanel — adaptive container that hosts the active view.
  *
- * Anchored to the right edge of the chat surface. Visible width is 360px
- * (narrow enough to keep the chat readable beside it on a 13" screen,
- * wide enough for a checklist + medium-length descriptions).
+ * Two presentations driven by viewport width:
  *
- * Children render the active view (TasksView / ApprovalsView / CalendarView).
- * The panel itself only handles the chrome — close button, title, layout.
+ *   - Desktop (≥ md, 768px): slide-in side panel anchored to the right edge.
+ *     Resizable via left-edge drag, persists width per `storageKey`. Matches
+ *     the pre-Phase-2 behaviour for laptop ops.
+ *
+ *   - Mobile (< md): Vaul-backed bottom-sheet. Drag handle at the top,
+ *     swipe-down to dismiss, snap-points at 50%/90% of viewport height.
+ *     Matches the Claude Code mobile-app pattern the operator likes.
+ *
+ * Phase 2A of task_plan-collaborative-chat.md (PR #285). Children render
+ * the active view (TasksView / ApprovalsView / CalendarView / BugHuntView /
+ * HealthView) — the chrome here only handles layout + dismissal.
  */
 
 import { X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Drawer } from 'vaul'
 import { useResizable } from '@/lib/hooks/useResizable'
 
 interface Props {
@@ -24,7 +32,23 @@ interface Props {
   storageKey?: string
 }
 
-export default function ViewsPanel({ title, subtitle, onClose, children, storageKey = 'nexus:views-panel:width' }: Props) {
+export default function ViewsPanel(props: Props) {
+  // matchMedia hook — `isMobile` flips when the operator drags a window
+  // across the 768px threshold so the presentation swaps without a remount.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    function update() { setIsMobile(mq.matches) }
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  return isMobile ? <MobileSheet {...props} /> : <DesktopPanel {...props} />
+}
+
+function DesktopPanel({ title, subtitle, onClose, children, storageKey = 'nexus:views-panel:width' }: Props) {
   const resize = useResizable({
     key:          storageKey,
     defaultPx:    360,
@@ -47,7 +71,6 @@ export default function ViewsPanel({ title, subtitle, onClose, children, storage
         transition:           resize.isDragging ? undefined : 'width 100ms ease-out',
       }}
     >
-      {/* Drag handle on the left edge — visible only on hover unless actively dragging. */}
       <div
         {...resize.handleProps}
         style={{
@@ -78,5 +101,56 @@ export default function ViewsPanel({ title, subtitle, onClose, children, storage
         {children}
       </div>
     </aside>
+  )
+}
+
+function MobileSheet({ title, subtitle, onClose, children }: Props) {
+  // Vaul's Drawer.Root is controlled — `open` stays true while we're rendered,
+  // and the operator's swipe/backdrop tap triggers our onClose via onOpenChange.
+  return (
+    <Drawer.Root open={true} onOpenChange={(o) => { if (!o) onClose() }} shouldScaleBackground={false}>
+      <Drawer.Portal>
+        <Drawer.Overlay
+          className="fixed inset-0 z-40"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+        />
+        <Drawer.Content
+          className="fixed bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-2xl outline-none"
+          style={{
+            background:           'linear-gradient(180deg, rgba(15,15,24,0.98), rgba(8,8,14,0.98))',
+            borderTop:            '1px solid rgba(255,255,255,0.10)',
+            backdropFilter:       'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            maxHeight:            '92vh',
+            minHeight:            '50vh',
+            boxShadow:            '0 -10px 32px rgba(0,0,0,0.5)',
+          }}
+        >
+          {/* Vaul-conventional drag handle */}
+          <div className="mx-auto mt-2 mb-1 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }} />
+          <Drawer.Title asChild>
+            <header className="flex items-start justify-between gap-2 px-4 py-3 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate" style={{ color: '#e8e8f0' }}>{title}</div>
+                {subtitle && <div className="text-[10px] mt-0.5 truncate" style={{ color: '#9090b0' }}>{subtitle}</div>}
+              </div>
+              <button
+                onClick={onClose}
+                title="Close"
+                aria-label="Close view"
+                className="shrink-0 p-1.5 min-h-[36px] min-w-[36px] rounded transition-colors"
+                style={{ color: '#9090b0' }}
+              >
+                <X size={16} />
+              </button>
+            </header>
+          </Drawer.Title>
+          <Drawer.Description className="sr-only">Mobile bottom-sheet view</Drawer.Description>
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            {children}
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   )
 }

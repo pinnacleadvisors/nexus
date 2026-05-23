@@ -18,9 +18,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as TerminalIcon, Copy, Check } from 'lucide-react'
+import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as TerminalIcon, Copy, Check, Menu } from 'lucide-react'
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
-import SessionSidebar, { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
+import { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
+import MobileAwareSessionSidebar from '@/components/platform-chat/MobileAwareSessionSidebar'
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
@@ -171,6 +172,9 @@ export default function BusinessChat({ slug, name }: Props) {
   // Phase 1 of task_plan-collaborative-chat.md — per-business mode + model.
   const { value: chatMode,  setValue: setChatMode  } = useChatMode(`nexus:business-chat:${slug}:mode`)
   const { value: chatModel, setValue: setChatModel } = useChatModel(`nexus:business-chat:${slug}:model`)
+
+  // Phase 2C — mobile session sidebar reveal state.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   // Pending CLI tool-permission requests — same wiring as PlatformChat.
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
@@ -617,23 +621,48 @@ export default function BusinessChat({ slug, name }: Props) {
 
   return (
     <div className="flex h-[calc(100vh-200px)] min-h-[500px]">
-      <SessionSidebar
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        loading={sessionsLoading}
-        onSelect={setActiveSessionId}
-        onNew={handleNewChat}
-        onDelete={handleDeleteSession}
-      />
+      <div className="hidden md:flex md:h-full">
+        <MobileAwareSessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          loading={sessionsLoading}
+          onSelect={setActiveSessionId}
+          onNew={handleNewChat}
+          onDelete={handleDeleteSession}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
+      </div>
+      <div className="md:hidden">
+        <MobileAwareSessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          loading={sessionsLoading}
+          onSelect={setActiveSessionId}
+          onNew={handleNewChat}
+          onDelete={handleDeleteSession}
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-4 py-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open chat sessions"
+              title="Chat sessions"
+              className="md:hidden shrink-0 p-2 min-h-[44px] min-w-[44px] rounded-lg flex items-center justify-center transition-colors"
+              style={{ color: '#9090b0', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Menu size={16} />
+            </button>
             <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
               <Briefcase size={14} style={{ color: '#a8a3ff' }} className="shrink-0" />
               <span style={{ color: '#e8e8f0' }}>{name} copilot</span>
-              <span style={{ color: '#55556a' }}>—</span>
-              <span className="truncate" style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
+              <span className="hidden sm:inline" style={{ color: '#55556a' }}>—</span>
+              <span className="hidden sm:inline truncate" style={{ color: '#9090b0' }}>scoped to this business, uses per-business + Shared connections</span>
             </div>
             <ViewsDropdown
               scope={viewScope}
