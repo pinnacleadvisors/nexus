@@ -332,28 +332,111 @@ Once approved:
 - Edits in `/repo` are ephemeral (entrypoint resets to `origin/<ref>` on next boot) — they only matter for syntax-checking with `Read`/`Bash`. The branch's content lives on GitHub; that's the source of truth.
 
 ### 4. Verify locally (no approval needed — read-only)
-- Run `Bash`: `cd /repo && npx tsc --noEmit` to catch type errors before the operator wastes a preview deploy on a broken build
-- Run `Bash`: `cd /repo && npm run check:retry-storm` if the change touched API routes, polling, or migrations
-- If checks fail, surface the errors and ask the operator whether to push another commit on the same branch or scrap and replan
 
-### 5. Open PR (APPROVAL GATE — small one, usually quick)
-- `admin_execute_action(platform='github', action='GITHUB_CREATE_A_PULL_REQUEST', args={title, body, head, base: 'main'})`
-- PR body should include: what + why, files touched (with line counts), test plan, risks
-- Surface the PR URL + the **Vercel preview URL** to the operator. Preview URLs follow the pattern `https://nexus-git-<branch-slug>-<team>.vercel.app` (Vercel auto-generates them; check the PR's "Deployments" sidebar for the actual one if the slug normalisation is uncertain)
+#### 4a. Static checks (always)
+- `cd /repo && npx tsc --noEmit` — catches type errors before the operator wastes a preview deploy on a broken build.
+- `cd /repo && npm run check:retry-storm` — if the change touched API routes, polling, or migrations.
+- `cd /repo && npm run check:lockfile` — if `package.json` was edited.
+- `cd /repo && npm run check:sentry-config` — if any Sentry config files were touched.
+- If any check fails, surface the errors and ask the operator whether to push another commit on the same branch or scrap and replan.
 
-### 6. Preview verification (operator clicks around)
+#### 4b. UI verify on real dev server — MANDATORY for UI changes
+
+Phase 3 of `task_plan-mobile-copilot.md`. **If the edit-group touches any of these surfaces, I MUST take a laptop + mobile screenshot pair BEFORE proposing step 5**:
+
+- `app/(protected)/**/*.tsx`, `app/(public)/**/*.tsx`, `app/manage-platform/**/*.tsx`
+- `components/**/*.tsx`
+- `app/globals.css`, `tailwind.config.*`, `next.config.ts` (when affecting layout)
+
+The screenshot pair is taken by delegating to **codex-operator** (its container has Playwright 1.49.1 + Chromium pre-installed; the claude-gateway does not). Boilerplate:
+
+```
+delegate_to_codex({
+  agent: "codex-operator",
+  task: `Verify the UI change at branch <branch-slug>.
+
+  1. Mint a fresh Clerk sign-in ticket:
+     curl -X POST $NEXUS_BASE_URL/api/admin/issue-bot-session \\
+       -H "X-Nexus-Signature: sha256=$(echo -n '{"userId":"$BOT_CLERK_USER_ID"}' | openssl dgst -sha256 -hmac "$BOT_ISSUER_SECRET" -hex | cut -d' ' -f2 | sed 's/^/sha256=/')" \\
+       -H "X-Nexus-Timestamp: $(date +%s000)" \\
+       -d '{"userId":"$BOT_CLERK_USER_ID"}'
+  2. Boot dev server: cd /repo && git checkout <branch> && npm install --silent && npm run dev &
+     wait for http://localhost:3000 to return 200.
+  3. Redeem the ticket: page.goto(<ticket-url>).
+  4. Navigate to <route-changed>.
+  5. Screenshot at 1280×800 (Desktop Chrome), upload to Vercel Blob, get URL A.
+  6. Screenshot at 375×812 (iPhone 12), upload to Vercel Blob, get URL B.
+  7. Return both URLs as JSON: { laptop: "...", mobile: "..." }.`
+})
+```
+
+When the codex transcript returns, I embed BOTH screenshots inline in my next assistant message:
+
+```
+**Laptop preview** (1280×800)
+![laptop](<URL A>)
+
+**Mobile preview** (375×812)
+![mobile](<URL B>)
+```
+
+The operator sees the result BEFORE the PR is opened. If they spot a regression, we loop back to step 3 on the same branch.
+
+**No approval gate** for the screenshot pass itself — it's read-only (a dev server + a screenshot). The cost (~$0.05 per delegation) is inside `USER_DAILY_USD_LIMIT`; `checkKillSwitch(null)` is verified before delegating.
+
+#### 4c. Spec subset (when applicable)
+If a Playwright spec already exists under `tests/playwright/` matching the change scope (e.g. `dashboard-mobile.spec.ts` for a dashboard edit), delegate to codex to run it:
+
+```
+delegate_to_codex({
+  agent: "codex-operator",
+  task: "cd /repo && npx playwright test --project=iphone tests/playwright/dashboard-mobile.spec.ts. Boot env: BOT_SESSION_TICKET_URL=<ticket-url>. Report PASS/FAIL with failing assertion text."
+})
+```
+
+Do NOT run the full suite (`npx playwright test` no flag) unless the operator asks — 27 invocations cost ~10× a single targeted run.
+
+### 5. Open DRAFT PR (no approval gate — `draft: true` mandatory)
+
+Phase 3 lifted the explicit "open PR" approval gate. Rationale: opening a draft PR is non-destructive (Vercel previews build on every commit anyway), and the operator has already seen the screenshot pair from 4b. Their decision happens at merge (step 7), not at PR creation. This cuts one approval card per change.
+
+```
+admin_execute_action(platform='github',
+  action='GITHUB_CREATE_A_PULL_REQUEST',
+  args={
+    title:   '<conventional commit style>',
+    body:    '<see below>',
+    head:    '<branch-slug>',
+    base:    'main',
+    draft:   true   // ← MANDATORY. Non-negotiable per Phase 3.
+  })
+```
+
+`draft: true` is mandatory. A non-draft PR triggers automation hooks (auto-assignment, ci-blocking labels) that should only fire after the operator marks the PR ready. If `draft` is omitted or false, the operator's existing branch protection should reject the call; surface the error and retry with the flag.
+
+PR body must include:
+- **Summary** — what + why in 1-2 sentences.
+- **Files touched** — table with line counts.
+- **Screenshots** — embed the same two URLs from step 4b so the PR is reviewable on GitHub without the chat context.
+- **Test plan** — list of operator-verifiable items.
+- **Risks** — known unknowns.
+
+Surface the PR URL + Vercel preview URL to the operator. Preview URLs follow the pattern `https://nexus-git-<branch-slug>-<team>.vercel.app`.
+
+### 6. Preview verification (operator clicks around — same as before)
 The operator opens the preview URL and tests the change in a real browser. I can help by:
-- Calling `VERCEL_LIST_DEPLOYMENTS` to confirm the preview deploy succeeded (state=READY)
-- `WebFetch` against the preview URL to verify HTTP responses on key routes (`/sign-in`, `/dashboard`, the route I changed)
-- Suggesting specific paths to test based on the change
+- Calling `VERCEL_LIST_DEPLOYMENTS` to confirm the preview deploy succeeded (state=READY).
+- `WebFetch` against the preview URL to verify HTTP responses on key routes.
+- Re-running the screenshot pair against the preview URL if the operator wants a "production-like" image.
+- Suggesting specific paths to test based on the change.
 
-DO NOT proceed to merge until the operator explicitly confirms the preview works. If they report a bug, loop back to step 3 (more commits on the same branch).
+DO NOT proceed to merge until the operator explicitly confirms the preview works. If they report a bug, loop back to step 3 (more commits on the same branch). When the operator says "looks good, mark it ready" → call `GITHUB_UPDATE_A_PULL_REQUEST` to flip `draft: false`.
 
 ### 7. Merge to main (APPROVAL GATE — explicit "merge it")
 - `admin_execute_action(platform='github', action='GITHUB_MERGE_A_PULL_REQUEST', args={pull_number, merge_method: 'merge' or 'squash'})`
-- Vercel auto-deploys main → production
-- Write a memory-hq atom for any non-obvious decision or pattern discovered during the change
-- Confirm production deploy succeeded via `VERCEL_LIST_DEPLOYMENTS` filtered to `target='production'`
+- Vercel auto-deploys main → production.
+- Write a memory-hq atom for any non-obvious decision or pattern discovered during the change.
+- Confirm production deploy succeeded via `VERCEL_LIST_DEPLOYMENTS` filtered to `target='production'`.
 
 ## Connected platform tips
 
