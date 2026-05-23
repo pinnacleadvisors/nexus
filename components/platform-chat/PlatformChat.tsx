@@ -849,7 +849,9 @@ export default function PlatformChat() {
           <button
             onClick={() => void send()}
             disabled={busy || !input.trim()}
-            className="self-end px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            // Tap-target ≥44px on mobile per Phase 2 of task_plan-mobile-copilot.md.
+            // px-3.5 keeps the desktop weight; min-h-[44px] is the floor.
+            className="self-end px-3.5 py-2 min-h-[44px] rounded-lg flex items-center gap-1.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
               border:     '1px solid rgba(108,99,255,0.30)',

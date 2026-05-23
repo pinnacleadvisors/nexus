@@ -3,10 +3,12 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * Playwright config for the autonomous QA runner.
  *
- * - Single project: chromium-headless. The orchestrator dispatches fix-attempts
- *   on failure, so adding browsers multiplies dispatch cost without changing
- *   the signal. Add WebKit/Firefox only when an issue is suspected to be
- *   browser-specific.
+ * Projects mirror tests/playwright/playwright.config.ts (Phase 2 of
+ * task_plan-mobile-copilot.md): chromium desktop, iPhone 12, Pixel 5.
+ * The orchestrator dispatches per-project so a mobile-only regression
+ * surfaces with the same fix-attempt loop as a desktop one — and the
+ * orchestrator can subset to `--project=iphone` when triaging.
+ *
  * - Single worker by default (`PLAYWRIGHT_WORKERS=1`) — small VPS tiers
  *   can't afford parallel Chromium instances. Bump on a 4 GB+ host.
  * - `BASE_URL` defaults to the local Vercel preview that the cron triggers
@@ -37,6 +39,14 @@ export default defineConfig({
     {
       name: 'chromium',
       use:  { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'iphone',
+      use:  { ...devices['iPhone 12'] },
+    },
+    {
+      name: 'android',
+      use:  { ...devices['Pixel 5'] },
     },
   ],
   outputDir: 'dist/test-results',
