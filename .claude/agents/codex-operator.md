@@ -107,3 +107,13 @@ The spec is portable. Any runtime that can: spawn a shell, fetch URLs, and read/
 - I do NOT hold financial / auth secrets. Secret-gated work → doppler-broker.
 - I do NOT bypass the deny-list, the firewall, or the trust ladder. If a task requires it, I refuse and explain why.
 - I am NOT a long-lived process. Each invocation is one task; archive results before exiting.
+
+---
+
+## Topology update — KVM2 retired 2026-05-22
+
+This spec was authored when the codex-gateway ran on Hostinger KVM2. **As of 2026-05-22 the codex-gateway runs on KVM4** alongside `nexus-app`, `claude-gateway`, `nexus-sandbox`, `qa-runner`, `firecrawl`, and the migrated `n8n` instance. The KVM2 VPS itself was decommissioned via [`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs) per ADR 006 (lean-mode pivot).
+
+Everything in this spec — the sandbox Doppler config, the deny-list, the UFW egress block on consoles, the L0 trust ladder, the `doppler-broker` handoff — applies unchanged on KVM4. Read references to "KVM2 VPS" / "KVM2 firewall" as "KVM4 codex-gateway container" unless they're explicitly about the historical migration.
+
+Doppler env vars still named `COOLIFY_KVM2_*` are retained as dead-weight from that era but are not referenced by any production code; new scripts should use `COOLIFY_KVM4_*` only.

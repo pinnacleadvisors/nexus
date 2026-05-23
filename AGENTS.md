@@ -34,13 +34,15 @@ These apply to **every** agent — managed sub-agents, Inngest crons, n8n workfl
 - Every notable incident, root-cause discovery, vendor-quirk, or architectural decision gets one atom. Link to the relevant MOC (`mocs/<topic>`) — atoms without a MOC become orphans on the next `cli.mjs lint`.
 - Trivial fixes (typos, one-line config, package bumps) skip the atom — atom spam dilutes the signal.
 
-**Topology — what runs where:**
-- **KVM2** = shared `codex-gateway` (one Compose stack handles every business's `codex-maintainer` ticks). Sandbox Doppler config — no financial / secret-management secrets. Use for execution-heavy work (sysadmin, Coolify health, Vercel build-log scans, fresh-state SaaS research).
-- **KVM4** = per-business `claude-gateway` containers (one per `experiment_flag=true` business, Coolify-API-managed). Has the business's MCP set + `apiKeySetup` keys injected via `manifest.requiredEnv`.
-- **Vercel** = shared team. Per-business *projects* (one project = one storefront/site) under that team. Custom domains attached at the project level — visitors don't see team identity.
+**Topology — what runs where (post-lean-mode, as of 2026-05-24):**
+- **KVM4** = the only Coolify host. Runs `nexus-app` (Next.js platform), `claude-gateway`, `codex-gateway`, `nexus-sandbox`, `qa-runner`, `firecrawl`, and the migrated `n8n` instance side-by-side. Per ADR 006 (lean-mode pivot, 2026-05-19): a single KVM hosts everything until paying tenants justify scale-mode again.
+- **KVM2 — RETIRED 2026-05-22.** Used to host the shared `codex-gateway`. The gateway was migrated to KVM4 by `scripts/migrate-to-lean-kvm.mjs`; the KVM2 VPS itself was decommissioned. Older docs / agent specs may still reference KVM2 by name — read those as "KVM4 now" unless they're explicitly about the migration runbook.
+- **KVM1 / Hostinger n8n — RETIRED 2026-05-22.** Hostinger KVM1 VPS expired; n8n was migrated to KVM4 via [`docs/runbooks/n8n-kvm1-to-coolify.md`](docs/runbooks/n8n-kvm1-to-coolify.md). All workflows + the credential set encrypted under `N8N_ENCRYPTION_KEY` were preserved.
+- **Vercel** = previously hosted `nexus-app`. **Disabled in lean mode** ([PR #238](https://github.com/pinnacleadvisors/nexus/pull/238) — pulled into Coolify-on-KVM4). The Vercel project + per-business projects code stays in tree behind `LEAN_MODE` short-circuits — flip the flag to restore. Cron jobs ([`vercel.json`](vercel.json)) now run via cron-job.org, not Vercel crons.
 - **Stripe** = shared account. Per-business attribution via `metadata.business_slug`. One tax form, one payout, one revenue truth source.
 - **Supabase** = shared DB. Partition key is `business_slug`. RLS allows service-role writes from API routes; direct client reads disallowed.
 - **Composio** = shared org. `connected_accounts` rows scoped per-business OR user-default; `executeBusinessAction()` resolves in that order.
+- **Cron-job.org** = the platform's scheduler post-lean-mode. All cron entries from `vercel.json` are pushed via [`scripts/migrate-crons-to-cronjob-org.mjs`](scripts/migrate-crons-to-cronjob-org.mjs).
 
 **Memory query order (every agent, every task):**
 1. `memory/INDEX.md` (≤ 500 tokens) — topic map across Layers 1 & 2

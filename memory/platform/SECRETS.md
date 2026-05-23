@@ -34,7 +34,7 @@
 |-----|---------|
 | `CLAUDE_CODE_GATEWAY_URL` | **Primary.** Self-hosted Claude Code instance on Hostinger + Coolify (`services/claude-gateway/`). Drains the user's 20x Max plan instead of API credits. Resolves before OpenClaw in `lib/claw/business-client.ts`. |
 | `CLAUDE_CODE_BEARER_TOKEN` | Shared secret used both as bearer auth and HMAC key (`X-Nexus-Signature`) when Nexus calls the gateway. Must match `CLAUDE_GATEWAY_BEARER` set on the gateway container. |
-| `CODEX_GATEWAY_URL` | **Phase 8.** Self-hosted Codex CLI gateway on Hostinger KVM2 (`services/codex-gateway/`). Drains the user's ChatGPT Pro 10x plan. Routed to when `/api/claude-session/dispatch` body specifies `model: 'gpt-5.5-codex'` (or any `gpt*` / `codex*` prefix). See ADR 002. |
+| `CODEX_GATEWAY_URL` | **Phase 8.** Self-hosted Codex CLI gateway on **KVM4** (`services/codex-gateway/` — migrated from Hostinger KVM2 on 2026-05-22 via `scripts/migrate-to-lean-kvm.mjs`). Drains the user's ChatGPT Pro 10x plan. Routed to when `/api/claude-session/dispatch` body specifies `model: 'gpt-5.5-codex'` (or any `gpt*` / `codex*` prefix), or when the chat composer's model dropdown is on "Codex 5.5". See ADR 002 + ADR 006. |
 | `CODEX_GATEWAY_BEARER_TOKEN` | Bearer + HMAC key when Nexus calls the codex gateway. Must match `CODEX_GATEWAY_BEARER` set on the gateway container. |
 | `OPENCLAW_GATEWAY_URL` | Fallback OpenClaw / MyClaw gateway URL (single-tenant fallback when neither business-specific nor Claude Code config exists). |
 | `OPENCLAW_BEARER_TOKEN` | Overrides cookie-based OpenClaw auth. |
@@ -232,7 +232,7 @@ Per-business secrets (NOT env vars — stored in `businesses` table):
 
 ## Codex gateway — container-side env (`services/codex-gateway/`)
 
-Set on the Coolify service running the codex gateway on KVM2 (NOT on Nexus / Vercel):
+Set on the Coolify service running the codex gateway on **KVM4** (KVM2 retired 2026-05-22; NOT on Nexus / Vercel):
 
 | Var | Purpose |
 |-----|---------|
@@ -248,7 +248,7 @@ Set on the Coolify service running the codex gateway on KVM2 (NOT on Nexus / Ver
 | `REQUEST_TIMEOUT_MS` | Per-request timeout for the spawned `codex` CLI (default 180 000). |
 | `CODEX_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `codex-gw.<your-domain>` → this. |
 
-> **Doppler `sandbox` config.** The KVM2 VPS uses a Doppler service token scoped to a `sandbox` config that **excludes** financial / secret-management secrets — see ADR 002 for the deny-list. For secret-gated work, codex must invoke the `doppler-broker` agent (ADR 001). Codex never holds raw values.
+> **Doppler `sandbox` config.** The codex-gateway VPS (KVM4 post-2026-05-22; previously KVM2) uses a Doppler service token scoped to a `sandbox` config that **excludes** financial / secret-management secrets — see ADR 002 for the deny-list. For secret-gated work, codex must invoke the `doppler-broker` agent (ADR 001). Codex never holds raw values.
 
 ## Claude Code gateway — container-side env (`services/claude-gateway/`)
 
@@ -267,7 +267,7 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `MCP_USE_RUBE_FALLBACK` | Optional `0`/`1`. Force the gateway to use the legacy `@composio/rube-mcp` instead of the hard-isolation wrapper. Use for debugging when the wrapper misbehaves. |
 | `MEMORY_HQ_TOKEN` | **New (Phase MCP)** — when set, entrypoint builds + registers `@nexus/mcp-memory` alongside the Composio MCP. Gives platform-copilot durable cross-session memory (write atoms / entities / MOCs into the memory-hq graph, search past learnings). Optional but recommended — same value as Vercel-side `MEMORY_HQ_TOKEN`. |
 | `NEXUS_BASE_URL` | Required when `MEMORY_HQ_TOKEN` is set. The memory-hq MCP routes writes through `POST <NEXUS_BASE_URL>/api/memory/event`. Same value as Vercel-side `NEXUS_BASE_URL`. |
-| `CODEX_GATEWAY_URL` | **New (Phase 2c)** — base URL of the codex-gateway on KVM2. When set together with `CODEX_GATEWAY_BEARER_TOKEN`, the entrypoint builds + registers `@nexus/mcp-codex-delegate` so the platform-copilot can call `delegate_to_codex` directly. Same value as Vercel-side `CODEX_GATEWAY_URL`. |
+| `CODEX_GATEWAY_URL` | **New (Phase 2c)** — base URL of the codex-gateway (KVM4 post-2026-05-22; previously KVM2). When set together with `CODEX_GATEWAY_BEARER_TOKEN`, the entrypoint builds + registers `@nexus/mcp-codex-delegate` so the platform-copilot can call `delegate_to_codex` directly. Same value as Vercel-side `CODEX_GATEWAY_URL`. |
 | `CODEX_GATEWAY_BEARER_TOKEN` | **New (Phase 2c)** — bearer for the codex-delegate MCP's calls to the codex-gateway. Same value across all three sides (Vercel / Nexus app, claude-gateway container, codex-gateway container). |
 | `CODEX_DELEGATE_TIMEOUT_MS` | Optional — total poll budget per `delegate_to_codex` call (default 300000 = 5 min). |
 | `CODEX_DELEGATE_POLL_MS` | Optional — interval between poll ticks (default 3000 = 3s). |
@@ -436,7 +436,7 @@ These grant production-infra access. If a developer's laptop is compromised, you
 
 | Var | Why prd-only |
 |---|---|
-| `COOLIFY_KVM2_API_TOKEN`, `COOLIFY_KVM4_API_TOKEN` | Full Coolify management. Could destroy production apps. Today these are in **all three** envs — consider moving stg/dev to a read-only Coolify token or removing entirely. |
+| `COOLIFY_KVM4_API_TOKEN` | Full Coolify management. Could destroy production apps. Today this is in **all three** envs — consider moving stg/dev to a read-only Coolify token or removing entirely. (`COOLIFY_KVM2_*` env vars are retained in Doppler as legacy from the pre-2026-05-22 KVM2 era — KVM2 itself is decommissioned; do not reference in new code.) |
 | `VERCEL_TOKEN` | Full Vercel project access. Same risk. |
 | `INNGEST_DEPLOYMENT_PROTECTION_KEY` | Production cron triggering. |
 | `STRIPE_WEBHOOK_SECRET` (live) | Real revenue events. Use Stripe **test mode** secrets in stg/dev. |

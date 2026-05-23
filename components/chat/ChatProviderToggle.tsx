@@ -1,22 +1,20 @@
 'use client'
 
 /**
- * ChatProviderToggle — Phase 0 stub from task_plan-model-agnostic-chat.md.
+ * ChatProviderToggle — DEPRECATED 2026-05-24. No longer rendered in
+ * PlatformChat / BusinessChat — the model dropdown ([`ModelSelector`](../platform-chat/ModelSelector.tsx))
+ * now handles claude/codex routing via the selected model's `provider`
+ * field in [`lib/chat/models.ts`](../../lib/chat/models.ts). Pick "Codex 5.5"
+ * to route through codex-direct; any Claude model routes through claude-gateway.
  *
- * A small pill the operator clicks to flip a single chat conversation between:
+ * The component is kept here only because external embeds / older sessions
+ * may still import it for compatibility. Safe to delete once any remaining
+ * imports are migrated.
+ *
+ * Original purpose (historical):
  *   - 'claude'  → existing async-job path; typed blocks (iteration-plan,
  *                 approval-request, edit-plan, etc.) render normally.
  *   - 'codex'   → synchronous /api/.../chat dispatch through codex-gateway.
- *                 Cheaper (subscription-billed), but typed blocks emit
- *                 inconsistently. UI explicitly warns of this.
- *
- * Per-session-scope choice persisted in localStorage under a caller-supplied
- * key so the operator's preference survives reloads but doesn't bleed
- * between platform-chat and per-business chats.
- *
- * Throwaway by design — Task M9 replaces this with a real provider router
- * once the schema-first emission (M1-M7) makes Codex output render with the
- * same fidelity as Claude.
  */
 
 import { useEffect, useState } from 'react'

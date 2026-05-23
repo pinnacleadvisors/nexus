@@ -162,3 +162,11 @@ The agent spec is portable: any runtime that can write a `.md` file, POST JSON t
 - Do NOT implement the underlying capabilities. You emit the workflow; the capabilities exist in `lib/agent-capabilities.ts` and Claude managed agents exist in `.claude/agents/`.
 - Do NOT auto-activate the workflow. The importer sets `active: false`; the owner flips it on after the manual nodes are satisfied.
 - Do NOT exceed 18 nodes. If the idea is that big, split it into a build workflow + a maintain workflow.
+
+---
+
+## Topology update — KVM2 retired 2026-05-22
+
+`model: 'gpt-5.5-codex'` still routes to the Codex gateway sandbox, but that gateway now runs on **KVM4** (KVM2 was decommissioned 2026-05-22 per ADR 006 / `scripts/migrate-to-lean-kvm.mjs`). The trust ladder, the sandbox Doppler config, and the deny-list are unchanged — only the underlying VPS moved. Workflow JSON output requires no changes.
+
+Likewise, the n8n instance the operator ultimately imports into is now on KVM4 (migrated from Hostinger KVM1 via [`docs/runbooks/n8n-kvm1-to-coolify.md`](../../docs/runbooks/n8n-kvm1-to-coolify.md)). Pin URLs in agent specs should reference the KVM4 n8n hostname.

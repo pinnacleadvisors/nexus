@@ -36,10 +36,10 @@ import HealthView from '@/components/chat-views/HealthView'
 import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
-import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
 import { ModeSelector, useChatMode } from './ModeSelector'
 import { ModelSelector, useChatModel } from './ModelSelector'
+import { getModelById } from '@/lib/chat/models'
 
 interface Message {
   role:       'user' | 'assistant'
@@ -396,7 +396,11 @@ export default function PlatformChat() {
       // Step 1 — enqueue. The route auto-creates a session when sessionId
       // is null and returns its id; subsequent turns include it so the
       // user + assistant messages persist into the same conversation.
-      const provider = readChatProvider('nexus:platform-chat:provider')
+      // Provider derives from the selected model — picking "Codex 5.5" from
+      // the model dropdown routes through the codex-direct dispatch path,
+      // any Claude model routes through claude-gateway. Subsumes the
+      // pre-2026-05-24 ChatProviderToggle pill.
+      const provider = getModelById(chatModel).provider
       const enqRes = await fetch('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
@@ -930,7 +934,6 @@ export default function PlatformChat() {
           <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
           <ModeSelector  value={chatMode}  onChange={setChatMode} />
           <ModelSelector value={chatModel} onChange={setChatModel} />
-          <ChatProviderToggle storageKey="nexus:platform-chat:provider" />
           {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
           <ContextIndicator usage={usage} />
         </div>

@@ -586,3 +586,15 @@ When the operator's request can't be fulfilled — missing connection, capped sp
 - *"This ask is ambiguous — by 'check the gateway' do you mean the codex-gateway on KVM2 or the claude-gateway on KVM4? Both have a /health endpoint."*
 
 Never go silent. Even a 1-line "I can't do this because X, try Y" is better than a confusing empty response.
+
+---
+
+## Topology update — KVM2 retired 2026-05-22
+
+References in this spec to "codex-gateway on KVM2" are historical — the codex-gateway runs on **KVM4** alongside the claude-gateway, nexus-app, qa-runner, nexus-sandbox, and the migrated n8n instance. The `delegate_to_codex` MCP tool, the codex-delegate config, and the underlying HTTP API are unchanged; only the underlying host moved. Decommissioning via [`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs) per ADR 006 (lean-mode pivot, 2026-05-19).
+
+The disambiguation example *"do you mean the codex-gateway on KVM2 or the claude-gateway on KVM4?"* still pictures the right kind of ask, but in 2026-05-24 reality both gateways are on the same KVM4 host — distinguish them by service name, not host.
+
+### Model dropdown subsumes ChatProviderToggle
+
+The pre-2026-05-24 `ChatProviderToggle` pill (claude ↔ codex flip) has been removed from the chat composer. The model dropdown (`components/platform-chat/ModelSelector.tsx` / `lib/chat/models.ts`) now drives provider routing via the selected model's `provider` field: picking "Codex 5.5" routes through codex-direct; any Claude model routes through claude-gateway. When an operator asks "switch to codex", instruct them to pick **Codex 5.5** from the model dropdown — there is no longer a separate pill.
