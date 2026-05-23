@@ -21,6 +21,7 @@
 import { parseAssistantMessage } from '@/lib/chat/approval'
 import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
 import { parseBackgroundTaskBlocks } from '@/lib/chat/background-task'
+import { parseSwarmTaskBlocks } from '@/lib/chat/swarm-task'
 import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
@@ -32,6 +33,7 @@ import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
 import type { ApprovalRequest } from '@/lib/chat/approval'
 import type { ManualTaskInput } from '@/lib/chat/manual-task'
 import type { BackgroundTaskInput } from '@/lib/chat/background-task'
+import type { SwarmTaskInput } from '@/lib/chat/swarm-task'
 import type { IterationPlan } from '@/lib/chat/iteration-plan'
 import type { BugHuntFinding } from '@/lib/chat/bug-hunt-finding'
 import type { EditPlan, EditGroupComplete } from '@/lib/chat/edit-plan'
@@ -48,6 +50,9 @@ export interface ParsedTurnBlocks {
    *  agent delegates to a background worker. Rows inserted into
    *  `background_tasks` with status=pending; v2 wires Inngest handlers. */
   background_tasks:     BackgroundTaskInput[]
+  /** Phase 5 of task_plan-collaborative-chat.md — N-parallel swarm. The
+   *  persist routine fans each entry into one parent + N child rows. */
+  swarm_tasks:          SwarmTaskInput[]
   iteration_plans:      IterationPlan[]
   findings:             BugHuntFinding[]
   edit_plans:           EditPlan[]
@@ -71,6 +76,7 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
 
   const taskParse     = parseManualTaskBlocks(displayText);     displayText = taskParse.text
   const bgParse       = parseBackgroundTaskBlocks(displayText); displayText = bgParse.text
+  const swarmParse    = parseSwarmTaskBlocks(displayText);      displayText = swarmParse.text
   const iterParse     = parseIterationPlans(displayText);       displayText = iterParse.text
   const findingParse  = parseBugHuntFindings(displayText);  displayText = findingParse.text
   const editPlanParse = parseEditPlanBlocks(displayText);   displayText = editPlanParse.text
@@ -84,6 +90,7 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
     approval_requests:    approvalRequests,
     manual_tasks:         taskParse.tasks,
     background_tasks:     bgParse.tasks,
+    swarm_tasks:          swarmParse.swarms,
     iteration_plans:      iterParse.plans,
     findings:             findingParse.findings,
     edit_plans:           editPlanParse.plans,
@@ -177,6 +184,51 @@ export async function persistCompletedTurn(
     })
   }
 
+  // Stage 1c (Phase 5) — swarm tasks. Each swarm fans out into a parent
+  // (kind='swarm') + N children linked via parent_id. AGENTS.md's
+  // "≥3 subtasks" rule: swarms with <3 valid subtasks fall back to N
+  // standalone background_tasks (no parent grouping) so the agent's
+  // mental model isn't silently dropped.
+  for (const s of parsed.swarm_tasks) {
+    if (s.subtasks.length < 3) {
+      // Fall back: insert each as a standalone background_task.
+      for (const sub of s.subtasks) {
+        await createBackgroundTask({
+          userId:        input.userId,
+          scope:         taskScope,
+          chatSessionId: input.sessionId,
+          kind:          sub.kind,
+          title:         sub.title,
+          description:   sub.description ?? null,
+          payload:       sub.payload ?? {},
+        })
+      }
+      continue
+    }
+    const parent = await createBackgroundTask({
+      userId:        input.userId,
+      scope:         taskScope,
+      chatSessionId: input.sessionId,
+      kind:          'swarm',
+      title:         s.title,
+      description:   s.description ?? null,
+      payload:       { subtask_count: s.subtasks.length },
+    })
+    if (!parent) continue
+    for (const sub of s.subtasks) {
+      await createBackgroundTask({
+        userId:        input.userId,
+        scope:         taskScope,
+        chatSessionId: input.sessionId,
+        parentId:      parent.id,
+        kind:          sub.kind,
+        title:         sub.title,
+        description:   sub.description ?? null,
+        payload:       sub.payload ?? {},
+      })
+    }
+  }
+
   // Stage 2 — bug-hunt finding inserts + iteration bumps. These reference
   // a DIFFERENT session_id (a bug-hunt session, not the chat session) so
   // each one needs its own ownership check to defeat prompt injection
@@ -229,6 +281,7 @@ export async function persistCompletedTurn(
       tool_calls:           input.toolCalls,
       manual_tasks:         parsed.manual_tasks.length      > 0 ? parsed.manual_tasks      : undefined,
       background_tasks:     parsed.background_tasks.length  > 0 ? parsed.background_tasks  : undefined,
+      swarm_tasks:          parsed.swarm_tasks.length       > 0 ? parsed.swarm_tasks       : undefined,
       iteration_plans:      parsed.iteration_plans.length   > 0 ? parsed.iteration_plans   : undefined,
       findings_inserted:    findingsInserted || undefined,
       edit_plans:           parsed.edit_plans.length        > 0 ? parsed.edit_plans        : undefined,

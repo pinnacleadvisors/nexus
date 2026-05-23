@@ -34,6 +34,8 @@ export interface BackgroundTaskRow {
   user_id:           string
   scope:             string
   chat_session_id:   string | null
+  /** Phase 5: parent swarm row when this is a child sub-task. Null otherwise. */
+  parent_id?:        string | null
   kind:              BackgroundTaskKind | string
   title:             string
   description:       string | null
@@ -51,6 +53,8 @@ export interface CreateBackgroundTaskInput {
   userId:          string
   scope:           string
   chatSessionId?:  string | null
+  /** Phase 5: when set, this row is a child of a swarm parent. */
+  parentId?:       string | null
   kind:            string
   title:           string
   description?:    string | null
@@ -81,6 +85,7 @@ export async function createBackgroundTask(input: CreateBackgroundTaskInput): Pr
       user_id:         input.userId,
       scope:           input.scope,
       chat_session_id: input.chatSessionId ?? null,
+      parent_id:       input.parentId ?? null,
       kind:            input.kind.trim().slice(0, 80),
       title:           input.title.trim().slice(0, 500),
       description:     input.description?.trim() ?? null,
