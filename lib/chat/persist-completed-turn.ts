@@ -19,16 +19,16 @@
  */
 
 import { parseAssistantMessage } from '@/lib/chat/approval'
-import { parseManualTaskBlocks } from '@/lib/chat/manual-task'
+import { parseManualTaskBlocks, parseManualTaskCompleteBlocks } from '@/lib/chat/manual-task'
 import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { appendMessage } from '@/lib/chat/sessions'
-import { createTask } from '@/lib/views/tasks'
+import { createTask, findOpenTaskByTitle, updateTask, deleteTask } from '@/lib/views/tasks'
 import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
 import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
 import type { ApprovalRequest } from '@/lib/chat/approval'
-import type { ManualTaskInput } from '@/lib/chat/manual-task'
+import type { ManualTaskInput, ManualTaskCompleteInput } from '@/lib/chat/manual-task'
 import type { IterationPlan } from '@/lib/chat/iteration-plan'
 import type { BugHuntFinding } from '@/lib/chat/bug-hunt-finding'
 import type { EditPlan, EditGroupComplete } from '@/lib/chat/edit-plan'
@@ -41,6 +41,10 @@ export interface ParsedTurnBlocks {
   displayText:          string
   approval_requests:    ApprovalRequest[]
   manual_tasks:         ManualTaskInput[]
+  /** Phase 3 of task_plan-collaborative-chat.md — agent-emitted completions
+   *  for tasks it previously flagged. Resolved server-side by title match
+   *  against open operator_tasks for the session's scope. */
+  manual_task_completes: ManualTaskCompleteInput[]
   iteration_plans:      IterationPlan[]
   findings:             BugHuntFinding[]
   edit_plans:           EditPlan[]
@@ -62,8 +66,9 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
   let displayText      = parsed.text
   let approvalRequests = parsed.approval_requests
 
-  const taskParse     = parseManualTaskBlocks(displayText); displayText = taskParse.text
-  const iterParse     = parseIterationPlans(displayText);   displayText = iterParse.text
+  const taskParse     = parseManualTaskBlocks(displayText);         displayText = taskParse.text
+  const completeParse = parseManualTaskCompleteBlocks(displayText); displayText = completeParse.text
+  const iterParse     = parseIterationPlans(displayText);           displayText = iterParse.text
   const findingParse  = parseBugHuntFindings(displayText);  displayText = findingParse.text
   const editPlanParse = parseEditPlanBlocks(displayText);   displayText = editPlanParse.text
 
@@ -75,6 +80,7 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
     displayText,
     approval_requests:    approvalRequests,
     manual_tasks:         taskParse.tasks,
+    manual_task_completes: completeParse.completes,
     iteration_plans:      iterParse.plans,
     findings:             findingParse.findings,
     edit_plans:           editPlanParse.plans,
@@ -153,6 +159,21 @@ export async function persistCompletedTurn(
     })
   }
 
+  // Stage 1b (Phase 3 of task_plan-collaborative-chat.md) — manual-task
+  // completions. Agent identifies the row by exact title (case-insensitive)
+  // within this scope. Multiple matches: most recent open task wins. No
+  // match: silently no-op (the agent's mental model of open tasks may be
+  // stale; the operator sees no rogue side effect).
+  for (const c of parsed.manual_task_completes) {
+    const row = await findOpenTaskByTitle(input.userId, taskScope, c.title)
+    if (!row) continue
+    if (c.delete) {
+      await deleteTask(input.userId, row.id)
+    } else {
+      await updateTask(input.userId, row.id, { done: true })
+    }
+  }
+
   // Stage 2 — bug-hunt finding inserts + iteration bumps. These reference
   // a DIFFERENT session_id (a bug-hunt session, not the chat session) so
   // each one needs its own ownership check to defeat prompt injection
@@ -204,6 +225,7 @@ export async function persistCompletedTurn(
       approval_requests:    parsed.approval_requests,
       tool_calls:           input.toolCalls,
       manual_tasks:         parsed.manual_tasks.length      > 0 ? parsed.manual_tasks      : undefined,
+      manual_task_completes: parsed.manual_task_completes.length > 0 ? parsed.manual_task_completes : undefined,
       iteration_plans:      parsed.iteration_plans.length   > 0 ? parsed.iteration_plans   : undefined,
       findings_inserted:    findingsInserted || undefined,
       edit_plans:           parsed.edit_plans.length        > 0 ? parsed.edit_plans        : undefined,
