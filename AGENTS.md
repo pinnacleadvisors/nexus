@@ -146,13 +146,15 @@ Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.
 
 ### Per-agent hooks in `agent_library.hooks` (Phase 6 of collaborative-chat)
 
-Migration 055 added a `hooks jsonb default '{}'` column to `agent_library`. Each agent can carry its own Claude-Code-shape hooks block (PreToolUse / UserPromptSubmit / SessionStart / etc.) — same JSON shape as `~/.claude/settings.json` `hooks` keys. When the claude-gateway spawns the agent (PR #281 wiring), it merges:
+Migration 055 added a `hooks jsonb default '{}'` column to `agent_library`. Each agent can carry its own Claude-Code-shape hooks block (PreToolUse / UserPromptSubmit / SessionStart / etc.) — same JSON shape as `~/.claude/settings.json` `hooks` keys. When the claude-gateway spawns the agent, it merges:
 
-1. The repo-wide hooks from `/repo/.claude/hooks/*.sh` (`check-write-size.sh`, `skill-router.sh`)
-2. The agent-specific hooks from `agent_library.hooks` for the spawned slug
-3. (Future) The operator's own hooks from their own `~/.claude/settings.json` if mounted
+1. The repo-wide hooks from `/repo/.claude/hooks/*.sh` (`check-write-size.sh`, `skill-router.sh`) — written to `/root/.claude/settings.json` at boot by `services/claude-gateway/entrypoint.sh` (PR #281).
+2. The agent-specific hooks from `agent_library.hooks` for the spawned slug — fetched per-spawn by `services/claude-gateway/src/agentHooks.ts` (PR #299) and written to `/tmp/nexus-settings-<jobId>.json`, which is then passed to the CLI via `--mcp-config`.
+3. (Future) The operator's own hooks from their own `~/.claude/settings.json` if mounted.
 
-Result is written to `/root/.claude/settings.json` at boot. v1 = column exists with default `{}` (no behavioural change). The follow-up entrypoint wiring lands in its own PR so this migration can apply independently. When that lands, agent_library rows can opt into custom hooks via `update agent_library set hooks = '...' where slug = '...'`.
+Merge semantics are additive — agent matcher groups CONCAT onto repo matcher groups for the same event key. Agents cannot remove repo hooks; the repo hooks are baseline guardrails (output cap enforcement, skill routing) and per-agent hooks ADD to them. The temp file is cleaned up after each spawn.
+
+Opt an agent into custom hooks via `update agent_library set hooks = '...' where slug = '...'`. The fail-soft path (Supabase unreachable, slug not found, hooks column empty) silently falls back to the repo-wide settings.json — no risk of breaking a spawn.
 
 Why per-agent: some agents (e.g. `business-operator` running cyclic crons) want very different hook behaviour than `platform-copilot` (interactive). The repo-wide hooks are the floor; the column lets each agent opt up.
 
