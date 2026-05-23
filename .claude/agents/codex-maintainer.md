@@ -121,3 +121,11 @@ Spec is portable across runtimes — any runtime that can spawn a shell, fetch U
 - **Tightened ceiling**: ~5-min tick budget (was: untimed per-task).
 - **Tightened code policy**: zero production code edits, even in PR-only L0 mode (operator can still edit in PRs; maintainer cannot).
 - **Memory authorship policy**: cyclic ticks never write memory-hq atoms; `solopreneur-loop` owns the post-tick write.
+
+---
+
+## Topology update — KVM2 retired 2026-05-22
+
+The "shared codex-gateway on KVM2" referenced throughout this spec now runs on **KVM4** alongside the rest of the Nexus services. The codex-gateway container, the L0 trust ladder, the deny-list, the UFW egress block, and the `doppler-broker` handoff all apply unchanged on KVM4. Read the per-section "KVM2" mentions as "KVM4 codex-gateway container" unless explicitly about the historical migration ([`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs), ADR 006).
+
+`CODEX_AUTH_JSON` monitoring and the per-business container health-check work happen on KVM4 as well — the same Coolify API token (`COOLIFY_KVM4_API_TOKEN`) accesses every business's container.

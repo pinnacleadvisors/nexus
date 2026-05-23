@@ -25,10 +25,10 @@ import MobileAwareSessionSidebar from '@/components/platform-chat/MobileAwareSes
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
-import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from '@/components/platform-chat/TurnTimeoutSelector'
 import { ModeSelector, useChatMode } from '@/components/platform-chat/ModeSelector'
 import { ModelSelector, useChatModel } from '@/components/platform-chat/ModelSelector'
+import { getModelById } from '@/lib/chat/models'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
@@ -362,7 +362,11 @@ export default function BusinessChat({ slug, name }: Props) {
     setBusy(true)
 
     try {
-      const provider = readChatProvider(`nexus:business-chat:${slug}:provider`)
+      // Provider derives from the selected model — picking "Codex 5.5" from
+      // the model dropdown routes through codex-direct, any Claude model
+      // routes through claude-gateway. Subsumes the pre-2026-05-24
+      // ChatProviderToggle pill.
+      const provider = getModelById(chatModel).provider
       const enqRes = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
@@ -786,7 +790,6 @@ export default function BusinessChat({ slug, name }: Props) {
             <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
             <ModeSelector  value={chatMode}  onChange={setChatMode} />
             <ModelSelector value={chatModel} onChange={setChatModel} />
-            <ChatProviderToggle storageKey={`nexus:business-chat:${slug}:provider`} />
             {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
             <ContextIndicator usage={usage} />
           </div>

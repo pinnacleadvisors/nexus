@@ -10,11 +10,13 @@ Single page covering every script the operator runs by hand. Group by task; show
 
 | I want to… | Run |
 |---|---|
+| **Sync the checkout after pulling main** | `git pull --ff-only origin main && npm install` |
+| **Open a fresh feature branch off main** | `git fetch origin main && git checkout -b feat/<slug> origin/main` |
+| **Reset a stale branch onto latest main** | `git fetch origin main && git rebase origin/main` |
 | Deploy the Next.js platform | `npm run deploy -- --nexus-app` |
 | Deploy everything Coolify | `npm run deploy -- --all` |
 | Run the deploy picker | `npm run deploy` |
 | Migrate Vercel crons → cron-job.org | `doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --apply` |
-| Move a Coolify app KVM2 → KVM4 | `doppler run -- node scripts/migrate-to-lean-kvm.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
 | Diagnose codex-gateway 502 incidents | `npm run diagnose:codex` (add `--probe-dispatch` for a full dispatch test) |
@@ -25,6 +27,45 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Look up a Doppler secret | `doppler secrets get K --project nexus --config prd --plain` |
 | Set a Doppler secret | `echo "<value>" \| doppler secrets set K --project nexus --config prd --no-interactive` |
 | Install local git hooks | `bash scripts/install-git-hooks.sh` |
+| Open a Claude Code worktree for parallel work | `git worktree add ../nexus-<slug> -b feat/<slug> origin/main` |
+| List + clean up local worktrees | `git worktree list` then `git worktree remove ../nexus-<slug>` |
+
+---
+
+## 0. Daily workflow — keep the checkout fresh
+
+The `vaul` typecheck regression on 2026-05-24 ([investigation note](#vaul-incident)) traced to a stale `node_modules` after pulling a PR that added a dep. Run these as the very first commands of any session that will edit code.
+
+```bash
+git pull --ff-only origin main         # fast-forward; never overwrites local commits
+npm install                            # essential when package.json / lockfile moved
+npm run check:lockfile                 # confirms node_modules ↔ lockfile aligned
+```
+
+When `git pull` says "Your branch is behind" but `--ff-only` refuses (you have local commits): you're on a feature branch — use `git fetch origin main && git rebase origin/main` instead.
+
+**For a fresh feature branch:**
+```bash
+git fetch origin main
+git checkout -b feat/<slug> origin/main           # always branches off latest main, NEVER off a stale branch
+# ... do work ...
+git push -u origin feat/<slug>
+gh pr create --base main
+```
+
+**One PR per branch — PR merged = branch dead.** Pushing more commits to a merged-PR branch leaves them stranded. New work = new branch off `origin/main`. See [`git-multi-agent-collaboration.md`](git-multi-agent-collaboration.md).
+
+### Vaul incident — the canonical "stale node_modules" symptom {#vaul-incident}
+
+After PR #288 added `vaul` to `package.json`, a pull-and-deploy without `npm install` produced this typecheck error:
+
+```
+components/chat-views/ViewsPanel.tsx:23:24 - error TS2307: Cannot find module 'vaul'
+```
+
+**Diagnosis:** `package.json` declared the dep, `package-lock.json` had the resolved entry, but `node_modules/vaul/` was missing on disk. The lockfile and the filesystem had drifted because npm install was skipped after the pull.
+
+**Fix:** `npm install && npm run deploy -- --nexus-app`. The same recipe applies any time a typecheck fails with `Cannot find module '<x>'` on a package that's clearly declared in `package.json` — your filesystem is behind your lockfile.
 
 ---
 
@@ -38,7 +79,7 @@ npm run deploy -- --all                       # every Coolify service whose UUID
 npm run deploy -- --nexus-app                 # the Next.js platform on KVM4
 npm run deploy -- --nexus-sandbox             # rootless-Podman exec sandbox on KVM4
 npm run deploy -- --claude                    # claude-gateway (KVM4)
-npm run deploy -- --codex                     # codex-gateway (KVM4 preferred, KVM2 legacy fallback)
+npm run deploy -- --codex                     # codex-gateway (KVM4 — KVM2 retired 2026-05-22)
 npm run deploy -- --qa                        # qa-runner (KVM4)
 npm run deploy -- --firecrawl                 # firecrawl (KVM4)
 npm run deploy -- --skip-typecheck --nexus-app  # bypass `tsc --noEmit` for rapid iteration
@@ -69,7 +110,9 @@ doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --delete-nexus   # 
 
 ---
 
-## 3. Coolify migrations (KVM2 → KVM4 lean mode)
+## 3. Coolify migrations (KVM2 → KVM4 lean mode) — historical
+
+> **Status:** completed 2026-05-22. KVM2 has been decommissioned. Keep this section for the historical migration record; do not run on a clean install (KVM4 is now the only host). The Hostinger n8n KVM1 instance was migrated to KVM4 in the same window via [`n8n-kvm1-to-coolify.md`](n8n-kvm1-to-coolify.md).
 
 ```bash
 doppler run -- node scripts/migrate-to-lean-kvm.mjs --dry-run                 # preview migration plan
@@ -291,7 +334,7 @@ Hits four surfaces in one command and prints a verdict that maps the symptoms to
 | `not logged in` / `auth.json` in logs | Codex auth.json expired — see [`docs/runbooks/codex-gateway-auth-rotation.md`](codex-gateway-auth-rotation.md) |
 | Basic `/health` 200 but `/health?deep=1` reports `dispatchReady:false` | CLI binary or env is broken — restart the container; re-check |
 
-**Required env (in Doppler `prd`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_KVM4_CODEX_UUID` (or `COOLIFY_KVM2_CODEX_UUID`), `CODEX_GATEWAY_URL`. `--probe-dispatch` additionally needs `CODEX_GATEWAY_BEARER_TOKEN` and one entry in `ALLOWED_USER_IDS`.
+**Required env (in Doppler `prd`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, `COOLIFY_KVM4_CODEX_UUID`, `CODEX_GATEWAY_URL`. `--probe-dispatch` additionally needs `CODEX_GATEWAY_BEARER_TOKEN` and one entry in `ALLOWED_USER_IDS`. (`COOLIFY_KVM2_*` env vars are retained in Doppler as dead-weight from the pre-2026-05-22 KVM2 era — do not reference in new scripts.)
 
 **Important topology note**: the **Cloudflare Tunnel is configured OUTSIDE Coolify** (see comments in [`services/codex-gateway/docker-compose.yaml`](../../services/codex-gateway/docker-compose.yaml)). `cloudflared` runs as a separate container attached to the shared external `coolify` network, mapping `codex-gw.<your-domain>` → `codex-gateway:3000`. A Cloudflare 502 with `server=cloudflare` + an HTML body is almost never an issue Coolify can show — it means `cloudflared` itself can't reach the origin. SSH to the host and inspect the `cloudflared` container directly. The diagnostic script catches the symptom; the fix lives in the cloudflared sidecar's logs + config.
 
