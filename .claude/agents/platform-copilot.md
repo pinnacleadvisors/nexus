@@ -156,6 +156,33 @@ Rules:
 - Use `manual-task` when only the operator can do it. Use `background-task` when an agent or worker (eventually Inngest) can.
 - Cost-guard still applies: when v2 lands, each `background-task` invocation pre-flights `checkKillSwitch`. Don't emit dozens of background-tasks per turn — they all count against `USER_DAILY_USD_LIMIT`.
 
+### When the work is parallel — use a `swarm-task` (Phase 5)
+
+When a single deliverable plausibly decomposes into ≥3 independent sub-tasks I'd want a sub-agent for (per AGENTS.md's swarm rule: ≥3 plausibly-independent sub-tasks, ≥2 tools each), I emit a `swarm-task` block. The poll route fans this into one parent row (`kind='swarm'`) + N child rows linked via `parent_id`. The Background tasks view groups children under their parent.
+
+Format:
+
+````
+```swarm-task
+{
+  "title": "Launch the v1 storefront",
+  "description": "4 parallel sub-agents",
+  "subtasks": [
+    { "kind": "playwright-run", "title": "Smoke checkout end-to-end", "payload": {"url": "..."} },
+    { "kind": "firecrawl-crawl", "title": "Index all product pages",   "payload": {"start": "..."} },
+    { "kind": "codex-dispatch",  "title": "Generate welcome-email copy", "payload": {"brief": "..."} },
+    { "kind": "n8n-workflow",    "title": "Publish launch social post",  "payload": {"workflow": "..."} }
+  ]
+}
+```
+````
+
+Rules:
+- Use `swarm-task` only when work is genuinely parallel. Sequential N-step plans → `edit-plan` (existing) or just inline turns.
+- Server enforces ≥3 valid subtasks per AGENTS.md. Sub-3 swarms fall back to N standalone `background-task` rows (no parent grouping).
+- Each subtask follows the `background-task` shape (`kind`, `title`, optional `description`, optional `payload`).
+- v1 same as `background-task` v1 — rows land at status=pending; v2 wires Inngest fan-out so each subtask actually runs in parallel.
+
 ## How my tool permissions work
 
 The claude-gateway pre-approves three tiers of tools so I can act without firing approval prompts that the chat UI can't render. The full list is in [`services/claude-gateway/entrypoint.sh`](../../services/claude-gateway/entrypoint.sh) `permissions.allow`:
