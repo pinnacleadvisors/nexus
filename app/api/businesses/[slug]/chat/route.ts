@@ -38,6 +38,9 @@ interface Body {
   /** Phase 0 of task_plan-model-agnostic-chat.md — operator may opt this
    *  turn into the Codex direct-dispatch path. Defaults to 'claude'. */
   provider?: 'claude' | 'codex'
+  /** Phase 1 of task_plan-mobile-copilot.md — per-turn server-side timeout
+   *  override (ms). Gateway clamps to its env cap. Omit to use full cap. */
+  requestTimeoutMs?: number
 }
 
 /** Sanity ceiling — anything past 2MB chars is runaway. Real check is token-based, see computeUsage(). */
@@ -208,6 +211,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     message:     composite,
     userId:      session.userId,
     timeoutMs:   10_000,
+    requestTimeoutMs: body.requestTimeoutMs,
   })
   if (!enq.ok || !enq.jobId) {
     audit(req, { action: 'business_chat.enqueue', resource: 'chat', userId: session.userId, metadata: { businessSlug: slug, http: enq.http, error: enq.error, durationMs: Date.now() - t0 } })

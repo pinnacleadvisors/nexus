@@ -65,6 +65,11 @@ interface PlatformChatBody {
    *  typed blocks unreliable). Defaults to 'claude' (the existing async-job
    *  pattern that supports typed blocks). */
   provider?: 'claude' | 'codex'
+  /** Phase 1 of task_plan-mobile-copilot.md — per-turn timeout override
+   *  in milliseconds. The gateway clamps to its env cap REQUEST_MAX_MS;
+   *  omitting means "use the full env cap". The composer's TurnTimeoutSelector
+   *  populates this from the operator's chip pick. */
+  requestTimeoutMs?: number
 }
 
 /**
@@ -321,6 +326,7 @@ export async function POST(req: NextRequest) {
     message:     composite,
     userId:      session.userId,
     timeoutMs:   10_000,
+    requestTimeoutMs: body.requestTimeoutMs,
   })
 
   if (!enqueued.ok || !enqueued.jobId) {
