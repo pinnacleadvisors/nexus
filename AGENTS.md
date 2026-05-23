@@ -144,6 +144,50 @@ Clerk uses Cloudflare Turnstile for bot protection. The app's CSP (`next.config.
 - AI priority in `/api/chat`: Claude Code gateway (self-hosted on Hostinger+Coolify, plan-billed via 20x Max — see `services/claude-gateway/`) → OpenClaw (Claude Pro subscription, legacy fallback) → `ANTHROPIC_API_KEY` → helpful error message
 - OpenClaw config stored in cookies via `/api/claw/config` — migrate to encrypted DB before production
 
+### Docker images and docker-compose — Doppler as the source of truth
+
+**Rule:** when you create a new `Dockerfile` or `docker-compose.yaml` for a Nexus service that ships on Coolify, **the only secret Coolify (or any orchestrator) should need to set is `DOPPLER_TOKEN`.** Every other env var is fetched from Doppler at container boot by wrapping the runtime command in `doppler run --`.
+
+Why: a service with 12 secrets pasted into Coolify's env-var pane is 12 things to rotate, 12 places to drift from Doppler, and 12 places that go stale during a clone-this-service handoff. One `DOPPLER_TOKEN` per service collapses that to one rotation point and matches the rest of the platform.
+
+**Canonical reference:** [`services/claude-gateway/Dockerfile`](services/claude-gateway/Dockerfile) + [`services/claude-gateway/docker-compose.yaml`](services/claude-gateway/docker-compose.yaml). Pattern:
+
+1. **Dockerfile** — install Doppler CLI in the runtime stage:
+   ```dockerfile
+   RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh \
+    && rm -rf /var/lib/apt/lists/*
+   ```
+   Wrap the runtime command with `doppler run --` as the ENTRYPOINT:
+   ```dockerfile
+   ENTRYPOINT ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--"]
+   CMD ["node", "dist/index.js"]
+   ```
+   `--fallback=...` caches the last successful pull so the container can still boot if Doppler is briefly unreachable.
+
+2. **docker-compose.yaml** — the `environment:` block has ONE entry. Document the expected Doppler-sourced vars in a comment above the block so future readers know what the service actually consumes:
+   ```yaml
+   # Doppler-sourced env. Coolify only needs DOPPLER_TOKEN.
+   # Vars expected at runtime (all populated in Doppler):
+   #   FOO_BAR, BAZ_QUX, …
+   services:
+     my-service:
+       environment:
+         DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
+   ```
+   Do NOT put `FOO_BAR: "${FOO_BAR}"` in the `environment:` block — it forces Coolify to know about every variable, defeating the point.
+
+3. **Coolify env-var pane** — exactly one secret to set: `DOPPLER_TOKEN`. Mint a service token in Doppler scoped to the right config (typically `prd`) and paste it here. Rotation: rotate the token in Doppler → update Coolify → redeploy. One rotation, never twelve.
+
+**Reference deployments:** `services/claude-gateway/`, `services/codex-gateway/`, `services/qa-runner/` (post-2026-05-23 migration). When forking a new service from one of these, the Doppler ENTRYPOINT and DOPPLER_TOKEN-only env shape carries over unchanged.
+
+**Exceptions** — there are exactly two:
+- The Nexus app itself when deployed on Vercel (Vercel has its own env-var system; Doppler syncs to Vercel via the Doppler→Vercel integration). Not relevant to Coolify-deployed services.
+- A service that explicitly must NOT have any secrets at all (e.g. a public health-check responder). Document the exception in the Dockerfile comment header.
+
+**Tooling supports this:** the [`scripts/coolify-create-compose-app.mjs`](scripts/coolify-create-compose-app.mjs) helper for creating new Coolify Compose resources only takes `--name` + `--compose` + `--doppler-token-secret` (the Doppler secret NAME that holds the service token). The token VALUE is never passed on the command line.
+
 ## File Structure
 ```
 app/
