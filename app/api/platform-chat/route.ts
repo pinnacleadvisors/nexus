@@ -70,6 +70,14 @@ interface PlatformChatBody {
    *  omitting means "use the full env cap". The composer's TurnTimeoutSelector
    *  populates this from the operator's chip pick. */
   requestTimeoutMs?: number
+  /** Phase 1 of task_plan-collaborative-chat.md — per-turn model override.
+   *  See lib/chat/models.ts for the whitelist. Gateway passes through to
+   *  `claude -p --model <id>`. */
+  modelOverride?: string
+  /** Phase 1 of task_plan-collaborative-chat.md — per-turn permission mode.
+   *  See lib/chat/modes.ts. Gateway forwards as NEXUS_CHAT_MODE env to the
+   *  agent. */
+  mode?: 'ask' | 'plan' | 'auto'
 }
 
 /**
@@ -327,6 +335,8 @@ export async function POST(req: NextRequest) {
     userId:      session.userId,
     timeoutMs:   10_000,
     requestTimeoutMs: body.requestTimeoutMs,
+    modelOverride: body.modelOverride,
+    mode: body.mode,
   })
 
   if (!enqueued.ok || !enqueued.jobId) {

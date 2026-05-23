@@ -41,6 +41,12 @@ interface Body {
   /** Phase 1 of task_plan-mobile-copilot.md — per-turn server-side timeout
    *  override (ms). Gateway clamps to its env cap. Omit to use full cap. */
   requestTimeoutMs?: number
+  /** Phase 1 of task_plan-collaborative-chat.md — per-turn model override.
+   *  See lib/chat/models.ts. */
+  modelOverride?: string
+  /** Phase 1 of task_plan-collaborative-chat.md — per-turn permission mode.
+   *  See lib/chat/modes.ts. */
+  mode?: 'ask' | 'plan' | 'auto'
 }
 
 /** Sanity ceiling — anything past 2MB chars is runaway. Real check is token-based, see computeUsage(). */
@@ -212,6 +218,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     userId:      session.userId,
     timeoutMs:   10_000,
     requestTimeoutMs: body.requestTimeoutMs,
+    modelOverride: body.modelOverride,
+    mode: body.mode,
   })
   if (!enq.ok || !enq.jobId) {
     audit(req, { action: 'business_chat.enqueue', resource: 'chat', userId: session.userId, metadata: { businessSlug: slug, http: enq.http, error: enq.error, durationMs: Date.now() - t0 } })

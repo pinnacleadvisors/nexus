@@ -82,6 +82,25 @@ const messageBodySchema = z.object({
    * via the Doppler env var.
    */
   requestTimeoutMs: z.number().int().positive().optional(),
+  /**
+   * Per-turn model override (Phase 1 of task_plan-collaborative-chat.md).
+   * When set, the gateway passes `--model <id>` to the claude CLI so this
+   * turn runs on the chosen model instead of the gateway's default
+   * (whatever the bound OAuth token's default is — typically Opus 4.7).
+   *
+   * The Nexus side maintains a whitelist (`lib/chat/models.ts`); the
+   * gateway accepts any string the CLI will accept. If the model id is
+   * invalid the CLI exits with a clear error which surfaces as the turn's
+   * error message — no special handling here.
+   */
+  modelOverride: z.string().min(1).max(100).optional(),
+  /**
+   * Per-turn permission mode (Phase 1 of task_plan-collaborative-chat.md).
+   * Forwarded to the spawned agent as NEXUS_CHAT_MODE so the agent's spec
+   * can branch on it. The actual semantics live in the agent (platform-
+   * copilot.md, business-copilot.md) — the gateway is just a transport.
+   */
+  mode: z.enum(['ask', 'plan', 'auto']).optional(),
 })
 
 /** Clamp a per-turn timeout override to the env cap. Floor at 60s to avoid
@@ -230,14 +249,19 @@ app.post('/api/sessions/:sessionId/messages', async c => {
   const agentSlug = body.agent && isSafeSlug(body.agent) ? body.agent : null
 
   const turnTimeoutMs = effectiveTimeoutMs(body.requestTimeoutMs)
+  // Mode is forwarded to the spawned agent via env so the agent's
+  // system prompt can branch (ask/plan/auto). The gateway doesn't
+  // interpret the value beyond forwarding it.
+  const modeEnv = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
   let result
   try {
     result = await queue.enqueue(() => runClaude({
       agentSlug,
       message:   body.content,
-      env:       body.env,
+      env:       { ...body.env, ...modeEnv },
       repoPath:  REPO_PATH,
       timeoutMs: turnTimeoutMs,
+      model:     body.modelOverride,
     }))
   } catch (err) {
     if (err instanceof QueueFullError) {
@@ -322,14 +346,16 @@ app.post('/api/jobs', async c => {
 
   // Detached promise: we deliberately don't await. The job advances inside the
   // queue's existing FIFO drain loop and writes its result back into the store.
+  const modeEnvAsync = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
   void queue.enqueue(async () => {
     jobs.markRunning(jobId)
     const result = await runClaude({
       agentSlug,
       message:   body.content,
-      env:       body.env,
+      env:       { ...body.env, ...modeEnvAsync },
       repoPath:  REPO_PATH,
       timeoutMs: effectiveTimeoutMs(body.requestTimeoutMs),
+      model:     body.modelOverride,
       // Phase 2a (poll-with-deltas) — pipe text deltas into the job-store
       // so the GET /api/jobs/:id endpoint can return partial text while
       // the job is still running. Lets the chat UI render progressive

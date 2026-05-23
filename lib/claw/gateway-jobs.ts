@@ -42,6 +42,18 @@ export interface EnqueueJobOpts {
    * Wired in by task_plan-mobile-copilot.md Phase 1 (chat composer selector).
    */
   requestTimeoutMs?: number
+  /**
+   * Per-turn model override. Gateway passes through to `claude -p --model <id>`.
+   * Phase 1 of task_plan-collaborative-chat.md. See lib/chat/models.ts for
+   * the whitelist.
+   */
+  modelOverride?: string
+  /**
+   * Per-turn permission mode. Gateway forwards as NEXUS_CHAT_MODE env to the
+   * spawned agent so the agent's system prompt can branch on ask/plan/auto.
+   * Phase 1 of task_plan-collaborative-chat.md. See lib/chat/modes.ts.
+   */
+  mode?: 'ask' | 'plan' | 'auto'
 }
 
 export interface EnqueueJobResult {
@@ -117,6 +129,8 @@ export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJo
     env:     opts.env ?? {},
     // Optional per-turn server-side timeout. Gateway clamps to its env cap.
     ...(opts.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
+    ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
+    ...(opts.mode ? { mode: opts.mode } : {}),
   })
 
   const headers: Record<string, string> = {

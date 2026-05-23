@@ -89,6 +89,8 @@ For seasonal businesses (`money_model.seasonality.peak_months`), prioritize cont
 
 ## Approval gates (the operator's bright line)
 
+> **NEXUS_CHAT_MODE note (Phase 1 of task_plan-collaborative-chat.md):** business-operator is the autonomous cron-driven orchestrator — it doesn't read `NEXUS_CHAT_MODE` and the chat composer's mode chip is hidden when rendering business-operator surfaces. Operator decision (PR #285 Q2): autonomous agents are "always auto"; the gates below are the bright line that doesn't move regardless.
+
 You **always** flag these for human approval (`requires_approval: true`):
 
 | Gate prefix | Examples |
