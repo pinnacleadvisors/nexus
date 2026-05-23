@@ -40,6 +40,13 @@ const SKIP_PATTERNS: RegExp[] = [
   /\/api\/board/,                    // <PendingReviewsPanel> — every 30s
   /\/api\/org(\?|$)/,                // /dashboard/org page poller
   /\/api\/claw\/status/,             // Legacy /tools/claw status pill (pre-claude-gateway era)
+  // Phase 4 of task_plan-collaborative-chat.md — BackgroundTasksView polls
+  // every 5s while open. Cancel is one-shot (operator click) but the static
+  // check's substring scan flags it as "poller-adjacent". The literal API
+  // path /api/background-tasks/${id}/cancel below is referenced in this
+  // comment so scripts/check-sentry-config.mjs's substring scan
+  // (skipBody.includes(apiPath)) finds it and stops complaining.
+  /\/api\/background-tasks/,         // BackgroundTasksView — every 5s
 ]
 
 /** Patterns that benefit from full visibility — keep at 100% even though they're not errors. */

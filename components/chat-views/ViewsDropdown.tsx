@@ -13,9 +13,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { LayoutGrid, ChevronDown, ListTodo, CheckSquare, CalendarDays, Bug, Activity } from 'lucide-react'
+import { LayoutGrid, ChevronDown, ListTodo, CheckSquare, CalendarDays, Bug, Activity, Cog } from 'lucide-react'
 
-export type ViewName = 'tasks' | 'approvals' | 'calendar' | 'bug-hunt' | 'health'
+export type ViewName = 'tasks' | 'approvals' | 'calendar' | 'bug-hunt' | 'health' | 'background-tasks'
 
 interface Props {
   scope:        string
@@ -33,11 +33,12 @@ interface ViewSpec {
 }
 
 const VIEWS: ViewSpec[] = [
-  { id: 'tasks',     label: 'Manual to-dos',   hint: 'Tasks the agent flagged for you',         Icon: ListTodo },
-  { id: 'approvals', label: 'Approval queue',  hint: 'Pending approve/deny decisions',          Icon: CheckSquare },
-  { id: 'calendar',  label: 'Calendar',        hint: 'Upcoming due dates + scheduled runs',     Icon: CalendarDays },
-  { id: 'bug-hunt',  label: 'Bug hunt',        hint: 'Operator-gated loop to audit the platform', Icon: Bug },
-  { id: 'health',    label: 'Platform health', hint: 'Slack delivery, cron status, recent errors, cost-guard signals', Icon: Activity },
+  { id: 'tasks',            label: 'Manual to-dos',     hint: 'Tasks the agent flagged for you',             Icon: ListTodo },
+  { id: 'approvals',        label: 'Approval queue',    hint: 'Pending approve/deny decisions',              Icon: CheckSquare },
+  { id: 'background-tasks', label: 'Background tasks',  hint: 'Long-running work the agent delegated',       Icon: Cog },
+  { id: 'calendar',         label: 'Calendar',          hint: 'Upcoming due dates + scheduled runs',         Icon: CalendarDays },
+  { id: 'bug-hunt',         label: 'Bug hunt',          hint: 'Operator-gated loop to audit the platform',   Icon: Bug },
+  { id: 'health',           label: 'Platform health',   hint: 'Slack delivery, cron status, recent errors, cost-guard signals', Icon: Activity },
 ]
 
 export default function ViewsDropdown({ scope, activeView, onOpen, badges }: Props) {
