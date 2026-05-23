@@ -1,6 +1,15 @@
-# task_plan — Hermes agent (deferred from mobile-copilot Phase 3)
+# task_plan — Hermes agent — CLOSED
 
-> Captured during the Phase 3 wrap-up of [`task_plan-mobile-copilot.md`](task_plan-mobile-copilot.md). The operator listed "docker for hermes agent" as a deferred item. The reference is **ambiguous** — Nexus has absorbed several patterns *from* the Hermes agent framework (see [`memory/molecular/entities/hermes.md`](memory/molecular/entities/hermes.md)) but has no agent named "hermes" in `.claude/agents/`. This plan flags the disambiguation needed before any code is written.
+> **Status: CLOSED 2026-05-23 — operator picked option (C) "already absorbed".**
+>
+> The three Hermes patterns Nexus relies on are already live:
+> - **Autonomous SKILL.md authoring with frontmatter index** → see [`.claude/hooks/skill-router.sh`](.claude/hooks/skill-router.sh) + the `.claude/skills/<name>/SKILL.md` convention used by `firecrawl_local`, `frontend-design`, `molecularmemory_local`, `signals-briefing`.
+> - **3-tier light-index recall** (read frontmatter only, open the file on demand) → see [`memory/molecular/INDEX.md`](memory/molecular/INDEX.md) + the `[[wikilink]]` pattern across MOCs/atoms.
+> - **System-wide rollback via git stash + worktree** → see [`docs/runbooks/git-multi-agent-collaboration.md`](docs/runbooks/git-multi-agent-collaboration.md).
+>
+> No new agent or container needed. The candidate-options + atomic-task scaffolding below is preserved as a paper trail. **Do not execute.** Reopen only if (A) or (B) is reconsidered.
+
+> Captured during the Phase 3 wrap-up of [`task_plan-mobile-copilot.md`](task_plan-mobile-copilot.md). The operator listed "docker for hermes agent" as a deferred item. The reference was **ambiguous** — Nexus has absorbed several patterns *from* the Hermes agent framework (see [`memory/molecular/entities/hermes.md`](memory/molecular/entities/hermes.md)) but has no agent named "hermes" in `.claude/agents/`. This plan flagged the disambiguation needed before any code was written.
 
 ## North Star — pending operator clarification
 
