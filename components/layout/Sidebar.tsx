@@ -187,12 +187,31 @@ function isActive(pathname: string, href: string) {
 }
 
 export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false)
+  const [manualCollapsed, setManualCollapsed] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const pathname = usePathname() ?? ''
   const healthBadge = useHealthBadge()
   const businesses  = useBusinessesForSidebar()
   const nav         = buildNav(businesses)
+
+  // Phase 2 of task_plan-mobile-copilot.md — force icon-rail collapse on
+  // narrow viewports. The operator manages from mobile while travelling,
+  // and a 240-420px sidebar eats too much of a 375-414px screen. Below
+  // 640px we override the manual collapsed/expanded state entirely; the
+  // operator's preference is restored when they go back to a wider screen.
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 639px)')
+    function update() { setIsNarrow(mq.matches) }
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  // `collapsed` is the EFFECTIVE state used by all JSX below. Toggle button
+  // (line ~325) still updates manualCollapsed so the operator's choice persists
+  // for when they return to a wide viewport.
+  const collapsed = isNarrow || manualCollapsed
 
   // Resizable expanded-width. Drag the right edge to set; double-click to reset.
   // Dragging below 80px snaps to fully-collapsed (operator gets icon-only mode).
@@ -203,7 +222,7 @@ export default function Sidebar() {
     maxPx:        420,
     edge:         'right',
     collapseAtPx: 100,
-    onSnap:       () => setCollapsed(true),
+    onSnap:       () => setManualCollapsed(true),
   })
 
   // Auto-expand the Businesses group when the user is on a /businesses route
@@ -323,9 +342,12 @@ export default function Sidebar() {
         </div>
 
         <button
-          onClick={() => setCollapsed(c => !c)}
+          onClick={() => setManualCollapsed(c => !c)}
+          disabled={isNarrow}
+          title={isNarrow ? 'Sidebar is locked to icon mode on narrow viewports' : (collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
-            'flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm transition-colors',
+            'flex items-center gap-2 w-full rounded-lg px-3 py-2.5 min-h-[44px] text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
             collapsed && 'justify-center px-0'
           )}
           style={{ color: '#55556a' }}
@@ -375,7 +397,11 @@ function SidebarLink({
       href={link.href}
       title={badgeTitle}
       className={cn(
-        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        // min-h-[44px] meets the ADA / Apple HIG tap-target guideline
+        // (Phase 2 of task_plan-mobile-copilot.md). Desktop layouts are
+        // unaffected — the existing px-3 py-2 already exceeded 36px most
+        // of the time once the 18px icon is factored in.
+        'flex items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-sm font-medium transition-colors',
         collapsed && 'justify-center px-0',
         indent && !collapsed && 'pl-9',
       )}
