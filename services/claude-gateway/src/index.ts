@@ -70,7 +70,27 @@ const messageBodySchema = z.object({
   content: z.string().min(1).max(200_000),
   agent:   z.string().optional().nullable(),
   env:     z.record(z.string()).optional().default({}),
+  /**
+   * Per-turn timeout override in milliseconds. Optional. When set, the spawned
+   * Claude CLI is killed after min(requestTimeoutMs, REQUEST_MAX_MS) — never
+   * above the env-cap. When omitted, the full env-cap REQUEST_MAX_MS applies.
+   *
+   * Wired in by `task_plan-mobile-copilot.md` Phase 1 so the chat composer can
+   * narrow the per-turn budget for short turns (e.g. 5 min for a typo fix)
+   * without losing access to the full window for long ones (delegate codex
+   * smoke tests, end-to-end Playwright runs, etc.). The CAP itself moves only
+   * via the Doppler env var.
+   */
+  requestTimeoutMs: z.number().int().positive().optional(),
 })
+
+/** Clamp a per-turn timeout override to the env cap. Floor at 60s to avoid
+ *  pathological clients picking sub-second timeouts that kill turns before
+ *  the CLI even spawns. */
+function effectiveTimeoutMs(override: number | undefined): number {
+  if (override === undefined) return REQUEST_MAX_MS
+  return Math.min(Math.max(override, 60_000), REQUEST_MAX_MS)
+}
 
 app.get('/health', async c => {
   let loggedIn = false
@@ -209,6 +229,7 @@ app.post('/api/sessions/:sessionId/messages', async c => {
 
   const agentSlug = body.agent && isSafeSlug(body.agent) ? body.agent : null
 
+  const turnTimeoutMs = effectiveTimeoutMs(body.requestTimeoutMs)
   let result
   try {
     result = await queue.enqueue(() => runClaude({
@@ -216,7 +237,7 @@ app.post('/api/sessions/:sessionId/messages', async c => {
       message:   body.content,
       env:       body.env,
       repoPath:  REPO_PATH,
-      timeoutMs: REQUEST_MAX_MS,
+      timeoutMs: turnTimeoutMs,
     }))
   } catch (err) {
     if (err instanceof QueueFullError) {
@@ -308,7 +329,7 @@ app.post('/api/jobs', async c => {
       message:   body.content,
       env:       body.env,
       repoPath:  REPO_PATH,
-      timeoutMs: REQUEST_MAX_MS,
+      timeoutMs: effectiveTimeoutMs(body.requestTimeoutMs),
       // Phase 2a (poll-with-deltas) — pipe text deltas into the job-store
       // so the GET /api/jobs/:id endpoint can return partial text while
       // the job is still running. Lets the chat UI render progressive

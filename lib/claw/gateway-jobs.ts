@@ -31,6 +31,17 @@ export interface EnqueueJobOpts {
   userId?:      string
   /** Default 10s — only the enqueue call must fit; the actual generation is detached. */
   timeoutMs?:   number
+  /**
+   * Per-turn server-side timeout for the spawned Claude CLI (milliseconds).
+   * Optional. When set, the gateway clamps this to its env cap REQUEST_MAX_MS
+   * — never above. When omitted, the gateway uses its full env cap.
+   *
+   * Distinct from `timeoutMs` above: that one bounds the ENQUEUE fetch (~10s);
+   * this one bounds the actual Claude turn (minutes).
+   *
+   * Wired in by task_plan-mobile-copilot.md Phase 1 (chat composer selector).
+   */
+  requestTimeoutMs?: number
 }
 
 export interface EnqueueJobResult {
@@ -104,6 +115,8 @@ export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJo
     content: opts.message,
     agent:   opts.agentSlug ?? null,
     env:     opts.env ?? {},
+    // Optional per-turn server-side timeout. Gateway clamps to its env cap.
+    ...(opts.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
   })
 
   const headers: Record<string, string> = {

@@ -25,6 +25,7 @@ import ToolCallCard from '@/components/platform-chat/ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
 import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
+import { TurnTimeoutSelector, useTurnTimeoutMs } from '@/components/platform-chat/TurnTimeoutSelector'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
@@ -160,6 +161,10 @@ export default function BusinessChat({ slug, name }: Props) {
   // Context usage from the most-recent successful enqueue. Surfaces in
   // the bottom-right ContextIndicator.
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
+
+  // Phase 1 of task_plan-mobile-copilot.md — per-turn timeout selector.
+  // Storage key is per-business so different businesses can keep different defaults.
+  const { value: turnTimeoutMs, setValue: setTurnTimeoutMs } = useTurnTimeoutMs(`nexus:business-chat:${slug}:turn-timeout-ms`)
 
   // Pending CLI tool-permission requests — same wiring as PlatformChat.
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
@@ -340,7 +345,14 @@ export default function BusinessChat({ slug, name }: Props) {
       const enqRes = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId, provider }),
+        body:    JSON.stringify({
+          messages:  nextMessages,
+          sessionId: activeSessionId,
+          provider,
+          // Phase 1 of task_plan-mobile-copilot.md — null = "No limit"
+          // (omit field so gateway uses its env cap).
+          ...(turnTimeoutMs !== null ? { requestTimeoutMs: turnTimeoutMs } : {}),
+        }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -712,14 +724,16 @@ export default function BusinessChat({ slug, name }: Props) {
               <span>{busy ? 'Working…' : 'Send'}</span>
             </button>
           </div>
-          <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
-            <TerminalIcon size={11} />
-            <span className="flex-1 min-w-0 truncate">
+          <div className="mt-2 text-[11px] flex flex-wrap items-center gap-2" style={{ color: '#55556a' }}>
+            <TerminalIcon size={11} className="hidden sm:inline" />
+            <span className="hidden sm:inline flex-1 min-w-0 truncate">
               Scoped to <span className="font-mono">business:{slug}</span> — per-business + Shared fallback.
               {process.env.NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED === '1'
                 ? ' SSE streaming on; falls back to poll if the stream drops.'
                 : ' Async polling — flip NEXT_PUBLIC_BUSINESS_CHAT_STREAM_ENABLED=1 to enable streaming.'}
             </span>
+            <span className="flex-1 sm:hidden" />
+            <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
             <ChatProviderToggle storageKey={`nexus:business-chat:${slug}:provider`} />
             {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
             <ContextIndicator usage={usage} />

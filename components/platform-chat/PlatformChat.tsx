@@ -35,6 +35,7 @@ import HealthView from '@/components/chat-views/HealthView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
+import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
 
 interface Message {
   role:       'user' | 'assistant'
@@ -184,6 +185,10 @@ export default function PlatformChat() {
   // Context usage from the most-recent successful enqueue. Surfaces in
   // the bottom-right ContextIndicator (Claude-Code-Desktop style).
   const [usage, setUsage] = useState<ContextUsageView | null>(null)
+
+  // Phase 1 of task_plan-mobile-copilot.md — per-turn timeout selector.
+  // value is null when "No limit" is picked (gateway uses its env cap).
+  const { value: turnTimeoutMs, setValue: setTurnTimeoutMs } = useTurnTimeoutMs('nexus:platform-chat:turn-timeout-ms')
 
   // Pending CLI tool-permission requests from the broker MCP (PR #189).
   // Refreshes on every poll tick while the turn is running; cleared when
@@ -369,7 +374,14 @@ export default function PlatformChat() {
       const enqRes = await fetch('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify({ messages: nextMessages, sessionId: activeSessionId, provider }),
+        body:    JSON.stringify({
+          messages:  nextMessages,
+          sessionId: activeSessionId,
+          provider,
+          // Phase 1 of task_plan-mobile-copilot.md — null means "No limit",
+          // omit the field so the gateway uses its env cap REQUEST_MAX_MS.
+          ...(turnTimeoutMs !== null ? { requestTimeoutMs: turnTimeoutMs } : {}),
+        }),
       })
       if (enqRes.status === 401) {
         const here = window.location.pathname + window.location.search
@@ -848,13 +860,16 @@ export default function PlatformChat() {
             <span>{busy ? 'Working…' : 'Send'}</span>
           </button>
         </div>
-        <div className="mt-2 text-[11px] flex items-center gap-2" style={{ color: '#55556a' }}>
-          <TerminalIcon size={11} />
-          <span className="flex-1 min-w-0 truncate">
+        <div className="mt-2 text-[11px] flex flex-wrap items-center gap-2" style={{ color: '#55556a' }}>
+          <TerminalIcon size={11} className="hidden sm:inline" />
+          <span className="hidden sm:inline flex-1 min-w-0 truncate">
             {process.env.NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED === '1'
               ? 'SSE streaming + persistent sessions + approval cards. Falls back to async poll if the stream drops.'
               : 'Async polling + persistent sessions + approval cards. SSE streaming is wired but disabled — flip NEXT_PUBLIC_PLATFORM_CHAT_STREAM_ENABLED=1 to enable.'}
           </span>
+          {/* Spacer pushes the right-side chips to the edge on mobile too. */}
+          <span className="flex-1 sm:hidden" />
+          <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
           <ChatProviderToggle storageKey="nexus:platform-chat:provider" />
           {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
           <ContextIndicator usage={usage} />
