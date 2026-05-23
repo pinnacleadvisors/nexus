@@ -19,7 +19,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Check, X, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react'
+import { Check, X, ShieldCheck, CheckCircle2, XCircle, Maximize2 } from 'lucide-react'
+import { Drawer } from 'vaul'
 import type { ApprovalRequest } from '@/lib/chat/approval'
 
 interface Props {
@@ -51,7 +52,36 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
 
   const resolved = !!resolution
 
-  return (
+  // Phase 2B of task_plan-collaborative-chat.md — on mobile with multi-item
+  // approvals, the inline card is cramped. Auto-open a Vaul bottom-sheet
+  // pinned to 92vh so the operator gets full-screen tap-friendly buttons.
+  // Operator can swipe down to dismiss → reveals the inline card behind it,
+  // can still approve from there. Resolved cards always inline (historical).
+  const [isMobile, setIsMobile] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 639px)')
+    function update() { setIsMobile(mq.matches) }
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  // Auto-open the sheet exactly once per approval_id — when a new approval
+  // lands on a mobile viewport, the operator should see it modally without
+  // having to scroll the chat. Re-rendering must not re-open after dismissal.
+  const [seenApprovalIds, setSeenApprovalIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!isMobile || resolved) return
+    if (request.items.length <= 2) return
+    if (seenApprovalIds.has(request.approval_id)) return
+    setSheetOpen(true)
+    setSeenApprovalIds(prev => new Set(prev).add(request.approval_id))
+  }, [isMobile, resolved, request.approval_id, request.items.length, seenApprovalIds])
+
+  const useFullScreen = isMobile && !resolved && request.items.length > 2
+
+  const inlineCard = (
     <div
       className="rounded-xl mt-3 mb-1"
       style={{
@@ -117,16 +147,25 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
         })}
       </div>
 
-      {/* Action bar */}
+      {/* Action bar — bigger tap targets on mobile per Phase 2B. */}
       {!resolved && (
         <div
-          className="px-4 py-2.5 flex items-center justify-between gap-2"
+          className="px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap"
           style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
         >
+          {useFullScreen && (
+            <button
+              onClick={() => setSheetOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg text-xs font-medium opacity-70 hover:opacity-100"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', color: '#9090b0' }}
+            >
+              <Maximize2 size={11} /> Expand
+            </button>
+          )}
           <button
             onClick={() => onSubmit?.([])}
             disabled={disabled}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:py-1.5 min-h-[44px] sm:min-h-0 rounded-lg text-xs font-medium disabled:opacity-40"
             style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#fca5a5' }}
           >
             <X size={12} /> Deny all
@@ -134,7 +173,7 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
           <button
             onClick={() => onSubmit?.(approvedIds)}
             disabled={disabled || noneSelected}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:py-1.5 min-h-[44px] sm:min-h-0 rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.10))', border: '1px solid rgba(108,99,255,0.30)', color: '#e8e8f0' }}
           >
             <Check size={12} /> {allSelected ? 'Approve all' : noneSelected ? 'Select at least one' : `Approve ${approvedIds.length}/${request.items.length}`}
@@ -142,5 +181,42 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
         </div>
       )}
     </div>
+  )
+
+  // Default: inline card. On mobile with 3+ items + unresolved, ALSO render a
+  // Vaul Drawer that auto-opens once (per approval_id) — operator can swipe
+  // down to dismiss and use the inline card behind it.
+  if (!useFullScreen) {
+    return inlineCard
+  }
+
+  return (
+    <>
+      {inlineCard}
+      <Drawer.Root open={sheetOpen} onOpenChange={setSheetOpen}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.6)' }} />
+          <Drawer.Content
+            className="fixed bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-2xl outline-none"
+            style={{
+              background:           'linear-gradient(180deg, rgba(15,15,24,0.98), rgba(8,8,14,0.98))',
+              borderTop:            '1px solid rgba(108,99,255,0.30)',
+              backdropFilter:       'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              maxHeight:            '92vh',
+              minHeight:            '60vh',
+              boxShadow:            '0 -10px 32px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div className="mx-auto mt-2 mb-1 h-1.5 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }} />
+            <Drawer.Title className="sr-only">{request.title}</Drawer.Title>
+            <Drawer.Description className="sr-only">Approval card — review and approve or deny items</Drawer.Description>
+            <div className="flex-1 overflow-y-auto px-2 pb-4">
+              {inlineCard}
+            </div>
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+    </>
   )
 }

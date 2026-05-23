@@ -187,6 +187,16 @@ export default function BusinessChat({ slug, name }: Props) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
+  // Phase 2E — keep the latest message above the iOS keyboard. See PlatformChat
+  // for the design note.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return
+    const vv = window.visualViewport
+    function onResize() { bottomRef.current?.scrollIntoView({ block: 'end' }) }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
   // Reload session list — called on mount + after create/delete.
   const reloadSessions = useCallback(async () => {
     setSessionsLoading(true)

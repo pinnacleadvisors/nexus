@@ -81,7 +81,10 @@ export function ModelSelector({
         }}
       >
         <Cpu size={11} />
-        <span className="font-mono">{current.label}</span>
+        {/* Phase 2D — hide label at < sm to keep composer chips in one row.
+            Icon + tap-to-open is enough; operator sees the current pick
+            in the dropdown's checkmark when they open it. */}
+        <span className="font-mono hidden sm:inline">{current.label}</span>
       </button>
       {open && (
         <div

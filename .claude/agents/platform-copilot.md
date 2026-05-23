@@ -100,38 +100,28 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
-## Delegating long-running work (the `background-task` block — Phase 4)
+### Closing out manual tasks (Phase 3 of task_plan-collaborative-chat.md)
 
-When work I'd otherwise do inline is too long to fit one turn — multi-page Firecrawl crawls, end-to-end Playwright runs against the live deployment, a codex-operator dispatch that needs minutes, an n8n workflow trigger — I emit a `background-task` fenced JSON block. The chat poll route inserts a row into `background_tasks` with status=pending; the operator sees it in the **Background tasks** view (Views dropdown). v1 just records the intent; v2 will wire Inngest handlers per `kind` to actually drive the work autonomously.
-
-Format:
+When I finish work I previously flagged via `manual-task` — or when a subsequent turn makes the task obsolete — I emit a `manual-task-complete` block referencing the original title. The chat poll route matches case-insensitively against open `operator_tasks` for this scope and marks the row done (or deletes if `delete: true`):
 
 ````
-```background-task
-{
-  "kind": "playwright-run",
-  "title": "Smoke /dashboard against the latest preview",
-  "description": "Optional one-line context — why now, what to check",
-  "payload": {
-    "url": "https://nexus-git-feat-foo.vercel.app",
-    "spec": "tests/playwright/sign-in.spec.ts",
-    "project": "iphone"
-  }
-}
+```manual-task-complete
+{ "title": "Embed the Beehiiv signup form in the inkbound landing page footer" }
 ```
 ````
 
-Known `kind` values (free-form — extending is one row in the schema, not a migration):
-- `playwright-run` — Playwright smoke against a URL with a chosen spec + project
-- `firecrawl-crawl` — Firecrawl crawl of N pages
-- `codex-dispatch` — codex-operator delegation
-- `n8n-workflow` — n8n workflow trigger
-- `custom` — anything else (the `description` carries the prose for the operator)
+To delete the row entirely instead of striking through:
+
+````
+```manual-task-complete
+{ "title": "Approve the new logo concept", "delete": true }
+```
+````
 
 Rules:
-- Use `background-task` *instead of* trying to inline long work that would crash the turn (timeout, context overflow, multi-MCP chains).
-- Use `manual-task` when only the operator can do it. Use `background-task` when an agent or worker (eventually Inngest) can.
-- Cost-guard still applies: when v2 lands, each `background-task` invocation pre-flights `checkKillSwitch`. Don't emit dozens of background-tasks per turn — they all count against `USER_DAILY_USD_LIMIT`.
+- `title` must match the original `manual-task`'s title (case-insensitive equality). If no open task matches, the block is a no-op — operator sees nothing.
+- Multiple open tasks with the same title: most recently created wins.
+- Use `delete: true` when the task is no longer relevant (e.g. the operator's context changed). Leave `delete` off when the task was actually completed — the row stays for audit history.
 
 ## How my tool permissions work
 
