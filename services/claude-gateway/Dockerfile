@@ -20,8 +20,12 @@ WORKDIR /app
 # clone supplies .claude/agents/<slug>.md specs to the spawned claude CLI.
 # bash + ca-certificates + curl round out the runtime essentials. curl + gnupg
 # are also needed to bootstrap the Doppler CLI (next layer).
+#
+# jq + python3-minimal added by Phase 3 of task_plan-mobile-copilot.md so the
+# repo's .claude/hooks/* scripts can run: check-write-size.sh uses jq to
+# inspect tool input; skill-router.sh uses python3 to JSON-parse the prompt.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates bash curl gnupg \
+ && apt-get install -y --no-install-recommends git ca-certificates bash curl gnupg jq python3-minimal \
  && rm -rf /var/lib/apt/lists/*
 
 # Doppler CLI — secrets pulled at container startup, so the only env var that

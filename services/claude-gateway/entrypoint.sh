@@ -317,6 +317,54 @@ if [ -n "$MCP_BLOCK" ]; then
   # surfaces an Allow/Deny card in the chat. So unknown tools still get
   # a UI gate; the allow list just covers the common path so the broker
   # isn't on the hot path for every Bash run.
+  # Phase 3 of task_plan-mobile-copilot.md — port the operator's two most
+  # leveraged Claude-Code hooks into the gateway so the spawned agent
+  # inherits the same guardrails:
+  #
+  #   * PreToolUse Write|Edit|Bash → check-write-size.sh blocks single-call
+  #     payloads >300 lines / 10 KB (Opus stream-timeout class). Without
+  #     this, the platform-copilot routinely truncates mid-Edit on long
+  #     refactors and leaves the repo in an undefined state.
+  #
+  #   * UserPromptSubmit → skill-router.sh injects skill-routing hints
+  #     ("/firecrawl_local for that URL", "/molecularmemory_local to remember
+  #     this fact"). Cheap context-shaping; saves an LLM turn discovering
+  #     each skill cold.
+  #
+  # Both scripts live in the cloned /repo at /repo/.claude/hooks/*.sh —
+  # available because the entrypoint clones the repo before this block.
+  # We reference them by absolute path so the CLI doesn't need to resolve
+  # them through its own cwd.
+  HOOKS_DIR="${REPO_PATH}/.claude/hooks"
+  HOOKS_BLOCK=""
+  if [ -d "$HOOKS_DIR" ] && [ -f "$HOOKS_DIR/check-write-size.sh" ]; then
+    chmod +x "$HOOKS_DIR"/*.sh 2>/dev/null || true
+    HOOKS_BLOCK=$(cat <<JSON
+,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          { "type": "command", "command": "$HOOKS_DIR/check-write-size.sh" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOOKS_DIR/skill-router.sh" }
+        ]
+      }
+    ]
+  }
+JSON
+)
+    echo "[gateway] Wiring repo hooks (check-write-size + skill-router)"
+  else
+    echo "[gateway] Repo hooks not found at $HOOKS_DIR — skipping hooks block"
+  fi
+
   cat > /root/.claude/settings.json <<JSON
 {
   "mcpServers": {
@@ -359,7 +407,7 @@ $MCP_BLOCK
       "WebSearch",
       "TodoWrite"
     ]
-  }
+  }$HOOKS_BLOCK
 }
 JSON
   REGISTERED=""
