@@ -33,6 +33,7 @@ import ApprovalsView from '@/components/chat-views/ApprovalsView'
 import CalendarView from '@/components/chat-views/CalendarView'
 import BugHuntView from '@/components/chat-views/BugHuntView'
 import HealthView from '@/components/chat-views/HealthView'
+import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
@@ -933,6 +934,11 @@ export default function PlatformChat() {
       {activeView === 'approvals' && (
         <ViewsPanel title="Approval queue" subtitle="Pending approval cards across every admin chat" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:approvals">
           <ApprovalsView scope="admin" sessionsBasePath="/manage-platform" onCountChange={setApprovalsBadge} />
+        </ViewsPanel>
+      )}
+      {activeView === 'background-tasks' && (
+        <ViewsPanel title="Background tasks" subtitle="Long-running work the agent delegated" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:background-tasks">
+          <BackgroundTasksView scope="admin" />
         </ViewsPanel>
       )}
       {activeView === 'calendar' && (
