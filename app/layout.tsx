@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
@@ -16,6 +16,31 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Nexus',
   description: 'Business management and agent automation platform',
+}
+
+/**
+ * Viewport meta — Next.js 16 emits <meta name="viewport"> from this export.
+ *
+ * Without it, mobile browsers assume a ~980px desktop viewport, Tailwind
+ * sm:/md:/lg: breakpoints never trigger on phones, and the desktop layout
+ * renders at scale on the device — the "squashed and unusable" symptom on
+ * 2026-05-24 was caused by this missing export.
+ *
+ * The mobile-copilot Playwright projects (PR #290) didn't catch the
+ * regression because Playwright sets its own viewport via device config,
+ * bypassing the meta tag entirely. Real-device traffic was the only path
+ * that exposed it.
+ *
+ * `userScalable: true` + `maximumScale: 5` lets the operator pinch-zoom
+ * dense tables / kanban boards on a small screen — locking it disabled
+ * would be an accessibility regression.
+ */
+export const viewport: Viewport = {
+  width:         'device-width',
+  initialScale:  1,
+  maximumScale:  5,
+  userScalable:  true,
+  themeColor:    '#050508',
 }
 
 // Opt out of static prerender. The setup-gate below reads runtime env
