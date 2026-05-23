@@ -28,6 +28,32 @@ import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { appendMessage } from '@/lib/chat/sessions'
 import { createTask, findOpenTaskByTitle, updateTask, deleteTask } from '@/lib/views/tasks'
 import { createBackgroundTask } from '@/lib/background-tasks/dispatch'
+
+/**
+ * Phase 4 v2 — fire-and-forget hook into the dispatch route after a row
+ * is created. Doesn't await; doesn't block the chat turn. The dispatch
+ * route handles its own auth (bot bearer) + cost-guard + handler errors;
+ * we just kick it off here so the row doesn't sit pending until the next
+ * cron sweep. Wraps in try/catch so a missing NEXUS_BASE_URL / BOT_API_TOKEN
+ * env doesn't crash the chat poll route.
+ */
+function fireAndForgetDispatch(taskId: string): void {
+  try {
+    const base = process.env.NEXUS_BASE_URL
+    const bot  = process.env.BOT_API_TOKEN
+    if (!base || !bot) return  // no creds = dispatch will need to be triggered out-of-band (cron / manual)
+    void fetch(`${base}/api/background-tasks/${taskId}/dispatch`, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${bot}`, 'Content-Type': 'application/json' },
+      // Tight timeout — we don't actually wait for the dispatcher's result
+      // here; we just want to trip the start. The dispatch route's own
+      // maxDuration handles the long tail.
+      signal:  AbortSignal.timeout(5_000),
+    }).catch(err => console.warn(`[background-task] dispatch trigger failed for ${taskId}:`, err instanceof Error ? err.message : err))
+  } catch (err) {
+    console.warn(`[background-task] dispatch setup error for ${taskId}:`, err instanceof Error ? err.message : err)
+  }
+}
 import { getSession as getBugHuntSession, insertFinding, bumpIteration } from '@/lib/bug-hunt/sessions'
 import { insertGatewayTurn } from '@/lib/claw/gateway-turns'
 import type { ApprovalRequest } from '@/lib/chat/approval'
@@ -191,12 +217,11 @@ export async function persistCompletedTurn(
   }
 
   // Stage 1c (Phase 4 of task_plan-collaborative-chat.md) — background tasks.
-  // Same scope ownership pattern as manual_tasks. v1 inserts the row with
-  // status=pending; v2 wires Inngest handlers per `kind` to actually drive
-  // the work. Without this stage the agent's background-task block is
-  // silently ignored — the BackgroundTasksView would always be empty.
+  // Same scope ownership pattern as manual_tasks. v1 inserted the row at
+  // status=pending; v2 (this commit) ALSO fires the dispatcher fire-and-
+  // forget so the row immediately transitions pending → running → done|error.
   for (const b of parsed.background_tasks) {
-    await createBackgroundTask({
+    const row = await createBackgroundTask({
       userId:        input.userId,
       scope:         taskScope,
       chatSessionId: input.sessionId,
@@ -205,6 +230,7 @@ export async function persistCompletedTurn(
       description:   b.description ?? null,
       payload:       b.payload ?? {},
     })
+    if (row) fireAndForgetDispatch(row.id)
   }
 
   // Stage 1d (Phase 5 of task_plan-collaborative-chat.md) — swarm tasks.
@@ -214,9 +240,9 @@ export async function persistCompletedTurn(
   // agent's mental model isn't silently dropped.
   for (const s of parsed.swarm_tasks) {
     if (s.subtasks.length < 3) {
-      // Fall back: insert each as a standalone background_task.
+      // Fall back: insert each as a standalone background_task + dispatch.
       for (const sub of s.subtasks) {
-        await createBackgroundTask({
+        const subRow = await createBackgroundTask({
           userId:        input.userId,
           scope:         taskScope,
           chatSessionId: input.sessionId,
@@ -225,6 +251,7 @@ export async function persistCompletedTurn(
           description:   sub.description ?? null,
           payload:       sub.payload ?? {},
         })
+        if (subRow) fireAndForgetDispatch(subRow.id)
       }
       continue
     }
@@ -239,7 +266,7 @@ export async function persistCompletedTurn(
     })
     if (!parent) continue
     for (const sub of s.subtasks) {
-      await createBackgroundTask({
+      const subRow = await createBackgroundTask({
         userId:        input.userId,
         scope:         taskScope,
         chatSessionId: input.sessionId,
@@ -249,6 +276,7 @@ export async function persistCompletedTurn(
         description:   sub.description ?? null,
         payload:       sub.payload ?? {},
       })
+      if (subRow) fireAndForgetDispatch(subRow.id)
     }
   }
 
