@@ -84,6 +84,11 @@ try {
   process.exit(2)
 }
 
+// Coolify v4 expects docker_compose_raw to be base64-encoded (validated
+// 2026-05-23 against https://coolify.coolifycloudtunnel.uk — sending raw
+// YAML returns 422 "The docker_compose_raw should be base64 encoded.").
+const composeYamlB64 = Buffer.from(composeYaml, 'utf8').toString('base64')
+
 const DOPPLER_TOKEN_VALUE = DOPPLER_SECRET_NAME ? process.env[DOPPLER_SECRET_NAME] : null
 if (DOPPLER_SECRET_NAME && !DOPPLER_TOKEN_VALUE) {
   console.error(`--doppler-token-secret=${DOPPLER_SECRET_NAME} but $${DOPPLER_SECRET_NAME} is unset — did you run via \`doppler run --\` against a config that has it?`)
@@ -169,7 +174,8 @@ async function main() {
   if (DRY_RUN) {
     console.log(`\n[DRY-RUN] Would POST /services with body:`)
     console.log(JSON.stringify({
-      type:               'docker-compose-empty',
+      // Coolify v4: type vs docker_compose_raw are mutually exclusive.
+      // Providing docker_compose_raw signals "custom compose" — omit type.
       name:               NAME,
       project_uuid:       project.uuid,
       server_uuid:        server.uuid,
@@ -190,12 +196,15 @@ async function main() {
   const created = await api('/services', {
     method: 'POST',
     body:   JSON.stringify({
-      type:               'docker-compose-empty',
+      // Coolify v4 422s if both type and docker_compose_raw are sent —
+      // they're mutually exclusive. Providing raw compose signals "custom"
+      // (vs templated services like wordpress / ghost / n8n).
+      // docker_compose_raw must be base64-encoded per Coolify validation.
       name:               NAME,
       project_uuid:       project.uuid,
       server_uuid:        server.uuid,
       environment_name:   ENV_NAME,
-      docker_compose_raw: composeYaml,
+      docker_compose_raw: composeYamlB64,
     }),
   })
 
