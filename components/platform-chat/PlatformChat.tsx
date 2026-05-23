@@ -36,6 +36,8 @@ import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
+import { ModeSelector, useChatMode } from './ModeSelector'
+import { ModelSelector, useChatModel } from './ModelSelector'
 
 interface Message {
   role:       'user' | 'assistant'
@@ -189,6 +191,10 @@ export default function PlatformChat() {
   // Phase 1 of task_plan-mobile-copilot.md — per-turn timeout selector.
   // value is null when "No limit" is picked (gateway uses its env cap).
   const { value: turnTimeoutMs, setValue: setTurnTimeoutMs } = useTurnTimeoutMs('nexus:platform-chat:turn-timeout-ms')
+
+  // Phase 1 of task_plan-collaborative-chat.md — per-turn mode + model.
+  const { value: chatMode,  setValue: setChatMode  } = useChatMode('nexus:platform-chat:mode')
+  const { value: chatModel, setValue: setChatModel } = useChatModel('nexus:platform-chat:model')
 
   // Pending CLI tool-permission requests from the broker MCP (PR #189).
   // Refreshes on every poll tick while the turn is running; cleared when
@@ -381,6 +387,9 @@ export default function PlatformChat() {
           // Phase 1 of task_plan-mobile-copilot.md — null means "No limit",
           // omit the field so the gateway uses its env cap REQUEST_MAX_MS.
           ...(turnTimeoutMs !== null ? { requestTimeoutMs: turnTimeoutMs } : {}),
+          // Phase 1 of task_plan-collaborative-chat.md — per-turn model + mode.
+          modelOverride: chatModel,
+          mode:          chatMode,
         }),
       })
       if (enqRes.status === 401) {
@@ -872,6 +881,8 @@ export default function PlatformChat() {
           {/* Spacer pushes the right-side chips to the edge on mobile too. */}
           <span className="flex-1 sm:hidden" />
           <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
+          <ModeSelector  value={chatMode}  onChange={setChatMode} />
+          <ModelSelector value={chatModel} onChange={setChatModel} />
           <ChatProviderToggle storageKey="nexus:platform-chat:provider" />
           {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
           <ContextIndicator usage={usage} />

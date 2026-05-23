@@ -26,6 +26,8 @@ import CrashedTurnCard, { type CrashedInfo } from '@/components/platform-chat/Cr
 import ContextIndicator, { type ContextUsageView } from '@/components/platform-chat/ContextIndicator'
 import ChatProviderToggle, { readChatProvider } from '@/components/chat/ChatProviderToggle'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from '@/components/platform-chat/TurnTimeoutSelector'
+import { ModeSelector, useChatMode } from '@/components/platform-chat/ModeSelector'
+import { ModelSelector, useChatModel } from '@/components/platform-chat/ModelSelector'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
@@ -165,6 +167,10 @@ export default function BusinessChat({ slug, name }: Props) {
   // Phase 1 of task_plan-mobile-copilot.md — per-turn timeout selector.
   // Storage key is per-business so different businesses can keep different defaults.
   const { value: turnTimeoutMs, setValue: setTurnTimeoutMs } = useTurnTimeoutMs(`nexus:business-chat:${slug}:turn-timeout-ms`)
+
+  // Phase 1 of task_plan-collaborative-chat.md — per-business mode + model.
+  const { value: chatMode,  setValue: setChatMode  } = useChatMode(`nexus:business-chat:${slug}:mode`)
+  const { value: chatModel, setValue: setChatModel } = useChatModel(`nexus:business-chat:${slug}:model`)
 
   // Pending CLI tool-permission requests — same wiring as PlatformChat.
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
@@ -352,6 +358,9 @@ export default function BusinessChat({ slug, name }: Props) {
           // Phase 1 of task_plan-mobile-copilot.md — null = "No limit"
           // (omit field so gateway uses its env cap).
           ...(turnTimeoutMs !== null ? { requestTimeoutMs: turnTimeoutMs } : {}),
+          // Phase 1 of task_plan-collaborative-chat.md — per-turn model + mode.
+          modelOverride: chatModel,
+          mode:          chatMode,
         }),
       })
       if (enqRes.status === 401) {
@@ -735,6 +744,8 @@ export default function BusinessChat({ slug, name }: Props) {
             </span>
             <span className="flex-1 sm:hidden" />
             <TurnTimeoutSelector value={turnTimeoutMs} onChange={setTurnTimeoutMs} />
+            <ModeSelector  value={chatMode}  onChange={setChatMode} />
+            <ModelSelector value={chatModel} onChange={setChatModel} />
             <ChatProviderToggle storageKey={`nexus:business-chat:${slug}:provider`} />
             {/* Bottom-right context-usage indicator — mirrors Claude Code Desktop. */}
             <ContextIndicator usage={usage} />

@@ -34,6 +34,13 @@ export interface RunArgs {
    * returns a hard-deny on any tool-permission call (fail-safe).
    */
   jobId?:     string
+  /**
+   * Per-turn model override (Phase 1 of task_plan-collaborative-chat.md).
+   * When set, the CLI is invoked with `--model <id>` so this turn runs on
+   * the chosen model instead of the OAuth-bound default (Opus 4.7). Invalid
+   * ids surface as a CLI error in the turn's stderr.
+   */
+  model?:     string
 }
 
 /**
@@ -95,6 +102,13 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     '--verbose',
     '--max-turns', '25',
   ]
+  // Per-turn model override. When omitted, the CLI uses the OAuth-bound
+  // default (typically claude-opus-4-7). See lib/chat/models.ts for the
+  // Nexus-side whitelist of accepted ids. Invalid ids surface as a clear
+  // CLI error in the turn's stderr — no special handling here.
+  if (args.model) {
+    cliArgs.push('--model', args.model)
+  }
   // MCP loading: `claude -p` (print/non-interactive mode) does NOT reliably
   // auto-load ~/.claude/settings.json across versions. The entrypoint writes
   // the MCP server registrations to /root/.claude/settings.json at boot, but

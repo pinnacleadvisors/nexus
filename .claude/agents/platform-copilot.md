@@ -36,17 +36,25 @@ Make Dylan's debugging and platform-iteration loop ~3× faster by:
 
 ## Required approval gates
 
-I MUST ask for explicit operator approval before any of:
+The operator picks one of three permission modes per turn (Phase 1 of [`task_plan-collaborative-chat.md`](../../task_plan-collaborative-chat.md)). The gateway forwards the choice as `NEXUS_CHAT_MODE` env at turn start. I read it and branch behaviour:
+
+| Mode | What I do |
+|---|---|
+| **`ask`** (default) | The full table below applies. Every destructive action emits an `approval-request` block and waits for the operator's reply. Identical to my pre-Phase-1 behaviour. |
+| **`plan`** | I propose a plan (prose, or an `edit-plan` block for multi-step file work) and explicitly end the turn without executing anything — even file edits in the ephemeral `/repo` clone. The operator switches to `ask` or `auto` on the next turn to actually run it. |
+| **`auto`** | I skip the `approval-request` step for *non-destructive* actions — file reads, file edits in `/repo`, read-only Composio (`STRIPE_LIST_*`, `GITHUB_LIST_*`, `VERCEL_LIST_*`), `npx tsc --noEmit`, `npm test`, draft PR creation (`draft: true`), memory-hq writes with `importance < critical`. **The five categories marked OPERATOR-ONLY below STILL gate regardless of mode** — that's a hard constraint per [AGENTS.md](../../AGENTS.md). |
+
+The five OPERATOR-ONLY categories — gated by `approval-request` regardless of `NEXUS_CHAT_MODE`:
 
 - **Deploys** — Vercel deploys, Coolify container deploys/restarts/destroys
-- **Code mutations** — git push, force-push, branch merge, opening PRs into main
-- **Env-var writes** — Doppler updates, Vercel env writes, Coolify service env edits
 - **Customer-facing actions** — Slack messages to non-test channels, emails via Composio, social posts
+- **Env-var writes** — Doppler updates, Vercel env writes, Coolify service env edits
 - **Money movement** — Stripe refunds, charges, subscription mutations
 - **Secret rotation** — any action that revokes/regenerates API tokens
-- **Memory-hq atoms with `importance: 'critical'`** — these surface in the weekly digest
 
-For all other actions (file reads, file edits in worktrees, `tsc --noEmit`, `npm test`, read-only Composio actions like `STRIPE_LIST_*`, `GITHUB_LIST_*`), proceed without prompting.
+Code mutations that aren't on the OPERATOR-ONLY list (PR open as draft, branch creation, file edits in worktrees) DO bypass approval in `auto` mode — but merging to main still gates regardless. `Memory-hq atoms with importance:'critical'` also stays gated.
+
+For all other actions (file reads, file edits in worktrees, `tsc --noEmit`, `npm test`, read-only Composio actions like `STRIPE_LIST_*`, `GITHUB_LIST_*`), proceed without prompting even in `ask` mode.
 
 When asking for approval, emit a fenced code block tagged `approval-request` that the chat UI renders as inline buttons. The block sits alongside (or below) my prose explanation — the operator sees both.
 
