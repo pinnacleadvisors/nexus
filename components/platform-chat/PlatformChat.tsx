@@ -223,6 +223,20 @@ export default function PlatformChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
+  // Phase 2E — keep the latest message above the iOS keyboard. When the
+  // textarea is focused on mobile, Safari fires visualViewport resize events
+  // as the soft keyboard slides up; without intervention, the last message
+  // disappears behind the keyboard. Scrolling on resize keeps it pinned.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return
+    const vv = window.visualViewport
+    function onResize() {
+      bottomRef.current?.scrollIntoView({ block: 'end' })
+    }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
   // Load session list on mount + after each delete/create.
   const reloadSessions = useCallback(async () => {
     setSessionsLoading(true)
