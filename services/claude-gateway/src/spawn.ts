@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readAgentSystemPrompt } from './agentSpec.js'
+import { loadAgentHooks, writeMergedSettings, cleanupMergedSettings } from './agentHooks.js'
 
 export interface RunArgs {
   agentSlug:  string | null
@@ -116,7 +117,33 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
   // makes discovery deterministic (only this file, no fallback hunting).
   // Skip when MCP_CONFIG_PATH=skip — useful for tests that intentionally run
   // without MCP, or to revert behaviour during incident response.
-  const mcpConfigPath = process.env.MCP_CONFIG_PATH ?? '/root/.claude/settings.json'
+  const baseConfigPath = process.env.MCP_CONFIG_PATH ?? '/root/.claude/settings.json'
+
+  // Phase 6 v2 of task_plan-collaborative-chat.md — merge per-agent hooks
+  // from `agent_library.hooks` (migration 055) on top of the repo-wide
+  // settings.json the entrypoint wrote at boot. Result is written to a
+  // per-spawn temp file in /tmp; the original /root/.claude/settings.json
+  // stays the repo-wide baseline so the next spawn's merge starts from a
+  // clean slate. Fail-soft: no agent / no hooks / unreachable Supabase /
+  // unreadable settings.json all fall through to baseConfigPath unchanged.
+  let mcpConfigPath = baseConfigPath
+  let tmpSettingsPath: string | null = null
+  if (args.agentSlug && baseConfigPath !== 'skip') {
+    const hooks = await loadAgentHooks(args.agentSlug)
+    if (hooks) {
+      const merged = await writeMergedSettings({
+        basePath: baseConfigPath,
+        hooks,
+        jobId:    args.jobId ?? null,
+      })
+      if (merged) {
+        mcpConfigPath = merged
+        tmpSettingsPath = merged
+        console.log(`[gw] merged ${Object.keys(hooks).length} hook-event(s) for agent=${args.agentSlug} → ${merged}`)
+      }
+    }
+  }
+
   if (mcpConfigPath && mcpConfigPath !== 'skip') {
     cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
   }
@@ -222,6 +249,7 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
       if (resolved) return
       resolved = true
       child.kill('SIGTERM')
+      void cleanupMergedSettings(tmpSettingsPath)
       resolve({
         ok:         false,
         content:    lastAssistantText,
@@ -254,6 +282,7 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
       if (resolved) return
       resolved = true
       clearTimeout(timeout)
+      void cleanupMergedSettings(tmpSettingsPath)
       resolve({
         ok:         false,
         content:    '',
@@ -266,6 +295,7 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
       if (resolved) return
       resolved = true
       clearTimeout(timeout)
+      void cleanupMergedSettings(tmpSettingsPath)
       if (result.content) {
         result.durationMs = Date.now() - started
         result.ok = code === 0
