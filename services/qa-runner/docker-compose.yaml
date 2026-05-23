@@ -27,8 +27,11 @@ services:
     restart: unless-stopped
     environment:
       DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
-    volumes:
-      - qa_runner_dist:/app/dist
+    # No volume on /app/dist — the first failed boot persisted the original
+    # broken tsc output (dist/src/index.js) and every subsequent rebuild was
+    # shadowed by the stale volume. Playwright artifacts persistence isn't
+    # critical for the smoke loop; if we need it later, mount a separate
+    # volume on /app/reports + change playwright.config.ts's outputDir.
     expose:
       - "3001"
     # `default: {}` was here previously but it (a) requires a corresponding
@@ -45,9 +48,6 @@ services:
       interval: 30s
       timeout:  5s
       retries:  3
-
-volumes:
-  qa_runner_dist:
 
 networks:
   coolify:
