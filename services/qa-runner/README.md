@@ -117,7 +117,9 @@ doppler secrets set VERCEL_LOG_DRAIN_SECRET=$(openssl rand -hex 32)
 through the gateway successfully — see `task_plan-autonomous-qa.md` Q3
 follow-up list for the call sites still on the API path.)
 
-### 4. Configure the Vercel JSON log drain
+### 4. Wire log access (Vercel-deployed Nexus)
+
+> Skip to **§4-Coolify** below if your Nexus is deployed on Coolify, not Vercel.
 
 - Vercel → Project → **Settings → Log Drains** → **Add Log Drain**
 - Type: **JSON**
@@ -133,11 +135,23 @@ select count(*) from log_events
  where created_at > now() - interval '5 minutes';
 ```
 
+### 4-Coolify. Coolify-deployed Nexus — log path alternatives
+
+When `vercel.json` has `"deploymentEnabled": false` and Nexus runs on Coolify, the Vercel log drain doesn't apply. Three options, in order of operator effort:
+
+**A. Skip log drain (recommended for v1).** qa-runner still works; failures just lose the 30 s log-slice context. The dispatched fix-attempt has the Playwright failure text + screenshot + trace — usually enough to diagnose. Migration 022 is still optional in this mode.
+
+**B. Vector sidecar (full log parity).** Add a `vector` container to your Nexus docker-compose that tails container stdout and POSTs to `https://nexus.<your-domain>/api/vercel/log-drain`. The log-drain endpoint accepts any JSON shape — name is historical, not Vercel-specific.
+
+**C. Coolify scheduled task to scrape `docker logs`.** Lower-fidelity than Vector; only use if A and B are blocked.
+
 ### 5. Apply the migration
 
 ```bash
 npm run migrate                    # reads supabase/migrations/022_log_events.sql
 ```
+
+Skip if you picked Option A in §4-Coolify — `log_events` table is unused.
 
 ### 6. Deploy the qa-runner service on Coolify
 
@@ -146,8 +160,10 @@ Follow the **Deploy on Coolify** steps above. Confirm `GET /health` returns
 
 ### 7. Smoke-test the end-to-end loop
 
+> See **§7-Coolify** below for the Coolify-deployed Nexus path. The flow is identical; only the auth header differs (bot bearer instead of Vercel `CRON_SECRET`).
+
 ```bash
-# Trigger the cron manually
+# Vercel cron auth — Vercel injects Authorization: Bearer $CRON_SECRET
 curl -X POST https://nexus.<your-domain>/api/cron/post-deploy-smoke \
   -H "Authorization: Bearer $CRON_SECRET" \
   -H "Content-Type: application/json" \
@@ -164,6 +180,44 @@ You should see in `docker logs qa-runner`:
 To force a dispatch and prove the loop end-to-end, temporarily break a route
 (e.g. throw in `app/(protected)/dashboard/page.tsx`), redeploy, and watch the
 gateway logs for the dispatched session.
+
+### 7-Coolify. Coolify-deployed Nexus — smoke + cron scheduling
+
+Two differences from the Vercel path: auth uses the bot bearer (not `CRON_SECRET`), and *something else* has to fire the cron route on a schedule because Vercel crons are inactive when deploys are disabled.
+
+**Manual smoke test (anytime — owner-equivalent via bot token):**
+
+```bash
+# Pull what you need from Doppler. Bot user is in ALLOWED_USER_IDS so its
+# bearer is owner-equivalent for hitting the cron route directly.
+BOT_API_TOKEN=$(doppler secrets get BOT_API_TOKEN --project nexus --plain)
+NEXUS_BASE_URL=$(doppler secrets get NEXUS_BASE_URL --project nexus --plain)
+
+curl -X POST "$NEXUS_BASE_URL/api/cron/post-deploy-smoke" \
+  -H "Authorization: Bearer $BOT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"baseUrl\":\"$NEXUS_BASE_URL\"}"
+```
+
+Expected response: `{ "ok": true, "dispatched": true, "baseUrl": "..." }`. Then check qa-runner logs in Coolify for the smoke output.
+
+**Schedule the trigger (pick one — replaces the Vercel cron entry in `vercel.json`):**
+
+| Option | How |
+|---|---|
+| Coolify scheduled task | On your Nexus Coolify resource → **Scheduled Tasks** → add `curl -fsS -X POST -H "Authorization: Bearer $BOT_API_TOKEN" "$NEXUS_BASE_URL/api/cron/post-deploy-smoke"` with frequency `*/30 * * * *`. Inject `BOT_API_TOKEN` + `NEXUS_BASE_URL` from the same Doppler config. |
+| n8n cron workflow | If n8n is already running, add a **Schedule trigger** → **HTTP Request** node hitting the cron URL with the bot bearer. Same `*/30 * * * *`. |
+| External cron service | cron-job.org / EasyCron — same recipe. Lowest-rate-limit but external dependency. |
+| Manual only | Don't schedule. Smoke after each deploy by hand using the curl above. Fine for early-stage operation. |
+
+**Diagnosing common failures:**
+
+| Response | Probable cause | Fix |
+|---|---|---|
+| `{ ok: true, skipped: true, reason: 'qa_runner_not_configured' }` | `QA_RUNNER_WEBHOOK_URL` or `QA_RUNNER_HMAC_SECRET` missing from Doppler | `doppler secrets set QA_RUNNER_WEBHOOK_URL=https://qa-runner.<your-tunnel>/run`. Redeploy Nexus on Coolify. |
+| `{ ok: false, error: 'qa_runner_502', detail: '...' }` | qa-runner container unreachable at that URL | Coolify → qa-runner resource → Logs. Check it booted on :3001 and the Cloudflare Tunnel ingress is healthy. |
+| `{ ok: false, error: 'qa_runner_401', detail: 'bad_signature' }` | HMAC mismatch — `QA_RUNNER_HMAC_SECRET` differs between Nexus env and qa-runner env | Both must read the SAME Doppler secret. Confirm both Coolify resources are wired to the same Doppler config. Redeploy both. |
+| `{ ok: false, error: 'no_base_url' }` | `NEXUS_BASE_URL` (or `QA_RUNNER_BASE_URL`) unset in Doppler AND `baseUrl` not passed in body | Set `NEXUS_BASE_URL=https://nexus.<your-domain>` in Doppler. Redeploy Nexus. |
 
 ## Operational notes
 
