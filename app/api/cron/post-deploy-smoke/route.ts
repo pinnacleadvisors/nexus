@@ -36,8 +36,16 @@ interface CronBody {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isAuthorised(req)) {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  const authVerdict = checkAuth(req)
+  if (!authVerdict.ok) {
+    // Non-secret-leaking diagnostic. The operator hitting a 401 in a
+    // cron-job.org dashboard log can now tell which auth path failed
+    // (CRON_SECRET unset → wrong header from caller → bot token tried &
+    // failed) without grepping production logs.
+    return NextResponse.json(
+      { ok: false, error: 'unauthorized', reason: authVerdict.reason },
+      { status: 401 },
+    )
   }
 
   const webhookUrl = process.env.QA_RUNNER_WEBHOOK_URL
@@ -105,13 +113,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   return POST(req)
 }
 
-function isAuthorised(req: NextRequest): boolean {
+type AuthVerdict =
+  | { ok: true;  reason: 'cron_secret' | 'bot_token' }
+  | { ok: false; reason: 'cron_secret_unset_and_bot_token_invalid' | 'cron_secret_set_but_header_mismatch' | 'no_authorization_header' }
+
+/**
+ * Returns a structured verdict so the 401 response can tell the operator
+ * WHICH auth path failed without leaking the secret. 2026-05-24 — the
+ * `qa-runner-401-rca` atom (mocs/autonomous-qa) documents the typical
+ * failure modes this surfaces.
+ */
+function checkAuth(req: NextRequest): AuthVerdict {
   const cronSecret = process.env.CRON_SECRET
-  const header = req.headers.get('authorization') ?? ''
-  if (cronSecret && header === `Bearer ${cronSecret}`) return true
+  const header     = req.headers.get('authorization') ?? ''
+
+  if (cronSecret && header === `Bearer ${cronSecret}`) {
+    return { ok: true, reason: 'cron_secret' }
+  }
   // Manual triggers (local dev) — bot token works too. The bot user is in
   // ALLOWED_USER_IDS so this is owner-equivalent without exposing the cron
   // secret to the runner box.
-  if (authBotToken(req)) return true
-  return false
+  if (authBotToken(req)) {
+    return { ok: true, reason: 'bot_token' }
+  }
+
+  // Diagnostic: tell the operator which auth path failed. Never leaks the
+  // secret value — only whether the env var is set + whether the header
+  // arrived at all.
+  if (!header) {
+    return { ok: false, reason: 'no_authorization_header' }
+  }
+  if (!cronSecret) {
+    return { ok: false, reason: 'cron_secret_unset_and_bot_token_invalid' }
+  }
+  return { ok: false, reason: 'cron_secret_set_but_header_mismatch' }
 }
