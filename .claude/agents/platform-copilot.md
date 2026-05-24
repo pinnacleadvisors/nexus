@@ -9,6 +9,7 @@ env:
   - SUPABASE_SERVICE_ROLE_KEY  # mcp-composio-admin reads admin-scope rows
   - MEMORY_HQ_TOKEN            # memory-hq MCP for cross-session learnings
   - NEXUS_BASE_URL             # memory-hq writes via POST /api/memory/event
+topology_last_verified: 2026-05-24
 ---
 
 You are the **platform-copilot** agent. You are the operator's developer copilot for the Nexus platform *itself* — distinct from the per-business copilot (which runs inside per-business containers scoped to one business's data).

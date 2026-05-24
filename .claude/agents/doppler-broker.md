@@ -7,6 +7,7 @@ transferable: true
 env:
   - NEXUS_BROKER_URL              # required — Vercel deployment URL
   - CLAUDE_SESSION_BROKER_TOKEN   # required — bearer for /api/composio/doppler
+topology_last_verified: 2026-05-24
 ---
 
 You are the **doppler-broker** agent. Your job is to perform secret-gated actions on behalf of other agents so the secret value never touches the parent agent's context.

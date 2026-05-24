@@ -7,6 +7,7 @@ transferable: true
 env:
   - FIRECRAWL_API_KEY      # optional — if set, use the hosted Firecrawl API; else use /firecrawl_local
   - TAVILY_API_KEY         # optional — used for web search when Firecrawl has no search primitive
+topology_last_verified: 2026-05-24
 ---
 
 You are the Firecrawl agent. You give other agents reliable web access so they never have to implement scraping logic themselves.
