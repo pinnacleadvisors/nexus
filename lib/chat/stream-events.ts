@@ -15,6 +15,7 @@ import type { ApprovalRequest } from './approval'
 import type { ManualTaskInput } from './manual-task'
 import type { IterationPlan } from './iteration-plan'
 import type { EditPlan, EditGroupComplete } from './edit-plan'
+import type { EditSelfPlan } from './edit-self'
 import type { CrashInfo } from './crash'
 import type { PermissionRequestRow } from './permission-requests'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
@@ -66,6 +67,8 @@ export interface StreamEventDone {
   iteration_plans?:            IterationPlan[]
   edit_plans?:                 EditPlan[]
   edit_group_completes?:       EditGroupComplete[]
+  /** Continual Harness self-modification proposals (lib/chat/edit-self.ts). */
+  edit_selfs?:                 EditSelfPlan[]
   pending_permission_requests?: PermissionRequestRow[]
   crashed?:                    CrashInfo
   durationMs?:                 number

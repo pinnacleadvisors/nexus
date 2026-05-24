@@ -25,6 +25,7 @@ import { parseSwarmTaskBlocks } from '@/lib/chat/swarm-task'
 import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
+import { parseEditSelfBlocks } from '@/lib/chat/edit-self'
 import { appendMessage } from '@/lib/chat/sessions'
 import { createTask, findOpenTaskByTitle, updateTask, deleteTask } from '@/lib/views/tasks'
 import { createBackgroundTask } from '@/lib/background-tasks/dispatch'
@@ -63,6 +64,7 @@ import type { SwarmTaskInput } from '@/lib/chat/swarm-task'
 import type { IterationPlan } from '@/lib/chat/iteration-plan'
 import type { BugHuntFinding } from '@/lib/chat/bug-hunt-finding'
 import type { EditPlan, EditGroupComplete } from '@/lib/chat/edit-plan'
+import type { EditSelfPlan } from '@/lib/chat/edit-self'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import type { CrashInfo } from '@/lib/chat/crash'
 import type { PermissionRequestRow } from '@/lib/chat/permission-requests'
@@ -87,6 +89,11 @@ export interface ParsedTurnBlocks {
   findings:             BugHuntFinding[]
   edit_plans:           EditPlan[]
   edit_group_completes: EditGroupComplete[]
+  /** Continual Harness absorption (arXiv 2605.09998) — self-modification
+   *  plans the agent proposes mid-cycle. Operator approves via the same
+   *  APPROVAL syntax as edit-plan; on approve the next turn materialises
+   *  the edits via the standard Edit tool. See lib/chat/edit-self.ts. */
+  edit_selfs:           EditSelfPlan[]
 }
 
 /**
@@ -111,6 +118,7 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
   const iterParse     = parseIterationPlans(displayText);           displayText = iterParse.text
   const findingParse  = parseBugHuntFindings(displayText);  displayText = findingParse.text
   const editPlanParse = parseEditPlanBlocks(displayText);   displayText = editPlanParse.text
+  const editSelfParse = parseEditSelfBlocks(displayText);   displayText = editSelfParse.text
 
   // iteration-plan blocks each carry an inner ApprovalRequest — append so
   // the existing ApprovalCard renders them with the rest.
@@ -127,6 +135,7 @@ export function parseTurnBlocks(gatewayText: string): ParsedTurnBlocks {
     findings:             findingParse.findings,
     edit_plans:           editPlanParse.plans,
     edit_group_completes: editPlanParse.group_completes,
+    edit_selfs:           editSelfParse.plans,
   }
 }
 
@@ -338,6 +347,7 @@ export async function persistCompletedTurn(
       findings_inserted:    findingsInserted || undefined,
       edit_plans:           parsed.edit_plans.length        > 0 ? parsed.edit_plans        : undefined,
       edit_group_completes: parsed.edit_group_completes.length > 0 ? parsed.edit_group_completes : undefined,
+      edit_selfs:           parsed.edit_selfs.length         > 0 ? parsed.edit_selfs         : undefined,
       crashed:              input.crashed
         ? {
             exit_code:   input.crashed.exitCode   ?? null,
