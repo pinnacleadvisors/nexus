@@ -29,12 +29,22 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # apt cache mounts skip the ~15s download of ca-certificates + curl + gnupg
 # on cached rebuilds. Debian's image installs a docker-clean hook that
 # trashes the cache after install; rm it so the mount stays warm.
+#
+# IMPORTANT: pass `--install-path /usr/local/bin` to the Doppler install
+# script. Without this flag, the script detects `dpkg` on Debian-based
+# images and installs Doppler via the .deb package — landing the binary
+# at /usr/bin/doppler, NOT /usr/local/bin/doppler. The runtime stage's
+# `COPY --from=build /usr/local/bin/doppler ...` then fails with "failed
+# to compute cache key: '/usr/local/bin/doppler': not found".
+# Forcing the install-path disables the package-manager path and lands
+# the binary exactly where we copy from. See AGENTS.md "Docker images
+# and docker-compose — Doppler as the source of truth".
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
  && apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
- && curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
+ && curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh -s -- --install-path /usr/local/bin
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # next.config.ts pulls Sentry config; the build needs Sentry env to avoid a
