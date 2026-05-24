@@ -17,9 +17,11 @@
  *   COOLIFY_PROJECT_ID_NEXUS_BUSINESSES uuid of the Coolify project that holds per-business apps
  *   COOLIFY_KVM4_SERVER_UUID            uuid of the Coolify server the apps run on
  *
- * Naming reflects the multi-instance setup: KVM2 hosts the codex-gateway,
- * KVM4 hosts claude-gateway + per-business containers. Future KVM2-side
- * provisioning would add a parallel `COOLIFY_KVM2_*` resolver.
+ * Naming retains the `_KVM4_` suffix as an artefact of the pre-lean-mode
+ * dual-host setup (KVM4 = claude-gateway + per-business; KVM2 = codex-     // topology-check: ignore
+ * gateway). KVM2 was retired 2026-05-22 per ADR 006 and every service     // topology-check: ignore
+ * now runs on KVM4 — the suffix could be flattened to `COOLIFY_*` in a
+ * future refactor without a behaviour change.
  *
  * The wrapper throws CoolifyError on any non-2xx; callers should wrap in
  * try/catch and log to audit_log via lib/audit.

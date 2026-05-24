@@ -200,12 +200,13 @@ node scripts/populate-memory.mjs                 # populate from `populate-memor
 Run before every commit (and certainly before opening a PR).
 
 ```bash
-npm run check:all              # lint + tsc + retry-storm + sentry-config + lockfile (one shot)
+npm run check:all              # lint + tsc + retry-storm + sentry-config + lockfile + topology (one shot)
 npm run lint                   # eslint
 npx tsc --noEmit               # TypeScript only — fastest single check
 npm run check:retry-storm      # blocks the 6 grep-detectable retry-storm patterns
 npm run check:sentry-config    # blocks Sentry sample-rate regressions (2026-05-12 budget cap)
 npm run check:lockfile         # blocks package.json ↔ package-lock.json drift (PR-274 incident class)
+npm run check:topology         # blocks references to retired infra (KVM2, KVM1, ChatProviderToggle) outside allowlist
 ```
 
 Every check exits non-zero on any finding. See [AGENTS.md "Pre-commit Checklist"](../../AGENTS.md) for the full mental checklist.
