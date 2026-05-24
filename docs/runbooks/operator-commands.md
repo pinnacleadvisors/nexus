@@ -200,12 +200,13 @@ node scripts/populate-memory.mjs                 # populate from `populate-memor
 Run before every commit (and certainly before opening a PR).
 
 ```bash
-npm run check:all              # lint + tsc + retry-storm + sentry-config + lockfile (one shot)
+npm run check:all              # lint + tsc + retry-storm + sentry-config + lockfile + topology (one shot)
 npm run lint                   # eslint
 npx tsc --noEmit               # TypeScript only — fastest single check
 npm run check:retry-storm      # blocks the 6 grep-detectable retry-storm patterns
 npm run check:sentry-config    # blocks Sentry sample-rate regressions (2026-05-12 budget cap)
 npm run check:lockfile         # blocks package.json ↔ package-lock.json drift (PR-274 incident class)
+npm run check:topology         # blocks references to retired infra (KVM2, KVM1, ChatProviderToggle) outside allowlist
 ```
 
 Every check exits non-zero on any finding. See [AGENTS.md "Pre-commit Checklist"](../../AGENTS.md) for the full mental checklist.
@@ -218,6 +219,21 @@ Two-tier check:
 2. **Authoritative `npm ci --dry-run`** (3-5 s) — catches subtler drift: version mismatches, phantom entries, conflicting peer deps. Only runs if the fast check passes.
 
 On failure, the script prints which packages drifted + the exact `npm install` + `git add package-lock.json` sequence to fix it on the PR branch.
+
+### Playwright projects — when to run which
+
+Root-level [`playwright.config.ts`](../../playwright.config.ts) declares four projects. Most pre-commit work needs only `chromium`; the mobile + real-device runs catch a different class of regression.
+
+```bash
+npm run test:e2e                                         # all four projects (chromium + iphone + android + real-device-mobile)
+npx playwright test --project=chromium                   # desktop only — fastest sanity check
+npx playwright test --project=iphone                     # iPhone 12 emulation — mobile layout assertions
+npx playwright test --project=android                    # Pixel 5 emulation
+npx playwright test --project=real-device-mobile         # Safari-iOS UA + 390×844, NO device-injection — catches viewport-meta-class bugs
+npx playwright test viewport-meta.spec.ts                # single spec — meta tag presence assertion (runs on all projects)
+```
+
+**When to run `real-device-mobile`** — the existing `iphone` / `android` projects use Playwright's `devices[...]` which sets viewport directly, bypassing the page's own `<meta name="viewport">` tag. The 2026-05-24 mobile-squashed bug (PR #301) only manifested on real phones because the meta tag was missing — Playwright tests passed because the device config injected the viewport directly. Run `real-device-mobile` for any change that touches `app/layout.tsx`, Tailwind responsive classes, or SSR meta-tag emission.
 
 ---
 

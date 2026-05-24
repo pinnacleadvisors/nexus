@@ -1,8 +1,9 @@
 /**
  * codex_gateway adapter — wraps the Codex CLI sandbox gateway at
- * services/codex-gateway/. Single shared gateway on KVM2 with a sandbox
- * Doppler config that excludes financial / secret-management secrets, per
- * ADR-002 (docs/adr/002-codex-gateway-sandbox.md).
+ * services/codex-gateway/. Single shared gateway on KVM4 (migrated from
+ * KVM2 on 2026-05-22 per ADR 006 lean-mode pivot) with a sandbox Doppler  // topology-check: ignore
+ * config that excludes financial / secret-management secrets, per ADR-002
+ * (docs/adr/002-codex-gateway-sandbox.md).
  *
  * invoke: POST <gatewayUrl>/dispatch with { agent_slug, brief, env }
  * status: GET  <gatewayUrl>/runs/<runId>
