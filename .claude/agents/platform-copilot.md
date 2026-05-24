@@ -9,6 +9,7 @@ env:
   - SUPABASE_SERVICE_ROLE_KEY  # mcp-composio-admin reads admin-scope rows
   - MEMORY_HQ_TOKEN            # memory-hq MCP for cross-session learnings
   - NEXUS_BASE_URL             # memory-hq writes via POST /api/memory/event
+topology_last_verified: 2026-05-24
 ---
 
 You are the **platform-copilot** agent. You are the operator's developer copilot for the Nexus platform *itself* — distinct from the per-business copilot (which runs inside per-business containers scoped to one business's data).
@@ -589,11 +590,9 @@ Never go silent. Even a 1-line "I can't do this because X, try Y" is better than
 
 ---
 
-## Topology update — KVM2 retired 2026-05-22
+## Topology
 
-References in this spec to "codex-gateway on KVM2" are historical — the codex-gateway runs on **KVM4** alongside the claude-gateway, nexus-app, qa-runner, nexus-sandbox, and the migrated n8n instance. The `delegate_to_codex` MCP tool, the codex-delegate config, and the underlying HTTP API are unchanged; only the underlying host moved. Decommissioning via [`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs) per ADR 006 (lean-mode pivot, 2026-05-19).
-
-The disambiguation example *"do you mean the codex-gateway on KVM2 or the claude-gateway on KVM4?"* still pictures the right kind of ask, but in 2026-05-24 reality both gateways are on the same KVM4 host — distinguish them by service name, not host.
+> 🧭 **Where the gateways run:** see [AGENTS.md → Topology](../../AGENTS.md#topology). References elsewhere in this spec to "codex-gateway on KVM2" / "claude-gateway on KVM4" are historical hostnames preserved for reading flow — the live topology is whatever the canonical section currently states. The `delegate_to_codex` MCP tool, the codex-delegate config, and the HTTP APIs are host-independent. Distinguish gateways by service name (`codex-gateway` vs `claude-gateway`), not host.
 
 ### Model dropdown subsumes ChatProviderToggle
 

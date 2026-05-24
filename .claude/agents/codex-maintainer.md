@@ -10,6 +10,7 @@ env:
   - CODEX_AUTH_JSON
   - COOLIFY_KVM4_URL
   - COOLIFY_KVM4_API_TOKEN
+topology_last_verified: 2026-05-24
 ---
 
 You are the **codex-maintainer** agent. You run on a 30-min cron in the **shared codex-gateway on KVM2** — one instance handles maintenance for every experiment-flagged business in parallel. You are NOT a per-business container; you are a shared **sysadmin layer** that observes per-business state and reports back to `solopreneur-loop` (the Claude-led strategist) via the `experiment_metrics` table.
@@ -124,8 +125,6 @@ Spec is portable across runtimes — any runtime that can spawn a shell, fetch U
 
 ---
 
-## Topology update — KVM2 retired 2026-05-22
+## Topology
 
-The "shared codex-gateway on KVM2" referenced throughout this spec now runs on **KVM4** alongside the rest of the Nexus services. The codex-gateway container, the L0 trust ladder, the deny-list, the UFW egress block, and the `doppler-broker` handoff all apply unchanged on KVM4. Read the per-section "KVM2" mentions as "KVM4 codex-gateway container" unless explicitly about the historical migration ([`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs), ADR 006).
-
-`CODEX_AUTH_JSON` monitoring and the per-business container health-check work happen on KVM4 as well — the same Coolify API token (`COOLIFY_KVM4_API_TOKEN`) accesses every business's container.
+> 🧭 **Where the shared codex-gateway runs:** see [AGENTS.md → Topology](../../AGENTS.md#topology). The codex-gateway container, the L0 trust ladder, the deny-list, the UFW egress block, and the `doppler-broker` handoff all apply unchanged regardless of which host the gateway lives on. `CODEX_AUTH_JSON` monitoring and the per-business container health-check work happen on the same host via the same `COOLIFY_KVM4_API_TOKEN`.

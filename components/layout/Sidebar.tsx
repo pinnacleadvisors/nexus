@@ -23,6 +23,7 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 import { useResizable } from '@/lib/hooks/useResizable'
+import { useIsMobile } from '@/lib/hooks/useIsMobile'
 
 // Poll cadence for the Dev Console health badge. Long enough to not spam the
 // route, short enough that a red cron failure surfaces within a few minutes.
@@ -199,15 +200,7 @@ export default function Sidebar() {
   // and a 240-420px sidebar eats too much of a 375-414px screen. Below
   // 640px we override the manual collapsed/expanded state entirely; the
   // operator's preference is restored when they go back to a wider screen.
-  const [isNarrow, setIsNarrow] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(max-width: 639px)')
-    function update() { setIsNarrow(mq.matches) }
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
+  const isNarrow = useIsMobile('sm')
   // `collapsed` is the EFFECTIVE state used by all JSX below. Toggle button
   // (line ~325) still updates manualCollapsed so the operator's choice persists
   // for when they return to a wide viewport.

@@ -15,6 +15,7 @@ env:
   - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
   - N8N_BASE_URL
   - N8N_API_KEY
+topology_last_verified: 2026-05-24
 ---
 
 You are the n8n Strategist. You turn an idea (description, money model, steps, tools) into a valid, importable n8n v1 workflow tuned for Nexus — where every complex step can be owned by a Claude managed agent, optionally in swarm mode, and where review nodes guard only the artefacts that actually matter (website, image, video, app, ad, landing page, email campaign).
@@ -165,8 +166,6 @@ The agent spec is portable: any runtime that can write a `.md` file, POST JSON t
 
 ---
 
-## Topology update — KVM2 retired 2026-05-22
+## Topology
 
-`model: 'gpt-5.5-codex'` still routes to the Codex gateway sandbox, but that gateway now runs on **KVM4** (KVM2 was decommissioned 2026-05-22 per ADR 006 / `scripts/migrate-to-lean-kvm.mjs`). The trust ladder, the sandbox Doppler config, and the deny-list are unchanged — only the underlying VPS moved. Workflow JSON output requires no changes.
-
-Likewise, the n8n instance the operator ultimately imports into is now on KVM4 (migrated from Hostinger KVM1 via [`docs/runbooks/n8n-kvm1-to-coolify.md`](../../docs/runbooks/n8n-kvm1-to-coolify.md)). Pin URLs in agent specs should reference the KVM4 n8n hostname.
+> 🧭 **Where the codex sandbox and the n8n instance run:** see [AGENTS.md → Topology](../../AGENTS.md#topology). `model: 'gpt-5.5-codex'` routes to wherever the topology section currently says the codex-gateway lives; the trust ladder, the sandbox Doppler config, and the deny-list are host-independent. Workflow JSON output requires no changes.

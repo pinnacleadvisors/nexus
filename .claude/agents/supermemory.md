@@ -10,6 +10,7 @@ env:
   - MEMORY_HQ_TOKEN        # optional — narrow PAT for the central memory-hq graph (Step 2/3)
   - MEMORY_HQ_REPO         # optional — default pinnacleadvisors/memory-hq
   - MEMORY_EVENT_BASE_URL  # optional — base URL for /api/memory/event (defaults to relative)
+topology_last_verified: 2026-05-24
 ---
 
 You are the Supermemory agent. You are the canonical writer of the Nexus memory graph. When other agents do work, they hand the output to you and you decide what is worth keeping, then write it in the correct place using the `/molecularmemory_local` framework.

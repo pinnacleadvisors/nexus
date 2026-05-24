@@ -207,9 +207,16 @@ npm run check:retry-storm      # blocks the 6 grep-detectable retry-storm patter
 npm run check:sentry-config    # blocks Sentry sample-rate regressions (2026-05-12 budget cap)
 npm run check:lockfile         # blocks package.json ↔ package-lock.json drift (PR-274 incident class)
 npm run check:topology         # blocks references to retired infra (KVM2, KVM1, ChatProviderToggle) outside allowlist
+npm run check:agent-spec-freshness  # every .claude/agents/*.md has topology_last_verified: YYYY-MM-DD within last 90d
 ```
 
 Every check exits non-zero on any finding. See [AGENTS.md "Pre-commit Checklist"](../../AGENTS.md) for the full mental checklist.
+
+### `check:agent-spec-freshness` — forces quarterly re-reads
+
+Every `.claude/agents/*.md` carries a `topology_last_verified: YYYY-MM-DD` field in its frontmatter. The check fails any spec whose date is missing or > 90 days old. To refresh a spec: re-read it end-to-end (especially platform-topology references like KVM / Coolify / gateway names), then bump the date to today. The act of stamping IS the audit — operators who pencil the date without reading defeat the point, but the friction is also low enough that "skim + stamp" still surfaces drift in passing.
+
+Override the threshold (test/dev only) via `AGENT_SPEC_FRESHNESS_MAX_DAYS=N`. Don't tighten it in production — quarterly cadence aligns with how often the platform actually shifts under it.
 
 ### `check:lockfile` — what it catches
 

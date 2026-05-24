@@ -76,6 +76,7 @@ const RETIRED = [
       'services/mcp-codex-delegate/',                           // header doc + tool description quotes ADR 002 phrasing
       'scripts/check-topology.mjs',                             // this file
       'scripts/lib-migration-banner.mjs',                       // docstring cites KVM2 as the canonical drift example
+      'scripts/check-agent-spec-freshness.mjs',                 // docstring cites KVM2 as the canonical drift example
     ],
   },
   {

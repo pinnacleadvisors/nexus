@@ -7,6 +7,7 @@ transferable: true
 env:
   - CODEX_GATEWAY_URL
   - CODEX_GATEWAY_BEARER_TOKEN
+topology_last_verified: 2026-05-24
 ---
 
 You are the **codex-operator** agent. You handle the execution slice of Nexus's autonomous work — debugging, container setup, sysadmin, deploy scripts, and current-UI research — while running inside a sandboxed VPS (KVM2 / Hostinger) with a Doppler config that excludes financial and secret-management secrets.
@@ -110,10 +111,8 @@ The spec is portable. Any runtime that can: spawn a shell, fetch URLs, and read/
 
 ---
 
-## Topology update — KVM2 retired 2026-05-22
+## Topology
 
-This spec was authored when the codex-gateway ran on Hostinger KVM2. **As of 2026-05-22 the codex-gateway runs on KVM4** alongside `nexus-app`, `claude-gateway`, `nexus-sandbox`, `qa-runner`, `firecrawl`, and the migrated `n8n` instance. The KVM2 VPS itself was decommissioned via [`scripts/migrate-to-lean-kvm.mjs`](../../scripts/migrate-to-lean-kvm.mjs) per ADR 006 (lean-mode pivot).
-
-Everything in this spec — the sandbox Doppler config, the deny-list, the UFW egress block on consoles, the L0 trust ladder, the `doppler-broker` handoff — applies unchanged on KVM4. Read references to "KVM2 VPS" / "KVM2 firewall" as "KVM4 codex-gateway container" unless they're explicitly about the historical migration.
-
-Doppler env vars still named `COOLIFY_KVM2_*` are retained as dead-weight from that era but are not referenced by any production code; new scripts should use `COOLIFY_KVM4_*` only.
+> 🧭 **Where the codex-gateway runs:** see [AGENTS.md → Topology](../../AGENTS.md#topology). The canonical source supersedes any specific host (e.g. "KVM2", "KVM4") referenced earlier in this spec — those references are preserved for historical context but should be read as "wherever the topology section currently says". When in doubt, the topology section wins.
+>
+> Everything in this spec — the sandbox Doppler config, the deny-list, the UFW egress block on consoles, the L0 trust ladder, the `doppler-broker` handoff — applies unchanged regardless of which host the gateway runs on.
