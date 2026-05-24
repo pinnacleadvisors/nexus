@@ -21,11 +21,13 @@ import ToolCallCard from './ToolCallCard'
 import CrashedTurnCard, { type CrashedInfo } from './CrashedTurnCard'
 import ContextIndicator, { type ContextUsageView } from './ContextIndicator'
 import EditPlanCard, { type EditPlanResolution } from './EditPlanCard'
+import EditSelfCard, { type EditSelfResolution } from './EditSelfCard'
 import PermissionPromptCard, { type PermissionRequest } from './PermissionPromptCard'
 import FloatingActionBar from './FloatingActionBar'
 import McpStatusStrip from '@/components/chat/McpStatusStrip'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
+import { buildEditSelfReply, type EditSelfPlan } from '@/lib/chat/edit-self'
 import { pickPendingAction } from '@/lib/chat/action-bar'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
@@ -63,6 +65,9 @@ interface Message {
   edit_plans?: EditPlan[]
   /** Per-group completion markers — used to flip status of prior cards. */
   edit_group_completes?: EditGroupComplete[]
+  /** Continual Harness self-modification proposals (lib/chat/edit-self.ts).
+   *  Rendered as EditSelfCard inline with the assistant bubble. */
+  edit_selfs?: EditSelfPlan[]
 }
 
 interface EnqueueOkAsync  { ok: true;  mode?: undefined;       jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
@@ -71,12 +76,12 @@ type    EnqueueOk         = EnqueueOkAsync | EnqueueOkCodex
 interface EnqueueFail     { ok: false; error: string; code: string; fallbackHint?: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number; startedAt?: number; finishedAt?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[] } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -99,6 +104,7 @@ interface StreamOrPollResult {
   crashed?:               CrashedInfo
   edit_plans?:            EditPlan[]
   edit_group_completes?:  EditGroupComplete[]
+  edit_selfs?:            EditSelfPlan[]
   cancelled?:             boolean
   continueWithPoll?:      boolean
 }
@@ -140,6 +146,34 @@ function computeEditPlanResolutions(messages: Message[]): Map<string, EditPlanRe
       const ids = approveMatch[1].split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
       for (const id of ids) if (!r.approvedGroupIds.includes(id)) r.approvedGroupIds.push(id)
     }
+  }
+  return out
+}
+
+/**
+ * Walk the message list and build a per-plan_id snapshot of approval state
+ * for edit-self blocks. Simpler than computeEditPlanResolutions because
+ * edit-self is one-shot — no `continue`, no per-group completion tracking.
+ * Operator either approves the listed item_ids or denies the whole block.
+ */
+function computeEditSelfResolutions(messages: Message[]): Map<string, EditSelfResolution> {
+  const out = new Map<string, EditSelfResolution>()
+  const knownPlans = new Set<string>()
+  for (const m of messages) for (const p of m.edit_selfs ?? []) knownPlans.add(p.plan_id)
+  for (const m of messages) {
+    if (m.role !== 'user') continue
+    const match = /APPROVAL\s+\[([^\]]+)\]:\s*(.+?)\s*$/m.exec(m.content)
+    if (!match) continue
+    const planId = match[1].trim()
+    if (!knownPlans.has(planId)) continue
+    const tail = match[2].trim()
+    if (/^deny\b/i.test(tail))     { out.set(planId, { approvedItemIds: [], denied: true }); continue }
+    const approveMatch = /^approve\s+(.+)$/i.exec(tail)
+    if (!approveMatch) continue
+    const subset = approveMatch[1].trim()
+    if (/^all$/i.test(subset))     { out.set(planId, { approvedItemIds: ['*'] }); continue }
+    const ids = subset.split(',').map(s => s.trim()).filter(Boolean)
+    out.set(planId, { approvedItemIds: ids })
   }
   return out
 }
@@ -215,6 +249,8 @@ export default function PlatformChat() {
   // Computed inline (not memoized) because messages array changes on
   // every send/poll anyway, so memoization gains nothing meaningful.
   const editPlanResolutions = computeEditPlanResolutions(messages)
+  // Mirror for edit-self blocks — same APPROVAL grammar, different shape.
+  const editSelfResolutions = computeEditSelfResolutions(messages)
 
   // The "current actionable thing" picked from messages + resolutions.
   // Feeds the FloatingActionBar above the input so the operator never
@@ -276,6 +312,7 @@ export default function PlatformChat() {
           crashed:              m.metadata?.crashed,
           edit_plans:           m.metadata?.edit_plans,
           edit_group_completes: m.metadata?.edit_group_completes,
+          edit_selfs:           m.metadata?.edit_selfs,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -352,6 +389,15 @@ export default function PlatformChat() {
     const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
     // Same pattern as handleApproval — fire-and-forget, no visible reply
     // bubble. The EditPlanCard's resolution state IS the confirmation.
+    void send(reply)
+  }
+
+  // Edit-self handler — mirrors handleEditPlanReply but one-shot (no
+  // continue). The agent's next turn reads the approval from history and
+  // materialises the items via the standard Edit tool (per
+  // .claude/agents/platform-copilot.md "Mid-cycle self-modification").
+  function handleEditSelfReply(planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) {
+    const reply = buildEditSelfReply(planId, mode, approvedItemIds)
     void send(reply)
   }
 
@@ -493,6 +539,7 @@ export default function PlatformChat() {
         crashed:               finalResult.crashed,
         edit_plans:            finalResult.edit_plans,
         edit_group_completes:  finalResult.edit_group_completes,
+        edit_selfs:            finalResult.edit_selfs,
       }])
       setPartial('')   // final landed, clear tentative bubble
       setInflightToolCalls([])   // final tool_calls live on the message now
@@ -546,6 +593,7 @@ export default function PlatformChat() {
           crashed:              j.crashed,
           edit_plans:           j.edit_plans,
           edit_group_completes: j.edit_group_completes,
+          edit_selfs:           j.edit_selfs,
         }
       }
       if (j.status === 'error') {
@@ -560,6 +608,7 @@ export default function PlatformChat() {
           crashed:              j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
           edit_plans:           j.edit_plans,
           edit_group_completes: j.edit_group_completes,
+          edit_selfs:           j.edit_selfs,
         }
       }
       // status === 'pending' | 'running' — Phase 2a pushes the running
@@ -682,6 +731,7 @@ export default function PlatformChat() {
               tool_calls:           Array.isArray(parsed.tool_calls)           ? parsed.tool_calls           as ToolCall[]           : undefined,
               edit_plans:           Array.isArray(parsed.edit_plans)           ? parsed.edit_plans           as EditPlan[]           : undefined,
               edit_group_completes: Array.isArray(parsed.edit_group_completes) ? parsed.edit_group_completes as EditGroupComplete[] : undefined,
+              edit_selfs:           Array.isArray(parsed.edit_selfs)           ? parsed.edit_selfs           as EditSelfPlan[]       : undefined,
               crashed:              parsed.crashed as CrashedInfo | undefined,
             }
             // Surface any pending permission requests one final time —
@@ -831,6 +881,8 @@ export default function PlatformChat() {
                 onApprove={handleApproval}
                 onEditPlanReply={handleEditPlanReply}
                 editPlanResolutions={editPlanResolutions}
+                onEditSelfReply={handleEditSelfReply}
+                editSelfResolutions={editSelfResolutions}
                 busy={busy}
               />
             )
@@ -1072,12 +1124,14 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 function MessageBubble({
-  message, onApprove, onEditPlanReply, editPlanResolutions, busy,
+  message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, busy,
 }: {
   message:             Message
   onApprove:           (request: ApprovalRequest, approvedItemIds: string[]) => void
   onEditPlanReply:     (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void
   editPlanResolutions: Map<string, EditPlanResolution>
+  onEditSelfReply:     (planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) => void
+  editSelfResolutions: Map<string, EditSelfResolution>
   busy:                boolean
 }) {
   const isUser = message.role === 'user'
@@ -1133,6 +1187,19 @@ function MessageBubble({
             onApprove={ids => onEditPlanReply(plan.plan_id, 'approve', ids)}
             onContinue={()  => onEditPlanReply(plan.plan_id, 'continue')}
             onDeny={()      => onEditPlanReply(plan.plan_id, 'deny')}
+          />
+        ))}
+        {/* Self-modification proposals (Continual Harness pattern) — one-shot,
+            no continue. Operator approves a subset of items; the agent's next
+            turn materialises the approved items via the Edit tool as a draft PR. */}
+        {!isUser && message.edit_selfs?.map(plan => (
+          <EditSelfCard
+            key={plan.plan_id}
+            plan={plan}
+            resolution={editSelfResolutions.get(plan.plan_id) ?? null}
+            disabled={busy}
+            onApprove={ids => onEditSelfReply(plan.plan_id, 'approve', ids)}
+            onDeny={()      => onEditSelfReply(plan.plan_id, 'deny')}
           />
         ))}
         {message.durationMs !== undefined && (
