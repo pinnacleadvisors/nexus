@@ -34,7 +34,12 @@ These apply to **every** agent — managed sub-agents, Inngest crons, n8n workfl
 - Every notable incident, root-cause discovery, vendor-quirk, or architectural decision gets one atom. Link to the relevant MOC (`mocs/<topic>`) — atoms without a MOC become orphans on the next `cli.mjs lint`.
 - Trivial fixes (typos, one-line config, package bumps) skip the atom — atom spam dilutes the signal.
 
+<a id="topology"></a>
+
 **Topology — what runs where (post-lean-mode, as of 2026-05-24):**
+
+> 🧭 **Single source of truth** — this paragraph is the canonical "what runs where" reference. Every doc / agent spec / code comment that needs to discuss platform topology should LINK HERE rather than duplicate the facts inline. Links use `[topology](AGENTS.md#topology)` (or the relative path equivalent). When infra changes, edit only this paragraph + write a memory-hq atom per the [Post-infrastructure-change memory protocol](#post-infrastructure-change-memory-protocol) — everything else inherits the truth via the link.
+
 - **KVM4** = the only Coolify host. Runs `nexus-app` (Next.js platform), `claude-gateway`, `codex-gateway`, `nexus-sandbox`, `qa-runner`, `firecrawl`, and the migrated `n8n` instance side-by-side. Per ADR 006 (lean-mode pivot, 2026-05-19): a single KVM hosts everything until paying tenants justify scale-mode again.
 - **KVM2 — RETIRED 2026-05-22.** Used to host the shared `codex-gateway`. The gateway was migrated to KVM4 by `scripts/migrate-to-lean-kvm.mjs`; the KVM2 VPS itself was decommissioned. Older docs / agent specs may still reference KVM2 by name — read those as "KVM4 now" unless they're explicitly about the migration runbook.
 - **KVM1 / Hostinger n8n — RETIRED 2026-05-22.** Hostinger KVM1 VPS expired; n8n was migrated to KVM4 via [`docs/runbooks/n8n-kvm1-to-coolify.md`](docs/runbooks/n8n-kvm1-to-coolify.md). All workflows + the credential set encrypted under `N8N_ENCRYPTION_KEY` were preserved.
