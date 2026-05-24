@@ -383,6 +383,12 @@ bash scripts/scan-secrets.sh                               # repo-wide scan for 
 bash scripts/bootstrap-agent-template.sh <slug>            # scaffold a new managed agent
 bash scripts/bootstrap-memory-hq.sh                        # one-time setup of memory-hq locally
 
+# Seed the deferred-audit backlog into operator_tasks (Manual to-dos view)
+# Idempotent — re-run safe; existing rows are skipped. See
+# docs/runbooks/seed-deferred-tasks.md for the full backlog list.
+doppler run -- node scripts/seed-deferred-tasks.mjs --user-id=user_xxxxxxxxx --dry-run
+doppler run -- node scripts/seed-deferred-tasks.mjs --user-id=user_xxxxxxxxx
+
 # Sync Doppler → Vercel env (legacy — Vercel deploy is disabled in lean mode)
 bash scripts/sync-vercel-env.sh
 ```
