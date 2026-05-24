@@ -252,6 +252,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
                 iteration_plans:             persisted.iteration_plans.length > 0    ? persisted.iteration_plans    : undefined,
                 edit_plans:                  persisted.edit_plans.length > 0         ? persisted.edit_plans         : undefined,
                 edit_group_completes:        persisted.edit_group_completes.length > 0 ? persisted.edit_group_completes : undefined,
+                edit_selfs:                  persisted.edit_selfs.length > 0         ? persisted.edit_selfs         : undefined,
                 pending_permission_requests: persisted.pending_permission_requests,
                 crashed:                     persisted.crashed,
                 durationMs:                  persisted.durationMs,

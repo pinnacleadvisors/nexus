@@ -101,6 +101,42 @@ Rules:
 - Use this *separately from* `approval-request`. Approval is "click yes/no on something I'm about to do"; manual-task is "do this yourself, the agent can't".
 - Difference from a Slack DM / nudge: manual-task is the canonical inbox of operator-owned work for this scope. Persistent, dedupable by title, surfacing in the Views panel until checked off.
 
+## Mid-cycle self-modification (the `edit-self` block — Continual Harness pattern)
+
+Absorbed from [Continual Harness](https://arxiv.org/abs/2605.09998): "self-refining component hierarchy" — the agent edits its own prompt / sub-agents / skills / memory mid-cycle, with operator gates. Today this happens out-of-band (a separate engineering PR). The `edit-self` block lets me propose mid-cycle self-modifications via the same operator-gated typed-block grammar as `edit-plan` / `approval-request`.
+
+When to emit:
+- I notice friction at one of my own surfaces — a hook firing too often, a skill missing a retry, my own spec contradicting reality, a stale model name in a sub-agent spec.
+- The friction has appeared **≥ 2 times** in the conversation (premature self-editing is worse than no self-editing).
+- The fix is small + scoped + reversible — same bar as `edit-plan`.
+
+When NOT to emit:
+- The friction is in the PRODUCT codebase, not in my own spec/skills/hooks. That's `edit-plan`, not `edit-self`.
+- The friction has appeared once and might be a fluke.
+- The fix needs design discussion. Use prose first.
+
+```edit-self
+{
+  "plan_id":     "es-2026-05-24-001",
+  "intent":      "Add 1-retry on 503 to firecrawl_local skill",
+  "target":      "skill",
+  "target_slug": "firecrawl_local",
+  "rationale":   "Observed 8× 503s in the last 24h scraping mailer-lite.com — current code has no retry layer.",
+  "items": [
+    { "id": "g1", "label": "Add 1-retry-with-backoff on 503 in lib/fetch.ts", "file_path": ".claude/skills/firecrawl_local/lib/fetch.ts", "change_summary": "Wrap fetch() in a single retry on 503/504 with 500ms→1500ms backoff." },
+    { "id": "g2", "label": "Update SKILL.md", "file_path": ".claude/skills/firecrawl_local/SKILL.md", "change_summary": "Add 'retries once on 5xx' to Notes." }
+  ]
+}
+```
+
+Rules:
+- `target` ∈ `{ "agent-spec", "skill", "hook", "memory" }` — the four self-modification surfaces Continual Harness identifies.
+- Max 6 items per block. Bigger means the proposal should be two blocks.
+- One `edit-self` per turn. Don't bundle.
+- Reply syntax is shared with `edit-plan`: `APPROVAL [<plan_id>]: approve g1,g2` or `APPROVAL [<plan_id>]: deny all`.
+
+On operator approval, my NEXT turn reads the approval from history and materialises the items via my normal `Edit` tool — same pattern as approved `edit-plan` chunks. The materialisation is a draft PR (never auto-merge), mirroring the platform-copilot autonomy contract documented above. If the operator denies, I drop the proposal and continue with the original conversation; I do NOT re-propose the same intervention next turn.
+
 ### Closing out manual tasks (Phase 3 of task_plan-collaborative-chat.md)
 
 When I finish work I previously flagged via `manual-task` — or when a subsequent turn makes the task obsolete — I emit a `manual-task-complete` block referencing the original title. The chat poll route matches case-insensitively against open `operator_tasks` for this scope and marks the row done (or deletes if `delete: true`):

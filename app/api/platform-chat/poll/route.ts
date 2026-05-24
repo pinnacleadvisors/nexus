@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
   let editPlans          = [] as ParsedTurnBlocks['edit_plans']
   let editGroupCompletes = [] as ParsedTurnBlocks['edit_group_completes']
+  let editSelfs          = [] as ParsedTurnBlocks['edit_selfs']
 
   // Crash detection — covers two failure shapes:
   //   1. status='error' with jobError set (CLI exited with code != 0)
@@ -144,6 +145,7 @@ export async function GET(req: NextRequest) {
       approvalRequests   = persisted.approval_requests
       editPlans          = persisted.edit_plans
       editGroupCompletes = persisted.edit_group_completes
+      editSelfs          = persisted.edit_selfs
     } else {
       // Defensive — sessionId missing or unowned. Still parse for the
       // response shape and still record accounting (spend was committed
@@ -154,6 +156,7 @@ export async function GET(req: NextRequest) {
       approvalRequests   = parsed.approval_requests
       editPlans          = parsed.edit_plans
       editGroupCompletes = parsed.edit_group_completes
+      editSelfs          = parsed.edit_selfs
       recordCompletedTurnAccounting({
         userId,
         parsed,
@@ -202,6 +205,10 @@ export async function GET(req: NextRequest) {
     /** Per-group completion markers. Client uses these to flip group
      *  checkboxes to ✓ on prior cards. */
     edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    /** Self-modification proposals (Continual Harness pattern). Client
+     *  renders an EditSelfCard per entry; operator approves via the same
+     *  APPROVAL [<plan_id>]: ... syntax as edit-plan. */
+    edit_selfs:            editSelfs.length > 0 ? editSelfs : undefined,
     /** Pending CLI tool-permission requests (PR #189). Client renders a
      *  PermissionPromptCard per entry. While the array is non-empty the
      *  gateway turn is paused — operator Allow/Deny on /api/platform-

@@ -67,6 +67,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   let approvalRequests   = [] as ReturnType<typeof parseAssistantMessage>['approval_requests']
   let editPlans          = [] as ParsedTurnBlocks['edit_plans']
   let editGroupCompletes = [] as ParsedTurnBlocks['edit_group_completes']
+  let editSelfs          = [] as ParsedTurnBlocks['edit_selfs']
 
   // Crash detection — see app/api/platform-chat/poll/route.ts for design notes.
   const crashedRaw = result.jobError || (result.status === 'error' ? result.error : undefined)
@@ -99,6 +100,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
       approvalRequests   = persisted.approval_requests
       editPlans          = persisted.edit_plans
       editGroupCompletes = persisted.edit_group_completes
+      editSelfs          = persisted.edit_selfs
     } else {
       // Defensive — sessionId missing, unowned, or cross-scope. Still
       // parse for the response shape and still record accounting (the
@@ -109,6 +111,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
       approvalRequests   = parsed.approval_requests
       editPlans          = parsed.edit_plans
       editGroupCompletes = parsed.edit_group_completes
+      editSelfs          = parsed.edit_selfs
       recordCompletedTurnAccounting({
         userId:             session.userId,
         parsed,
@@ -150,6 +153,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
     approval_requests:     approvalRequests,
     edit_plans:            editPlans.length > 0 ? editPlans : undefined,
     edit_group_completes:  editGroupCompletes.length > 0 ? editGroupCompletes : undefined,
+    edit_selfs:            editSelfs.length > 0 ? editSelfs : undefined,
     pending_permission_requests: pendingPermissions.length > 0 ? pendingPermissions : undefined,
     jobError:              result.jobError,
     crashed:           isCrashed ? { exit_code: crash?.exitCode ?? null, stderr_tail: crash?.stderrTail ?? null, raw: crash?.rawError ?? null } : undefined,
