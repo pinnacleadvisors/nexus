@@ -44,6 +44,7 @@ import ApprovalsView from '@/components/chat-views/ApprovalsView'
 import CalendarView from '@/components/chat-views/CalendarView'
 import HealthView from '@/components/chat-views/HealthView'
 import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
+import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
@@ -816,6 +817,11 @@ export default function BusinessChat({ slug, name }: Props) {
       {activeView === 'calendar' && (
         <ViewsPanel title="Calendar" subtitle={`Upcoming due dates + runs for ${name}`} onClose={() => setActiveView(null)} storageKey={`nexus:views-panel:business:${slug}:calendar`}>
           <CalendarView scope={viewScope} />
+        </ViewsPanel>
+      )}
+      {activeView === 'notes' && (
+        <ViewsPanel title="Notes" subtitle={`Markdown scratchpad scoped to ${name} — autosaved`} onClose={() => setActiveView(null)} storageKey={`nexus:views-panel:business:${slug}:notes`}>
+          <NotesView scope={viewScope} />
         </ViewsPanel>
       )}
       {activeView === 'health' && (
