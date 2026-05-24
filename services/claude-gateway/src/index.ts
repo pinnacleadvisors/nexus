@@ -252,7 +252,7 @@ app.post('/api/sessions/:sessionId/messages', async c => {
   // Mode is forwarded to the spawned agent via env so the agent's
   // system prompt can branch (ask/plan/auto). The gateway doesn't
   // interpret the value beyond forwarding it.
-  const modeEnv = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
+  const modeEnv: Record<string, string> = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
   let result
   try {
     result = await queue.enqueue(() => runClaude({
@@ -346,7 +346,7 @@ app.post('/api/jobs', async c => {
 
   // Detached promise: we deliberately don't await. The job advances inside the
   // queue's existing FIFO drain loop and writes its result back into the store.
-  const modeEnvAsync = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
+  const modeEnvAsync: Record<string, string> = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
   void queue.enqueue(async () => {
     jobs.markRunning(jobId)
     const result = await runClaude({
