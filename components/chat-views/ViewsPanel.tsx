@@ -19,7 +19,7 @@
  */
 
 import { X } from 'lucide-react'
-import { type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Drawer } from 'vaul'
 import { useResizable } from '@/lib/hooks/useResizable'
 import { useIsMobile } from '@/lib/hooks/useIsMobile'
@@ -37,6 +37,19 @@ export default function ViewsPanel(props: Props) {
   // `isMobile` flips when the operator drags a window across the md
   // breakpoint (768px) so the presentation swaps without a remount.
   const isMobile = useIsMobile('md')
+
+  // Esc closes the panel — matches Claude Code's reflex and the existing
+  // pattern in ViewsDropdown.tsx (line 53). Listening here covers both
+  // DesktopPanel and MobileSheet without duplicating the effect in each.
+  // The Vaul drawer also dismisses on Esc via its own backdrop behaviour
+  // so this is additive on mobile rather than redundant.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') props.onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [props.onClose])
 
   return isMobile ? <MobileSheet {...props} /> : <DesktopPanel {...props} />
 }

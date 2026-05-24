@@ -34,6 +34,7 @@ import CalendarView from '@/components/chat-views/CalendarView'
 import BugHuntView from '@/components/chat-views/BugHuntView'
 import HealthView from '@/components/chat-views/HealthView'
 import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
+import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
@@ -961,6 +962,11 @@ export default function PlatformChat() {
       {activeView === 'calendar' && (
         <ViewsPanel title="Calendar" subtitle="Upcoming due dates + scheduled runs" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:calendar">
           <CalendarView scope="admin" />
+        </ViewsPanel>
+      )}
+      {activeView === 'notes' && (
+        <ViewsPanel title="Notes" subtitle="Per-scope markdown scratchpad — autosaved" onClose={() => setActiveView(null)} storageKey="nexus:views-panel:admin:notes">
+          <NotesView scope="admin" />
         </ViewsPanel>
       )}
       {activeView === 'bug-hunt' && (
