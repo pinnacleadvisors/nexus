@@ -23,6 +23,7 @@ import { createServerClient } from '@/lib/supabase'
 import { writeAgentRun, searchPages as searchMemory, isMemoryConfigured } from '@/lib/memory/github'
 import { audit } from '@/lib/audit'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { insertTask } from '@/lib/board/insert-task'
 import { createEntry, extractCodeBlocksFromOutput } from '@/lib/library/client'
 import type { CodeLanguage } from '@/lib/library/types'
 import {
@@ -185,7 +186,10 @@ export async function POST(req: NextRequest) {
           const lineageSlug = body.inputs.businessSlug?.trim() || null
           for (const opp of opps.slice(0, 8)) {
             const toolList = opp.tools.join(', ')
-            await db.from('tasks').insert({
+            // Route through insertTask so the migration-025-missing fail-soft
+            // path catches the column drift instead of letting upstream
+            // retry-storm. See lib/board/insert-task.ts.
+            insertTask(db, {
               title:         `[Automation] ${opp.title}`,
               description:   `${opp.description}\n\nTools: ${toolList}\nSetup: ~${opp.estimatedSetupMinutes} min\nOpenClaw needed: ${opp.requiresOpenClaw ? 'Yes' : 'No'}`,
               column_id:     'backlog',
@@ -202,8 +206,9 @@ export async function POST(req: NextRequest) {
         console.error('[agent/consultant] failed to parse recommendations:', err)
       }
 
-      // Also create a single summary card in Review
-      await db.from('tasks').insert({
+      // Also create a single summary card in Review (via insertTask for the
+      // same fail-soft reason as above).
+      insertTask(db, {
         title:         `Automation Strategy: ${body.inputs.businessName ?? 'Your Business'}`,
         description:   'Full consultant report — approve to proceed with implementation.',
         column_id:     'review',
@@ -217,7 +222,8 @@ export async function POST(req: NextRequest) {
     } else if (db) {
       // ── Default: create one board card in Review column ─────────────────
       const title = `${capability!.name}: ${body.inputs.businessName ?? 'Untitled'}`
-      await db.from('tasks').insert({
+      // Migrated to insertTask for the migration-025-missing fail-soft path.
+      insertTask(db, {
         title,
         description:   `Agent-generated ${capability!.name} document.`,
         column_id:     'review',
