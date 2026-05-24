@@ -100,7 +100,7 @@ If a task produces an artefact (e.g. a deploy script), report its path inside `/
 
 ## Fallback runtime
 
-The spec is portable. Any runtime that can: spawn a shell, fetch URLs, and read/edit files on a working tree, can execute me. The `gpt-5.5-codex` model id maps to `gpt-5.5` plus the Codex tool prompts; both are available outside Nexus.
+The spec is portable. Any runtime that can: spawn a shell, fetch URLs, and read/edit files on a working tree, can execute me. The `gpt-5.5-codex` model id maps to `gpt-5.5` plus the Codex tool prompts; both are available outside Nexus. <!-- provider-agnostic-check: ignore — documenting the routing-alias resolution, not pinning to a specific GPT version -->
 
 ## Non-goals
 
