@@ -20,6 +20,10 @@ You are the Workflow Optimizer. You take subjective human feedback ("the blog po
 
 ## Input contract
 
+Two shapes — same agent, two callers.
+
+### Shape A — Human-flagged feedback (canonical / existing)
+
 ```json
 {
   "feedbackId": "uuid",
@@ -29,6 +33,31 @@ You are the Workflow Optimizer. You take subjective human feedback ("the blog po
   "artifactUrl": "..."              // optional — the original output for reference
 }
 ```
+
+### Shape B — Automatic failure-cluster scan (new, Life-Harness pattern)
+
+```json
+{
+  "task":   "distill-failure-cluster",
+  "brief":  "<markdown brief built by /api/cron/optimizer-scan-failures>",
+  "cluster": {
+    "signature":        "rate-limit:429 from anthropic",
+    "kind":             "dispatch.completed",
+    "summary":          "47× dispatch.completed in business:foo-bar: rate-limit:429 from anthropic",
+    "count":            47,
+    "business_slug":    "foo-bar",
+    "sample_event_ids": ["evt_…", "evt_…", "evt_…"],
+    "first_seen_at":    "2026-05-17T...",
+    "last_seen_at":     "2026-05-24T..."
+  }
+}
+```
+
+Dispatched daily by [`/api/cron/optimizer-scan-failures`](../../app/api/cron/optimizer-scan-failures/route.ts) — reads `run_events` for `phase.fail` / `phase.block` / `review.rejected` / `dispatch.completed` (`ok:false`) via [`lib/runs/failure-clusters.ts`](../../lib/runs/failure-clusters.ts), groups by `(kind, business_slug, error_signature)`, dispatches the highest-frequency cluster.
+
+When Shape B fires, classify the failure to a harness layer (`h2`/`h3`/`h4`/`h5` per [AGENTS.md "Harness taxonomy"](../../AGENTS.md#harness-taxonomy-life-harness-layers-h2h5)) and emit ONE `edit-plan` block proposing the smallest intervention. If the cluster looks already-resolved (last_seen_at > 24h ago + decreasing frequency), reply `scope: "stop"` + one-line rationale instead — operator-gated loop pattern.
+
+Absorbed from [Life-Harness](https://arxiv.org/abs/2605.22166) — "failure-to-intervention conversion" — automatic distillation of recurring trajectory failures, alongside (not replacing) the manual `workflow-feedback` flow.
 
 ## Workflow
 
