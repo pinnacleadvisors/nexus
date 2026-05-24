@@ -48,6 +48,7 @@
 import fs   from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { printDocPropagationBanner } from './lib-migration-banner.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -450,6 +451,17 @@ async function main() {
     process.exit(3)
   }
   console.log('\nok')
+
+  // Only nudge after a real --apply, never on --dry-run.
+  if (APPLY) {
+    printDocPropagationBanner({
+      scriptName: 'migrate-to-lean-kvm',
+      extras: [
+        `KVM2 / KVM1 hostnames the source services used are now retired — confirm npm run check:topology passes.`,
+        `If the migration moved the codex-gateway, update CODEX_GATEWAY_URL in Doppler prd to point at the new host.`,
+      ],
+    })
+  }
 }
 
 main().catch(err => {
