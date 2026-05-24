@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react'
 import { Check, X, ShieldCheck, CheckCircle2, XCircle, Maximize2 } from 'lucide-react'
 import { Drawer } from 'vaul'
 import type { ApprovalRequest } from '@/lib/chat/approval'
+import { useIsMobile } from '@/lib/hooks/useIsMobile'
 
 interface Props {
   request:    ApprovalRequest
@@ -57,16 +58,8 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
   // pinned to 92vh so the operator gets full-screen tap-friendly buttons.
   // Operator can swipe down to dismiss → reveals the inline card behind it,
   // can still approve from there. Resolved cards always inline (historical).
-  const [isMobile, setIsMobile] = useState(false)
+  const isMobile = useIsMobile('sm')
   const [sheetOpen, setSheetOpen] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(max-width: 639px)')
-    function update() { setIsMobile(mq.matches) }
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
   // Auto-open the sheet exactly once per approval_id — when a new approval
   // lands on a mobile viewport, the operator should see it modally without
   // having to scroll the chat. Re-rendering must not re-open after dismissal.
