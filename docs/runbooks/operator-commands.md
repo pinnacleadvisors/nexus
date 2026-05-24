@@ -220,6 +220,21 @@ Two-tier check:
 
 On failure, the script prints which packages drifted + the exact `npm install` + `git add package-lock.json` sequence to fix it on the PR branch.
 
+### Playwright projects — when to run which
+
+Root-level [`playwright.config.ts`](../../playwright.config.ts) declares four projects. Most pre-commit work needs only `chromium`; the mobile + real-device runs catch a different class of regression.
+
+```bash
+npm run test:e2e                                         # all four projects (chromium + iphone + android + real-device-mobile)
+npx playwright test --project=chromium                   # desktop only — fastest sanity check
+npx playwright test --project=iphone                     # iPhone 12 emulation — mobile layout assertions
+npx playwright test --project=android                    # Pixel 5 emulation
+npx playwright test --project=real-device-mobile         # Safari-iOS UA + 390×844, NO device-injection — catches viewport-meta-class bugs
+npx playwright test viewport-meta.spec.ts                # single spec — meta tag presence assertion (runs on all projects)
+```
+
+**When to run `real-device-mobile`** — the existing `iphone` / `android` projects use Playwright's `devices[...]` which sets viewport directly, bypassing the page's own `<meta name="viewport">` tag. The 2026-05-24 mobile-squashed bug (PR #301) only manifested on real phones because the meta tag was missing — Playwright tests passed because the device config injected the viewport directly. Run `real-device-mobile` for any change that touches `app/layout.tsx`, Tailwind responsive classes, or SSR meta-tag emission.
+
 ---
 
 ## 7. Doppler / secrets
