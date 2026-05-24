@@ -388,6 +388,11 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
 - [ ] No secrets committed (check with `git diff --staged`)
 - [ ] `ROADMAP.md` updated if a feature was completed or added
 - [ ] [`docs/runbooks/operator-commands.md`](docs/runbooks/operator-commands.md) updated if you added/renamed a script in `scripts/`, `.claude/skills/*/cli.mjs`, or changed any `package.json#scripts` interface. That file is the canonical operator reference — stale commands there get copy-pasted into terminals and run as-is.
+- [ ] **Infra-impact check** — if the commit touches `services/`, `scripts/migrate-*`, `Dockerfile*`, `docker-compose*.yaml`, `vercel.json`, or any Coolify / Doppler / Cloudflare config:
+  - [ ] Did this change *which host runs which service*, or retire / migrate / replace a managed resource? If yes → update the **Topology** paragraph near the top of this file IN THE SAME PR.
+  - [ ] Did this change add or remove an env var? If yes → `memory/platform/SECRETS.md` in the same PR.
+  - [ ] After the migration script completes, follow the [Post-infrastructure-change memory protocol](#post-infrastructure-change-memory-protocol) below and write a `memory_atom` so future sessions see the new topology via `memory_search`.
+- [ ] **Superseding-component check** — if this commit adds a component / hook / API that replaces another, **delete the superseded render sites in the same PR** (not just deprecate the file). The 2026-05-24 ChatProviderToggle pill survived for weeks after `ModelSelector` shipped because its render sites in `PlatformChat.tsx` / `BusinessChat.tsx` were never deleted; the old behaviour silently coexisted alongside the new dropdown.
 
 ### Retry-storm vulnerability checklist (run mentally for every change)
 
@@ -494,4 +499,55 @@ node .claude/skills/molecularmemory_local/cli.mjs --backend=github atom \
 - After writing, verify with `memory_search` (MCP) or by reading `pinnacleadvisors/memory-hq/atoms/55bedf46-nexus/<slug>.md` — the canonical scope-id for this repo is `55bedf46-nexus`.
 
 **Source-of-truth note:** memory-hq is the canonical store; `memory/molecular/` in this repo is a development cache. After a successful MCP write, you do NOT need to also write to local. The Supabase mirror webhook on `pinnacleadvisors/memory-hq` propagates the atom to `mol_*` tables within seconds.
+
+### Post-infrastructure-change memory protocol
+
+Sibling to the post-incident protocol above. **Whenever you decommission, migrate, or replace a host / service / container / managed resource, write a memory-hq atom in the same session as the change** — before the chat ends, before the PR opens. The 2026-05-24 platform-state cleanup ([PR #300](https://github.com/pinnacleadvisors/nexus/pull/300)) had to retroactively document a KVM2 retirement that happened 2 weeks earlier ([scripts/migrate-to-lean-kvm.mjs](scripts/migrate-to-lean-kvm.mjs)) because the migration session never wrote one. Every subsequent agent session was reasoning about a dead topology.
+
+**Default — MCP `memory-hq` server:**
+
+```json
+memory_atom({
+  scope:    { repo: "pinnacleadvisors/nexus" },
+  payload:  {
+    title:      "<old-host>/<service> → <new-host>/<service> migrated YYYY-MM-DD",
+    body:       "<what moved> · <why> · <script or PR that did it> · <verification command> · <doc updates landed in same PR>",
+    kind:       "infra-change",
+    importance: "high"
+  },
+  locators: [
+    { kind: "github", repo: "pinnacleadvisors/nexus", path: "scripts/migrate-<topic>.mjs" }
+  ],
+  links: ["[[mocs/platform-topology]]"]
+})
+```
+
+**When to write an infra-change atom:**
+- Migrated a service between hosts / KVMs / Coolify instances (e.g. KVM2 → KVM4, Hostinger → Coolify)
+- Decommissioned a host, container, or managed resource
+- Replaced a managed resource with another (Vercel → Coolify, Hostinger n8n → Coolify n8n, polling → SSE, etc.)
+- Retired an env var, secret, or Doppler config
+- Renamed or relocated a service in a way that breaks existing URLs / health-check paths
+- Swapped a vendor (Resend → Postmark, etc.) or auth provider
+
+**When to skip:**
+- A version bump of an existing service in place (`claude-gateway:v1.2 → v1.3` on the same host). That's a deploy, not an infra change.
+- A rename inside the same host with no host-level effect (renaming a container without changing what it does).
+
+**Linking:**
+- Always link to `[[mocs/platform-topology]]`. Create that MOC the first time if it doesn't exist — it becomes the canonical entry point for "what runs where, when did it last change". Subsequent atoms link to the same MOC so the timeline reconstructs itself.
+- Reference the migration script or PR by exact GitHub path. Cold-reading the atom 6 months later, the next agent needs to find the script.
+
+**Concrete example** — the right atom to have written on 2026-05-22:
+
+```
+title: "codex-gateway: KVM2 (Hostinger) → KVM4 migrated 2026-05-22"
+body:  "Codex-gateway container relocated from Hostinger KVM2 to KVM4 (Coolify shared host) via scripts/migrate-to-lean-kvm.mjs --apply per ADR 006 (lean-mode pivot). KVM2 VPS decommissioned. Verification: npm run diagnose:codex → /health passes on new host. AGENTS.md Topology paragraph updated in same PR. COOLIFY_KVM2_* env vars retained in Doppler as dead-weight; new scripts use COOLIFY_KVM4_* exclusively."
+kind: infra-change
+importance: high
+locators: [github: scripts/migrate-to-lean-kvm.mjs, github: docs/runbooks/migrate-to-lean-kvm.md, github: docs/adr/006-lean-mode-pivot.md]
+links: [[mocs/platform-topology]]
+```
+
+That atom would have shown up on the very first `memory_search "KVM2"` from any subsequent session — saving the 2026-05-24 cleanup work entirely.
 
