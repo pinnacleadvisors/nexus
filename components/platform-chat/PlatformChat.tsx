@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon, Menu } from 'lucide-react'
+import { safeJson } from '@/lib/chat/safe-json-response'
 import ApprovalCard from './ApprovalCard'
 import { type SessionSummary } from './SessionSidebar'
 import MobileAwareSessionSidebar from './MobileAwareSessionSidebar'
@@ -422,7 +423,18 @@ export default function PlatformChat() {
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
         return
       }
-      const enq = (await enqRes.json()) as EnqueueResponse
+      // Defensive JSON parse — if the upstream proxy (Coolify / Cloudflare
+      // Tunnel) hits a timeout and returns HTML instead of the route's JSON,
+      // Safari throws "The string did not match the expected pattern" and
+      // the operator sees a cryptic "Turn failed" banner instead of the
+      // actual upstream issue. See lib/chat/safe-json-response.ts.
+      const enqResult = await safeJson<EnqueueResponse>(enqRes)
+      if (!enqResult.ok) {
+        const detail = enqResult.snippet ? `\n\n${enqResult.snippet}` : ''
+        setError(`${enqResult.error}${detail}`)
+        return
+      }
+      const enq = enqResult.data
       if (!enq.ok) {
         setError(enq.fallbackHint ? `${enq.error} — ${enq.fallbackHint}` : enq.error)
         return

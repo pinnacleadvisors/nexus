@@ -52,7 +52,13 @@ import {
 import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 
 export const runtime    = 'nodejs'
-export const maxDuration = 30   // Enqueue should be <1s; 30s leaves plenty of slack.
+// The Claude path enqueues to the gateway and returns in <1s. The codex
+// path runs synchronously inside this handler (no async job — see Phase 0
+// of task_plan-model-agnostic-chat.md) so the ceiling needs to cover the
+// codex-gateway round-trip plus its 30s internal timeout. 60s leaves
+// margin without paying for slots that don't need it (the function still
+// returns in <1s on the Claude path).
+export const maxDuration = 60
 
 interface PlatformChatBody {
   messages?:  Array<{ role?: string; content?: string }>
