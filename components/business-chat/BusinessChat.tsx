@@ -30,12 +30,14 @@ import { ModeSelector, useChatMode } from '@/components/platform-chat/ModeSelect
 import { ModelSelector, useChatModel } from '@/components/platform-chat/ModelSelector'
 import { getModelById } from '@/lib/chat/models'
 import EditPlanCard, { type EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
+import EditSelfCard, { type EditSelfResolution } from '@/components/platform-chat/EditSelfCard'
 import PermissionPromptCard, { type PermissionRequest } from '@/components/platform-chat/PermissionPromptCard'
 import FloatingActionBar from '@/components/platform-chat/FloatingActionBar'
 import McpStatusStrip from '@/components/chat/McpStatusStrip'
 import { pickPendingAction } from '@/lib/chat/action-bar'
 import { findClaimedRanges } from '@/lib/chat/crash'
 import { buildEditPlanReply, type EditPlan, type EditGroupComplete } from '@/lib/chat/edit-plan'
+import { buildEditSelfReply, type EditSelfPlan } from '@/lib/chat/edit-self'
 import { isApprovalReply } from '@/lib/chat/approval'
 import ViewsDropdown, { type ViewName } from '@/components/chat-views/ViewsDropdown'
 import ViewsPanel from '@/components/chat-views/ViewsPanel'
@@ -58,6 +60,7 @@ interface Message {
   crashed?:              CrashedInfo
   edit_plans?:           EditPlan[]
   edit_group_completes?: EditGroupComplete[]
+  edit_selfs?:           EditSelfPlan[]
 }
 
 /**
@@ -95,18 +98,42 @@ function computeEditPlanResolutions(messages: Message[]): Map<string, EditPlanRe
   return out
 }
 
+/** Mirror of PlatformChat.computeEditSelfResolutions — same APPROVAL grammar,
+ *  one-shot (no continue / no per-group completion tracking). */
+function computeEditSelfResolutions(messages: Message[]): Map<string, EditSelfResolution> {
+  const out = new Map<string, EditSelfResolution>()
+  const knownPlans = new Set<string>()
+  for (const m of messages) for (const p of m.edit_selfs ?? []) knownPlans.add(p.plan_id)
+  for (const m of messages) {
+    if (m.role !== 'user') continue
+    const match = /APPROVAL\s+\[([^\]]+)\]:\s*(.+?)\s*$/m.exec(m.content)
+    if (!match) continue
+    const planId = match[1].trim()
+    if (!knownPlans.has(planId)) continue
+    const tail = match[2].trim()
+    if (/^deny\b/i.test(tail))     { out.set(planId, { approvedItemIds: [], denied: true }); continue }
+    const approveMatch = /^approve\s+(.+)$/i.exec(tail)
+    if (!approveMatch) continue
+    const subset = approveMatch[1].trim()
+    if (/^all$/i.test(subset))     { out.set(planId, { approvedItemIds: ['*'] }); continue }
+    const ids = subset.split(',').map(s => s.trim()).filter(Boolean)
+    out.set(planId, { approvedItemIds: ids })
+  }
+  return out
+}
+
 interface EnqueueOkAsync  { ok: true;  mode?: undefined;       jobId: string; sessionId: string; usage?: ContextUsageView }
 interface EnqueueOkCodex  { ok: true;  mode: 'codex-direct';                  sessionId: string; sessionTag: string; text: string; usage?: ContextUsageView }
 type    EnqueueOk         = EnqueueOkAsync | EnqueueOkCodex
 interface EnqueueFail     { ok: false; error: string; code: string; fallbackHint?: string }
 type EnqueueResponse = EnqueueOk | EnqueueFail
 
-interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
+interface PollOk     { ok: true;  status: 'pending' | 'running' | 'done' | 'error'; text?: string; partialText?: string; approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[]; pending_permission_requests?: PermissionRequest[]; crashed?: CrashedInfo; jobError?: string; durationMs?: number }
 interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[] } }> }
+interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
@@ -129,6 +156,7 @@ interface StreamOrPollResult {
   crashed?:               CrashedInfo
   edit_plans?:            EditPlan[]
   edit_group_completes?:  EditGroupComplete[]
+  edit_selfs?:            EditSelfPlan[]
   cancelled?:             boolean
   continueWithPoll?:      boolean
 }
@@ -183,6 +211,9 @@ export default function BusinessChat({ slug, name }: Props) {
 
   // Per-plan resolution map for EditPlanCards — mirror of PlatformChat.
   const editPlanResolutions = computeEditPlanResolutions(messages)
+  // Per-plan resolution map for EditSelfCards — same APPROVAL grammar,
+  // one-shot (no continue).
+  const editSelfResolutions = computeEditSelfResolutions(messages)
   // Pick the current pending action so FloatingActionBar can surface it.
   const pendingAction = pickPendingAction(messages, editPlanResolutions)
 
@@ -234,6 +265,7 @@ export default function BusinessChat({ slug, name }: Props) {
           crashed:              m.metadata?.crashed,
           edit_plans:           m.metadata?.edit_plans,
           edit_group_completes: m.metadata?.edit_group_completes,
+          edit_selfs:           m.metadata?.edit_selfs,
         })))
         setError(null)
       } catch { /* swallow */ }
@@ -294,6 +326,12 @@ export default function BusinessChat({ slug, name }: Props) {
 
   function handleEditPlanReply(planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) {
     const reply = buildEditPlanReply(planId, mode, approvedGroupIds)
+    void send(reply)
+  }
+
+  // Mirror of PlatformChat.handleEditSelfReply — one-shot approval (no continue).
+  function handleEditSelfReply(planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) {
+    const reply = buildEditSelfReply(planId, mode, approvedItemIds)
     void send(reply)
   }
 
@@ -440,6 +478,7 @@ export default function BusinessChat({ slug, name }: Props) {
         crashed:              finalResult.crashed,
         edit_plans:           finalResult.edit_plans,
         edit_group_completes: finalResult.edit_group_completes,
+        edit_selfs:           finalResult.edit_selfs,
       }])
       setPartial('')
       setInflightToolCalls([])
@@ -482,6 +521,7 @@ export default function BusinessChat({ slug, name }: Props) {
           crashed:              j.crashed,
           edit_plans:           j.edit_plans,
           edit_group_completes: j.edit_group_completes,
+          edit_selfs:           j.edit_selfs,
         }
       }
       if (j.status === 'error') {
@@ -494,6 +534,7 @@ export default function BusinessChat({ slug, name }: Props) {
           tool_calls:           j.tool_calls,
           edit_plans:           j.edit_plans,
           edit_group_completes: j.edit_group_completes,
+          edit_selfs:           j.edit_selfs,
           crashed:            j.crashed ?? { exit_code: null, stderr_tail: null, raw: j.jobError ?? null },
         }
       }
@@ -601,6 +642,7 @@ export default function BusinessChat({ slug, name }: Props) {
               tool_calls:           Array.isArray(parsed.tool_calls)           ? parsed.tool_calls           as ToolCall[]           : undefined,
               edit_plans:           Array.isArray(parsed.edit_plans)           ? parsed.edit_plans           as EditPlan[]           : undefined,
               edit_group_completes: Array.isArray(parsed.edit_group_completes) ? parsed.edit_group_completes as EditGroupComplete[] : undefined,
+              edit_selfs:           Array.isArray(parsed.edit_selfs)           ? parsed.edit_selfs           as EditSelfPlan[]       : undefined,
               crashed:              parsed.crashed as CrashedInfo | undefined,
             }
             const perms = Array.isArray(parsed.pending_permission_requests) ? parsed.pending_permission_requests as PermissionRequest[] : []
@@ -697,7 +739,7 @@ export default function BusinessChat({ slug, name }: Props) {
           {messages.map((m, i) => {
             if (m.role === 'user' && isApprovalReply(m.content)) return null
             return (
-              <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} busy={busy} />
+              <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} onEditSelfReply={handleEditSelfReply} editSelfResolutions={editSelfResolutions} busy={busy} />
             )
           })}
           {busy && pendingPermissions.length > 0 && (
@@ -904,7 +946,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   )
 }
 
-function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolutions, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; onEditPlanReply: (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void; editPlanResolutions: Map<string, EditPlanResolution>; busy: boolean }) {
+function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; onEditPlanReply: (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void; editPlanResolutions: Map<string, EditPlanResolution>; onEditSelfReply: (planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) => void; editSelfResolutions: Map<string, EditSelfResolution>; busy: boolean }) {
   const isUser = message.role === 'user'
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
@@ -942,6 +984,16 @@ function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolution
             onApprove={ids => onEditPlanReply(plan.plan_id, 'approve', ids)}
             onContinue={()  => onEditPlanReply(plan.plan_id, 'continue')}
             onDeny={()      => onEditPlanReply(plan.plan_id, 'deny')}
+          />
+        ))}
+        {!isUser && message.edit_selfs?.map(plan => (
+          <EditSelfCard
+            key={plan.plan_id}
+            plan={plan}
+            resolution={editSelfResolutions.get(plan.plan_id) ?? null}
+            disabled={busy}
+            onApprove={ids => onEditSelfReply(plan.plan_id, 'approve', ids)}
+            onDeny={()      => onEditSelfReply(plan.plan_id, 'deny')}
           />
         ))}
         {message.durationMs !== undefined && (
