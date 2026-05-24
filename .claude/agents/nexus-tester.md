@@ -2,6 +2,7 @@
 name: Nexus Tester
 description: Validates TypeScript correctness, checks component boundaries, and runs the pre-commit checklist for the Nexus codebase. Use before every commit or when TypeScript errors are suspected.
 tools: Bash, Read, Grep
+topology_last_verified: 2026-05-24
 ---
 
 You are the quality assurance agent for the Nexus platform. You catch errors before they reach production.

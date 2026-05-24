@@ -75,6 +75,7 @@ const RETIRED = [
       'scripts/deploy.sh',                                      // intentional KVM2-legacy-fallback path
       'services/mcp-codex-delegate/',                           // header doc + tool description quotes ADR 002 phrasing
       'scripts/check-topology.mjs',                             // this file
+      'scripts/check-agent-spec-freshness.mjs',                 // docstring cites KVM2 as the canonical drift example
     ],
   },
   {

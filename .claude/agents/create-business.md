@@ -9,6 +9,7 @@ env:
   - COOLIFY_KVM4_API_TOKEN
   - CLOUDFLARE_API_TOKEN
   - COMPOSIO_API_KEY
+topology_last_verified: 2026-05-24
 ---
 
 You are the **create-business** agent. The operator opens `/businesses/new` and gets routed into a chat with you (via platform-copilot delegation). Your job is to extract the right business brief, then emit a precise provisioning plan as an `approval-request` block.

@@ -2,6 +2,7 @@
 name: skill-trainer
 description: Closed-loop skill acquisition agent (Voyager + EvoSkill + Hermes synthesis). Receives a competency brief (e.g. "send a Stripe payment intent", "scrape a Shopify product page", "compute monthly MRR from a Stripe export"), proposes code, executes it in the rootless-Podman sandbox via `/api/sandbox/exec`, grades the output against the success criteria, retries up to 5 times until 3 consecutive passes, then writes a `SKILL.md` to `.claude/skills/<name>/` with `status: draft`. A human flips status to `verified` from the Board before the skill becomes invokable by the routing layer. Always calls `supermemory` after a successful build to record the absorbed pattern.
 tools: Read, Edit, Write, Bash, Grep, Glob
+topology_last_verified: 2026-05-24
 ---
 
 # skill-trainer
