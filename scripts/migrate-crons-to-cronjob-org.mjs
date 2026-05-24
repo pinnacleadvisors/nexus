@@ -35,6 +35,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { printDocPropagationBanner } from './lib-migration-banner.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -258,6 +259,16 @@ async function main() {
   console.log(`  skipped: ${results.filter(r => r.action === 'skipped').length}`)
   console.log(`  failed:  ${results.filter(r => r.action === 'failed').length}`)
   if (results.some(r => r.action === 'failed')) process.exit(3)
+
+  // Only nudge after a real --apply (not --dry-run / --list / --delete-nexus).
+  if (APPLY) {
+    printDocPropagationBanner({
+      scriptName: 'migrate-crons-to-cronjob-org',
+      extras: [
+        `If CRONJOB_ORG_API_KEY rotated, also update Doppler ${process.env.DOPPLER_CONFIG ?? 'prd'} config.`,
+      ],
+    })
+  }
 }
 
 main().catch(err => { console.error(err); process.exit(3) })

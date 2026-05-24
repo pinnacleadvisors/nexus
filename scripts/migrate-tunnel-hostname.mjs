@@ -50,6 +50,8 @@
  *   --skip-dns            skip the DNS CNAME update (use if DNS already correct)
  */
 
+import { printDocPropagationBanner } from './lib-migration-banner.mjs'
+
 const RED   = '\x1b[31m'
 const GREEN = '\x1b[32m'
 const YEL   = '\x1b[33m'
@@ -354,3 +356,12 @@ try {
 }
 
 console.log(`\n${DIM}Done. Re-run \`npm run diagnose:codex\` to confirm full health.${RST}`)
+
+if (!DRY_RUN) {
+  printDocPropagationBanner({
+    scriptName: 'migrate-tunnel-hostname',
+    extras: [
+      `If the hostname now points at a different gateway service, update operator-facing docs (AGENTS.md → Topology, runbooks) that reference the old tunnel.`,
+    ],
+  })
+}
