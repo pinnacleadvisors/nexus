@@ -19,9 +19,10 @@
  */
 
 import { X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Drawer } from 'vaul'
 import { useResizable } from '@/lib/hooks/useResizable'
+import { useIsMobile } from '@/lib/hooks/useIsMobile'
 
 interface Props {
   title:    string
@@ -33,17 +34,9 @@ interface Props {
 }
 
 export default function ViewsPanel(props: Props) {
-  // matchMedia hook — `isMobile` flips when the operator drags a window
-  // across the 768px threshold so the presentation swaps without a remount.
-  const [isMobile, setIsMobile] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(max-width: 767px)')
-    function update() { setIsMobile(mq.matches) }
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
+  // `isMobile` flips when the operator drags a window across the md
+  // breakpoint (768px) so the presentation swaps without a remount.
+  const isMobile = useIsMobile('md')
 
   return isMobile ? <MobileSheet {...props} /> : <DesktopPanel {...props} />
 }

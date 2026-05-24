@@ -16,9 +16,9 @@
  * the same way in PlatformChat and BusinessChat.
  */
 
-import { useEffect, useState } from 'react'
 import { Drawer } from 'vaul'
 import SessionSidebar, { type SessionSummary } from './SessionSidebar'
+import { useIsMobile } from '@/lib/hooks/useIsMobile'
 
 interface Props {
   sessions:          SessionSummary[]
@@ -34,15 +34,7 @@ interface Props {
 }
 
 export default function MobileAwareSessionSidebar(props: Props) {
-  const [isMobile, setIsMobile] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(max-width: 767px)')
-    function update() { setIsMobile(mq.matches) }
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
+  const isMobile = useIsMobile('md')
 
   const sidebarProps = {
     sessions:        props.sessions,
