@@ -16,16 +16,25 @@
  *     on this project (and `android`).
  *   - android  (Pixel 5 emulation, 393×851 with touch + DPR 2.75) — broader
  *     Android coverage so a Chrome-mobile-only quirk surfaces in CI.
+ *   - real-device-mobile — Safari-iOS user-agent + 390×844 viewport, no
+ *     Playwright device-injection. Catches the viewport-meta-class
+ *     regression fixed by PR #301: the other mobile projects use
+ *     `devices['iPhone 12']` which presets viewport from device config,
+ *     bypassing the page's own `<meta name="viewport">` tag entirely.
+ *     This project leaves layout responsibility to the page so the
+ *     `viewport-meta.spec.ts` assertions are exercised against the
+ *     real SSR output, not against Playwright's emulator defaults.
  *
  * Single worker by default — keeps Clerk session reuse predictable and
  * matches the qa-runner's choice on small VPS tiers. Bump via PLAYWRIGHT_WORKERS
  * on workstations that can afford parallel Chromium instances.
  *
  * Running subsets:
- *   - `npx playwright test --project=chromium`  — desktop only
- *   - `npx playwright test --project=iphone`    — iPhone-emulated only
- *   - `npx playwright test --project=android`   — Pixel 5 only
- *   - `npx playwright test` (no flag)           — all three projects
+ *   - `npx playwright test --project=chromium`             — desktop only
+ *   - `npx playwright test --project=iphone`               — iPhone-emulated only
+ *   - `npx playwright test --project=android`              — Pixel 5 only
+ *   - `npx playwright test --project=real-device-mobile`   — Safari-iOS UA only
+ *   - `npx playwright test` (no flag)                      — all four projects
  *
  * BASE_URL defaults to http://localhost:3000. CI / loop scenarios override
  * via BASE_URL=https://branch-preview.example.
@@ -64,6 +73,17 @@ export default defineConfig({
     {
       name: 'android',
       use:  { ...devices['Pixel 5'] },
+    },
+    {
+      // Real-device-mobile — explicit Safari iOS UA + minimal viewport
+      // override, NO Playwright device-injection. Used by viewport-meta.spec.ts
+      // to verify the page's own meta tag is doing its job. Don't add
+      // touch / DPR / isMobile here — that would defeat the purpose.
+      name: 'real-device-mobile',
+      use:  {
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        viewport:  { width: 390, height: 844 },
+      },
     },
   ],
   outputDir: 'test-results',
