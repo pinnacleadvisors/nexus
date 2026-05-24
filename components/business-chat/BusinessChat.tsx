@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as TerminalIcon, Copy, Check, Menu } from 'lucide-react'
+import { safeJson } from '@/lib/chat/safe-json-response'
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
 import { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
 import MobileAwareSessionSidebar from '@/components/platform-chat/MobileAwareSessionSidebar'
@@ -388,7 +389,15 @@ export default function BusinessChat({ slug, name }: Props) {
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
         return
       }
-      const enq = (await enqRes.json()) as EnqueueResponse
+      // Defensive JSON parse — see PlatformChat for the Safari "string did
+      // not match expected pattern" failure mode this avoids.
+      const enqResult = await safeJson<EnqueueResponse>(enqRes)
+      if (!enqResult.ok) {
+        const detail = enqResult.snippet ? `\n\n${enqResult.snippet}` : ''
+        setError(`${enqResult.error}${detail}`)
+        return
+      }
+      const enq = enqResult.data
       if (!enq.ok) { setError(enq.fallbackHint ? `${enq.error} — ${enq.fallbackHint}` : enq.error); return }
       if (!activeSessionId) setActiveSessionId(enq.sessionId)
       if (enq.usage) setUsage(enq.usage)

@@ -97,11 +97,25 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     systemPrompt = await readAgentSystemPrompt(args.repoPath, args.agentSlug)
   }
 
+  // Max agentic-loop turns the CLI may take before exiting with code 1.
+  //
+  // Why 200 (was 25): at ~7-8s per CLI turn, 25 turns hit the wall at
+  // ~175-200s — operators with the 15-min wall-clock dropdown saw their
+  // turns crash at that mark with "claude CLI exited with code 1" and
+  // were confused because the wall-clock cap hadn't been reached. The
+  // wall-clock REQUEST_MAX_MS (default 10min) is the real soft cap;
+  // max-turns should be high enough that the agent has room to do real
+  // work without hitting it as a side limit. 200 turns × 8s ≈ 26min,
+  // comfortably above the wall-clock floor.
+  //
+  // Override via CLAUDE_MAX_TURNS env on the gateway container.
+  const maxTurns = Number(process.env.CLAUDE_MAX_TURNS ?? 200)
+
   const cliArgs = [
     '-p',
     '--output-format', 'stream-json',
     '--verbose',
-    '--max-turns', '25',
+    '--max-turns', String(Number.isFinite(maxTurns) && maxTurns > 0 ? maxTurns : 200),
   ]
   // Per-turn model override. When omitted, the CLI uses the OAuth-bound
   // default (typically claude-opus-4-7). See lib/chat/models.ts for the
