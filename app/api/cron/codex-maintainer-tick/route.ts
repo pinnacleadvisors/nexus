@@ -7,8 +7,9 @@
  * Fires every 30 minutes. Iterates every `business_operators` row whose
  * `money_model.experiment_flag` is `true`, runs the kill-switch preflight,
  * and dispatches the `codex-maintainer` agent against the **shared**
- * codex-gateway on KVM2 (one instance covers every experiment-flagged
- * business — see ADR 002 + `.claude/agents/codex-maintainer.md`).
+ * codex-gateway on KVM4 (one instance covers every experiment-flagged
+ * business — see ADR 002 + `.claude/agents/codex-maintainer.md`). KVM4
+ * since 2026-05-22 (was KVM2 before; ADR 006 lean-mode pivot).  // topology-check: ignore
  *
  * Single-instance reasoning: `dispatchToCodexGateway` reads
  * `CODEX_GATEWAY_URL` + `CODEX_GATEWAY_BEARER_TOKEN` from env and posts to
@@ -148,7 +149,7 @@ async function tickOne(b: BusinessRow, dryRun: boolean, tickTs: string): Promise
   // 2. Dispatch to the SHARED codex-gateway. dispatchToCodexGateway()
   //    reads CODEX_GATEWAY_URL from env directly — it does NOT consult
   //    the per-business resolver in lib/claw/business-client.ts, so
-  //    every business's tick lands on the same KVM2 instance. That's
+  //    every business's tick lands on the same KVM4 instance. That's
   //    intentional (see ADR 002 + the agent spec's single-instance
   //    notes).
   const message = buildAgentMessage({

@@ -144,8 +144,9 @@ Gateways available:
   - You're running on the shared claude-gateway (KVM4)
   - For execution-heavy work (sysadmin, Coolify health, container debugging,
     fresh-state SaaS research, full-stack smoke tests), you can delegate to
-    codex-gateway on KVM2. Use it when the task is shell-heavy or needs
-    sandboxed experimentation — don't try to do those yourself.
+    codex-gateway (also on KVM4 post lean-mode pivot). Use it when the task
+    is shell-heavy or needs sandboxed experimentation — don't try to do
+    those yourself.
 
 Interactive rules:
   1. When the operator asks an investigation question, fetch the relevant

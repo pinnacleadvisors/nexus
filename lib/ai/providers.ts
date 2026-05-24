@@ -89,7 +89,7 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     modes:    ['subscription', 'api'],
     subscription: {
       envVars:      ['CODEX_GATEWAY_URL', 'CODEX_GATEWAY_BEARER_TOKEN'],
-      instructions: 'ChatGPT Plus / Pro plan drained via the Codex CLI gateway on KVM2. Auth rotation ~30 days — see docs/runbooks/codex-gateway-auth-rotation.md.',
+      instructions: 'ChatGPT Plus / Pro plan drained via the Codex CLI gateway on KVM4 (migrated from KVM2 on 2026-05-22 per ADR 006). Auth rotation ~30 days — see docs/runbooks/codex-gateway-auth-rotation.md.',  // topology-check: ignore
       setupUrl:     '/manage-platform',
     },
     api: {
