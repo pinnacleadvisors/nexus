@@ -15,6 +15,7 @@
     "check:topology": "node scripts/check-topology.mjs",
     "check:agent-spec-freshness": "node scripts/check-agent-spec-freshness.mjs",
     "check:provider-agnostic": "node scripts/check-provider-agnostic.mjs",
+    "seed:deferred-tasks": "doppler run -- node scripts/seed-deferred-tasks.mjs",
     "check:all": "npm run lint && npx tsc --noEmit && npm run check:retry-storm && npm run check:sentry-config && npm run check:lockfile && npm run check:topology && npm run check:agent-spec-freshness && npm run check:provider-agnostic",
     "migrate": "doppler run -- node scripts/migrate.mjs",
     "migrate:local": "node scripts/migrate.mjs",
