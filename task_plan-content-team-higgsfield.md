@@ -1,5 +1,7 @@
 # task_plan-content-team-higgsfield.md
 
+> **Architectural overlay:** this is one instance of the [departments + ecosystems abstraction](task_plan-departments-and-ecosystems.md). The Content **department** roster below is ecosystem-agnostic; Higgsfield is just the default `video` adapter. Swapping to Runway / Veo / Kling / Pika is a one-config-row change to `teams.ecosystem_bindings`. Read the departments plan first for the adapter contract, the registry, and the v1 scope it ships into.
+
 Goal: A "Content Team" managed-agent roster, anchored on the open Higgsfield video model, that any Nexus business with `niche=creator | ad-agency | personal-brand` can spin up. End-to-end pipeline: trend → concept → shot list → Higgsfield render → edit pass → distribution → performance feedback.
 
 Success criteria:

@@ -128,6 +128,13 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `SUNO_API_KEY` / `UDIO_API_KEY` | 18 | AI background music |
 | `MEMORY_TOKEN` | 20 | GitHub PAT (repo scope) for runtime agent memory |
 | `MEMORY_REPO` | 20 | e.g. `pinnacleadvisors/nexus-memory` |
+| `HIGGSFIELD_BASE_URL` | departments-and-ecosystems v1 | Self-hosted Higgsfield endpoint. When set, the `video:higgsfield` adapter routes here instead of the hosted API. |
+| `OPEN_DESIGN_BASE_URL` | departments-and-ecosystems v1 | Self-hosted open-design.ai endpoint. Same swap pattern as Higgsfield. |
+| `OPEN_DESIGN_API_KEY` | departments-and-ecosystems v1 | API key for hosted open-design.ai (or self-hosted with auth on). |
+| `OPEN_CODE_BASE_URL` | departments-and-ecosystems v1 | Open Code endpoint. When unset, the `code:open-code` adapter falls back to the existing claude-gateway. |
+| `OPEN_CODE_API_KEY` | departments-and-ecosystems v1 | Auth for Open Code (when self-hosted with auth on). |
+| `GBRAIN_BASE_URL` | gbrain-integration v1 | GBrain endpoint. When unset, the `memory:gbrain` adapter reports `unavailable` and the operator stays on memory-hq. |
+| `GBRAIN_API_KEY` | gbrain-integration v1 | Optional auth for GBrain. |
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
 | `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands AND `/api/slack/decision` business-operator approval webhooks (Phase A). Per-user override at `kind='slack' name='signingSecret'`. |
 | `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |

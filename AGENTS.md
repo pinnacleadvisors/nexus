@@ -368,6 +368,32 @@ When Phase 2 lands, the loop agent inherits every Ralph-loop invariant above (op
 
 `services/qa-runner/` (post-deploy production smoke against the live Vercel deploy) is a **distinct system** — same Playwright framework, different runtime and purpose. It stays the production safety net; `tests/playwright/` is the local + loop-time verification layer.
 
+### Departments + ecosystem-agnostic teams
+
+The "team" abstraction in this codebase is two-axis: a **department** (a named bundle of role specs + approval gates + KPI hooks) bound to an **ecosystem set** (concrete adapters for `video`, `code`, `design`, `memory`, … capabilities). Both axes are pluggable — swapping a business's Content video provider from Higgsfield to Runway is one DB-row update; no agent spec edits.
+
+| Surface | Location |
+|---|---|
+| Architecture overlay | [task_plan-departments-and-ecosystems.md](task_plan-departments-and-ecosystems.md) |
+| Adapter contract | [lib/ecosystems/types.ts](lib/ecosystems/types.ts) — every adapter implements `EcosystemAdapter` |
+| Adapter registry | [lib/ecosystems/registry.ts](lib/ecosystems/registry.ts) — `getEcosystem(kind, name)` |
+| Starter departments | [lib/teams/departments.ts](lib/teams/departments.ts) — 7 starter slugs (executive, engineering, design, content, sales-cs, operations, research) |
+| Default bindings | [lib/teams/default-bindings.ts](lib/teams/default-bindings.ts) — per-niche ecosystem defaults |
+| Spawn helper | [lib/teams/template.ts](lib/teams/template.ts) — `materialiseTeam()` |
+| Persistence | [lib/teams/store.ts](lib/teams/store.ts) — `teams` + `team_members` tables (migration 060) |
+| Spawn API | [app/api/teams/spawn/route.ts](app/api/teams/spawn/route.ts) |
+| Admin UI | [app/(protected)/teams/page.tsx](app/(protected)/teams/page.tsx) |
+| Lead-agent template | [.claude/agents/departments/_template.md](.claude/agents/departments/_template.md) |
+| Concrete leads (v1) | `.claude/agents/departments/{content,design,engineering}/<dept>-lead.md` |
+
+Rules for new ecosystems / departments:
+- A new ecosystem adapter = a file under `lib/ecosystems/adapters/<name>.ts` + a row in `registry.ts`. Zero changes to department code.
+- A new department = a row in `DEPARTMENTS` + (optionally) a lead spec under `.claude/agents/departments/<slug>/`. Roles can be added incrementally — empty `roles[]` is valid.
+- Adapters MUST implement `available()` truthfully and return `{ ok: false, error: 'unavailable' }` when env vars are unset. Never crash the platform if an optional ecosystem isn't wired.
+- Role specs are ecosystem-agnostic: declare verbs (`render_clip`, `generate_module`), let the registry resolve to the bound adapter at dispatch time. Provider names never appear in spec prose (the [`check:provider-agnostic`](AGENTS.md#pre-commit-checklist) script enforces).
+
+Custom org-chart arrangements (custom departments, role borrowing, per-role ecosystem overrides, time-bounded teams, org-chart templates) are scoped as a future plan inside `task_plan-departments-and-ecosystems.md` — v1 ships the durable spine; the rearrangement UI is a follow-up.
+
 ### Harness taxonomy (Life-Harness layers `h2`–`h5`)
 
 Absorbed from [Life-Harness](https://arxiv.org/abs/2605.22166) (Peking University, May 2026). Their headline insight is that **most LLM-agent failures come from interface mismatches, not model limits** — so adapt the harness (frozen LLM, evolving interface) instead of the weights. Their 4-layer taxonomy organises every harness intervention into one of these buckets. Nexus's surfaces already cover all four; the taxonomy is the org chart, not new code.

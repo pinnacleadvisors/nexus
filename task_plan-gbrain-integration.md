@@ -1,5 +1,7 @@
 # task_plan-gbrain-integration.md
 
+> **Architectural overlay:** GBrain plugs into the [`memory` ecosystem kind](task_plan-departments-and-ecosystems.md#part-2--ecosystems-the-adapter-layer). v1 ships a stub `lib/ecosystems/adapters/gbrain.ts` that no-ops when `GBRAIN_BASE_URL` is unset — so the platform is shipped GBrain-ready before GBrain itself is wired. When the benchmark below picks GBrain over memory-hq for a specific business or department, the operator rebinds `memory` → `gbrain` with one DB update.
+
 Goal: Evaluate and (if it wins on a head-to-head benchmark) integrate GBrain — Garry Tan / YC's self-wiring memory layer for AI agents — alongside (not replacing) the existing memory-hq stack. Result is either (a) a `lib/memory/gbrain.ts` adapter making GBrain queryable through the same MCP surface, or (b) a decision memo explaining why memory-hq plus the planned H-Mem evolution dominate for our workloads.
 
 Sources:
