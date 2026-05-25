@@ -97,6 +97,35 @@ export function BusinessCard({ row, slackWarning, slackVerified, verifying, onPa
         </FormField>
       </div>
 
+      {/* v14 — per-business Slack bot config (optional). Both fields together
+          unlock chat.postMessage so cron alerts can thread their reminders.
+          Leave blank to keep the webhook-only path. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        <FormField label="Slack bot token (optional)">
+          <input type="password" defaultValue={row.slack_bot_token ?? ''}
+            placeholder="xoxb-..."
+            onBlur={e => {
+              const v = e.target.value.trim() || null
+              if (v !== (row.slack_bot_token ?? null)) onPatch({ slack_bot_token: v })
+            }}
+            className="w-full rounded-md px-2 py-1.5 text-xs font-mono"
+            style={{ background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(255,255,255,0.08)', color: '#e8e8f0', outline: 'none' }} />
+        </FormField>
+        <FormField label="Slack channel ID (optional)">
+          <input type="text" defaultValue={row.slack_channel_id ?? ''}
+            placeholder="C123ABC..."
+            onBlur={e => {
+              const v = e.target.value.trim() || null
+              if (v !== (row.slack_channel_id ?? null)) onPatch({ slack_channel_id: v })
+            }}
+            className="w-full rounded-md px-2 py-1.5 text-xs font-mono"
+            style={{ background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(255,255,255,0.08)', color: '#e8e8f0', outline: 'none' }} />
+        </FormField>
+      </div>
+      <p className="text-[10px] -mt-1.5" style={{ color: '#6b7280' }}>
+        Both bot fields together upgrade cron-alert reminders to in-thread replies. Webhook stays as fallback when either is blank.
+      </p>
+
       {slackWarning && (
         <div className="text-[11px] flex items-start gap-1.5"
           style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.22)', borderRadius: '8px', padding: '6px 8px' }}>

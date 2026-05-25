@@ -18,6 +18,7 @@ import { resolve } from 'node:path'
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { getSlackConfig, postSlackNotification } from '@/lib/slack/client'
+import { computeDecision } from '@/lib/gbrain/decision'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 60
@@ -107,43 +108,8 @@ export async function POST(req: NextRequest) {
  * MEMORY_REPO are unset (returns ok:false + reason); the operator still
  * gets the Slack post.
  */
-/** v13 — ADR 009 numeric decision. Applies the same criteria the bench prints
- *  at line 311 ("gbrain wins if citation ≥ +25% over memory-hq AND p95 < 3000ms
- *  AND errors ≤ 2") so the PR's Decision line is filled in automatically.
- *  Operator can still override before marking Ready for Review. */
-type BenchDecision = {
-  verdict:   'integrate' | 'defer' | 'reject'
-  rationale: string
-}
-function computeDecision(hq: AdapterSummary, gb: AdapterSummary): BenchDecision {
-  const citationGainPct = hq.avg_score > 0 ? ((gb.avg_score - hq.avg_score) / hq.avg_score) * 100 : 0
-  const p95Ok    = gb.p95_latency_ms < 3000
-  const errorsOk = gb.errors <= 2
-  const gainOk   = citationGainPct >= 25
-
-  const fmtGain = `${citationGainPct >= 0 ? '+' : ''}${citationGainPct.toFixed(1)}%`
-  if (gainOk && p95Ok && errorsOk) {
-    return {
-      verdict:   'integrate',
-      rationale: `gbrain wins all ADR 009 criteria: citation gain ${fmtGain} (target ≥ +25%), p95 ${gb.p95_latency_ms}ms (target < 3000ms), ${gb.errors} errors (target ≤ 2). Promote gbrain to default memory adapter for hot reads.`,
-    }
-  }
-  if (citationGainPct <= 0) {
-    return {
-      verdict:   'reject',
-      rationale: `memory-hq matches or beats gbrain on citation (${fmtGain} gain). p95 ${gb.p95_latency_ms}ms, ${gb.errors} errors. No reason to integrate.`,
-    }
-  }
-  // Improvement exists but at least one criterion failed — defer to next bench.
-  const failed: string[] = []
-  if (!gainOk)   failed.push(`citation gain ${fmtGain} below +25% target`)
-  if (!p95Ok)    failed.push(`p95 ${gb.p95_latency_ms}ms above 3000ms target`)
-  if (!errorsOk) failed.push(`${gb.errors} errors above ≤2 target`)
-  return {
-    verdict:   'defer',
-    rationale: `gbrain shows improvement (${fmtGain} citation) but fails: ${failed.join('; ')}. Re-run after upstream tuning.`,
-  }
-}
+// v13 → v14 — computeDecision() lives in lib/gbrain/decision.ts so it can be
+// unit-tested (tests in __tests__/gbrain-decision.test.ts).
 
 async function openAdrPr(hq: AdapterSummary, gb: AdapterSummary): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const token = process.env.MEMORY_HQ_TOKEN

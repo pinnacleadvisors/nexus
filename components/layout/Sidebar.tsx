@@ -21,6 +21,8 @@ import {
   ListTodo,
   Network,
   ShieldCheck,
+  Activity,
+  Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -153,6 +155,17 @@ const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
   { type: 'link', href: '/audit',           label: 'Audit',           icon: ShieldCheck },
+  {
+    type:  'group',
+    id:    'operations',
+    label: 'Operations',
+    icon:  Activity,
+    href:  '/cron-health',
+    children: [
+      { type: 'link', href: '/cron-health',     label: 'Cron health',     icon: Activity },
+      { type: 'link', href: '/admin-triggers',  label: 'Admin triggers',  icon: Wrench },
+    ],
+  },
   { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
@@ -191,6 +204,8 @@ function isActive(pathname: string, href: string) {
   if (href === '/graph')           return pathname === '/graph'
   if (href === '/learn')           return pathname === '/learn' || pathname.startsWith('/learn/')
   if (href === '/audit')           return pathname === '/audit' || pathname.startsWith('/audit/')
+  if (href === '/cron-health')     return pathname === '/cron-health'
+  if (href === '/admin-triggers')  return pathname === '/admin-triggers'
   if (href === '/manage-platform') return pathname === '/manage-platform' || pathname.startsWith('/manage-platform/')
   if (href === '/settings')        return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')
@@ -232,6 +247,10 @@ export default function Sidebar() {
   useEffect(() => {
     if (pathname.startsWith('/businesses')) {
       setOpenGroups(g => g.businesses ? g : { ...g, businesses: true })
+    }
+    // v14 — same for the Operations group when on /cron-health or /admin-triggers.
+    if (pathname === '/cron-health' || pathname === '/admin-triggers') {
+      setOpenGroups(g => g.operations ? g : { ...g, operations: true })
     }
   }, [pathname])
 
