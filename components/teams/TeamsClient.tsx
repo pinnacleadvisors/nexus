@@ -8,9 +8,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, PlusCircle, Sparkles, Users, AlertCircle, X } from 'lucide-react'
+import { Loader2, PlusCircle, Sparkles, Users, AlertCircle, X, Pause, Play, Archive, MoreHorizontal, Repeat } from 'lucide-react'
 import type { BusinessRow } from '@/lib/business/types'
 import { DEPARTMENT_ORDER, DEPARTMENTS, type DepartmentSlug } from '@/lib/teams/departments'
+import { listAllEcosystems } from '@/lib/ecosystems/registry'
+import type { EcosystemKind } from '@/lib/ecosystems/types'
 
 interface TeamRow {
   id:                 string
@@ -64,6 +66,30 @@ export default function TeamsClient({ businesses }: { businesses: BusinessRow[] 
     }
   }
 
+  /**
+   * Update a team's status and/or ecosystem bindings via PATCH. We send the
+   * FULL bindings map every time (the route doesn't support sparse patches)
+   * so callers must merge their change with the existing bindings before
+   * passing the result.
+   */
+  async function patchTeam(teamId: string, patch: { status?: TeamRow['status']; ecosystemBindings?: Record<string, string> }) {
+    setBusy(teamId); setErr(null)
+    try {
+      const res  = await fetch(`/api/teams/${teamId}`, {
+        method:  'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify(patch),
+      })
+      const json = (await res.json()) as { ok: boolean; team?: TeamRow; error?: string }
+      if (!json.ok || !json.team) throw new Error(json.error || 'update failed')
+      setTeams(prev => prev.map(t => t.id === teamId ? json.team! : t))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'update failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   // Group teams by business for the per-business sections.
   const teamsByBusiness = useMemo(() => {
     const m = new Map<string, TeamRow[]>()
@@ -112,6 +138,7 @@ export default function TeamsClient({ businesses }: { businesses: BusinessRow[] 
             onCloseSpawn={() => setSpawnFor(null)}
             busy={busy}
             onSpawn={dept => void spawn(b.slug, dept, b.niche)}
+            onPatch={patchTeam}
           />
         ))
       )}
@@ -130,7 +157,7 @@ function EmptyBusinessesCard() {
   )
 }
 
-function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSpawn, busy, onSpawn }: {
+function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSpawn, busy, onSpawn, onPatch }: {
   business:     BusinessRow
   teams:        TeamRow[]
   spawnOpen:    boolean
@@ -138,6 +165,7 @@ function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSp
   onCloseSpawn: () => void
   busy:         string | null
   onSpawn:      (dept: DepartmentSlug) => void
+  onPatch:      (teamId: string, patch: { status?: TeamRow['status']; ecosystemBindings?: Record<string, string> }) => Promise<void>
 }) {
   const taken = new Set(teams.map(t => t.department_slug))
   const remaining = DEPARTMENT_ORDER.filter(s => !taken.has(s))
@@ -173,7 +201,7 @@ function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSp
         </div>
       )}
 
-      {teams.map(t => <TeamCard key={t.id} team={t} />)}
+      {teams.map(t => <TeamCard key={t.id} team={t} busy={busy === t.id} onPatch={p => onPatch(t.id, p)} />)}
 
       {spawnOpen && (
         <SpawnPicker
@@ -188,29 +216,137 @@ function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSp
   )
 }
 
-function TeamCard({ team }: { team: TeamRow }) {
+function TeamCard({ team, busy, onPatch }: {
+  team:    TeamRow
+  busy:    boolean
+  onPatch: (patch: { status?: TeamRow['status']; ecosystemBindings?: Record<string, string> }) => Promise<void>
+}) {
   const dept = DEPARTMENTS[team.department_slug]
+  const [menuOpen, setMenuOpen] = useState(false)
+  // Track which binding chip is in "rebind picker" mode (kind name, or null).
+  const [rebindFor, setRebindFor] = useState<string | null>(null)
+
+  const archived = team.status === 'archived'
+  const paused   = team.status === 'paused'
+
   return (
     <div className="px-3 py-2.5 rounded-lg flex items-start gap-3"
-         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+                  opacity: archived ? 0.55 : 1 }}>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium" style={{ color: '#e8e8f0' }}>{dept?.label ?? team.department_slug}</div>
         <div className="text-[11px] mt-0.5" style={{ color: '#9090b0' }}>{dept?.purpose}</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-1.5 items-center">
           {Object.entries(team.ecosystem_bindings).map(([kind, name]) => (
-            <span key={kind} className="text-[10px] px-1.5 py-0.5 rounded-md font-mono"
-                  style={{ color: '#a8a3ff', background: 'rgba(108,99,255,0.10)', border: '1px solid rgba(108,99,255,0.22)' }}>
-              {kind}: {name}
-            </span>
+            <BindingChip
+              key={kind}
+              kindRaw={kind}
+              name={name}
+              editing={rebindFor === kind}
+              busy={busy}
+              onClick={() => !archived && setRebindFor(prev => prev === kind ? null : kind)}
+              onPick={async newName => {
+                if (newName === name) { setRebindFor(null); return }
+                const next = { ...team.ecosystem_bindings, [kind]: newName }
+                await onPatch({ ecosystemBindings: next })
+                setRebindFor(null)
+              }}
+              onCancel={() => setRebindFor(null)}
+            />
           ))}
         </div>
       </div>
-      <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ color: team.status === 'active' ? '#4ade80' : '#fbbf24',
-                     background: team.status === 'active' ? 'rgba(34,197,94,0.10)' : 'rgba(251,191,36,0.10)',
-                     border: `1px solid ${team.status === 'active' ? 'rgba(34,197,94,0.20)' : 'rgba(251,191,36,0.22)'}` }}>
-        {team.status.toUpperCase()}
-      </span>
+      <div className="flex flex-col items-end gap-1.5 shrink-0 relative">
+        <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full"
+              style={{
+                color:      team.status === 'active' ? '#4ade80' : team.status === 'paused' ? '#fbbf24' : '#9090b0',
+                background: team.status === 'active' ? 'rgba(34,197,94,0.10)' : team.status === 'paused' ? 'rgba(251,191,36,0.10)' : 'rgba(255,255,255,0.04)',
+                border:     team.status === 'active' ? '1px solid rgba(34,197,94,0.20)' : team.status === 'paused' ? '1px solid rgba(251,191,36,0.22)' : '1px solid rgba(255,255,255,0.08)',
+              }}>
+          {team.status.toUpperCase()}
+        </span>
+        {!archived && (
+          <button type="button" onClick={() => setMenuOpen(o => !o)} disabled={busy}
+                  className="rounded-md p-1 transition-colors disabled:opacity-40"
+                  style={{ color: '#9090b0', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                  title="Team actions">
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <MoreHorizontal size={11} />}
+          </button>
+        )}
+        {menuOpen && !archived && (
+          <div className="absolute right-0 top-full mt-1 z-10 min-w-[140px] rounded-lg overflow-hidden"
+               style={{ background: 'rgba(5,5,16,0.92)', border: '1px solid rgba(255,255,255,0.10)',
+                        backdropFilter: 'blur(20px)', boxShadow: '0 24px 48px -12px rgba(0,0,0,0.6)' }}>
+            {paused ? (
+              <MenuItem icon={<Play size={11} />} label="Resume" onClick={async () => { setMenuOpen(false); await onPatch({ status: 'active' }) }} />
+            ) : (
+              <MenuItem icon={<Pause size={11} />} label="Pause" onClick={async () => { setMenuOpen(false); await onPatch({ status: 'paused' }) }} />
+            )}
+            <MenuItem icon={<Archive size={11} />} label="Archive" onClick={async () => {
+              setMenuOpen(false)
+              if (confirm('Archive this team? It becomes read-only.')) await onPatch({ status: 'archived' })
+            }} danger />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MenuItem({ icon, label, onClick, danger }: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick}
+            className="w-full px-2.5 py-1.5 flex items-center gap-2 text-[11px] transition-colors"
+            style={{ color: danger ? '#f87171' : '#e8e8f0', background: 'transparent' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+      {icon}{label}
+    </button>
+  )
+}
+
+/** Chip showing one ecosystem binding. Click to enter rebind mode, which
+ *  swaps the chip for a small dropdown of every adapter of the same kind. */
+function BindingChip({ kindRaw, name, editing, busy, onClick, onPick, onCancel }: {
+  kindRaw:  string
+  name:     string
+  editing:  boolean
+  busy:     boolean
+  onClick:  () => void
+  onPick:   (newName: string) => Promise<void>
+  onCancel: () => void
+}) {
+  // Filter the registry to adapters of this kind. listEcosystemsByKind is
+  // not directly exposed in older registry builds, so we filter manually.
+  const candidates = useMemo(() => {
+    return listAllEcosystems().filter(a => a.kind === (kindRaw as EcosystemKind))
+  }, [kindRaw])
+
+  if (!editing) {
+    return (
+      <button type="button" onClick={onClick} disabled={busy}
+              className="text-[10px] px-1.5 py-0.5 rounded-md font-mono inline-flex items-center gap-1 transition-colors disabled:opacity-50"
+              style={{ color: '#a8a3ff', background: 'rgba(108,99,255,0.10)', border: '1px solid rgba(108,99,255,0.22)' }}
+              title="Click to rebind">
+        <Repeat size={9} className="opacity-60" />
+        {kindRaw}: {name}
+      </button>
+    )
+  }
+  return (
+    <div className="inline-flex items-center gap-1">
+      <select
+        defaultValue={name}
+        disabled={busy}
+        onChange={async e => { await onPick(e.target.value) }}
+        className="text-[10px] px-1.5 py-0.5 rounded-md font-mono"
+        style={{ color: '#e8e8f0', background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(108,99,255,0.40)' }}
+      >
+        {candidates.map(c => (
+          <option key={c.name} value={c.name}>{c.label} {c.available() ? '' : '(unwired)'}</option>
+        ))}
+      </select>
+      <button type="button" onClick={onCancel} className="text-[10px]" style={{ color: '#9090b0' }}>cancel</button>
     </div>
   )
 }
