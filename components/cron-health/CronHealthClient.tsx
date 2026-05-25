@@ -18,6 +18,20 @@ interface CronStatus {
   health:           'green' | 'yellow' | 'red' | 'unknown'
 }
 
+/** v11 — common cron presets. Picking one pre-fills the schedule input;
+ *  operator can still edit afterward. Covers the 80% of real schedules. */
+const SCHEDULE_PRESETS: { label: string; cron: string }[] = [
+  { label: 'every 5 min',          cron: '*/5 * * * *' },
+  { label: 'every 15 min',         cron: '*/15 * * * *' },
+  { label: 'every 30 min',         cron: '*/30 * * * *' },
+  { label: 'hourly (top of hour)', cron: '0 * * * *' },
+  { label: 'every 6h',             cron: '0 */6 * * *' },
+  { label: 'daily 03:00 UTC',      cron: '0 3 * * *' },
+  { label: 'daily 04:30 UTC',      cron: '30 4 * * *' },
+  { label: 'weekly Sun 03:30 UTC', cron: '30 3 * * 0' },
+  { label: 'monthly 1st 04:00',    cron: '0 4 1 * *' },
+]
+
 /** Scrub `secret=<...>` so the URL is safe to render. */
 function scrubSecret(url: string): string {
   return url.replace(/([?&]secret=)[^&]+/i, '$1<redacted>')
@@ -313,9 +327,10 @@ function CronRow({ job, enabling, onEnable, onUpdateUrl, onUpdateSchedule }: {
           </div>
         )}
         {/* v10 — inline schedule editor. Cron-string text input + inline
-            validation. Save sends parsed schedule to the v9 update endpoint. */}
+            validation. Save sends parsed schedule to the v9 update endpoint.
+            v11 — adds a preset picker beside the input to skip typing. */}
         {editingSched ? (
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
             <Clock size={10} style={{ color: '#9090b0' }} />
             <input
               type="text"
@@ -326,7 +341,7 @@ function CronRow({ job, enabling, onEnable, onUpdateUrl, onUpdateSchedule }: {
                 if (e.key === 'Escape')            { setEditingSched(false) }
               }}
               placeholder="m h dom mon dow"
-              className="flex-1 text-[10px] px-1.5 py-0.5 rounded-md font-mono"
+              className="flex-1 min-w-[120px] text-[10px] px-1.5 py-0.5 rounded-md font-mono"
               style={{
                 color: '#e8e8f0',
                 background: 'rgba(5,5,16,0.55)',
@@ -334,6 +349,18 @@ function CronRow({ job, enabling, onEnable, onUpdateUrl, onUpdateSchedule }: {
               }}
               autoFocus
             />
+            <select
+              value=""
+              onChange={e => { if (e.target.value) setDraftCron(e.target.value) }}
+              className="text-[10px] px-1 py-0.5 rounded-md font-mono"
+              style={{ color: '#e8e8f0', background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(108,99,255,0.40)' }}
+              title="Pick a common preset"
+            >
+              <option value="">presets…</option>
+              {SCHEDULE_PRESETS.map(p => (
+                <option key={p.cron} value={p.cron}>{p.label}</option>
+              ))}
+            </select>
             <button type="button" disabled={!!cronErr}
                     onClick={() => { onUpdateSchedule(draftCron); setEditingSched(false) }}
                     className="rounded-md p-0.5 disabled:opacity-40"

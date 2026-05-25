@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   if (!db) {
     // No DB — alert unconditionally if there's red. Dedup degrades gracefully.
     if (redTitles.length === 0) return NextResponse.json({ ok: true, alerted: false, reason: 'no_red' })
-    await sendAlert(redJobs)
+    await sendAlert(redJobs, 'new')
     return NextResponse.json({ ok: true, alerted: true, reason: 'no_db_fallback', red_count: redTitles.length })
   }
 
@@ -94,7 +94,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, alerted: false, reason: 'dedup', sinceLastAlertMs: sinceLastAlert })
   }
 
-  const sent = await sendAlert(redJobs)
+  // v11: distinct message prefix on reminder-due (same red-set as last
+  // time). Webhooks don't support thread_ts so we can't reply-in-thread;
+  // a "still red" prefix instead so the operator can ignore reminders
+  // they've already acknowledged in their head.
+  const mode: 'new' | 'reminder' = titlesChanged ? 'new' : 'reminder'
+  const sent = await sendAlert(redJobs, mode)
   await persistState(db, redTitles, sent ? new Date().toISOString() : (prev.data?.last_alert_at ?? null))
 
   return NextResponse.json({
@@ -143,7 +148,7 @@ async function fetchCronStatus(req: NextRequest): Promise<{ ok: true; jobs: Cron
  * Returns true if at least one alert was actually dispatched (i.e. a
  * webhook was configured + the post succeeded).
  */
-async function sendAlert(redJobs: CronStatus[]): Promise<boolean> {
+async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder'): Promise<boolean> {
   // Bucket red jobs by business slug (or 'admin' for ungrouped).
   const groups = new Map<string, CronStatus[]>()
   for (const j of redJobs) {
@@ -181,7 +186,13 @@ async function sendAlert(redJobs: CronStatus[]): Promise<boolean> {
     if (!webhookUrl) continue
     const scope = bucket === 'admin' ? 'platform' : `business ${bucket}`
     const lines = jobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus(?:\[[^\]]+\])?:\s*/, '')}`).join('\n')
-    const text  = `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
+    // v11: distinct prefix per mode. `:rotating_light:` for genuinely new
+    // failures, `:repeat:` for "still red since last cycle" reminders.
+    // Operator's eye can pattern-match the emoji + skip reminders mentally.
+    const prefix = mode === 'new'
+      ? `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:`
+      : `:repeat: still red — ${jobs.length} ${scope} cron(s) (since last alert):`
+    const text  = `${prefix}\n${lines}\nRe-enable / debug at /cron-health.`
     const ok = await postSlackNotification({ webhookUrl }, { text })
     if (ok) anySent = true
   }

@@ -136,24 +136,32 @@ Why this matters: a PR that's `mergeable: CONFLICTING` cannot be merged from the
 
 Skip the check when this session opened **exactly one** PR — there's nothing to stack-resolve.
 
-### When `git rebase origin/main` conflicts on already-merged content
+### Default recovery for stacked-PR branches whose parents merged: `reset + cherry-pick`
 
-A stacked branch's parent commits (e.g. v5 + v6 sitting underneath v7) get squash-merged into main with *different* SHAs. `git rebase` sees "v5 + v6 not in my history yet" and tries to re-apply them — but their CONTENT is already in main, so the re-apply collides with itself on shared files (the v7 PR #332 hit this in `scripts/eval-memory.mjs`).
+**Promoted to default in v11 — validated 4 sessions in a row (#332, #334, #335, this).**
 
-`git rebase --skip` works but is tedious for tall stacks. The faster recovery:
+When you've been working on a stacked branch (`claude/teams-v_n`) and the parent PRs in the stack merged while you were busy, DON'T start with `git rebase origin/main`. The parent commits got squash-merged into main with *different* SHAs; `rebase` tries to re-apply them by sha-content match and collides with itself on shared files (the v7 PR #332 hit this in `scripts/eval-memory.mjs`; v9 PR #334 hit it in `scripts/eval-memory.mjs` again; v10 PR #335 hit it in the same family).
+
+Recovery in 3 lines — this is the DEFAULT for any stacked-PR session, not a fallback:
 
 ```bash
-# v_n is the branch you want to land; v_n-only-commit is the SHA of your branch's
-# unique tip (the commit you made FOR v_n, before any rebases).
+# v_n is the branch; v_n-only-commit is the SHA of YOUR unique commit
+# (the one you made FOR v_n, before any rebases). Look it up with
+# `git log --oneline` — it's the topmost commit that ISN'T already on origin/main.
 git fetch origin main
 git checkout claude/teams-v_n
-git reset --hard origin/main          # discard the branch's parent commits — they're in main now
-git cherry-pick <v_n-only-commit>     # replay just your unique work
-# resolve any genuine conflict (rare — main rarely touches your v_n files)
+git reset --hard origin/main && git cherry-pick <v_n-only-commit>
 git push --force-with-lease
 ```
 
-When does this come up? Every time a stacked-PR session lands multiple stack PRs simultaneously. Documented here so future agents land their v_n PR cleanly without burning a `rebase --skip` loop.
+**Why this works:**
+- `reset --hard origin/main` throws away your branch's parent commits — they're already in main with the squash-merged SHAs.
+- `cherry-pick <v_n-only-commit>` replays just YOUR unique work on top of clean main.
+- Result: a one-commit branch that GitHub can fast-forward merge with zero conflicts.
+
+**When to use `git rebase origin/main` instead:** when the branch is NOT a stacked-PR branch — e.g. a single-feature branch that's been open for a while and just needs to catch up. Rebase is the right tool there because there's no SHA-vs-content collision.
+
+The `git rebase --skip` loop (the old default in this section) still works but is tedious for tall stacks AND requires identifying the right commits to skip mid-flight. The reset+cherry-pick pattern is mechanically simpler + harder to get wrong.
 
 ---
 
