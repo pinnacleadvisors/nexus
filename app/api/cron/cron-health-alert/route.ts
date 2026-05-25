@@ -158,6 +158,16 @@ async function fetchCronStatus(req: NextRequest): Promise<{ ok: true; jobs: Cron
  * Returns true if at least one alert was actually dispatched (i.e. a
  * webhook was configured + the post succeeded).
  */
+/**
+ * v13 — digest threshold. When MORE THAN this many crons go red in a single
+ * poll, collapse all per-bucket pings into one digest message to the operator
+ * (platform-wide outage signal). Below the threshold, the existing per-bucket
+ * fan-out runs unchanged. Tuned at 5: a typical "Vercel deploy broke 3 routes"
+ * incident stays per-bucket; a "Doppler down → everything red" incident
+ * collapses to one ping instead of 12.
+ */
+const DIGEST_THRESHOLD = 5
+
 async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder', replyToTs: string | null): Promise<{ sent: boolean; newThreadTs: string | null }> {
   // Bucket red jobs by business slug (or 'admin' for ungrouped).
   const groups = new Map<string, CronStatus[]>()
@@ -168,39 +178,32 @@ async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder', replyT
     arr.push(j); groups.set(key, arr)
   }
 
-  // Resolve per-business webhooks once (one DB lookup per business).
-  const businessSlugs = [...groups.keys()].filter(s => s !== 'admin')
-  const businessWebhooks: Record<string, string | null> = {}
-  if (businessSlugs.length > 0) {
-    const db = createServerClient()
-    if (db) {
-      type Chain<T> = { in: (c: string, v: string[]) => Promise<{ data: T[] | null }> }
-      const res = await (db.from('businesses' as never) as unknown as { select: (c: string) => Chain<{ slug: string; slack_webhook_url: string | null }> })
-        .select('slug, slack_webhook_url')
-        .in('slug', businessSlugs)
-      for (const row of res.data ?? []) businessWebhooks[row.slug] = row.slack_webhook_url
-    }
+  // Digest mode — only triggers when reds exceed the threshold. Keeps
+  // operators sane during platform-wide outages (Doppler / Vercel down).
+  if (redJobs.length > DIGEST_THRESHOLD) {
+    return sendDigest(redJobs, groups, mode, replyToTs)
   }
 
-  // Resolve the operator's fallback config once.
+  // v13 — resolve per-business Slack config (bot + webhook) in parallel via
+  // getSlackConfig(operatorId, businessSlug). Each call picks the per-business
+  // overrides from `businesses` and falls back to user-secrets + env.
   const operatorId = (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0] ?? ''
+  const businessSlugs = [...groups.keys()].filter(s => s !== 'admin')
   const opCfg = operatorId
     ? await getSlackConfig(operatorId)
-    : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined }
-
-  // v12 — bot-token path. When SLACK_BOT_TOKEN + SLACK_CHANNEL_ID are set,
-  // use chat.postMessage so we get the message `ts` back + can reply in
-  // thread. Otherwise fall back to the webhook + v11 emoji-prefix workaround.
-  const botToken   = process.env.SLACK_BOT_TOKEN
-  const botChannel = process.env.SLACK_CHANNEL_ID
-  const useBot     = Boolean(botToken && botChannel)
+    : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined, botToken: process.env.SLACK_BOT_TOKEN, channelId: process.env.SLACK_CHANNEL_ID }
+  const businessCfgs: Record<string, Awaited<ReturnType<typeof getSlackConfig>>> = {}
+  if (operatorId && businessSlugs.length > 0) {
+    await Promise.all(businessSlugs.map(async slug => {
+      businessCfgs[slug] = await getSlackConfig(operatorId, slug)
+    }))
+  }
 
   let anySent = false
   let newThreadTs: string | null = null
   for (const [bucket, jobs] of groups.entries()) {
-    const webhookUrl = bucket === 'admin'
-      ? opCfg.webhookUrl
-      : (businessWebhooks[bucket] ?? opCfg.webhookUrl)  // per-business fall through to operator
+    const cfg = bucket === 'admin' ? opCfg : (businessCfgs[bucket] ?? opCfg)
+    const useBot = Boolean(cfg.botToken && cfg.channelId)
     const scope = bucket === 'admin' ? 'platform' : `business ${bucket}`
     const lines = jobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus(?:\[[^\]]+\])?:\s*/, '')}`).join('\n')
     // v11 prefix logic still applies on the webhook fallback. Bot-token
@@ -212,29 +215,80 @@ async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder', replyT
           ? `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
           : `:repeat: still red — ${jobs.length} ${scope} cron(s) (since last alert):\n${lines}\nRe-enable / debug at /cron-health.`)
 
-    if (useBot && bucket === 'admin') {
-      // Bot path — only on admin bucket for now (per-business slack channels
-      // would need per-business bot config; future v13). Per-business buckets
-      // keep webhook fallback.
+    if (useBot) {
+      // v13 — bot path now works per-business too. We only capture+persist
+      // the thread ts on the ADMIN bucket (cron_alerts_state has one row);
+      // per-business bot pings stay top-level until per-business state lands.
       const res = await postSlackMessage({
-        token:    botToken!,
-        channel:  botChannel!,
+        token:    cfg.botToken!,
+        channel:  cfg.channelId!,
         text,
-        threadTs: replyToTs ?? undefined,
+        threadTs: bucket === 'admin' ? (replyToTs ?? undefined) : undefined,
       })
       if (res.ok) {
         anySent = true
-        // Only capture ts on NEW alerts; reminders inherit the parent ts.
-        if (mode === 'new' && res.ts) newThreadTs = res.ts
+        if (bucket === 'admin' && mode === 'new' && res.ts) newThreadTs = res.ts
       }
       continue
     }
 
-    if (!webhookUrl) continue
-    const ok = await postSlackNotification({ webhookUrl }, { text })
+    if (!cfg.webhookUrl) continue
+    const ok = await postSlackNotification({ webhookUrl: cfg.webhookUrl }, { text })
     if (ok) anySent = true
   }
   return { sent: anySent, newThreadTs }
+}
+
+/**
+ * v13 — platform-wide outage digest. Collapses N per-bucket pings into one
+ * message routed to the OPERATOR's Slack (NOT per-business webhooks — the
+ * per-business operator is the same human and they don't need 12 pings).
+ *
+ * Uses the bot path if available so the reminder still threads on the
+ * original digest. Falls back to webhook + emoji-prefix when no bot is wired.
+ */
+async function sendDigest(
+  redJobs: CronStatus[],
+  groups:  Map<string, CronStatus[]>,
+  mode:    'new' | 'reminder',
+  replyToTs: string | null,
+): Promise<{ sent: boolean; newThreadTs: string | null }> {
+  const operatorId = (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0] ?? ''
+  const cfg = operatorId
+    ? await getSlackConfig(operatorId)
+    : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined, botToken: process.env.SLACK_BOT_TOKEN, channelId: process.env.SLACK_CHANNEL_ID }
+
+  // Sort buckets by red count desc so the operator sees the worst-hit first.
+  const bucketLines = [...groups.entries()]
+    .sort(([, a], [, b]) => b.length - a.length)
+    .map(([bucket, jobs]) => `• ${bucket === 'admin' ? 'platform' : bucket}: ${jobs.length} red`)
+    .join('\n')
+  const scopeCount = groups.size
+  const headline = mode === 'reminder'
+    ? `:repeat: still red — platform-wide cron outage`
+    : `:rotating_light: platform-wide cron outage detected`
+  const text = [
+    `${headline} — ${redJobs.length} cron(s) red across ${scopeCount} scope(s):`,
+    bucketLines,
+    `Re-enable / debug at /cron-health.`,
+  ].join('\n')
+
+  const useBot = Boolean(cfg.botToken && cfg.channelId)
+  if (useBot) {
+    const res = await postSlackMessage({
+      token:    cfg.botToken!,
+      channel:  cfg.channelId!,
+      text,
+      threadTs: replyToTs ?? undefined,
+    })
+    return {
+      sent:         res.ok,
+      newThreadTs:  res.ok && mode === 'new' && res.ts ? res.ts : null,
+    }
+  }
+  if (!cfg.webhookUrl) return { sent: false, newThreadTs: null }
+  const ok = await postSlackNotification({ webhookUrl: cfg.webhookUrl }, { text })
+  return { sent: ok, newThreadTs: null }
 }
 
 async function persistState(db: ReturnType<typeof createServerClient>, redTitles: string[], lastAlertAt: string | null, lastThreadTs: string | null): Promise<void> {

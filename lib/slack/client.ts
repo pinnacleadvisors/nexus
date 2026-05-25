@@ -19,19 +19,63 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getSecrets } from '@/lib/user-secrets'
 import { checkExfilSafe } from '@/lib/security/exfil-guard'
+import { createServerClient } from '@/lib/supabase'
 
 export interface SlackConfig {
   webhookUrl?:     string
   signingSecret?:  string
   defaultChannel?: string
+  /** v13 — per-business chat.postMessage path. When both are set, callers
+   *  SHOULD prefer postSlackMessage() over postSlackNotification() so that
+   *  cron-health-alert can reply in-thread on reminder cycles. */
+  botToken?:       string
+  channelId?:      string
 }
 
-export async function getSlackConfig(userId: string): Promise<SlackConfig> {
+/**
+ * Resolve Slack config for a given operator + optional business overlay.
+ *
+ * Resolution order (per field):
+ *   1. businesses.<field> if businessSlug provided AND that business has a value
+ *   2. user_secrets.slack.<field> for userId
+ *   3. NEXUS_SLACK_* env var
+ *
+ * The business overlay is per-FIELD, not per-CONFIG — so a business may
+ * set only slack_bot_token + slack_channel_id (and inherit the operator's
+ * webhookUrl + signingSecret).
+ */
+export async function getSlackConfig(userId: string, businessSlug?: string): Promise<SlackConfig> {
   const fields = await getSecrets(userId, 'slack')
-  return {
+  const base: SlackConfig = {
     webhookUrl:     fields.webhookUrl     || process.env.NEXUS_SLACK_WEBHOOK_URL     || undefined,
     signingSecret:  fields.signingSecret  || process.env.NEXUS_SLACK_SIGNING_SECRET  || undefined,
     defaultChannel: fields.defaultChannel || undefined,
+    botToken:       process.env.SLACK_BOT_TOKEN || undefined,
+    channelId:      process.env.SLACK_CHANNEL_ID || undefined,
+  }
+  if (!businessSlug) return base
+
+  const db = createServerClient()
+  if (!db) return base
+  type Row = {
+    slack_webhook_url: string | null
+    slack_bot_token:   string | null
+    slack_channel_id:  string | null
+    slack_channel:     string | null
+  }
+  type Chain = { eq: (c: string, v: string) => { single: () => Promise<{ data: Row | null }> } }
+  const res = await (db.from('businesses' as never) as unknown as { select: (c: string) => Chain })
+    .select('slack_webhook_url, slack_bot_token, slack_channel_id, slack_channel')
+    .eq('slug', businessSlug)
+    .single()
+  const row = res.data
+  if (!row) return base
+  return {
+    webhookUrl:     row.slack_webhook_url || base.webhookUrl,
+    signingSecret:  base.signingSecret,
+    defaultChannel: row.slack_channel    || base.defaultChannel,
+    botToken:       row.slack_bot_token  || base.botToken,
+    channelId:      row.slack_channel_id || base.channelId,
   }
 }
 
