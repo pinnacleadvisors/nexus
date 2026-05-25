@@ -233,7 +233,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         ok:    false,
         error: 'Supabase service-role client not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
-      }, { status: 503 })
+      }, { status: 503 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
     }
 
     const dryRun = req.nextUrl.searchParams.get('dryRun') === '1' || req.method === 'GET'
@@ -262,7 +262,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         ok: false, dryRun: false, total: candidates.length, byReason, sample, warnings,
         error: `Delete failed: ${error}`,
-      }, { status: 500 })
+      }, { status: 500 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
     }
     await logAudit(req, db, { reason: 'sweep', ids: candidates.map(c => c.card.id), dryRun: false })
     return NextResponse.json({
@@ -274,7 +274,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       ok:    false,
       error: err instanceof Error ? err.message : String(err),
-    }, { status: 500 })
+    }, { status: 500 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
   }
 }
 

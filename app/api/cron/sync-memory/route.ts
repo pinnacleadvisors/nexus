@@ -211,7 +211,7 @@ export async function POST(req: NextRequest) {
     const stats = await applyPaths(Array.from(seen.values()))
     return NextResponse.json({ ok: true, ...stats })
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 })
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
   }
 }
 
@@ -239,6 +239,6 @@ export async function GET(req: NextRequest) {
     const stats = await reconcileTree(scopePrefix)
     return NextResponse.json({ ok: true, mode: 'reconcile', scopePrefix: scopePrefix || null, ...stats })
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 })
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
   }
 }

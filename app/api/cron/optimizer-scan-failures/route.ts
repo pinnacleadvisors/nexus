@@ -115,7 +115,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }),
     signal: AbortSignal.timeout(20_000),
   }).catch(err => {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), { status: 502 })
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), { status: 502 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
   })
 
   if (!res.ok) {

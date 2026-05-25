@@ -136,6 +136,25 @@ Why this matters: a PR that's `mergeable: CONFLICTING` cannot be merged from the
 
 Skip the check when this session opened **exactly one** PR — there's nothing to stack-resolve.
 
+### When `git rebase origin/main` conflicts on already-merged content
+
+A stacked branch's parent commits (e.g. v5 + v6 sitting underneath v7) get squash-merged into main with *different* SHAs. `git rebase` sees "v5 + v6 not in my history yet" and tries to re-apply them — but their CONTENT is already in main, so the re-apply collides with itself on shared files (the v7 PR #332 hit this in `scripts/eval-memory.mjs`).
+
+`git rebase --skip` works but is tedious for tall stacks. The faster recovery:
+
+```bash
+# v_n is the branch you want to land; v_n-only-commit is the SHA of your branch's
+# unique tip (the commit you made FOR v_n, before any rebases).
+git fetch origin main
+git checkout claude/teams-v_n
+git reset --hard origin/main          # discard the branch's parent commits — they're in main now
+git cherry-pick <v_n-only-commit>     # replay just your unique work
+# resolve any genuine conflict (rare — main rarely touches your v_n files)
+git push --force-with-lease
+```
+
+When does this come up? Every time a stacked-PR session lands multiple stack PRs simultaneously. Documented here so future agents land their v_n PR cleanly without burning a `rebase --skip` loop.
+
 ---
 
 # Long-Horizon Task Protocol
