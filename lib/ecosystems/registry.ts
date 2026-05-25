@@ -14,6 +14,10 @@ import { openDesignAdapter } from './adapters/open-design'
 import { openCodeAdapter   } from './adapters/open-code'
 import { memoryHqAdapter   } from './adapters/memory-hq'
 import { gbrainAdapter     } from './adapters/gbrain'
+import { claudeLlmAdapter  } from './adapters/claude-llm'
+import { tavilyAdapter     } from './adapters/tavily'
+import { firecrawlAdapter  } from './adapters/firecrawl'
+import { composioAdapter   } from './adapters/composio'
 
 /**
  * Authoritative registry of every wired adapter in v1. Adding a new adapter:
@@ -24,6 +28,12 @@ import { gbrainAdapter     } from './adapters/gbrain'
  *      default for any niche.
  */
 const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
+  // v2 — real adapters wired through existing infra:
+  claudeLlmAdapter,
+  tavilyAdapter,
+  firecrawlAdapter,
+  composioAdapter,
+  // v1 — stub adapters (verb routers; real wiring lands per team plans):
   higgsfieldAdapter,
   openDesignAdapter,
   openCodeAdapter,
