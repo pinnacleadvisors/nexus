@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         results,
-      }, { status: 500 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
+      }, { status: 200 })  // retry-storm: ok:false already in body; cron-job.org auto-disables on 5xx
     }
     return NextResponse.json({ ok: true, processed: results.length, results })
   }

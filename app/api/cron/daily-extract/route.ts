@@ -5,6 +5,10 @@
  * when supplied). Owner-only. Best-effort filesystem write — on Vercel the repo
  * filesystem is read-only, so the route returns the markdown body for the caller
  * (a GitHub Action or Inngest job) to commit.
+ *
+ * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
+ * called by cron-job.org. The E6 cron runs via GitHub Action / Inngest
+ * with its own auth.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

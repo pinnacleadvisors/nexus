@@ -96,27 +96,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const brief = buildBrief(top)
-  const res = await fetch(dispatchUrl, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${process.env.BOT_API_TOKEN ?? ''}`,
-    },
-    body: JSON.stringify({
-      agentSlug:  'workflow-optimizer',
-      sessionTag: `optimizer-failure-scan-${new Date().toISOString().slice(0, 10)}`,
-      inputs: {
-        task:        'distill-failure-cluster',
-        cluster:     top,
-        brief,
-        // Tool budget — h3 layer. Required ≥ 2 plausible options.
-        tools:       ['Read', 'Edit'],
+  let res: Response
+  try {
+    res = await fetch(dispatchUrl, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${process.env.BOT_API_TOKEN ?? ''}`,
       },
-    }),
-    signal: AbortSignal.timeout(20_000),
-  }).catch(err => {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), { status: 502 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
-  })
+      body: JSON.stringify({
+        agentSlug:  'workflow-optimizer',
+        sessionTag: `optimizer-failure-scan-${new Date().toISOString().slice(0, 10)}`,
+        inputs: {
+          task:        'distill-failure-cluster',
+          cluster:     top,
+          brief,
+          // Tool budget — h3 layer. Required ≥ 2 plausible options.
+          tools:       ['Read', 'Edit'],
+        },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    })
+  } catch (err) {
+    // retry-storm: return 200 + ok:false so cron-job.org doesn't auto-disable.
+    return NextResponse.json({
+      ok:      false,
+      error:   'dispatch_unreachable',
+      detail:  err instanceof Error ? err.message : String(err),
+      cluster: top,
+    })
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')

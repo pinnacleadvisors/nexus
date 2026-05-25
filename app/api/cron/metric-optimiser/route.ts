@@ -3,6 +3,9 @@
  *
  * Owner-only (ALLOWED_USER_IDS gate inside). Returns `{ detected, filed }` so
  * the owner can verify the workflow-feedback queue picked up drift signals.
+ *
+ * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
+ * called by cron-job.org. The hourly sweep runs via Inngest.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

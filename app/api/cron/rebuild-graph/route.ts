@@ -10,6 +10,10 @@
  * committed CLI is read-only — the CLI steps are best-effort and the caller
  * can still use the rebuilt in-process graph even when the filesystem write
  * failed.
+ *
+ * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
+ * called by cron-job.org. The actual cron runs via Inngest with its own
+ * service-to-service auth.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

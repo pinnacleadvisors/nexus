@@ -233,7 +233,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         ok:    false,
         error: 'Supabase service-role client not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
-      }, { status: 503 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
+      }, { status: 200 })  // retry-storm: cron-job.org auto-disables on 5xx — surface DB-missing via ok:false in body
     }
 
     const dryRun = req.nextUrl.searchParams.get('dryRun') === '1' || req.method === 'GET'
@@ -262,7 +262,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         ok: false, dryRun: false, total: candidates.length, byReason, sample, warnings,
         error: `Delete failed: ${error}`,
-      }, { status: 500 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
+      }, { status: 200 })  // retry-storm: cron-job.org auto-disables on 5xx — body already carries ok:false
     }
     await logAudit(req, db, { reason: 'sweep', ids: candidates.map(c => c.card.id), dryRun: false })
     return NextResponse.json({
@@ -274,7 +274,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       ok:    false,
       error: err instanceof Error ? err.message : String(err),
-    }, { status: 500 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
+    }, { status: 200 })  // retry-storm: unhandled errors → ok:false in body so cron-job.org doesn't auto-disable
   }
 }
 
