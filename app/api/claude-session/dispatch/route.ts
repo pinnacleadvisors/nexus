@@ -85,6 +85,16 @@ interface DispatchBody {
   model?: string
   /** E11 — fire a Slack wake notification on completion. */
   notifyOnDone?: boolean
+  /**
+   * Optional issue this dispatch serves. When set, the route auto-computes
+   * the full ancestry chain (issue → parent issues → goal → parent goals →
+   * business) and prepends a "Why this matters" block to the brief.
+   * Soft-fails to no-prepend when migrations 047/048/052 are missing.
+   * Part of task_plan-platform-expansion.md Task D2.
+   */
+  issueId?: string
+  /** Optional goal pointer for ancestry. Currently unused unless paired with issueId. */
+  goalId?: string
   inputs?: {
     task?:             string
     description?:      string
@@ -294,13 +304,18 @@ async function dispatchToOpenClaw(opts: {
   }
 }
 
-function buildAgentBrief(body: DispatchBody, env: Record<string, string>): string {
+function buildAgentBrief(body: DispatchBody, env: Record<string, string>, ancestryBlock?: string): string {
   const inputs = body.inputs ?? {}
-  const parts: string[] = [
+  const parts: string[] = []
+  if (ancestryBlock && ancestryBlock.trim().length > 0) {
+    parts.push(ancestryBlock)
+    parts.push('')
+  }
+  parts.push(
     `Nexus session — agent ${body.agentSlug}.`,
     '',
     `Task: ${inputs.task ?? '(no task provided)'}`,
-  ]
+  )
   if (inputs.description)     parts.push(`\nIdea description: ${inputs.description}`)
   if (inputs.howItMakesMoney) parts.push(`\nMoney model: ${inputs.howItMakesMoney}`)
   if (inputs.tools?.length) {
@@ -413,7 +428,24 @@ export async function POST(req: NextRequest) {
 
   // 2. Build env
   const env = buildSessionEnv({ swarm })
-  const message = buildAgentBrief(body, env)
+
+  // 2a. Compute ancestry block when caller passed issueId. Soft-fails to
+  // empty string when migrations 047/048/052 are missing (no behaviour
+  // change for callers that don't pass issueId). Part of Task D2.
+  let ancestryBlock = ''
+  if (body.issueId) {
+    try {
+      const { getIssueAncestry, renderAncestryPrompt } = await import('@/lib/goals/ancestry')
+      const ancestryDb = createServerClient()
+      if (ancestryDb) {
+        const ancestry = await getIssueAncestry(ancestryDb, body.issueId)
+        ancestryBlock = renderAncestryPrompt(ancestry)
+      }
+    } catch (err) {
+      console.warn('[claude-session/dispatch] ancestry compute failed:', err instanceof Error ? err.message : err)
+    }
+  }
+  const message = buildAgentBrief(body, env, ancestryBlock)
 
   // 3. Codex routing — when the body specifies a GPT-class model AND the
   // Codex gateway is configured, dispatch to the sandbox VPS instead of
