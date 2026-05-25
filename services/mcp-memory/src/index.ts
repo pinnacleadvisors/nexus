@@ -178,6 +178,20 @@ const TOOLS = [
       required: ['scope', 'start_id'],
     },
   },
+  {
+    name: 'ecosystem_invoke',
+    description: 'Generic adapter dispatch. Calls any registered ecosystem adapter (video / code / design / search / memory / voice / image / music / avatar / speech / browser / workflow / voice-agent / doc-parse / llm) without the caller needing to know the adapter URL or auth. Returns the adapter typed result envelope { ok, adapter, verb, result?, error?, telemetry? }. Use when an agent needs to call a vendor API (e.g. render_clip on higgsfield) without hard-coding the vendor.',
+    inputSchema: {
+      type:       'object',
+      properties: {
+        kind:    { type: 'string', description: 'Ecosystem kind, e.g. "video", "search", "code".' },
+        name:    { type: 'string', description: 'Adapter name, e.g. "higgsfield", "tavily", "claude".' },
+        verb:    { type: 'string', description: 'Verb the adapter implements, e.g. "render_clip", "web_search", "generate_text".' },
+        payload: { type: 'object', description: 'Adapter-specific payload — passed straight through.' },
+      },
+      required: ['kind', 'name', 'verb'],
+    },
+  },
 ] as const
 
 const server = new Server(
@@ -225,6 +239,21 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (name === 'memory_query' || name === 'memory_search') {
       const result = await getMemoryQuery(args as Record<string, unknown>)
       return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+    }
+    if (name === 'ecosystem_invoke') {
+      const a = args as Record<string, unknown>
+      const res = await fetch(`${NEXUS_BASE_URL}/api/ecosystems/invoke`, {
+        method:  'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${MEMORY_HQ_TOKEN}` },
+        body:    JSON.stringify({
+          kind:    String(a.kind ?? ''),
+          name:    String(a.name ?? ''),
+          verb:    String(a.verb ?? ''),
+          payload: a.payload ?? {},
+        }),
+      })
+      const json = await res.json()
+      return { content: [{ type: 'text', text: JSON.stringify(json) }] }
     }
     if (name === 'memory_walk') {
       const a = args as Record<string, unknown>
