@@ -261,7 +261,7 @@ function TeamCard({ team, busy, onPatch }: {
             />
           ))}
         </div>
-        {!archived && <MembersDisclosure teamId={team.id} />}
+        {!archived && <MembersDisclosure teamId={team.id} teamBindings={team.ecosystem_bindings} />}
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0 relative">
         <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full"

@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, AlertCircle, X, GitBranch, ChevronRight, RotateCcw } from 'lucide-react'
+import { Loader2, AlertCircle, X, GitBranch, ChevronRight, RotateCcw, GripVertical, Inbox } from 'lucide-react'
 import type { BusinessRow } from '@/lib/business/types'
 import { DEPARTMENTS } from '@/lib/teams/departments'
 
@@ -28,6 +28,8 @@ export default function OrgChartClient({ businesses }: { businesses: BusinessRow
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState<string | null>(null)
   const [err, setErr]         = useState<string | null>(null)
+  // v5 drag-drop: id of the team currently being dragged. Cleared on drop / dragend.
+  const [draggingId, setDraggingId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -112,17 +114,21 @@ export default function OrgChartClient({ businesses }: { businesses: BusinessRow
           teams={teamsByBusiness.get(b.slug) ?? []}
           busy={busy}
           onSetParent={setParent}
+          draggingId={draggingId}
+          setDraggingId={setDraggingId}
         />
       ))}
     </div>
   )
 }
 
-function BusinessTree({ business, teams, busy, onSetParent }: {
-  business:    BusinessRow
-  teams:       TeamRow[]
-  busy:        string | null
-  onSetParent: (teamId: string, parentTeamId: string | null) => Promise<void>
+function BusinessTree({ business, teams, busy, onSetParent, draggingId, setDraggingId }: {
+  business:      BusinessRow
+  teams:         TeamRow[]
+  busy:          string | null
+  onSetParent:   (teamId: string, parentTeamId: string | null) => Promise<void>
+  draggingId:    string | null
+  setDraggingId: (id: string | null) => void
 }) {
   // Build child map: parent_team_id → children[]. null parent = root.
   const childMap = useMemo(() => {
@@ -148,26 +154,33 @@ function BusinessTree({ business, teams, busy, onSetParent }: {
           No teams. Visit <Link href="/teams" className="font-mono" style={{ color: '#a8a3ff' }}>/teams</Link> to spawn one.
         </div>
       ) : (
-        <TreeBranch
-          parent={null}
-          depth={0}
-          childMap={childMap}
-          allTeams={teams}
-          busy={busy}
-          onSetParent={onSetParent}
-        />
+        <>
+          {draggingId && <RootDropZone draggingId={draggingId} onDrop={() => { void onSetParent(draggingId, null); setDraggingId(null) }} />}
+          <TreeBranch
+            parent={null}
+            depth={0}
+            childMap={childMap}
+            allTeams={teams}
+            busy={busy}
+            onSetParent={onSetParent}
+            draggingId={draggingId}
+            setDraggingId={setDraggingId}
+          />
+        </>
       )}
     </section>
   )
 }
 
-function TreeBranch({ parent, depth, childMap, allTeams, busy, onSetParent }: {
-  parent:      string | null
-  depth:       number
-  childMap:    Map<string | null, TeamRow[]>
-  allTeams:    TeamRow[]
-  busy:        string | null
-  onSetParent: (teamId: string, parentTeamId: string | null) => Promise<void>
+function TreeBranch({ parent, depth, childMap, allTeams, busy, onSetParent, draggingId, setDraggingId }: {
+  parent:        string | null
+  depth:         number
+  childMap:      Map<string | null, TeamRow[]>
+  allTeams:      TeamRow[]
+  busy:          string | null
+  onSetParent:   (teamId: string, parentTeamId: string | null) => Promise<void>
+  draggingId:    string | null
+  setDraggingId: (id: string | null) => void
 }) {
   const children = childMap.get(parent) ?? []
   if (children.length === 0) return null
@@ -175,29 +188,97 @@ function TreeBranch({ parent, depth, childMap, allTeams, busy, onSetParent }: {
     <ul className="space-y-2">
       {children.map(t => (
         <li key={t.id} style={{ marginLeft: `${depth * 16}px` }}>
-          <TreeNode team={t} allTeams={allTeams} busy={busy === t.id} onSetParent={onSetParent} depth={depth} />
-          <TreeBranch parent={t.id} depth={depth + 1} childMap={childMap} allTeams={allTeams} busy={busy} onSetParent={onSetParent} />
+          <TreeNode team={t} allTeams={allTeams} busy={busy === t.id} onSetParent={onSetParent} depth={depth}
+                    draggingId={draggingId} setDraggingId={setDraggingId} />
+          <TreeBranch parent={t.id} depth={depth + 1} childMap={childMap} allTeams={allTeams} busy={busy}
+                      onSetParent={onSetParent} draggingId={draggingId} setDraggingId={setDraggingId} />
         </li>
       ))}
     </ul>
   )
 }
 
-function TreeNode({ team, allTeams, busy, onSetParent, depth }: {
-  team:        TeamRow
-  allTeams:    TeamRow[]
-  busy:        boolean
-  onSetParent: (teamId: string, parentTeamId: string | null) => Promise<void>
-  depth:       number
+/** Drop zone that appears at the top of each business tree while a team
+ *  is being dragged. Dropping on it detaches the team (sets parent=null). */
+function RootDropZone({ draggingId, onDrop }: { draggingId: string; onDrop: () => void }) {
+  const [over, setOver] = useState(false)
+  return (
+    <div
+      onDragOver={e => { e.preventDefault(); setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={e => { e.preventDefault(); setOver(false); onDrop() }}
+      className="rounded-lg px-3 py-2 mb-2 flex items-center gap-2 text-xs transition-colors"
+      style={{
+        background: over ? 'rgba(108,99,255,0.15)' : 'rgba(108,99,255,0.04)',
+        border:     `1px dashed ${over ? 'rgba(108,99,255,0.60)' : 'rgba(108,99,255,0.30)'}`,
+        color:      '#e8e8f0',
+      }}
+    >
+      <Inbox size={11} style={{ color: '#a8a3ff' }} />
+      <span>Drop here to make this team a root reporter</span>
+      <span className="ml-auto text-[10px] font-mono opacity-60">{draggingId.slice(0, 8)}</span>
+    </div>
+  )
+}
+
+function TreeNode({ team, allTeams, busy, onSetParent, depth, draggingId, setDraggingId }: {
+  team:          TeamRow
+  allTeams:      TeamRow[]
+  busy:          boolean
+  onSetParent:   (teamId: string, parentTeamId: string | null) => Promise<void>
+  depth:         number
+  draggingId:    string | null
+  setDraggingId: (id: string | null) => void
 }) {
   const dept = DEPARTMENTS[team.department_slug as keyof typeof DEPARTMENTS]
   const archived = team.status === 'archived'
   const candidates = useMemo(() => allTeams.filter(t => t.id !== team.id && !isDescendant(t.id, team.id, allTeams)), [allTeams, team.id])
+  // Drop-target gating: a team can NOT be dropped onto itself OR onto one
+  // of its own descendants (would form a cycle).
+  const isDraggingSelf  = draggingId === team.id
+  const isInvalidTarget = draggingId !== null && (isDraggingSelf || isDescendant(team.id, draggingId, allTeams))
+  const [isDragOver, setIsDragOver] = useState(false)
 
   return (
-    <div className="px-3 py-2 rounded-lg flex items-center gap-2.5"
-         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
-                  opacity: archived ? 0.55 : 1 }}>
+    <div
+      draggable={!archived && !busy}
+      onDragStart={e => {
+        if (archived) return
+        setDraggingId(team.id)
+        // Hint to the browser that we're MOVING the node (not copying).
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', team.id)
+      }}
+      onDragEnd={() => setDraggingId(null)}
+      onDragOver={e => {
+        if (!draggingId || isInvalidTarget) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (!isDragOver) setIsDragOver(true)
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={async e => {
+        e.preventDefault()
+        setIsDragOver(false)
+        if (!draggingId || isInvalidTarget) return
+        await onSetParent(draggingId, team.id)
+        setDraggingId(null)
+      }}
+      className="px-3 py-2 rounded-lg flex items-center gap-2.5 transition-colors"
+      style={{
+        background: isDragOver
+          ? 'rgba(108,99,255,0.18)'
+          : 'rgba(255,255,255,0.02)',
+        border: isDragOver
+          ? '1px dashed rgba(108,99,255,0.60)'
+          : isDraggingSelf
+            ? '1px dashed rgba(168,163,255,0.40)'
+            : '1px solid rgba(255,255,255,0.06)',
+        opacity: archived ? 0.55 : isDraggingSelf ? 0.5 : 1,
+        cursor: archived ? 'default' : busy ? 'progress' : 'grab',
+      }}
+    >
+      {!archived && <GripVertical size={11} style={{ color: '#6a6a86', flexShrink: 0 }} />}
       {depth > 0 && <ChevronRight size={11} style={{ color: '#6a6a86' }} />}
       <div className="min-w-0 flex-1">
         <div className="text-sm" style={{ color: '#e8e8f0' }}>
