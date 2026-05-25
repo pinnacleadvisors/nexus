@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Check, X, AlertCircle, Filter } from 'lucide-react'
+import { Loader2, Check, X, AlertCircle, Filter, Building2 } from 'lucide-react'
+import type { BusinessRow } from '@/lib/business/types'
 
 interface EdgeRow {
   id:               string
@@ -24,12 +25,37 @@ interface EdgeRow {
 
 type ConfidenceBucket = 'all' | 'high' | 'medium' | 'low'
 
-export default function PendingEdgesClient({ scope }: { scope: string }) {
+export default function PendingEdgesClient({ defaultScope, businesses }: { defaultScope: string; businesses: BusinessRow[] }) {
   const [edges, setEdges]     = useState<EdgeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState<string | null>(null)
   const [err, setErr]         = useState<string | null>(null)
   const [bucket, setBucket]   = useState<ConfidenceBucket>('all')
+  // v7: scope picker. Initial value comes from URL hash if present (so
+  // bookmarks survive), else the page's default. Operator can swap to
+  // any business scope; the scope-id for a per-business slot is
+  // "<scope_id>-<slug>" matching memory-hq's scope canonicalisation.
+  const initialScope = (typeof window !== 'undefined' && window.location.hash.startsWith('#scope='))
+    ? decodeURIComponent(window.location.hash.slice('#scope='.length))
+    : defaultScope
+  const [scope, setScope] = useState<string>(initialScope)
+
+  /** Build the list of pickable scopes. Admin scope (defaultScope) is
+   *  always first; each connected business adds its own. The scope-id
+   *  encoding follows the memory-hq canonical form (sha1(scope_json)[:8]
+   *  + human suffix) — for v7 we use a simpler convention:
+   *  `<defaultScope>-<businessSlug>`. When memory-hq's real per-business
+   *  scopes are populated this picker shows them; until then the per-
+   *  business rows return empty (correct + non-crashing). */
+  const scopeOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [
+      { value: defaultScope, label: 'Admin (platform)' },
+    ]
+    for (const b of businesses) {
+      opts.push({ value: `${defaultScope}-${b.slug}`, label: `Business: ${b.name}` })
+    }
+    return opts
+  }, [defaultScope, businesses])
 
   async function load() {
     setLoading(true); setErr(null)
@@ -45,6 +71,15 @@ export default function PendingEdgesClient({ scope }: { scope: string }) {
     }
   }
   useEffect(() => { void load() }, [scope])
+  // Sync the URL hash so refresh + back/forward keep the picked scope.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (scope === defaultScope) {
+      if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    } else {
+      window.history.replaceState(null, '', `#scope=${encodeURIComponent(scope)}`)
+    }
+  }, [scope, defaultScope])
 
   async function decide(edge: EdgeRow, decision: 'approve' | 'reject') {
     setBusy(edge.id); setErr(null)
@@ -86,6 +121,16 @@ export default function PendingEdgesClient({ scope }: { scope: string }) {
           </button>
         </div>
       )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <Building2 size={11} style={{ color: '#9090b0' }} />
+        <span className="text-[11px]" style={{ color: '#9090b0' }}>scope:</span>
+        <select value={scope} onChange={e => setScope(e.target.value)}
+                className="text-[11px] px-2 py-0.5 rounded-md font-mono"
+                style={{ color: '#e8e8f0', background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(255,255,255,0.10)' }}>
+          {scopeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
 
       <div className="flex items-center gap-2 flex-wrap">
         <Filter size={11} style={{ color: '#9090b0' }} />

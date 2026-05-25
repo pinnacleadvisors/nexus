@@ -22,13 +22,18 @@ const CRON_SECRET = process.env.CRON_SECRET
 const BASE_URL    = (process.env.NEXUS_BASE_URL ?? '').replace(/\/$/, '')
 const API_HOST    = 'https://api.cron-job.org'
 
-const args     = process.argv.slice(2)
-const DRY_RUN  = args.includes('--dry-run')
-const APPLY    = args.includes('--apply')
-const DELETE   = args.includes('--delete')
+const args            = process.argv.slice(2)
+const DRY_RUN         = args.includes('--dry-run')
+const APPLY           = args.includes('--apply')
+const DELETE          = args.includes('--delete')
+// v7: when set with --apply (or --dry-run), existing entries whose URL or
+// schedule has DRIFTED are PATCHed in place rather than skipped. Useful
+// after CRON_SECRET rotation or schedule changes.
+const UPDATE_EXISTING = args.includes('--update-existing')
 
 if (![DRY_RUN, APPLY, DELETE].some(Boolean)) {
-  console.error('Usage: doppler run -- node scripts/sync-crons-hmem.mjs <--dry-run|--apply|--delete>')
+  console.error('Usage: doppler run -- node scripts/sync-crons-hmem.mjs <--dry-run|--apply|--delete> [--update-existing]')
+  console.error('  --update-existing  also reconcile URL + schedule for already-registered jobs (PATCH cron-job.org).')
   process.exit(1)
 }
 if (!API_KEY) { console.error('CRONJOB_ORG_API_KEY not set'); process.exit(2) }
@@ -49,6 +54,13 @@ const SPECS = [
   { title: 'Nexus: hmem-consolidate (weekly L2)',  path: '/api/cron/hmem-consolidate?level=2', schedule: { minutes: [30], hours: [3],  mdays: [-1], months: [-1], wdays: [0]  } },
   { title: 'Nexus: hmem-consolidate (monthly L3)', path: '/api/cron/hmem-consolidate?level=3', schedule: { minutes: [0],  hours: [4],  mdays: [1],  months: [-1], wdays: [-1] } },
   { title: 'Nexus: hmem-extract-edges',            path: '/api/cron/hmem-extract-edges',       schedule: { minutes: [30], hours: [4],  mdays: [-1], months: [-1], wdays: [-1] } },
+  // v7: every 15 min — keeps cron-job.org's own auto-disable from being
+  // the first signal of a red cron. The route Slack-pings only on
+  // titles-changed or 4h-reminder so this isn't noisy. Title is intentionally
+  // "Nexus: " (not "Nexus: hmem...") because the cron isn't an H-Mem cron,
+  // but the listExistingH() title filter still picks it up via the broader
+  // /cron-health dashboard (which scans for any "Nexus: " prefix).
+  { title: 'Nexus: hmem-cron-health-alert',        path: '/api/cron/cron-health-alert',        schedule: { minutes: [0, 15, 30, 45], hours: [-1], mdays: [-1], months: [-1], wdays: [-1] } },
 ]
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
@@ -110,6 +122,23 @@ async function listExistingH() {
   return jobs.filter(j => typeof j.title === 'string' && j.title.startsWith('Nexus: hmem'))
 }
 
+/** Compare an existing cron-job.org job row to the spec we'd register.
+ *  Returns the SHALLOW diff between expected + actual; empty array = no drift. */
+function diffJobToSpec(job, spec) {
+  const expectedUrl = urlFor(spec.path)
+  const drift = []
+  // cron-job.org normalises URLs; compare encoded forms.
+  if ((job.url ?? '') !== expectedUrl) drift.push('url')
+  // Schedule fields are arrays — JSON-stringify both sides for shallow compare.
+  for (const field of ['minutes', 'hours', 'mdays', 'months', 'wdays']) {
+    const a = JSON.stringify(spec.schedule[field] ?? [])
+    const b = JSON.stringify(job.schedule?.[field] ?? [])
+    if (a !== b) drift.push(`schedule.${field}`)
+  }
+  if (job.enabled === false) drift.push('disabled')  // re-enable on update
+  return drift
+}
+
 async function main() {
   if (DELETE) {
     const existing = await listExistingH()
@@ -124,14 +153,35 @@ async function main() {
   }
 
   const existing = await listExistingH()
-  const existingTitles = new Set(existing.map(j => j.title))
+  const byTitle = new Map(existing.map(j => [j.title, j]))
   console.log(`Found ${existing.length} existing H-Mem cron entries.`)
 
   for (const spec of SPECS) {
-    if (existingTitles.has(spec.title)) {
-      console.log(`✓ already registered: ${spec.title}`)
+    const match = byTitle.get(spec.title)
+    if (match) {
+      // Already-registered path — either skip (default) OR reconcile.
+      if (!UPDATE_EXISTING) {
+        console.log(`✓ already registered: ${spec.title}`)
+        continue
+      }
+      const drift = diffJobToSpec(match, spec)
+      if (drift.length === 0) {
+        console.log(`✓ already in sync:    ${spec.title}`)
+        continue
+      }
+      if (DRY_RUN) {
+        console.log(`~ would update:       ${spec.title} (drift: ${drift.join(', ')})`)
+        continue
+      }
+      process.stdout.write(`~ updating:           ${spec.title} (drift: ${drift.join(', ')})… `)
+      // cron-job.org's PATCH replaces the whole `job` object; we use the
+      // same payload as create + the existing jobId in the URL.
+      await api('PATCH', `/jobs/${match.jobId}`, payloadFor(spec))
+      console.log('OK')
+      await sleep(1500)
       continue
     }
+    // New entry path.
     if (DRY_RUN) {
       console.log(`+ would create: ${spec.title}`)
       console.log(`    url: ${urlFor(spec.path).replace(CRON_SECRET, '<redacted>')}`)
