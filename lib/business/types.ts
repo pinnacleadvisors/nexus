@@ -81,6 +81,9 @@ export interface BusinessRow {
 
   slack_channel:            string | null
   slack_webhook_url:        string | null
+  /** v13 — optional per-business Slack bot config. NULL → falls back to webhook. */
+  slack_bot_token?:         string | null
+  slack_channel_id?:        string | null
 
   current_run_id:           string | null
   last_operator_at:         string | null
@@ -93,4 +96,4 @@ export interface BusinessRow {
  * The shape the `business-operator` agent sees in `inputs.business`.
  * Same as BusinessRow minus secrets (slack webhook is server-only).
  */
-export type BusinessContext = Omit<BusinessRow, 'slack_webhook_url' | 'user_id'>
+export type BusinessContext = Omit<BusinessRow, 'slack_webhook_url' | 'slack_bot_token' | 'user_id'>
