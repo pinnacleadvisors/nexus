@@ -448,6 +448,7 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
   - [ ] Did this change add or remove an env var? If yes → `memory/platform/SECRETS.md` in the same PR.
   - [ ] After the migration script completes, follow the [Post-infrastructure-change memory protocol](#post-infrastructure-change-memory-protocol) below and write a `memory_atom` so future sessions see the new topology via `memory_search`.
 - [ ] **Superseding-component check** — if this commit adds a component / hook / API that replaces another, **delete the superseded render sites in the same PR** (not just deprecate the file). The 2026-05-24 ChatProviderToggle pill survived for weeks after `ModelSelector` shipped because its render sites in `PlatformChat.tsx` / `BusinessChat.tsx` were never deleted; the old behaviour silently coexisted alongside the new dropdown.
+- [ ] **Multi-PR end-of-session sanity** — if this session opened more than one PR (stacked branches), run `gh pr list --author "@me" --state open --json number,headRefName,mergeable,mergeStateStatus` BEFORE declaring done. For any `mergeable: CONFLICTING`, rebase + resolve from OLDEST PR first (mainline-merging the oldest shifts main; newer stacked PRs need a re-rebase). Procedure documented in [CLAUDE.md → End-of-multi-PR-session](CLAUDE.md#end-of-multi-pr-session--verify-each-pr-is-mergeable). Skip when the session opened exactly one PR.
 
 ### Retry-storm vulnerability checklist (run mentally for every change)
 
