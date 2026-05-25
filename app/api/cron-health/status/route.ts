@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
+import { scheduleToCronString, type CronJobOrgSchedule } from '@/lib/cron/parse'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 15
@@ -26,6 +27,7 @@ interface CronJobOrgJob {
   lastExecution?: number     // unix seconds
   nextExecution?: number
   saveResponses?: boolean
+  schedule?:     CronJobOrgSchedule  // v10 — surface for inline schedule editor
 }
 
 interface CronStatus {
@@ -36,6 +38,10 @@ interface CronStatus {
    *  it inline from /cron-health without running the sync script. Secret
    *  query param IS included; the dashboard renders it scrubbed. */
   url:              string
+  /** v10 — 5-field cron string ("0 3 * * *") derived from cron-job.org's
+   *  array shape so the schedule editor can pre-fill from the current
+   *  value. Empty when schedule isn't returned by cron-job.org. */
+  schedule_cron:    string
   last_status:      number
   last_status_text: 'ok' | 'fail' | 'never_run'
   last_execution:   string | null     // ISO
@@ -109,12 +115,21 @@ function normalise(j: CronJobOrgJob): CronStatus {
     title:            j.title,
     enabled:          j.enabled,
     url:              j.url ?? '',
+    schedule_cron:    j.schedule ? safeScheduleToCron(j.schedule) : '',
     last_status:      lastStatus,
     last_status_text: lastStatusText,
     last_execution:   j.lastExecution ? new Date(j.lastExecution * 1000).toISOString() : null,
     next_execution:   j.nextExecution ? new Date(j.nextExecution * 1000).toISOString() : null,
     health,
   }
+}
+
+/** Defensive wrapper — cron-job.org's schedule shape is permissive; if any
+ *  field is missing we'd rather surface an empty string than crash the
+ *  whole dashboard. */
+function safeScheduleToCron(s: CronJobOrgSchedule): string {
+  try { return scheduleToCronString(s) }
+  catch { return '' }
 }
 
 function orderKey(s: CronStatus): number {
