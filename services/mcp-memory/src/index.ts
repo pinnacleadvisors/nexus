@@ -164,6 +164,20 @@ const TOOLS = [
       required: ['q'],
     },
   },
+  {
+    name: 'memory_walk',
+    description: 'H-Mem multi-hop traversal — start at an atom/entity/temporal node, walk up to max_hops edges, return the path. Empty path = no edges in mol_edge yet OR no path within max_hops. Edge tables are populated by scripts/hmem-backfill-wikilinks.mjs + (future) LLM edge extraction crons.',
+    inputSchema: {
+      type:       'object',
+      properties: {
+        scope:      { type: 'string', description: 'Scope id, e.g. "55bedf46-nexus".' },
+        start_id:   { type: 'string', description: '"<scope_id>:<slug>" for atoms; raw uuid for temporal nodes.' },
+        predicates: { type: 'array', items: { type: 'string' }, description: 'Optional predicate filter, e.g. ["mentions","caused"].' },
+        max_hops:   { type: 'number', description: 'Default 2, max 5.' },
+      },
+      required: ['scope', 'start_id'],
+    },
+  },
 ] as const
 
 const server = new Server(
@@ -211,6 +225,19 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (name === 'memory_query' || name === 'memory_search') {
       const result = await getMemoryQuery(args as Record<string, unknown>)
       return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+    }
+    if (name === 'memory_walk') {
+      const a = args as Record<string, unknown>
+      const params = new URLSearchParams()
+      if (a.scope)      params.set('scope',      String(a.scope))
+      if (a.start_id)   params.set('start_id',   String(a.start_id))
+      if (a.predicates && Array.isArray(a.predicates)) params.set('predicates', a.predicates.join(','))
+      if (a.max_hops)   params.set('max_hops',   String(a.max_hops))
+      const res = await fetch(`${NEXUS_BASE_URL}/api/memory/walk?${params.toString()}`, {
+        headers: { 'authorization': `Bearer ${MEMORY_HQ_TOKEN}` },
+      })
+      const json = await res.json()
+      return { content: [{ type: 'text', text: JSON.stringify(json) }] }
     }
     throw new Error(`unknown tool: ${name}`)
   } catch (e) {

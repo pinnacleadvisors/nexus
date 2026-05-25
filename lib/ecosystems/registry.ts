@@ -18,6 +18,9 @@ import { claudeLlmAdapter  } from './adapters/claude-llm'
 import { tavilyAdapter     } from './adapters/tavily'
 import { firecrawlAdapter  } from './adapters/firecrawl'
 import { composioAdapter   } from './adapters/composio'
+import { aiderAdapter      } from './adapters/aider'
+import { pipecatAdapter    } from './adapters/pipecat'
+import { searxngAdapter    } from './adapters/searxng'
 
 /**
  * Authoritative registry of every wired adapter in v1. Adding a new adapter:
@@ -33,6 +36,10 @@ const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
   tavilyAdapter,
   firecrawlAdapter,
   composioAdapter,
+  // v3 — open-source adapter stubs (verb routers; deploy `services/<name>/` to enable):
+  aiderAdapter,
+  pipecatAdapter,
+  searxngAdapter,
   // v1 — stub adapters (verb routers; real wiring lands per team plans):
   higgsfieldAdapter,
   openDesignAdapter,

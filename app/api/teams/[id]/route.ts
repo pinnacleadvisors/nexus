@@ -29,6 +29,9 @@ export const maxDuration = 10
 interface PatchBody {
   status?:            string
   ecosystemBindings?: Record<string, string>
+  /** Reassign org-chart parent. Pass null to detach. Set the field to "" to
+   *  signal "leave unchanged" — undefined also leaves unchanged. */
+  parentTeamId?:      string | null
 }
 
 const VALID_STATUSES: readonly TeamStatus[] = ['active', 'paused', 'archived']
@@ -46,7 +49,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   let body: PatchBody = {}
   try { body = await req.json() } catch { /* validated below */ }
 
-  const patch: { status?: TeamStatus; ecosystemBindings?: Record<string, string> } = {}
+  const patch: { status?: TeamStatus; ecosystemBindings?: Record<string, string>; parentTeamId?: string | null } = {}
   if (typeof body.status === 'string') {
     if (!VALID_STATUSES.includes(body.status as TeamStatus)) {
       return NextResponse.json({ ok: false, error: `invalid status (must be one of ${VALID_STATUSES.join(', ')})` }, { status: 400 })
@@ -62,6 +65,18 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       if (typeof k === 'string' && typeof v === 'string') clean[k] = v
     }
     patch.ecosystemBindings = clean
+  }
+  if (body.parentTeamId !== undefined) {
+    if (body.parentTeamId === null) {
+      patch.parentTeamId = null
+    } else if (typeof body.parentTeamId === 'string' && /^[0-9a-f-]{36}$/i.test(body.parentTeamId)) {
+      if (body.parentTeamId === id) {
+        return NextResponse.json({ ok: false, error: 'team cannot be its own parent' }, { status: 400 })
+      }
+      patch.parentTeamId = body.parentTeamId
+    } else {
+      return NextResponse.json({ ok: false, error: 'parentTeamId must be a uuid or null' }, { status: 400 })
+    }
   }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 })

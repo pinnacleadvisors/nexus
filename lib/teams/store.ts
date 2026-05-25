@@ -19,6 +19,12 @@ export interface TeamRow {
   ecosystem_bindings: Record<string, string>
   created_at:         string
   updated_at:         string
+  /** Org-chart parent (migration 063). null = root reporter. */
+  parent_team_id:     string | null
+  /** Time-bounded teams auto-archive when expires_at passes (cron, future). */
+  expires_at:         string | null
+  /** Saved-arrangement provenance. Null when spawned manually. */
+  template_id:        string | null
 }
 
 export interface TeamMemberRow {
@@ -105,17 +111,23 @@ export async function createTeam(input: CreateTeamInput): Promise<TeamRow | null
 
 /** Update team status (active / paused / archived) and / or rebind one
  *  ecosystem. Both knobs in one call so the operator can pause-and-rebind
- *  atomically. */
+ *  atomically. Org-chart fields (parent_team_id) live here too — same
+ *  PATCH route, same shape. */
 export async function updateTeam(
   userId: string,
   teamId: string,
-  patch: { status?: TeamStatus; ecosystemBindings?: Record<string, string> },
+  patch: {
+    status?:            TeamStatus
+    ecosystemBindings?: Record<string, string>
+    parentTeamId?:      string | null
+  },
 ): Promise<TeamRow | null> {
   const db = createServerClient()
   if (!db) return null
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  if (patch.status)             updates.status             = patch.status
-  if (patch.ecosystemBindings)  updates.ecosystem_bindings = patch.ecosystemBindings
+  if (patch.status)                 updates.status             = patch.status
+  if (patch.ecosystemBindings)      updates.ecosystem_bindings = patch.ecosystemBindings
+  if (patch.parentTeamId !== undefined) updates.parent_team_id = patch.parentTeamId
   if (Object.keys(updates).length === 1) return null  // only updated_at — no-op
   const res = await (db.from('teams' as never) as unknown as {
     update: (u: typeof updates) => { eq: (c: string, v: string) => { eq: (c: string, v: string) => { select: () => { single: () => Promise<{ data: TeamRow | null }> } } } }
