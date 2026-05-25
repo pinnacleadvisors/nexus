@@ -1,0 +1,26 @@
+{
+  "name": "@nexus/mcp-doppler-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing Doppler (secrets manager) tools to platform-copilot. Read-only listing + redaction-aware single-secret reads are pre-approved; mutating tools (set/delete/rotate) return requires_approval payloads so the agent escalates via approval-request blocks. Audits every call via lib/audit/tool-call.ts.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "^4.21.0",
+    "typescript": "5.7.2"
+  }
+}

@@ -18,6 +18,9 @@ import {
   Terminal,
   Briefcase,
   MessageSquare,
+  ListTodo,
+  Network,
+  ShieldCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -143,10 +146,13 @@ function useBusinessesForSidebar(): BusinessLink[] {
 const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/dashboard',       label: 'Mission Control', icon: LayoutDashboard },
   { type: 'link', href: '/inbox',           label: 'Inbox',           icon: Inbox },
+  { type: 'link', href: '/issues',          label: 'Issues',          icon: ListTodo },
   { type: 'link', href: '/businesses',      label: 'Businesses',      icon: Briefcase },
+  { type: 'link', href: '/org',             label: 'Org Chart',       icon: Network },
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
+  { type: 'link', href: '/audit',           label: 'Audit',           icon: ShieldCheck },
   { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
@@ -178,10 +184,13 @@ function buildNav(businesses: BusinessLink[]): NavItem[] {
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard')       return pathname === '/dashboard' || pathname.startsWith('/dashboard/')
   if (href === '/inbox')           return pathname === '/inbox' || pathname === '/approvals' || pathname === '/signals'
+  if (href === '/issues')          return pathname === '/issues' || pathname.startsWith('/issues/')
   if (href === '/businesses')      return pathname === '/businesses' || pathname.startsWith('/businesses/')
+  if (href === '/org')             return pathname === '/org' || pathname.startsWith('/org/')
   if (href === '/board')           return pathname === '/board' || pathname.startsWith('/automation-library') || pathname.startsWith('/swarm')
   if (href === '/graph')           return pathname === '/graph'
   if (href === '/learn')           return pathname === '/learn' || pathname.startsWith('/learn/')
+  if (href === '/audit')           return pathname === '/audit' || pathname.startsWith('/audit/')
   if (href === '/manage-platform') return pathname === '/manage-platform' || pathname.startsWith('/manage-platform/')
   if (href === '/settings')        return pathname === '/settings' || pathname.startsWith('/settings/')
   return pathname === href || pathname.startsWith(href + '/')

@@ -560,6 +560,47 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [
       envVar: 'SENTRY_AUTH_TOKEN',
     },
   },
+  {
+    // Doppler — secrets manager. The operator's source of truth for every env
+    // var injected into every container (per AGENTS.md "Docker images and
+    // docker-compose — Doppler as the source of truth"). Storing the Doppler
+    // service token here lets platform-copilot list projects/configs/secret
+    // names + read individual values (audited) + propose rotations via the
+    // `approval-request` gate. The actual env-var hydration of running
+    // containers continues to happen at boot via `doppler run --` ENTRYPOINT
+    // — this row is for the agent's read/propose path, not for container boot.
+    id: 'doppler',
+    name: 'Doppler',
+    toolkitSlug: 'DOPPLER', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'developer',
+    logo: '/logos/doppler.svg',
+    actions: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',    apiKeySetup: {
+      instructions: 'Doppler → Workplace settings → Service Tokens → Generate. Scope: "All projects, Read" for a low-risk operator token (recommended). Use a project-scoped token if you want to lock platform-copilot to one project. The token is never echoed back after creation — paste it below immediately.',
+      credentialsUrl: 'https://dashboard.doppler.com/workplace/tokens',
+      envVar: 'DOPPLER_TOKEN',
+    },
+  },
+  {
+    // Supabase — shared platform DB. Service role key powers admin reads
+    // (table introspection, log_events queries) + gated writes (only via the
+    // `approval-request` flow per platform-copilot.md). Read-only SELECT is
+    // pre-approved; UPDATE/INSERT/DELETE always escalates. This row also
+    // makes the dependency explicit in /settings/accounts → Admin scope.
+    id: 'supabase',
+    name: 'Supabase',
+    toolkitSlug: 'SUPABASE', // unused — not a Composio toolkit. Kept for shape compat.
+    category: 'developer',
+    logo: '/logos/supabase.svg',
+    actions: [],
+    sharePolicy: 'shareable',
+    scopePolicy: 'admin-only',    apiKeySetup: {
+      instructions: 'Supabase → Project settings → API → service_role secret. Treat like a database password — bypasses RLS. Paste below. Pair with NEXT_PUBLIC_SUPABASE_URL (already set in Doppler).',
+      credentialsUrl: 'https://app.supabase.com/project/_/settings/api',
+      envVar: 'SUPABASE_SERVICE_ROLE_KEY',
+    },
+  },
 ] as const
 
 export function getProvider(id: string): OAuthProvider | undefined {

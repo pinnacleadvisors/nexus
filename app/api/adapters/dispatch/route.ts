@@ -30,6 +30,8 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { resolveAdapter, listAdapterTypes } from '@/lib/adapters/registry'
 import type { AdapterType, InvokeContext } from '@/lib/adapters/types'
 import { assertUnderCostCap } from '@/lib/cost-guard'
+import { createServerClient } from '@/lib/supabase'
+import { getIssueAncestry, renderAncestryPrompt } from '@/lib/goals/ancestry'
 
 export const runtime    = 'nodejs'
 export const dynamic    = 'force-dynamic'
@@ -125,13 +127,33 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Auto-compute ancestry_prompt when the caller passed an issue_id but
+  // didn't pre-render the chain. Mirrors what the solopreneur-tick cron
+  // does inline so every dispatch (cron, n8n, swarm, copilot) lands the
+  // "why this matters" preamble in the agent's brief. Soft-fails to null
+  // when the migration is missing — the adapter's brief composer drops
+  // the empty block cleanly.
+  let ancestryPrompt = v.body.ancestry_prompt
+  if (!ancestryPrompt && v.body.issue_id) {
+    const db = createServerClient()
+    if (db) {
+      try {
+        const ancestry = await getIssueAncestry(db, v.body.issue_id)
+        const rendered = renderAncestryPrompt(ancestry)
+        ancestryPrompt = rendered.length > 0 ? rendered : null
+      } catch (err) {
+        console.warn('[adapters/dispatch] ancestry compute failed:', err instanceof Error ? err.message : err)
+      }
+    }
+  }
+
   const ctx: InvokeContext = {
     business_slug:   v.body.business_slug,
     user_id:         session.userId,
     agent_slug:      v.body.agent_slug,
     issue_id:        v.body.issue_id ?? null,
     goal_id:         v.body.goal_id ?? null,
-    ancestry_prompt: v.body.ancestry_prompt ?? null,
+    ancestry_prompt: ancestryPrompt ?? null,
     run_id:          v.body.run_id ?? null,
     inputs:          v.body.inputs ?? {},
   }

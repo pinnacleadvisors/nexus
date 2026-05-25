@@ -27,6 +27,7 @@ import { getProvider as getAiProvider }    from '@/lib/ai/providers'
 import type { AiProvider }    from '@/lib/ai/providers'
 import type { AiProviderKey } from '@/lib/models/types'
 import { isValidScope } from '@/lib/claw/business-client'
+import { validateApiKey, hasValidator } from '@/lib/oauth/validate-api-key'
 
 type ResolvedProvider = { kind: 'oauth' | 'ai'; id: string }
 
@@ -77,6 +78,17 @@ export async function POST(req: NextRequest) {
   const businessSlug = body.businessSlug?.trim() || null
   if (businessSlug && !isValidScope(businessSlug)) {
     return NextResponse.json({ error: 'invalid businessSlug' }, { status: 400 })
+  }
+
+  // Validate against the provider's live API when a validator is registered
+  // (Doppler, Supabase, …). Pre-existing apiKeySetup providers without a
+  // validator pass through unchanged. Returns 200 + ok:false so the inline
+  // form renders the error without an alarming 4xx in the network tab.
+  if (provider.kind === 'oauth' && hasValidator(provider.id)) {
+    const v = await validateApiKey(provider.id, trimmed)
+    if (!v.ok) {
+      return NextResponse.json({ ok: false, error: v.error ?? 'validation failed' })
+    }
   }
 
   const db = createServerClient()

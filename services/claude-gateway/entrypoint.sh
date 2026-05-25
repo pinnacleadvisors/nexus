@@ -176,6 +176,46 @@ if [ "${MCP_COOLIFY:-}" != "skip" ] \
   fi
 fi
 
+# Build the Doppler admin MCP (services/mcp-doppler-admin/). Task B of
+# task_plan-platform-expansion.md. Gives platform-copilot read access to
+# projects/configs/secret-names + audited single-secret reads; mutating
+# operations return requires_approval. Requires DOPPLER_TOKEN (already
+# present at gateway boot since the container is launched via `doppler
+# run --`). Skipped when MCP_DOPPLER=skip.
+DOPPLER_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-doppler-admin"
+DOPPLER_MCP_BUILT=0
+if [ "${MCP_DOPPLER:-}" != "skip" ] \
+   && [ -n "${DOPPLER_TOKEN:-}" ] \
+   && [ -d "$DOPPLER_MCP_DIR/src" ]; then
+  echo "[gateway] Building doppler-admin MCP from $DOPPLER_MCP_DIR..."
+  if (cd "$DOPPLER_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    DOPPLER_MCP_BUILT=1
+    echo "[gateway] doppler-admin MCP built — will register."
+  else
+    echo "[gateway] WARNING: doppler-admin MCP build FAILED — skipping registration."
+  fi
+fi
+
+# Build the Supabase admin MCP (services/mcp-supabase-admin/). Task B of
+# task_plan-platform-expansion.md. Gives platform-copilot SELECT-only
+# query access via REST + an audited gated `supabase_execute` for writes.
+# Requires SUPABASE_SERVICE_ROLE_KEY + NEXT_PUBLIC_SUPABASE_URL (both
+# already present in env). Skipped when MCP_SUPABASE=skip.
+SUPABASE_MCP_DIR="${NEXUS_REPO_PATH:-/repo}/services/mcp-supabase-admin"
+SUPABASE_MCP_BUILT=0
+if [ "${MCP_SUPABASE:-}" != "skip" ] \
+   && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
+   && [ -n "${NEXT_PUBLIC_SUPABASE_URL:-}" ] \
+   && [ -d "$SUPABASE_MCP_DIR/src" ]; then
+  echo "[gateway] Building supabase-admin MCP from $SUPABASE_MCP_DIR..."
+  if (cd "$SUPABASE_MCP_DIR" && npm install --no-audit --no-fund --silent && npm run build --silent); then
+    SUPABASE_MCP_BUILT=1
+    echo "[gateway] supabase-admin MCP built — will register."
+  else
+    echo "[gateway] WARNING: supabase-admin MCP build FAILED — skipping registration."
+  fi
+fi
+
 # Assemble the settings.json. Whichever MCP servers built successfully get
 # registered. composio-admin (hard-isolation) is the primary; rube-mcp is
 # the soft-isolation fallback used only when the wrapper isn't available.
@@ -281,6 +321,39 @@ JSON
         "COOLIFY_RATE_LIMIT_MIN":     "${COOLIFY_RATE_LIMIT_MIN:-5}",
         "COOLIFY_RATE_LIMIT_HOUR":    "${COOLIFY_RATE_LIMIT_HOUR:-30}",
         "COOLIFY_SCOPE":              "${COOLIFY_SCOPE:-admin}"
+      }
+    }
+JSON
+  fi
+  if [ "$DOPPLER_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "doppler-admin": {
+      "command": "node",
+      "args": ["$DOPPLER_MCP_DIR/dist/index.js"],
+      "env": {
+        "DOPPLER_TOKEN":          "${DOPPLER_TOKEN}",
+        "NEXUS_AUDIT_BASE_URL":   "${NEXUS_BASE_URL:-}",
+        "NEXUS_AUDIT_TOKEN":      "${NEXUS_AUDIT_TOKEN:-}",
+        "NEXUS_AGENT_SLUG":       "platform-copilot"
+      }
+    }
+JSON
+  fi
+  if [ "$SUPABASE_MCP_BUILT" -eq 1 ]; then
+    [ $first -eq 0 ] && printf ',\n'
+    first=0
+    cat <<JSON
+    "supabase-admin": {
+      "command": "node",
+      "args": ["$SUPABASE_MCP_DIR/dist/index.js"],
+      "env": {
+        "NEXT_PUBLIC_SUPABASE_URL":   "${NEXT_PUBLIC_SUPABASE_URL:-}",
+        "SUPABASE_SERVICE_ROLE_KEY":  "${SUPABASE_SERVICE_ROLE_KEY}",
+        "NEXUS_AUDIT_BASE_URL":       "${NEXUS_BASE_URL:-}",
+        "NEXUS_AUDIT_TOKEN":          "${NEXUS_AUDIT_TOKEN:-}",
+        "NEXUS_AGENT_SLUG":           "platform-copilot"
       }
     }
 JSON
@@ -393,6 +466,18 @@ $MCP_BLOCK
       "mcp__coolify__coolify_stop",
       "mcp__coolify__coolify_set_env",
       "mcp__coolify__coolify_delete_env",
+      "mcp__doppler-admin__doppler_list_projects",
+      "mcp__doppler-admin__doppler_list_configs",
+      "mcp__doppler-admin__doppler_list_secret_names",
+      "mcp__doppler-admin__doppler_get_secret",
+      "mcp__doppler-admin__doppler_set_secret",
+      "mcp__doppler-admin__doppler_delete_secret",
+      "mcp__doppler-admin__doppler_rotate_service_token",
+      "mcp__supabase-admin__supabase_list_tables",
+      "mcp__supabase-admin__supabase_describe_table",
+      "mcp__supabase-admin__supabase_select",
+      "mcp__supabase-admin__supabase_recent_log_events",
+      "mcp__supabase-admin__supabase_execute",
       "Bash",
       "Edit",
       "Write",
