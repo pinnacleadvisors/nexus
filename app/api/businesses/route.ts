@@ -69,6 +69,8 @@ export async function POST(req: NextRequest) {
     approval_gates:        body.approval_gates ?? [],
     slack_channel:         body.slack_channel ?? null,
     slack_webhook_url:     body.slack_webhook_url ?? null,
+    slack_bot_token:       body.slack_bot_token ?? null,
+    slack_channel_id:      body.slack_channel_id ?? null,
   }
 
   // Compare against persisted state to detect a slack URL change.
