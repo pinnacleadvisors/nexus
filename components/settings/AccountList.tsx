@@ -18,6 +18,7 @@ import { useClerk } from '@clerk/nextjs'
 import {
   CheckCircle2, Loader2, Plug, Power, AlertCircle, X, KeyRound, ExternalLink,
   ArrowRight, Cpu, Brain, BookMarked, Workflow, Lightbulb, PenLine,
+  Sparkles, Wand2, ListTodo,
 } from 'lucide-react'
 import { OAUTH_PROVIDERS, type OAuthCategory, type OAuthProvider } from '@/lib/oauth/providers'
 import { INTERNAL_TOOLS, type InternalTool, type InternalToolStatus } from '@/lib/internal-tools'
@@ -36,6 +37,19 @@ interface ConnectedAccount {
   status:       'active' | 'revoked' | 'error'
   createdAt:    string
   lastUsedAt:   string | null
+}
+
+/** Shape returned by POST /api/connected-accounts/describe. */
+interface DescribeResult {
+  ok:             boolean
+  kind?:          'oauth' | 'api_key' | 'manual'
+  providerId?:    string
+  providerName?:  string
+  apiKeyHint?:    string
+  apiKeyDocsUrl?: string
+  taskId?:        string
+  message?:       string
+  error?:         string
 }
 
 const CATEGORY_LABEL: Record<OAuthCategory, string> = {
@@ -94,6 +108,10 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
   // success flash). Keyed by provider.id so multiple panes don't clash.
   const [apiKeyInput,   setApiKeyInput]   = useState<Record<string, string>>({})
   const [apiKeySaved,   setApiKeySaved]   = useState<Record<string, boolean>>({})
+  // "Describe a connection" — operator types prose, /describe classifies it.
+  const [describeText,    setDescribeText]    = useState('')
+  const [describing,      setDescribing]      = useState(false)
+  const [describeResult,  setDescribeResult]  = useState<DescribeResult | null>(null)
 
   async function load() {
     setLoading(true)
@@ -194,6 +212,63 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
     }
   }
 
+  /**
+   * Send the operator's free-form description to /api/connected-accounts/describe.
+   * Three outcomes:
+   *   - oauth   → auto-call connect(provider) for the matched id.
+   *   - api_key → render the success card with a "Jump to <platform> card" button.
+   *   - manual  → the route already filed an operator_tasks row; show a link.
+   */
+  async function describe() {
+    const desc = describeText.trim()
+    if (desc.length < 4) { setErr('Describe what you want to connect (at least a few words).'); return }
+    setDescribing(true); setErr(null); setDescribeResult(null)
+    try {
+      const res = await fetch('/api/connected-accounts/describe', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({ description: desc, businessSlug }),
+      })
+      const json = (await res.json()) as DescribeResult
+      if (!json.ok) {
+        setErr(json.error || 'Could not classify that. Try a different phrasing.')
+        setDescribing(false)
+        return
+      }
+      setDescribeResult(json)
+      // OAuth match → auto-start the existing flow. Use a small delay so the
+      // operator sees what we matched before the redirect kicks in.
+      if (json.kind === 'oauth' && json.providerId) {
+        const provider = OAUTH_PROVIDERS.find(p => p.id === json.providerId)
+        if (provider) {
+          setTimeout(() => { void connect(provider) }, 600)
+        }
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'describe failed')
+    } finally {
+      setDescribing(false)
+    }
+  }
+
+  /** Smooth-scroll to a provider card by id. Used by the "Jump to" button. */
+  function scrollToProvider(providerId: string) {
+    if (typeof document === 'undefined') return
+    const el = document.getElementById(`provider-card-${providerId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Add a flash highlight so the operator's eye lands on it.
+      el.animate(
+        [
+          { boxShadow: '0 0 0 0 rgba(108,99,255,0.0)' },
+          { boxShadow: '0 0 0 4px rgba(108,99,255,0.5)' },
+          { boxShadow: '0 0 0 0 rgba(108,99,255,0.0)' },
+        ],
+        { duration: 1200, iterations: 1 },
+      )
+    }
+  }
+
   // Filter providers by the current scope's policy.
   //   - Admin scope: 'dual' + 'admin-only' (platform-management tokens)
   //   - Shared scope (null): 'dual' + 'shared-only' (shared business resources)
@@ -228,6 +303,16 @@ export default function AccountList({ businessSlug }: { businessSlug?: string | 
       {err && (
         <Banner kind="error" onDismiss={() => setErr(null)}>{err}</Banner>
       )}
+
+      <DescribeConnectionCard
+        value={describeText}
+        onChange={setDescribeText}
+        onSubmit={() => void describe()}
+        busy={describing}
+        result={describeResult}
+        onDismissResult={() => { setDescribeResult(null); setDescribeText('') }}
+        onJumpToProvider={scrollToProvider}
+      />
 
       {loading ? (
         <div
@@ -443,6 +528,7 @@ function ApiKeyCard({
 
   return (
     <div
+      id={`provider-card-${provider.id}`}
       className="p-3.5 flex flex-col gap-2.5"
       style={{
         background:           connected
@@ -631,6 +717,7 @@ function OAuthTile({ provider, account, busy, onConnect, onDisconnect }: {
   const connected = !!account
   return (
     <div
+      id={`provider-card-${provider.id}`}
       className="group p-3.5 flex items-center gap-3 transition-all"
       style={{
         background:           connected
@@ -871,6 +958,180 @@ function Banner({ kind, children, onDismiss }: { kind: 'ok' | 'error'; children:
         onMouseEnter={e => { e.currentTarget.style.color = '#e8e8f0'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
         onMouseLeave={e => { e.currentTarget.style.color = '#9090b0'; e.currentTarget.style.background = 'transparent' }}
       ><X size={14} /></button>
+    </div>
+  )
+}
+
+/**
+ * "Describe a connection" prompt card. Operator types a free-form sentence
+ * (e.g. "I need to post to my new YouTube channel" or "Hook up Shopify for
+ * the print-on-demand business"). The /describe route classifies it into an
+ * OAuth match, an API-key match, or a manual to-do; we render the matched
+ * outcome inline so the operator's eye doesn't leave the surface.
+ *
+ * Sits above the per-category provider tiles. Renders even when zero
+ * connections are present — it's the fastest way to add the first one.
+ */
+function DescribeConnectionCard({
+  value, onChange, onSubmit, busy, result, onDismissResult, onJumpToProvider,
+}: {
+  value:             string
+  onChange:          (v: string) => void
+  onSubmit:          () => void
+  busy:              boolean
+  result:            DescribeResult | null
+  onDismissResult:   () => void
+  onJumpToProvider:  (providerId: string) => void
+}) {
+  return (
+    <div
+      className="p-3.5 flex flex-col gap-2.5"
+      style={{
+        background:           'linear-gradient(135deg, rgba(108,99,255,0.10), rgba(245,158,11,0.04))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(108,99,255,0.22)',
+        borderRadius:         '16px',
+        boxShadow:
+          '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+      }}
+    >
+      <div className="flex items-center gap-2.5">
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(245,158,11,0.10))',
+            border:     '1px solid rgba(168,163,255,0.30)',
+            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+          }}
+        >
+          <Wand2 size={16} style={{ color: '#a8a3ff' }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium" style={{ color: '#e8e8f0' }}>Describe a connection</div>
+          <div className="text-[11px] mt-0.5" style={{ color: '#9090b0' }}>
+            Say what you want to hook up — we'll match it to a provider or file a manual to-do.
+          </div>
+        </div>
+      </div>
+      <div className="flex items-stretch gap-2 flex-col sm:flex-row">
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !busy) { e.preventDefault(); onSubmit() } }}
+          placeholder="e.g. connect my new YouTube channel for the creator business"
+          disabled={busy}
+          className="flex-1 rounded-lg px-3 py-2 text-xs transition-colors"
+          style={{
+            background: 'rgba(5,5,16,0.55)',
+            border:     '1px solid rgba(255,255,255,0.08)',
+            color:      '#e8e8f0',
+            outline:    'none',
+          }}
+          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(108,99,255,0.40)' }}
+          onBlur={e =>  { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
+        />
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={busy || value.trim().length < 4}
+          className="text-[11px] px-3 py-2 rounded-lg transition-all disabled:opacity-50 font-medium inline-flex items-center justify-center gap-1.5"
+          style={{
+            background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.10))',
+            color:      '#e8e8f0',
+            border:     '1px solid rgba(108,99,255,0.30)',
+            boxShadow:  '0 1px 0 0 rgba(255,255,255,0.06) inset',
+          }}
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          {busy ? 'Thinking…' : 'Create'}
+        </button>
+      </div>
+      {result && result.ok && <DescribeResultPanel result={result} onDismiss={onDismissResult} onJumpToProvider={onJumpToProvider} />}
+    </div>
+  )
+}
+
+function DescribeResultPanel({
+  result, onDismiss, onJumpToProvider,
+}: {
+  result:           DescribeResult
+  onDismiss:        () => void
+  onJumpToProvider: (id: string) => void
+}) {
+  const kind = result.kind ?? 'manual'
+  const accent = kind === 'manual' ? '#fbbf24' : '#4ade80'
+  const accentBg = kind === 'manual' ? 'rgba(251,191,36,0.10)' : 'rgba(34,197,94,0.10)'
+  const accentBorder = kind === 'manual' ? 'rgba(251,191,36,0.30)' : 'rgba(34,197,94,0.30)'
+  const Icon = kind === 'manual' ? ListTodo : CheckCircle2
+  return (
+    <div
+      className="px-3 py-2.5 flex items-start gap-2.5 text-xs"
+      style={{
+        background:   accentBg,
+        border:       `1px solid ${accentBorder}`,
+        borderRadius: '12px',
+        color:        '#e8e8f0',
+      }}
+    >
+      <Icon size={14} style={{ color: accent, marginTop: 2 }} />
+      <div className="flex-1 min-w-0">
+        <div className="font-medium" style={{ color: '#e8e8f0' }}>
+          {kind === 'oauth' && <>Matched <span className="font-mono" style={{ color: '#a8a3ff' }}>{result.providerName}</span> — opening sign-in…</>}
+          {kind === 'api_key' && <>Matched <span className="font-mono" style={{ color: '#a8a3ff' }}>{result.providerName}</span> — paste your key below.</>}
+          {kind === 'manual' && <>Filed as a manual to-do.</>}
+        </div>
+        {result.message && kind !== 'manual' && (
+          <div className="mt-0.5" style={{ color: '#9090b0' }}>{result.message}</div>
+        )}
+        {result.apiKeyHint && kind === 'api_key' && (
+          <div className="mt-1" style={{ color: '#9090b0' }}>{result.apiKeyHint}</div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {kind === 'api_key' && result.providerId && (
+            <button
+              type="button"
+              onClick={() => onJumpToProvider(result.providerId!)}
+              className="text-[11px] px-2 py-1 rounded-md transition-colors inline-flex items-center gap-1"
+              style={{ color: '#a8a3ff', background: 'rgba(108,99,255,0.10)', border: '1px solid rgba(108,99,255,0.30)' }}
+            >
+              Jump to {result.providerName} card <ArrowRight size={10} />
+            </button>
+          )}
+          {kind === 'api_key' && result.apiKeyDocsUrl && (
+            <a
+              href={result.apiKeyDocsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] inline-flex items-center gap-1"
+              style={{ color: '#a8a3ff' }}
+            >
+              Where to get the key <ExternalLink size={10} />
+            </a>
+          )}
+          {kind === 'manual' && result.taskId && (
+            <Link
+              href="/inbox"
+              className="text-[11px] px-2 py-1 rounded-md transition-colors inline-flex items-center gap-1 no-underline"
+              style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.30)' }}
+            >
+              Open Inbox <ArrowRight size={10} />
+            </Link>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="rounded-md p-0.5 transition-colors shrink-0"
+        style={{ color: '#9090b0' }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#e8e8f0' }}
+        onMouseLeave={e => { e.currentTarget.style.color = '#9090b0' }}
+      >
+        <X size={12} />
+      </button>
     </div>
   )
 }
