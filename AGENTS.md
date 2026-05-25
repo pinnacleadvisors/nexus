@@ -455,7 +455,7 @@ For long-horizon work in `task_plan.md`: every atomic task should fit in one too
 Lightweight version of `docs/RETRY_STORM_AUDIT.md` — if your change touches any of the surfaces below, walk the corresponding question. The static check (`npm run check:retry-storm`) catches the patterns mechanically, but these contextual judgement calls only show up here.
 
 **If you added or modified an API route…**
-- [ ] Will any external service call this route AND auto-retry on 5xx? (n8n: 3×, claw: 5×, Stripe: until 4xx for 3 days, Slack: rare). If yes → return **200 + `{ok: false, error}`** instead of 5xx, OR call `claimEvent('source', eventId)` from `lib/webhooks/idempotency.ts` BEFORE any side effects so replays are no-ops.
+- [ ] Will any external service call this route AND auto-retry on 5xx? (n8n: 3×, claw: 5×, Stripe: until 4xx for 3 days, Slack: rare, **cron-job.org: AUTO-DISABLES after ~26 consecutive 5xx** — 2026-05-25 `post-deploy-smoke` incident; the route returned 502 on qa-runner unreachability, cron-job.org disabled it after the 26-failure threshold. Operator sees the disable as a "your cronjob has been disabled" email and the cron silently stops firing.). If yes → return **200 + `{ok: false, error}`** instead of 5xx, OR call `claimEvent('source', eventId)` from `lib/webhooks/idempotency.ts` BEFORE any side effects so replays are no-ops. For cron-job.org specifically: also wire the cron into `/cron-health` (auto from `Nexus:` titled jobs) so the operator sees yellow/red before the disable threshold hits.
 - [ ] Does the route make any paid LLM / search / video API call? Did you wire `lib/cost-guard.ts` so the call counts against `USER_DAILY_USD_LIMIT`?
 
 **If you added or modified an Inngest function…**

@@ -82,19 +82,43 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const timestamp = Date.now().toString()
   const signature = 'sha256=' + createHmac('sha256', hmacSecret).update(body).digest('hex')
 
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'X-Nexus-Signature': signature,
-      'X-Nexus-Timestamp': timestamp,
-    },
-    body,
-  }).catch(err => {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
-      status: 502,
+  // 2026-05-25 — retry-storm fix. cron-job.org AUTO-DISABLES a job after
+  // ~26 consecutive 5xx responses (we hit this on 2026-05-25; the
+  // operator got "your cronjob has been disabled" email). Per the
+  // AGENTS.md retry-storm rule, routes called by auto-retrying services
+  // (n8n, Vercel crons, cron-job.org) MUST return 200 + {ok:false,error}
+  // on transient failures. Otherwise the upstream's retry/disable logic
+  // kicks in and we lose the cron entirely.
+  //
+  // Operator still sees failures via:
+  //   - cron-job.org dashboard (it captures the response body when
+  //     `saveResponses: true` is set on the job)
+  //   - /cron-health page (queries cron-job.org API directly)
+  //   - run_events row written by the qa-runner downstream
+  //
+  // The 502 PATH that flagged this was: when qa-runner's container is
+  // down OR the Coolify tunnel returns a network error, the .catch()
+  // synthesises a 502 Response which then triggers the !res.ok branch
+  // below — TWO consecutive 502s per call, which cron-job.org counts.
+  let res: Response
+  try {
+    res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'X-Nexus-Signature': signature,
+        'X-Nexus-Timestamp': timestamp,
+      },
+      body,
+      signal: AbortSignal.timeout(20_000),
     })
-  })
+  } catch (err) {
+    return NextResponse.json({
+      ok:    false,
+      error: 'qa_runner_unreachable',
+      detail: err instanceof Error ? err.message : String(err),
+    }, { status: 200 })
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -102,7 +126,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ok:    false,
       error: `qa_runner_${res.status}`,
       detail: text.slice(0, 500),
-    }, { status: 502 })
+    }, { status: 200 })
   }
 
   return NextResponse.json({ ok: true, dispatched: true, baseUrl })
