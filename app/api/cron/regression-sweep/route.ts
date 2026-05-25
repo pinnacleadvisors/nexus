@@ -4,6 +4,10 @@
  * Owner-only. Compares each user's last-24h metrics against their 7-day
  * baseline and files `perf-regression: ...` feedback rows the optimiser
  * picks up. Returns `{ detected, filed }` for verification.
+ *
+ * cron-check: auth-ok — owner-gated Clerk-session manual trigger; never
+ * called by cron-job.org (no session available there). The "/api/cron"
+ * prefix is historical; the actual cron work runs via Inngest.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

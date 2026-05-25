@@ -3,6 +3,9 @@
  *
  * Owner-only; goes through guardRequest() so CSRF + auth + rate-limit are
  * enforced. Returns the per-run result list so the owner can verify ingestion.
+ *
+ * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
+ * called by cron-job.org. The A11 sweep itself runs via Inngest.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

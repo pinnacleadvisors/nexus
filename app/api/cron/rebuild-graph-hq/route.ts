@@ -185,7 +185,8 @@ export async function POST(req: NextRequest) {
       digestEvents,
     })
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 })  // cron-check: ignore — TODO(v9): return 200 + {ok:false} per AGENTS.md retry-storm
+    // retry-storm: cron-job.org auto-disables on 5xx — surface failure via ok:false.
+    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 200 })
   }
 }
 

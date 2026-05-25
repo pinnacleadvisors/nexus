@@ -1,18 +1,24 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, AlertCircle, X, CheckCircle2, AlertTriangle, XCircle, HelpCircle, RefreshCw, Play } from 'lucide-react'
+import { Loader2, AlertCircle, X, CheckCircle2, AlertTriangle, XCircle, HelpCircle, RefreshCw, Play, Pencil, Check } from 'lucide-react'
 import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 
 interface CronStatus {
   job_id:           number
   title:            string
   enabled:          boolean
+  url:              string
   last_status:      number
   last_status_text: 'ok' | 'fail' | 'never_run'
   last_execution:   string | null
   next_execution:   string | null
   health:           'green' | 'yellow' | 'red' | 'unknown'
+}
+
+/** Scrub `secret=<...>` so the URL is safe to render. */
+function scrubSecret(url: string): string {
+  return url.replace(/([?&]secret=)[^&]+/i, '$1<redacted>')
 }
 
 export default function CronHealthClient() {
@@ -44,6 +50,26 @@ export default function CronHealthClient() {
   // cron-job.org API key doesn't spam the dashboard. Manual refresh button
   // still works via retry().
   const poll = usePollWithBackoff(fetcher, { intervalMs: 60_000, maxConsecutiveFailures: 5 })
+
+  /** v9 — update a job's URL via the cron-health update proxy. Used after
+   *  CRON_SECRET rotation or when migrating a route. Refetches after success. */
+  async function updateJobUrl(jobId: number, url: string) {
+    setEnabling(jobId); setErr(null)
+    try {
+      const res = await fetch(`/api/cron-health/jobs/${jobId}/update`, {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({ url }),
+      })
+      const json = (await res.json()) as { ok: boolean; error?: string }
+      if (!json.ok) throw new Error(json.error || 'update failed')
+      await fetcher()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'update failed')
+    } finally {
+      setEnabling(null)
+    }
+  }
 
   /** Inline re-enable for disabled jobs — calls cron-job.org PATCH via our
    *  proxy route. After success, refetch so the row flips green-or-yellow
@@ -118,7 +144,15 @@ export default function CronHealthClient() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {jobs.map(j => <CronRow key={j.job_id} job={j} enabling={enabling === j.job_id} onEnable={() => void enableJob(j.job_id)} />)}
+          {jobs.map(j => (
+            <CronRow
+              key={j.job_id}
+              job={j}
+              enabling={enabling === j.job_id}
+              onEnable={() => void enableJob(j.job_id)}
+              onUpdateUrl={url => void updateJobUrl(j.job_id, url)}
+            />
+          ))}
         </ul>
       )}
     </div>
@@ -136,7 +170,15 @@ function SummaryChip({ label, count, icon, color, bg, border }: { label: string;
   )
 }
 
-function CronRow({ job, enabling, onEnable }: { job: CronStatus; enabling: boolean; onEnable: () => void }) {
+function CronRow({ job, enabling, onEnable, onUpdateUrl }: {
+  job:          CronStatus
+  enabling:     boolean
+  onEnable:     () => void
+  onUpdateUrl:  (url: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draftUrl, setDraftUrl] = useState(job.url)
+  useEffect(() => { if (!editing) setDraftUrl(job.url) }, [job.url, editing])
   const healthMeta = {
     red:     { color: '#f87171', label: 'RED',     bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.22)' },
     yellow:  { color: '#fbbf24', label: 'YELLOW',  bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.22)' },
@@ -164,6 +206,40 @@ function CronRow({ job, enabling, onEnable }: { job: CronStatus; enabling: boole
             </>
           )}
         </div>
+        {/* v9 — inline URL editor. Useful after CRON_SECRET rotation or
+            when migrating a route's path. Schedule editing is v10. */}
+        {editing ? (
+          <div className="mt-2 flex items-center gap-1.5">
+            <input
+              type="text"
+              value={draftUrl}
+              onChange={e => setDraftUrl(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter')  { onUpdateUrl(draftUrl); setEditing(false) }
+                if (e.key === 'Escape') { setEditing(false) }
+              }}
+              className="flex-1 text-[10px] px-1.5 py-0.5 rounded-md font-mono"
+              style={{ color: '#e8e8f0', background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(108,99,255,0.40)' }}
+              autoFocus
+            />
+            <button type="button" onClick={() => { onUpdateUrl(draftUrl); setEditing(false) }}
+                    className="rounded-md p-0.5" style={{ color: '#4ade80' }} title="Save">
+              <Check size={11} />
+            </button>
+            <button type="button" onClick={() => setEditing(false)}
+                    className="rounded-md p-0.5" style={{ color: '#9090b0' }} title="Cancel">
+              <X size={11} />
+            </button>
+          </div>
+        ) : (
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-mono" style={{ color: '#a8a3ff' }}>
+            <span className="truncate" title={scrubSecret(job.url)}>{scrubSecret(job.url)}</span>
+            <button type="button" onClick={() => setEditing(true)}
+                    className="rounded-md p-0.5 shrink-0" style={{ color: '#9090b0' }} title="Edit URL">
+              <Pencil size={9} />
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         {!job.enabled && (

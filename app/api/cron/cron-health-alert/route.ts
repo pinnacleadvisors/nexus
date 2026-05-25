@@ -135,20 +135,57 @@ async function fetchCronStatus(req: NextRequest): Promise<{ ok: true; jobs: Cron
   }
 }
 
+/**
+ * v9: per-business cron alert routing. Titles encoded as `Nexus[<slug>]:`
+ * route to `businesses.slack_webhook_url` for that slug; titles without
+ * a bracketed slug fall back to the operator's getSlackConfig.
+ *
+ * Returns true if at least one alert was actually dispatched (i.e. a
+ * webhook was configured + the post succeeded).
+ */
 async function sendAlert(redJobs: CronStatus[]): Promise<boolean> {
-  // v8: per-user Slack via getSlackConfig — picks up the operator's
-  // user_secrets webhookUrl + channel override first, falls back to
-  // NEXUS_SLACK_WEBHOOK_URL. The CRON_SECRET-gated route runs without
-  // a Clerk session, so use the FIRST entry from ALLOWED_USER_IDS as
-  // the "operator" identity (mirrors /api/webhooks/slack's fallback).
+  // Bucket red jobs by business slug (or 'admin' for ungrouped).
+  const groups = new Map<string, CronStatus[]>()
+  for (const j of redJobs) {
+    const m = j.title.match(/^Nexus\[([a-z0-9-]+)\]:/)
+    const key = m ? m[1] : 'admin'
+    const arr = groups.get(key) ?? []
+    arr.push(j); groups.set(key, arr)
+  }
+
+  // Resolve per-business webhooks once (one DB lookup per business).
+  const businessSlugs = [...groups.keys()].filter(s => s !== 'admin')
+  const businessWebhooks: Record<string, string | null> = {}
+  if (businessSlugs.length > 0) {
+    const db = createServerClient()
+    if (db) {
+      type Chain<T> = { in: (c: string, v: string[]) => Promise<{ data: T[] | null }> }
+      const res = await (db.from('businesses' as never) as unknown as { select: (c: string) => Chain<{ slug: string; slack_webhook_url: string | null }> })
+        .select('slug, slack_webhook_url')
+        .in('slug', businessSlugs)
+      for (const row of res.data ?? []) businessWebhooks[row.slug] = row.slack_webhook_url
+    }
+  }
+
+  // Resolve the operator's fallback config once.
   const operatorId = (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0] ?? ''
-  const cfg = operatorId
+  const opCfg = operatorId
     ? await getSlackConfig(operatorId)
     : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined }
-  if (!cfg.webhookUrl) return false
-  const lines = redJobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus:\s*/, '')}`).join('\n')
-  const text  = `:rotating_light: ${redJobs.length} Nexus cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
-  return await postSlackNotification(cfg, { text })
+
+  let anySent = false
+  for (const [bucket, jobs] of groups.entries()) {
+    const webhookUrl = bucket === 'admin'
+      ? opCfg.webhookUrl
+      : (businessWebhooks[bucket] ?? opCfg.webhookUrl)  // per-business fall through to operator
+    if (!webhookUrl) continue
+    const scope = bucket === 'admin' ? 'platform' : `business ${bucket}`
+    const lines = jobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus(?:\[[^\]]+\])?:\s*/, '')}`).join('\n')
+    const text  = `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
+    const ok = await postSlackNotification({ webhookUrl }, { text })
+    if (ok) anySent = true
+  }
+  return anySent
 }
 
 async function persistState(db: ReturnType<typeof createServerClient>, redTitles: string[], lastAlertAt: string | null): Promise<void> {

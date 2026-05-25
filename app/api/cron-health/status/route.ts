@@ -32,6 +32,10 @@ interface CronStatus {
   job_id:           number
   title:            string
   enabled:          boolean
+  /** v9 — current URL on cron-job.org, surfaced so the operator can edit
+   *  it inline from /cron-health without running the sync script. Secret
+   *  query param IS included; the dashboard renders it scrubbed. */
+  url:              string
   last_status:      number
   last_status_text: 'ok' | 'fail' | 'never_run'
   last_execution:   string | null     // ISO
@@ -104,6 +108,7 @@ function normalise(j: CronJobOrgJob): CronStatus {
     job_id:           j.jobId,
     title:            j.title,
     enabled:          j.enabled,
+    url:              j.url ?? '',
     last_status:      lastStatus,
     last_status_text: lastStatusText,
     last_execution:   j.lastExecution ? new Date(j.lastExecution * 1000).toISOString() : null,
