@@ -6,31 +6,41 @@
  * desc, with approve/reject buttons. Approved edges become canonical;
  * rejected edges stay in the table (with decision='reject') for audit.
  *
- * v5 — single scope (55bedf46-nexus) hard-coded since the platform is
- * single-tenant today. When per-business scopes come online, add a
- * scope picker.
+ * v8 — scope-ids now come from scopeIdFor() so per-business scopes match
+ * the canonical memory-hq form (sha1 prefix + human suffix). Replaces
+ * v7's `<defaultScope>-<businessSlug>` placeholder encoding.
  */
 
 import { GitMerge } from 'lucide-react'
 import { auth } from '@clerk/nextjs/server'
 import { listBusinessesForUser } from '@/lib/business/db'
-import type { BusinessRow } from '@/lib/business/types'
+import { scopeIdFor } from '@/lib/memory/scope'
 import PendingEdgesClient from '@/components/memory/PendingEdgesClient'
 
 export const dynamic = 'force-dynamic'
 
-const NEXUS_SCOPE_ID = '55bedf46-nexus'
+const ADMIN_SCOPE_ID = scopeIdFor({ repo: 'pinnacleadvisors/nexus' })
 
-export default async function PendingEdgesPage() {
-  let businesses: BusinessRow[] = []
-  try {
-    const { userId } = await auth()
-    if (userId) businesses = await listBusinessesForUser(userId)
-  } catch { /* empty list is fine — only admin scope renders */ }
-  return PendingEdgesPageInner({ businesses })
+export interface ScopeOption {
+  value: string  // canonical scope-id
+  label: string  // human-readable
 }
 
-function PendingEdgesPageInner({ businesses }: { businesses: BusinessRow[] }) {
+export default async function PendingEdgesPage() {
+  const scopeOptions: ScopeOption[] = [{ value: ADMIN_SCOPE_ID, label: 'Admin (platform)' }]
+  try {
+    const { userId } = await auth()
+    if (userId) {
+      const businesses = await listBusinessesForUser(userId)
+      for (const b of businesses) {
+        scopeOptions.push({
+          value: scopeIdFor({ business_slug: b.slug }),
+          label: `Business: ${b.name}`,
+        })
+      }
+    }
+  } catch { /* admin-only fallback is fine */ }
+
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 space-y-5">
       <header className="flex items-center gap-3">
@@ -51,7 +61,7 @@ function PendingEdgesPageInner({ businesses }: { businesses: BusinessRow[] }) {
         </div>
       </header>
 
-      <PendingEdgesClient defaultScope={NEXUS_SCOPE_ID} businesses={businesses} />
+      <PendingEdgesClient defaultScope={ADMIN_SCOPE_ID} scopeOptions={scopeOptions} />
     </div>
   )
 }

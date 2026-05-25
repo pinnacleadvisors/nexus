@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
-import { postSlackNotification } from '@/lib/slack/client'
+import { getSlackConfig, postSlackNotification } from '@/lib/slack/client'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 30
@@ -136,11 +136,19 @@ async function fetchCronStatus(req: NextRequest): Promise<{ ok: true; jobs: Cron
 }
 
 async function sendAlert(redJobs: CronStatus[]): Promise<boolean> {
-  const webhookUrl = process.env.NEXUS_SLACK_WEBHOOK_URL
-  if (!webhookUrl) return false
+  // v8: per-user Slack via getSlackConfig — picks up the operator's
+  // user_secrets webhookUrl + channel override first, falls back to
+  // NEXUS_SLACK_WEBHOOK_URL. The CRON_SECRET-gated route runs without
+  // a Clerk session, so use the FIRST entry from ALLOWED_USER_IDS as
+  // the "operator" identity (mirrors /api/webhooks/slack's fallback).
+  const operatorId = (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0] ?? ''
+  const cfg = operatorId
+    ? await getSlackConfig(operatorId)
+    : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined }
+  if (!cfg.webhookUrl) return false
   const lines = redJobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus:\s*/, '')}`).join('\n')
   const text  = `:rotating_light: ${redJobs.length} Nexus cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
-  return await postSlackNotification({ webhookUrl }, { text })
+  return await postSlackNotification(cfg, { text })
 }
 
 async function persistState(db: ReturnType<typeof createServerClient>, redTitles: string[], lastAlertAt: string | null): Promise<void> {

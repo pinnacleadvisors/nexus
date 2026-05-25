@@ -7,7 +7,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Check, X, AlertCircle, Filter, Building2 } from 'lucide-react'
-import type { BusinessRow } from '@/lib/business/types'
+
+interface ScopeOption { value: string; label: string }
 
 interface EdgeRow {
   id:               string
@@ -25,7 +26,7 @@ interface EdgeRow {
 
 type ConfidenceBucket = 'all' | 'high' | 'medium' | 'low'
 
-export default function PendingEdgesClient({ defaultScope, businesses }: { defaultScope: string; businesses: BusinessRow[] }) {
+export default function PendingEdgesClient({ defaultScope, scopeOptions }: { defaultScope: string; scopeOptions: ScopeOption[] }) {
   const [edges, setEdges]     = useState<EdgeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState<string | null>(null)
@@ -40,22 +41,9 @@ export default function PendingEdgesClient({ defaultScope, businesses }: { defau
     : defaultScope
   const [scope, setScope] = useState<string>(initialScope)
 
-  /** Build the list of pickable scopes. Admin scope (defaultScope) is
-   *  always first; each connected business adds its own. The scope-id
-   *  encoding follows the memory-hq canonical form (sha1(scope_json)[:8]
-   *  + human suffix) — for v7 we use a simpler convention:
-   *  `<defaultScope>-<businessSlug>`. When memory-hq's real per-business
-   *  scopes are populated this picker shows them; until then the per-
-   *  business rows return empty (correct + non-crashing). */
-  const scopeOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [
-      { value: defaultScope, label: 'Admin (platform)' },
-    ]
-    for (const b of businesses) {
-      opts.push({ value: `${defaultScope}-${b.slug}`, label: `Business: ${b.name}` })
-    }
-    return opts
-  }, [defaultScope, businesses])
+  // v8: scopeOptions arrive pre-built from the server. The page resolves
+  // each business's canonical scope-id via scopeIdFor() so the picker hits
+  // the same ids memory-hq writes — no client-side encoding guesswork.
 
   async function load() {
     setLoading(true); setErr(null)
