@@ -65,6 +65,11 @@ const SPECS = [
   // been touched in 4h (= alerter missed two cycles), Slack-pings the
   // operator directly. Second line of defence behind the alerter.
   { title: 'Nexus: hmem-alerter-self-check',       path: '/api/cron/cron-alerter-self-check',  schedule: { minutes: [0], hours: [0, 6, 12, 18], mdays: [-1], months: [-1], wdays: [-1] } },
+  // v11: weekly bench of memory-hq vs GBrain. No-ops when GBRAIN_BASE_URL
+  // is unset so the cron is safe to register even before GBrain is deployed.
+  // Sunday 05:00 UTC — runs after the weekly hmem-consolidate (Sun 03:30)
+  // so the bench sees the latest summary nodes.
+  { title: 'Nexus: hmem-gbrain-bench',             path: '/api/cron/gbrain-bench',             schedule: { minutes: [0], hours: [5], mdays: [-1], months: [-1], wdays: [0] } },
 ]
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
