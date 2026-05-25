@@ -57,6 +57,10 @@ export async function GET(req: NextRequest) {
 
   const predFilter = url.searchParams.get('predicates')?.split(',').map(s => s.trim()).filter(Boolean) ?? null
   const maxHops    = Math.min(5, Math.max(1, parseInt(url.searchParams.get('max_hops') ?? '2', 10)))
+  // Migration 065: LLM-extracted edges land pending operator approval.
+  // Walks SKIP pending edges by default — they're proposals, not facts.
+  // Opt in via ?include_pending=true (useful for "review what's pending").
+  const includePending = url.searchParams.get('include_pending') === 'true'
 
   const db = createServerClient()
   if (!db) return NextResponse.json({ ok: true, path: [], visited_count: 0 })
@@ -69,10 +73,11 @@ export async function GET(req: NextRequest) {
     eq:    (c: string, v: unknown) => Chain<T>
     limit: (n: number) => Promise<{ data: T[] | null; error: { message: string } | null }>
   }
-  const res = await (db.from('mol_edge' as never) as unknown as { select: (c: string) => Chain<Row> })
+  let q = (db.from('mol_edge' as never) as unknown as { select: (c: string) => Chain<Row> })
     .select('scope_id, src_id, dst_id, src_kind, dst_kind, predicate, confidence')
     .eq('scope_id', scope)
-    .limit(5000)
+  if (!includePending) q = q.eq('pending_approval', false)
+  const res = await q.limit(5000)
 
   if (res.error) {
     return NextResponse.json({ ok: false, error: 'mol_edge read failed', detail: res.error.message }, { status: 200 })

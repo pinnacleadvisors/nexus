@@ -124,13 +124,17 @@ export async function POST(req: NextRequest) {
           insert: (r: Record<string, unknown>) => Promise<{ error?: { message: string } }>
         }).insert({
           scope_id,
-          src_kind:   'atom',
-          src_id:     srcId,
-          predicate:  e.predicate,
-          dst_kind:   'atom',
-          dst_id:     dstId,
-          confidence: Math.max(0, Math.min(1, e.confidence)),
-          source:     'llm',
+          src_kind:         'atom',
+          src_id:           srcId,
+          predicate:        e.predicate,
+          dst_kind:         'atom',
+          dst_id:           dstId,
+          confidence:       Math.max(0, Math.min(1, e.confidence)),
+          source:           'llm',
+          // Migration 065: LLM edges land pending operator approval. The
+          // walk endpoint filters pending=true edges out of traversals
+          // unless ?include_pending=true is set.
+          pending_approval: true,
         })
         if (ins.error) {
           errors.push(`${srcId}→${dstId}: ${ins.error.message}`)
