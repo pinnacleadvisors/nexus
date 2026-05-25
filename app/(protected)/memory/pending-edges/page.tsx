@@ -12,13 +12,25 @@
  */
 
 import { GitMerge } from 'lucide-react'
+import { auth } from '@clerk/nextjs/server'
+import { listBusinessesForUser } from '@/lib/business/db'
+import type { BusinessRow } from '@/lib/business/types'
 import PendingEdgesClient from '@/components/memory/PendingEdgesClient'
 
 export const dynamic = 'force-dynamic'
 
 const NEXUS_SCOPE_ID = '55bedf46-nexus'
 
-export default function PendingEdgesPage() {
+export default async function PendingEdgesPage() {
+  let businesses: BusinessRow[] = []
+  try {
+    const { userId } = await auth()
+    if (userId) businesses = await listBusinessesForUser(userId)
+  } catch { /* empty list is fine — only admin scope renders */ }
+  return PendingEdgesPageInner({ businesses })
+}
+
+function PendingEdgesPageInner({ businesses }: { businesses: BusinessRow[] }) {
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 space-y-5">
       <header className="flex items-center gap-3">
@@ -39,7 +51,7 @@ export default function PendingEdgesPage() {
         </div>
       </header>
 
-      <PendingEdgesClient scope={NEXUS_SCOPE_ID} />
+      <PendingEdgesClient defaultScope={NEXUS_SCOPE_ID} businesses={businesses} />
     </div>
   )
 }

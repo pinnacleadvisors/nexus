@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Loader2, AlertCircle, X, CheckCircle2, AlertTriangle, XCircle, HelpCircle, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Loader2, AlertCircle, X, CheckCircle2, AlertTriangle, XCircle, HelpCircle, RefreshCw, Play } from 'lucide-react'
+import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 
 interface CronStatus {
   job_id:           number
@@ -19,23 +20,49 @@ export default function CronHealthClient() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [err, setErr]         = useState<string | null>(null)
+  const [enabling, setEnabling] = useState<number | null>(null)
+
+  // Pollable fetcher — used by both the auto-poll hook AND the manual
+  // refresh button. Throws on failure so usePollWithBackoff counts it.
+  const fetcher = useCallback(async () => {
+    const res = await fetch('/api/cron-health/status', { cache: 'no-store' })
+    const json = (await res.json()) as { ok: boolean; jobs?: CronStatus[]; error?: string }
+    if (!json.ok) throw new Error(json.error || 'load failed')
+    setJobs(json.jobs ?? [])
+    setErr(null)
+  }, [])
 
   async function load(isRefresh = false) {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
-    setErr(null)
-    try {
-      const res = await fetch('/api/cron-health/status', { cache: 'no-store' })
-      const json = (await res.json()) as { ok: boolean; jobs?: CronStatus[]; error?: string }
-      if (!json.ok) throw new Error(json.error || 'load failed')
-      setJobs(json.jobs ?? [])
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'load failed')
-    } finally {
-      setLoading(false); setRefreshing(false)
-    }
+    try { await fetcher() }
+    catch (e) { setErr(e instanceof Error ? e.message : 'load failed') }
+    finally { setLoading(false); setRefreshing(false) }
   }
   useEffect(() => { void load() }, [])
+  // Auto-poll every 60s. Hook pauses on consecutive failures so a broken
+  // cron-job.org API key doesn't spam the dashboard. Manual refresh button
+  // still works via retry().
+  const poll = usePollWithBackoff(fetcher, { intervalMs: 60_000, maxConsecutiveFailures: 5 })
+
+  /** Inline re-enable for disabled jobs — calls cron-job.org PATCH via our
+   *  proxy route. After success, refetch so the row flips green-or-yellow
+   *  depending on the next scheduled run. */
+  async function enableJob(jobId: number) {
+    setEnabling(jobId); setErr(null)
+    try {
+      const res = await fetch(`/api/cron-health/jobs/${jobId}/enable`, { method: 'POST' })
+      const json = (await res.json()) as { ok: boolean; error?: string }
+      if (!json.ok) throw new Error(json.error || 'enable failed')
+      // Refetch — easier than mutating local state when the upstream's
+      // schedule + next_execution changed too.
+      await fetcher()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'enable failed')
+    } finally {
+      setEnabling(null)
+    }
+  }
 
   // Summary counts by health bucket.
   const reds    = jobs.filter(j => j.health === 'red' || !j.enabled).length
@@ -71,12 +98,17 @@ export default function CronHealthClient() {
         <SummaryChip label="Yellow"          count={yellows} icon={<AlertTriangle size={11} />} color="#fbbf24" bg="rgba(251,191,36,0.10)" border="rgba(251,191,36,0.22)" />
         <SummaryChip label="Green"           count={greens}  icon={<CheckCircle2 size={11} />} color="#4ade80" bg="rgba(34,197,94,0.10)"  border="rgba(34,197,94,0.22)" />
         <SummaryChip label="Never run yet"   count={unknown} icon={<HelpCircle size={11} />}   color="#9090b0" bg="rgba(255,255,255,0.03)" border="rgba(255,255,255,0.06)" />
-        <button type="button" onClick={() => void load(true)} disabled={refreshing}
-                className="ml-auto text-[11px] px-2 py-1 rounded-md inline-flex items-center gap-1"
-                style={{ color: '#e8e8f0', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-          Refresh
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px]" style={{ color: poll.paused ? '#f87171' : '#9090b0' }}>
+            {poll.paused ? `auto-poll paused after ${poll.consecutiveFailures} fail(s)` : 'auto-poll every 60s'}
+          </span>
+          <button type="button" onClick={() => { void load(true); poll.retry() }} disabled={refreshing}
+                  className="text-[11px] px-2 py-1 rounded-md inline-flex items-center gap-1"
+                  style={{ color: '#e8e8f0', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+            Refresh
+          </button>
+        </div>
       </div>
 
       {jobs.length === 0 ? (
@@ -86,7 +118,7 @@ export default function CronHealthClient() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {jobs.map(j => <CronRow key={j.job_id} job={j} />)}
+          {jobs.map(j => <CronRow key={j.job_id} job={j} enabling={enabling === j.job_id} onEnable={() => void enableJob(j.job_id)} />)}
         </ul>
       )}
     </div>
@@ -104,7 +136,7 @@ function SummaryChip({ label, count, icon, color, bg, border }: { label: string;
   )
 }
 
-function CronRow({ job }: { job: CronStatus }) {
+function CronRow({ job, enabling, onEnable }: { job: CronStatus; enabling: boolean; onEnable: () => void }) {
   const healthMeta = {
     red:     { color: '#f87171', label: 'RED',     bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.22)' },
     yellow:  { color: '#fbbf24', label: 'YELLOW',  bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.22)' },
@@ -133,10 +165,21 @@ function CronRow({ job }: { job: CronStatus }) {
           )}
         </div>
       </div>
-      <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ color: healthMeta.color, background: healthMeta.bg, border: `1px solid ${healthMeta.border}` }}>
-        {healthMeta.label}
-      </span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {!job.enabled && (
+          <button type="button" onClick={onEnable} disabled={enabling}
+                  className="text-[10px] px-2 py-0.5 rounded-md inline-flex items-center gap-1 disabled:opacity-40"
+                  style={{ color: '#4ade80', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.22)' }}
+                  title="Re-enable this cron on cron-job.org">
+            {enabling ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
+            Re-enable
+          </button>
+        )}
+        <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full"
+              style={{ color: healthMeta.color, background: healthMeta.bg, border: `1px solid ${healthMeta.border}` }}>
+          {healthMeta.label}
+        </span>
+      </div>
     </li>
   )
 }
