@@ -139,6 +139,8 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `PIPECAT_BASE_URL` | teams v3 (oss adapters) | Self-hosted Pipecat instance. When set, the `voice-agent:pipecat` adapter becomes available. |
 | `PIPECAT_API_KEY` | teams v3 (oss adapters) | Optional auth for Pipecat. |
 | `SEARXNG_BASE_URL` | teams v3 (oss adapters) | Self-hosted SearXNG instance. When set, the `search:searxng` adapter becomes available. |
+| `SLACK_BOT_TOKEN` | teams v12 (cron-health threads) | Bot token for `chat.postMessage`. When set with `SLACK_CHANNEL_ID`, the cron-health alerter uses threaded replies on 4h reminders instead of new top-level pings. Falls back to webhook + `:repeat:` prefix when unset. |
+| `SLACK_CHANNEL_ID` | teams v12 (cron-health threads) | Channel ID (not name) the bot posts to, e.g. `C0123456789`. |
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
 | `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands AND `/api/slack/decision` business-operator approval webhooks (Phase A). Per-user override at `kind='slack' name='signingSecret'`. |
 | `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |

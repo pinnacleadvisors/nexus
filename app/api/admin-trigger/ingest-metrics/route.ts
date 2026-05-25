@@ -1,11 +1,11 @@
 /**
- * POST /api/cron/ingest-metrics — manual trigger for the A11 measure-phase sweep.
+ * POST /api/admin-trigger/ingest-metrics — owner-only manual trigger for the A11 measure-phase sweep.
  *
  * Owner-only; goes through guardRequest() so CSRF + auth + rate-limit are
  * enforced. Returns the per-run result list so the owner can verify ingestion.
  *
- * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
- * called by cron-job.org. The A11 sweep itself runs via Inngest.
+ * v12 — moved from `app/api/cron/` to `app/api/admin-trigger/`. The
+ * A11 sweep itself runs via Inngest.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

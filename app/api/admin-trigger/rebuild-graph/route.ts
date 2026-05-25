@@ -1,7 +1,7 @@
 /**
- * POST /api/cron/rebuild-graph — C8
+ * POST /api/admin-trigger/rebuild-graph — owner-only manual rebuild (C8).
  *
- * Nightly (or manual) rebuild of the domain knowledge graph:
+ * Rebuilds the domain knowledge graph:
  *   1. Re-runs the molecularmemory_local CLI to refresh `.graph.json` + INDEX.md
  *   2. Rebuilds the in-process GraphData via `buildMemoryGraph()`
  *   3. Emits node count / orphan count / avg degree metrics
@@ -11,9 +11,9 @@
  * can still use the rebuilt in-process graph even when the filesystem write
  * failed.
  *
- * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
- * called by cron-job.org. The actual cron runs via Inngest with its own
- * service-to-service auth.
+ * v12 — moved from `app/api/cron/` to `app/api/admin-trigger/` so the
+ * directory truly maps to "things cron-job.org hits". The actual C8 cron
+ * runs via Inngest with service-to-service auth.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

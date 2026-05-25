@@ -107,6 +107,56 @@ export async function postSlackNotification(
 }
 
 /**
+ * v12 — chat.postMessage path (returns the message `ts` so callers can
+ * thread subsequent replies). Requires a bot token (`SLACK_BOT_TOKEN`)
+ * + a channel id. Use when you NEED threading; otherwise webhook
+ * (postSlackNotification) is simpler.
+ *
+ * Returns `{ ok, ts? }`. `ts` is the message timestamp (Slack's notion
+ * of a message id) — pass it back as `thread_ts` on the next call to
+ * reply in-thread.
+ *
+ * Exfil-safe (same scan as postSlackNotification).
+ */
+export interface PostMessageResult { ok: boolean; ts?: string; error?: string }
+
+export async function postSlackMessage(opts: {
+  token:     string
+  channel:   string
+  text:      string
+  threadTs?: string
+}): Promise<PostMessageResult> {
+  const scan = opts.text
+  if (!checkExfilSafe(scan, { surface: 'slack.postMessage' })) {
+    return { ok: false, error: 'exfil-guard rejected payload' }
+  }
+  try {
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json; charset=utf-8',
+        'Authorization': `Bearer ${opts.token}`,
+      },
+      body: JSON.stringify({
+        channel:    opts.channel,
+        text:       opts.text,
+        thread_ts:  opts.threadTs,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const j = await res.json() as { ok?: boolean; ts?: string; error?: string }
+    if (!j.ok) {
+      if (process.env.NODE_ENV !== 'production') console.warn('[slack] chat.postMessage:', j.error)
+      return { ok: false, error: j.error ?? 'unknown' }
+    }
+    return { ok: true, ts: j.ts }
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.warn('[slack] postMessage failed:', err)
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
  * Slack-specific failure-mode → human explanation.
  *
  * Slack's incoming webhooks return HTTP 200 with a plain-text body even when
