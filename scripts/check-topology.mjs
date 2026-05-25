@@ -73,6 +73,7 @@ const RETIRED = [
       'scripts/migrate-tunnel-hostname.mjs',                    // documents the KVM2→KVM4 hostname-migration use case
       'scripts/repair-codex-gateway-routing.mjs',               // repairs stale KVM2 tunnel routing post-migration
       'scripts/deploy.sh',                                      // intentional KVM2-legacy-fallback path
+      'tests/memory/',                                          // multi-hop bench questions intentionally reference retired infra (the whole point — does memory remember the migration?)
       'services/mcp-codex-delegate/',                           // header doc + tool description quotes ADR 002 phrasing
       'scripts/check-topology.mjs',                             // this file
       'scripts/lib-migration-banner.mjs',                       // docstring cites KVM2 as the canonical drift example
@@ -99,6 +100,7 @@ const RETIRED = [
       'services/n8n/docker-compose.yaml',                       // KVM1 mentions are migration-evidence comments (encryption-key origin)
       'scripts/cloudflare-tunnel-add-hostname.mjs',             // sets a CF DNS comment "n8n migration from KVM1 <date>"
       'scripts/check-topology.mjs',
+      'tests/memory/',                                          // multi-hop bench questions intentionally reference retired infra
     ],
   },
   {

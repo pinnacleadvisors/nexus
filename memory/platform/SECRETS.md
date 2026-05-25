@@ -135,6 +135,10 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `OPEN_CODE_API_KEY` | departments-and-ecosystems v1 | Auth for Open Code (when self-hosted with auth on). |
 | `GBRAIN_BASE_URL` | gbrain-integration v1 | GBrain endpoint. When unset, the `memory:gbrain` adapter reports `unavailable` and the operator stays on memory-hq. |
 | `GBRAIN_API_KEY` | gbrain-integration v1 | Optional auth for GBrain. |
+| `AIDER_BASE_URL` | teams v3 (oss adapters) | Self-hosted Aider HTTP shim. When set, the `code:aider` adapter becomes available. |
+| `PIPECAT_BASE_URL` | teams v3 (oss adapters) | Self-hosted Pipecat instance. When set, the `voice-agent:pipecat` adapter becomes available. |
+| `PIPECAT_API_KEY` | teams v3 (oss adapters) | Optional auth for Pipecat. |
+| `SEARXNG_BASE_URL` | teams v3 (oss adapters) | Self-hosted SearXNG instance. When set, the `search:searxng` adapter becomes available. |
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
 | `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands AND `/api/slack/decision` business-operator approval webhooks (Phase A). Per-user override at `kind='slack' name='signingSecret'`. |
 | `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |

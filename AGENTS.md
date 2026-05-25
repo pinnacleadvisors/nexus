@@ -383,8 +383,11 @@ The "team" abstraction in this codebase is two-axis: a **department** (a named b
 | Persistence | [lib/teams/store.ts](lib/teams/store.ts) — `teams` + `team_members` tables (migration 060) |
 | Spawn API | [app/api/teams/spawn/route.ts](app/api/teams/spawn/route.ts) |
 | Admin UI | [app/(protected)/teams/page.tsx](app/(protected)/teams/page.tsx) |
+| Org-chart UI (v3) | [app/(protected)/teams/org-chart/page.tsx](app/(protected)/teams/org-chart/page.tsx) — re-parent reporting lines, file custom departments |
 | Lead-agent template | [.claude/agents/departments/_template.md](.claude/agents/departments/_template.md) |
-| Concrete leads (v1) | `.claude/agents/departments/{content,design,engineering}/<dept>-lead.md` |
+| Role template (v2) | [.claude/agents/departments/_role-template.md](.claude/agents/departments/_role-template.md) |
+| Concrete leads (all 7) | `.claude/agents/departments/{content,design,engineering,executive,sales-cs,operations,research}/<dept>-lead.md` |
+| All role rosters (v3) | `.claude/agents/departments/<dept>/<role>.md` — 30+ specs across the 7 departments |
 
 Rules for new ecosystems / departments:
 - A new ecosystem adapter = a file under `lib/ecosystems/adapters/<name>.ts` + a row in `registry.ts`. Zero changes to department code.
