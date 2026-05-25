@@ -1,13 +1,13 @@
 /**
- * POST /api/cron/regression-sweep — manual trigger for the C2 daily sweep.
+ * POST /api/admin-trigger/regression-sweep — owner-only manual trigger for the C2 daily sweep.
  *
  * Owner-only. Compares each user's last-24h metrics against their 7-day
  * baseline and files `perf-regression: ...` feedback rows the optimiser
  * picks up. Returns `{ detected, filed }` for verification.
  *
- * cron-check: auth-ok — owner-gated Clerk-session manual trigger; never
- * called by cron-job.org (no session available there). The "/api/cron"
- * prefix is historical; the actual cron work runs via Inngest.
+ * v12 — moved from `app/api/cron/` to `app/api/admin-trigger/` so the
+ * directory truly maps to "things cron-job.org hits". The actual C2 cron
+ * runs via Inngest; this endpoint is for operator-initiated reruns.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

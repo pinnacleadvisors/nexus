@@ -87,13 +87,131 @@ export async function POST(req: NextRequest) {
 
   const markdown = renderReport(hqSummary, hqResults, gbSummary, gbResults)
   const sent = await postReport(markdown)
+  // v12 — auto-open a draft PR with the ADR Results section pre-filled,
+  // when MEMORY_HQ_TOKEN + MEMORY_REPO are set (the operator already has
+  // these for memory-hq writes). Slack post above still happens for ack.
+  const prResult = await openAdrPr(hqSummary, gbSummary).catch(e => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }))
 
   return NextResponse.json({
     ok:        true,
     posted:    sent,
+    pr:        prResult,
     memory_hq: hqSummary,
     gbrain:    gbSummary,
   })
+}
+
+/**
+ * Opens a draft PR against pinnacleadvisors/nexus with the ADR 009
+ * Results section pre-filled. No-ops gracefully when MEMORY_HQ_TOKEN or
+ * MEMORY_REPO are unset (returns ok:false + reason); the operator still
+ * gets the Slack post.
+ */
+async function openAdrPr(hq: AdapterSummary, gb: AdapterSummary): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const token = process.env.MEMORY_HQ_TOKEN
+  // ADR lives in this repo (pinnacleadvisors/nexus), not memory-hq. Reuse
+  // the same token (it's a PAT with repo scope per memory/platform/SECRETS.md).
+  const repo = 'pinnacleadvisors/nexus'
+  if (!token) return { ok: false, error: 'MEMORY_HQ_TOKEN not set' }
+
+  const branch = `gbrain-bench/${new Date().toISOString().slice(0, 10)}`
+  const path   = 'docs/adr/009-gbrain-evaluation.md'
+  const base   = 'main'
+
+  // 1. Get current main SHA + ADR file.
+  const ghGet = async (p: string) => fetch(`https://api.github.com/repos/${repo}/${p}`, {
+    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(15_000),
+  })
+  const refRes = await ghGet(`git/ref/heads/${base}`)
+  if (!refRes.ok) return { ok: false, error: `github get-ref ${refRes.status}` }
+  const refJson = await refRes.json() as { object?: { sha?: string } }
+  const baseSha = refJson.object?.sha
+  if (!baseSha) return { ok: false, error: 'no base sha' }
+
+  const fileRes = await ghGet(`contents/${encodeURIComponent(path)}?ref=${base}`)
+  if (!fileRes.ok) return { ok: false, error: `github get-file ${fileRes.status}` }
+  const fileJson = await fileRes.json() as { content?: string; sha?: string }
+  if (!fileJson.content || !fileJson.sha) return { ok: false, error: 'no file content' }
+  const current = Buffer.from(fileJson.content, 'base64').toString('utf-8')
+
+  // 2. Replace the Results section. We look for the `## Results` heading
+  //    and append our block beneath it (or replace if already filled).
+  const date = new Date().toISOString().slice(0, 10)
+  const block = [
+    `Date: ${date}`,
+    '',
+    `memory-hq:`,
+    `  avg citation score: ${(hq.avg_score * 100).toFixed(1)}%`,
+    `  p50 latency:        ${hq.p50_latency_ms} ms`,
+    `  p95 latency:        ${hq.p95_latency_ms} ms`,
+    `  errors:             ${hq.errors} / ${hq.questions}`,
+    '',
+    `gbrain:`,
+    `  avg citation score: ${(gb.avg_score * 100).toFixed(1)}%`,
+    `  p50 latency:        ${gb.p50_latency_ms} ms`,
+    `  p95 latency:        ${gb.p95_latency_ms} ms`,
+    `  errors:             ${gb.errors} / ${gb.questions}`,
+    '',
+    'Decision: <fill in — integrate | defer | reject>',
+    'Rationale: <one paragraph>',
+  ].join('\n')
+
+  // Replace existing "Date: <YYYY-MM-DD>" placeholder OR append a new
+  // dated entry under ## Results.
+  let next: string
+  if (current.includes('Date: <YYYY-MM-DD>')) {
+    next = current.replace(/```\nDate: <YYYY-MM-DD>[\s\S]*?```/, '```\n' + block + '\n```')
+  } else {
+    next = current.replace(/## Results.*?\n/, m => `${m}\n\`\`\`\n${block}\n\`\`\`\n\n`)
+  }
+  if (next === current) return { ok: false, error: 'no anchor matched in ADR' }
+
+  // 3. Create the branch (PUT git/refs).
+  const ghPost = (p: string, body: object) => fetch(`https://api.github.com/repos/${repo}/${p}`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const newRef = await ghPost('git/refs', { ref: `refs/heads/${branch}`, sha: baseSha })
+  if (!newRef.ok) {
+    const t = await newRef.text().catch(() => '')
+    // 422 = branch exists — fine, we'll just commit on top.
+    if (newRef.status !== 422) return { ok: false, error: `github create-branch ${newRef.status}: ${t.slice(0, 200)}` }
+  }
+
+  // 4. Commit the updated file via the contents API.
+  const commit = await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`, {
+    method: 'PUT',
+    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+    body: JSON.stringify({
+      message: `chore(adr): auto-fill GBrain bench results ${date}`,
+      content: Buffer.from(next, 'utf-8').toString('base64'),
+      sha:     fileJson.sha,
+      branch,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!commit.ok) {
+    const t = await commit.text().catch(() => '')
+    return { ok: false, error: `github commit ${commit.status}: ${t.slice(0, 200)}` }
+  }
+
+  // 5. Open draft PR.
+  const pr = await ghPost('pulls', {
+    title: `chore(adr): GBrain bench results ${date}`,
+    head:  branch,
+    base,
+    body:  `Auto-generated by \`/api/cron/gbrain-bench\`. Fill the Decision + Rationale lines, then mark Ready for Review.\n\nmemory-hq: ${(hq.avg_score * 100).toFixed(1)}% citation, p95 ${hq.p95_latency_ms}ms\ngbrain:    ${(gb.avg_score * 100).toFixed(1)}% citation, p95 ${gb.p95_latency_ms}ms`,
+    draft: true,
+  })
+  if (!pr.ok) {
+    const t = await pr.text().catch(() => '')
+    return { ok: false, error: `github pr ${pr.status}: ${t.slice(0, 200)}` }
+  }
+  const prJson = await pr.json() as { html_url?: string }
+  return { ok: true, url: prJson.html_url ?? '' }
 }
 
 /** Run one adapter against all questions. Returns the summary + per-question

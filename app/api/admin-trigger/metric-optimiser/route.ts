@@ -1,11 +1,11 @@
 /**
- * POST /api/cron/metric-optimiser — manual trigger for the hourly Inngest sweep.
+ * POST /api/admin-trigger/metric-optimiser — owner-only manual trigger for the hourly Inngest sweep.
  *
  * Owner-only (ALLOWED_USER_IDS gate inside). Returns `{ detected, filed }` so
  * the owner can verify the workflow-feedback queue picked up drift signals.
  *
- * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
- * called by cron-job.org. The hourly sweep runs via Inngest.
+ * v12 — moved from `app/api/cron/` to `app/api/admin-trigger/`. The
+ * actual hourly sweep runs via Inngest.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

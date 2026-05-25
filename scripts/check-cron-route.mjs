@@ -86,6 +86,36 @@ function hasCronSecretAuth(path) {
   return false
 }
 
+/** v12 — parse sync-crons-hmem.mjs SPECS to learn which `/api/cron/<name>`
+ *  paths are actually registered with cron-job.org. Only those need the
+ *  strict 5xx + auth checks (cron-job.org's auto-disable behaviour only
+ *  matters for routes it calls). Routes UNDER /api/cron that are NOT
+ *  registered are still in scope for the 5xx check (defensive — they
+ *  might get registered later) but skip the auth warning. */
+function loadRegisteredPaths() {
+  try {
+    const txt = readFileSync(join(ROOT, 'scripts', 'sync-crons-hmem.mjs'), 'utf8')
+    const out = new Set()
+    // Match `path: '/api/cron/<name>...'` in SPECS entries.
+    for (const m of txt.matchAll(/path:\s*'([^']+)'/g)) {
+      // Strip query string; we only key on the route path.
+      const path = m[1].split('?')[0]
+      out.add(path)
+    }
+    // Also include `vercel.json` cron entries when present (we hit the
+    // same routes from both schedulers historically).
+    try {
+      const vj = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf8'))
+      for (const c of vj.crons ?? []) if (c.path) out.add(c.path)
+    } catch { /* no vercel.json, fine */ }
+    return out
+  } catch {
+    // Sync script missing — fall back to "treat every route as registered"
+    // so the check stays strict by default.
+    return null
+  }
+}
+
 function main() {
   const files = listRouteFiles(CRON_DIR)
   if (files.length === 0) {
@@ -94,7 +124,14 @@ function main() {
   }
 
   console.log(`🔍  Cron-route static check`)
-  console.log(`    Repo: ${ROOT}\n`)
+  console.log(`    Repo: ${ROOT}`)
+  const registered = loadRegisteredPaths()
+  if (registered) {
+    console.log(`    Registered with cron-job.org: ${registered.size} route(s)`)
+  } else {
+    console.log(`    (sync-crons-hmem.mjs not found — treating every route as registered)`)
+  }
+  console.log('')
 
   let errors = 0
   let warnings = 0
@@ -102,19 +139,26 @@ function main() {
 
   for (const file of files) {
     const rel = relative(ROOT, file)
+    // Derive `/api/cron/<name>` from the file path.
+    const routePath = '/' + rel.replace(/^app\//, '').replace(/\/route\.ts$/, '')
+    const isRegistered = registered ? registered.has(routePath) : true
+
     const findings = find5xx(file)
     const hasAuth  = hasCronSecretAuth(file)
 
+    // 5xx check applies to every cron route (forward compatibility — any
+    // could be registered tomorrow). Auth warning applies only when the
+    // route IS registered; non-registered routes use Clerk/other auth.
     const fileErrors = findings.length
-    const fileWarns  = hasAuth ? 0 : 1
+    const fileWarns  = (isRegistered && !hasAuth) ? 1 : 0
     errors  += fileErrors
     warnings += fileWarns
 
     if (fileErrors === 0 && fileWarns === 0) {
-      console.log(`  PASS  ${rel}`)
+      console.log(`  PASS  ${rel}${isRegistered ? '' : '  (not registered with cron-job.org — auth check skipped)'}`)
       continue
     }
-    failures.push({ file: rel, findings, hasAuth })
+    failures.push({ file: rel, findings, hasAuth, isRegistered })
   }
 
   if (failures.length === 0) {
@@ -129,9 +173,9 @@ function main() {
       console.log(`    L${x.line}: status: ${x.status}   ${x.text}`)
       console.log(`           → cron-job.org auto-disables after ~26 consecutive 5xx. Return 200 + {ok:false, error} or add \`// cron-check: ignore\` on the line.`)
     }
-    if (!f.hasAuth) {
-      console.log(`    WARN  no CRON_SECRET check found — anyone can hit this cron URL.`)
-      console.log(`           Add \`?secret=<CRON_SECRET>\` validation or mark internal-only with \`// cron-check: auth-ok\` somewhere in the file.`)
+    if (f.isRegistered && !f.hasAuth) {
+      console.log(`    WARN  no CRON_SECRET check found — cron-job.org calls this route, so anyone can.`)
+      console.log(`           Add \`?secret=<CRON_SECRET>\` validation or move to app/api/admin-trigger/ if the route shouldn't be a cron.`)
     }
   }
   console.log('')

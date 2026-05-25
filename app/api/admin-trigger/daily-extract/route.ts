@@ -1,14 +1,13 @@
 /**
- * POST /api/cron/daily-extract — E6
+ * POST /api/admin-trigger/daily-extract — owner-only manual trigger (E6).
  *
  * Builds `memory/daily/YYYY-MM-DD.md` for the previous UTC day (or `?date=YYYY-MM-DD`
  * when supplied). Owner-only. Best-effort filesystem write — on Vercel the repo
  * filesystem is read-only, so the route returns the markdown body for the caller
  * (a GitHub Action or Inngest job) to commit.
  *
- * cron-check: auth-ok — owner-gated Clerk-session manual trigger; not
- * called by cron-job.org. The E6 cron runs via GitHub Action / Inngest
- * with its own auth.
+ * v12 — moved from `app/api/cron/` to `app/api/admin-trigger/`. The
+ * E6 cron itself runs via GitHub Action / Inngest with its own auth.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

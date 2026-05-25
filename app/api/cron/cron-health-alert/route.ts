@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
-import { getSlackConfig, postSlackNotification } from '@/lib/slack/client'
+import { getSlackConfig, postSlackNotification, postSlackMessage } from '@/lib/slack/client'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 30
@@ -39,6 +39,9 @@ interface AlertState {
   id:              number
   last_red_titles: string[]
   last_alert_at:   string | null
+  /** v12 — Slack message ts of the last NEW (titles-changed) alert; reminders
+   *  reply in-thread on this ts when SLACK_BOT_TOKEN + channel are wired. */
+  last_thread_ts:  string | null
 }
 
 export async function POST(req: NextRequest) {
@@ -69,13 +72,13 @@ export async function POST(req: NextRequest) {
   if (!db) {
     // No DB — alert unconditionally if there's red. Dedup degrades gracefully.
     if (redTitles.length === 0) return NextResponse.json({ ok: true, alerted: false, reason: 'no_red' })
-    await sendAlert(redJobs, 'new')
+    await sendAlert(redJobs, 'new', null)
     return NextResponse.json({ ok: true, alerted: true, reason: 'no_db_fallback', red_count: redTitles.length })
   }
 
   type Chain<T> = { eq: (c: string, v: number) => Chain<T>; single: () => Promise<{ data: T | null }> }
   const prev = await (db.from('cron_alerts_state' as never) as unknown as { select: (c: string) => Chain<AlertState> })
-    .select('id, last_red_titles, last_alert_at').eq('id', 1).single()
+    .select('id, last_red_titles, last_alert_at, last_thread_ts').eq('id', 1).single()
   const prevTitles = prev.data?.last_red_titles ?? []
   const prevAlertAt = prev.data?.last_alert_at ? new Date(prev.data.last_alert_at).getTime() : 0
 
@@ -85,8 +88,8 @@ export async function POST(req: NextRequest) {
   const reminderDue   = redTitles.length > 0 && sinceLastAlert >= REMIND_AFTER_MS
 
   if (redTitles.length === 0) {
-    // Healthy — only update state, no alert.
-    await persistState(db, [], prev.data?.last_alert_at ?? null)
+    // Healthy — only update state, clear thread (next outage starts a new top-level).
+    await persistState(db, [], prev.data?.last_alert_at ?? null, null)
     return NextResponse.json({ ok: true, alerted: false, reason: 'no_red' })
   }
   if (!titlesChanged && !reminderDue) {
@@ -95,18 +98,25 @@ export async function POST(req: NextRequest) {
   }
 
   // v11: distinct message prefix on reminder-due (same red-set as last
-  // time). Webhooks don't support thread_ts so we can't reply-in-thread;
-  // a "still red" prefix instead so the operator can ignore reminders
-  // they've already acknowledged in their head.
+  // time). v12: when SLACK_BOT_TOKEN + SLACK_CHANNEL_ID are set, the
+  // reminder ACTUALLY replies in-thread on the original top-level
+  // message instead of the :repeat: prefix workaround. Falls back to
+  // webhook + prefix when bot token isn't available.
   const mode: 'new' | 'reminder' = titlesChanged ? 'new' : 'reminder'
-  const sent = await sendAlert(redJobs, mode)
-  await persistState(db, redTitles, sent ? new Date().toISOString() : (prev.data?.last_alert_at ?? null))
+  const replyToTs = (mode === 'reminder') ? prev.data?.last_thread_ts ?? null : null
+  const { sent, newThreadTs } = await sendAlert(redJobs, mode, replyToTs)
+
+  // Persist: on a NEW alert with a captured ts, store it for future replies.
+  //          on a reminder, keep the existing ts.
+  const nextTs = mode === 'new' && newThreadTs ? newThreadTs : (prev.data?.last_thread_ts ?? null)
+  await persistState(db, redTitles, sent ? new Date().toISOString() : (prev.data?.last_alert_at ?? null), nextTs)
 
   return NextResponse.json({
     ok:        true,
     alerted:   sent,
     red_count: redTitles.length,
     reason:    titlesChanged ? 'titles_changed' : 'reminder_due',
+    threaded:  !!(replyToTs && sent),
   })
 }
 
@@ -148,7 +158,7 @@ async function fetchCronStatus(req: NextRequest): Promise<{ ok: true; jobs: Cron
  * Returns true if at least one alert was actually dispatched (i.e. a
  * webhook was configured + the post succeeded).
  */
-async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder'): Promise<boolean> {
+async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder', replyToTs: string | null): Promise<{ sent: boolean; newThreadTs: string | null }> {
   // Bucket red jobs by business slug (or 'admin' for ungrouped).
   const groups = new Map<string, CronStatus[]>()
   for (const j of redJobs) {
@@ -178,31 +188,63 @@ async function sendAlert(redJobs: CronStatus[], mode: 'new' | 'reminder'): Promi
     ? await getSlackConfig(operatorId)
     : { webhookUrl: process.env.NEXUS_SLACK_WEBHOOK_URL ?? undefined }
 
+  // v12 — bot-token path. When SLACK_BOT_TOKEN + SLACK_CHANNEL_ID are set,
+  // use chat.postMessage so we get the message `ts` back + can reply in
+  // thread. Otherwise fall back to the webhook + v11 emoji-prefix workaround.
+  const botToken   = process.env.SLACK_BOT_TOKEN
+  const botChannel = process.env.SLACK_CHANNEL_ID
+  const useBot     = Boolean(botToken && botChannel)
+
   let anySent = false
+  let newThreadTs: string | null = null
   for (const [bucket, jobs] of groups.entries()) {
     const webhookUrl = bucket === 'admin'
       ? opCfg.webhookUrl
       : (businessWebhooks[bucket] ?? opCfg.webhookUrl)  // per-business fall through to operator
-    if (!webhookUrl) continue
     const scope = bucket === 'admin' ? 'platform' : `business ${bucket}`
     const lines = jobs.map(j => `• ${j.enabled ? 'red' : 'DISABLED'}: ${j.title.replace(/^Nexus(?:\[[^\]]+\])?:\s*/, '')}`).join('\n')
-    // v11: distinct prefix per mode. `:rotating_light:` for genuinely new
-    // failures, `:repeat:` for "still red since last cycle" reminders.
-    // Operator's eye can pattern-match the emoji + skip reminders mentally.
-    const prefix = mode === 'new'
-      ? `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:`
-      : `:repeat: still red — ${jobs.length} ${scope} cron(s) (since last alert):`
-    const text  = `${prefix}\n${lines}\nRe-enable / debug at /cron-health.`
+    // v11 prefix logic still applies on the webhook fallback. Bot-token
+    // path drops the :repeat: prefix because a thread reply is already
+    // visually distinct from a top-level message.
+    const text = useBot
+      ? `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
+      : (mode === 'new'
+          ? `:rotating_light: ${jobs.length} ${scope} cron(s) need attention:\n${lines}\nRe-enable / debug at /cron-health.`
+          : `:repeat: still red — ${jobs.length} ${scope} cron(s) (since last alert):\n${lines}\nRe-enable / debug at /cron-health.`)
+
+    if (useBot && bucket === 'admin') {
+      // Bot path — only on admin bucket for now (per-business slack channels
+      // would need per-business bot config; future v13). Per-business buckets
+      // keep webhook fallback.
+      const res = await postSlackMessage({
+        token:    botToken!,
+        channel:  botChannel!,
+        text,
+        threadTs: replyToTs ?? undefined,
+      })
+      if (res.ok) {
+        anySent = true
+        // Only capture ts on NEW alerts; reminders inherit the parent ts.
+        if (mode === 'new' && res.ts) newThreadTs = res.ts
+      }
+      continue
+    }
+
+    if (!webhookUrl) continue
     const ok = await postSlackNotification({ webhookUrl }, { text })
     if (ok) anySent = true
   }
-  return anySent
+  return { sent: anySent, newThreadTs }
 }
 
-async function persistState(db: ReturnType<typeof createServerClient>, redTitles: string[], lastAlertAt: string | null): Promise<void> {
+async function persistState(db: ReturnType<typeof createServerClient>, redTitles: string[], lastAlertAt: string | null, lastThreadTs: string | null): Promise<void> {
   if (!db) return
   await (db.from('cron_alerts_state' as never) as unknown as {
     update: (u: Record<string, unknown>) => { eq: (c: string, v: number) => Promise<{ error?: unknown }> }
-  }).update({ last_red_titles: redTitles, last_alert_at: lastAlertAt, updated_at: new Date().toISOString() })
-   .eq('id', 1)
+  }).update({
+    last_red_titles: redTitles,
+    last_alert_at:   lastAlertAt,
+    last_thread_ts:  lastThreadTs,
+    updated_at:      new Date().toISOString(),
+  }).eq('id', 1)
 }
