@@ -47,6 +47,12 @@ const SKIP_PATTERNS: RegExp[] = [
   // comment so scripts/check-sentry-config.mjs's substring scan
   // (skipBody.includes(apiPath)) finds it and stops complaining.
   /\/api\/background-tasks/,         // BackgroundTasksView — every 5s
+  /\/api\/cron-health\/status/,                  // <CronHealthClient> — every ~15s while page open
+  // <CronHealthClient> per-job inline edit. The literal API path
+  // /api/cron-health/jobs/${jobId}/update appears here as a comment so
+  // scripts/check-sentry-config.mjs's substring scan finds it and stops
+  // complaining (same trick the BackgroundTasksView entry above uses).
+  /\/api\/cron-health\/jobs\/[^/]+\/update/,
 ]
 
 /** Patterns that benefit from full visibility — keep at 100% even though they're not errors. */

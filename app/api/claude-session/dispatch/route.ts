@@ -304,6 +304,34 @@ async function dispatchToOpenClaw(opts: {
   }
 }
 
+/**
+ * Read `agent_library.inject_platform_brief` for the spawned agent. Returns
+ * `true` by default — both when the column exists and the row is true, and
+ * when anything in the read path fails (missing column, supabase down, row
+ * not found). Opting OUT requires an explicit `false`.
+ */
+async function isPlatformBriefEnabled(agentSlug: string): Promise<boolean> {
+  try {
+    const db = createServerClient()
+    if (!db) return true
+    const res = await (db.from('agent_library') as unknown as {
+      select: (cols: string) => {
+        eq: (col: string, val: string) => {
+          maybeSingle: () => Promise<{ data: { inject_platform_brief?: boolean } | null; error: unknown }>
+        }
+      }
+    })
+      .select('inject_platform_brief')
+      .eq('slug', agentSlug)
+      .maybeSingle()
+    if (res.error) return true
+    if (!res.data) return true
+    return res.data.inject_platform_brief !== false
+  } catch {
+    return true
+  }
+}
+
 function buildAgentBrief(body: DispatchBody, env: Record<string, string>, ancestryBlock?: string): string {
   const inputs = body.inputs ?? {}
   const parts: string[] = []
@@ -445,7 +473,33 @@ export async function POST(req: NextRequest) {
       console.warn('[claude-session/dispatch] ancestry compute failed:', err instanceof Error ? err.message : err)
     }
   }
-  const message = buildAgentBrief(body, env, ancestryBlock)
+  let message = buildAgentBrief(body, env, ancestryBlock)
+
+  // Platform-brief injection — gives the spawned agent the same context a
+  // direct Claude session sees in this repo (memory/INDEX.md + relevant plan
+  // + optional memory-hq atoms). Per-agent opt-out via
+  // `agent_library.inject_platform_brief` (migration 069). Fail-soft —
+  // dispatch always proceeds with at least the un-augmented brief.
+  try {
+    const briefEnabled = await isPlatformBriefEnabled(body.agentSlug)
+    if (briefEnabled) {
+      const { buildPlatformBrief } = await import('@/lib/agents/inject-platform-brief')
+      const brief = await buildPlatformBrief({
+        task:             body.inputs?.task ?? '',
+        agentSlug:        body.agentSlug,
+        memoryQueryUrl:   process.env.NEXUS_MEMORY_QUERY_URL,
+        memoryQueryToken: process.env.MEMORY_HQ_TOKEN,
+      })
+      if (brief.brief) {
+        message = brief.brief + '\n' + message
+      }
+    }
+  } catch (err) {
+    console.warn(
+      '[claude-session/dispatch] platform-brief injection failed:',
+      err instanceof Error ? err.message : err,
+    )
+  }
 
   // 3. Codex routing — when the body specifies a GPT-class model AND the
   // Codex gateway is configured, dispatch to the sandbox VPS instead of
