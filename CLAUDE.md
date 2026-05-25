@@ -103,6 +103,39 @@ Conflict-resolution playbook (which files to take union vs regenerate vs theirs/
 
 Parallel-agent worktree pattern: see the runbook's [worktree section](docs/runbooks/git-multi-agent-collaboration.md#worktree-pattern-parallel-agents).
 
+## End-of-multi-PR-session — verify each PR is mergeable
+
+When one session opens **more than one PR** (typical of long auto-mode sessions stacking new branches off in-flight ones), the order in which mainline lands them is not the order you opened them. Earlier merges shift main; later PRs that stacked on the prior branch become stale.
+
+Before declaring the session done, run this check (last action of the session):
+
+```bash
+# 1. Snapshot every PR opened this session.
+gh pr list --author "@me" --state open --json number,headRefName,mergeable,mergeStateStatus
+
+# 2. For any PR whose mergeable=CONFLICTING, rebase + resolve from OLDEST PR first.
+#    (Resolving the oldest unblocks the newer ones that stacked on it.)
+git fetch origin main
+git checkout <oldest-conflicting-branch>
+git rebase origin/main
+# resolve any conflict files; for memory files (memory/molecular/, task_plan.md)
+# take the UNION; for generated indexes, regenerate after the rebase.
+git push --force-with-lease
+
+# 3. Re-fetch + rebase the next-newer branch onto the updated oldest branch.
+git checkout <next-branch>
+git rebase origin/main          # main now has the older branch's commits if it was merged
+# OR
+git rebase <oldest-branch>      # if older branch hasn't merged yet, rebase onto it
+git push --force-with-lease
+
+# 4. Repeat for every conflicting PR, oldest → newest.
+```
+
+Why this matters: a PR that's `mergeable: CONFLICTING` cannot be merged from the GitHub UI without losing signing + skipping hooks. The pre-push hook (`.githooks/pre-push`) blocks pushes to MERGED branches but does NOT detect "this branch is stale" — that's a discipline check at end-of-session.
+
+Skip the check when this session opened **exactly one** PR — there's nothing to stack-resolve.
+
 ---
 
 # Long-Horizon Task Protocol

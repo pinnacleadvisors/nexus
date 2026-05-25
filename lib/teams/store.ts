@@ -109,6 +109,38 @@ export async function createTeam(input: CreateTeamInput): Promise<TeamRow | null
   return team
 }
 
+/**
+ * Update one member's ecosystem_overrides and/or tool_budget_override.
+ * Verifies team ownership before mutating the member row.
+ */
+export async function updateTeamMember(
+  userId: string,
+  teamId: string,
+  memberId: string,
+  patch: { ecosystemOverrides?: Record<string, string>; toolBudgetOverride?: string[] | null },
+): Promise<TeamMemberRow | null> {
+  const db = createServerClient()
+  if (!db) return null
+  type OwnChain = { eq: (c: string, v: string) => OwnChain; single: () => Promise<{ data: { id: string } | null }> }
+  const own = await (db.from('teams' as never) as unknown as { select: (c: string) => OwnChain })
+    .select('id').eq('id', teamId).eq('user_id', userId).single()
+  if (!own.data) return null
+
+  const updates: Record<string, unknown> = {}
+  if (patch.ecosystemOverrides && typeof patch.ecosystemOverrides === 'object') {
+    updates.ecosystem_overrides = patch.ecosystemOverrides
+  }
+  if (patch.toolBudgetOverride !== undefined) {
+    updates.tool_budget_override = patch.toolBudgetOverride
+  }
+  if (Object.keys(updates).length === 0) return null
+
+  const res = await (db.from('team_members' as never) as unknown as {
+    update: (u: typeof updates) => { eq: (c: string, v: string) => { eq: (c: string, v: string) => { select: () => { single: () => Promise<{ data: TeamMemberRow | null }> } } } }
+  }).update(updates).eq('id', memberId).eq('team_id', teamId).select().single()
+  return res.data ?? null
+}
+
 /** Update team status (active / paused / archived) and / or rebind one
  *  ecosystem. Both knobs in one call so the operator can pause-and-rebind
  *  atomically. Org-chart fields (parent_team_id) live here too — same

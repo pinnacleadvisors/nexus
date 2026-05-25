@@ -13,6 +13,8 @@ import type { BusinessRow } from '@/lib/business/types'
 import { DEPARTMENT_ORDER, DEPARTMENTS, type DepartmentSlug } from '@/lib/teams/departments'
 import { listAllEcosystems } from '@/lib/ecosystems/registry'
 import type { EcosystemKind } from '@/lib/ecosystems/types'
+import MembersDisclosure from './MembersDisclosure'
+import TemplatesPanel from './TemplatesPanel'
 
 interface TeamRow {
   id:                 string
@@ -127,7 +129,11 @@ export default function TeamsClient({ businesses }: { businesses: BusinessRow[] 
 
       {businesses.length === 0 ? (
         <EmptyBusinessesCard />
-      ) : (
+      ) : (<></>)}
+
+      {businesses.length > 0 && <TemplatesPanel businesses={businesses} />}
+
+      {businesses.length > 0 && (
         businesses.map(b => (
           <BusinessTeamsBlock
             key={b.slug}
@@ -255,6 +261,7 @@ function TeamCard({ team, busy, onPatch }: {
             />
           ))}
         </div>
+        {!archived && <MembersDisclosure teamId={team.id} />}
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0 relative">
         <span className="text-[9px] font-mono tracking-[0.12em] px-1.5 py-0.5 rounded-full"
