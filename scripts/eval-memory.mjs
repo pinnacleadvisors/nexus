@@ -178,8 +178,14 @@ async function updateAdr(summary) {
   //     avg citation score: __%
   //     ...
   // Replace the matching adapter block (or, if it's already filled, replace
-  // it again — last-write-wins).
-  const re = new RegExp(`${summary.adapter}:\\s*\\n(?:\\s+.+\\n){4,6}`, 'm')
+  // it again — last-write-wins). `summary.adapter` is already validated to
+  // one of {memory-hq, gbrain} at the top of the script, but the CodeQL
+  // js/regex-injection rule doesn't see the validation — so escape any
+  // regex metachars in the adapter slug before interpolating. Defense in
+  // depth: even if a future adapter is added with a regex metachar in
+  // its slug, this stays safe.
+  const escaped = String(summary.adapter).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`${escaped}:\\s*\\n(?:\\s+.+\\n){4,6}`, 'm')
   const next = re.test(body)
     ? body.replace(re, block + '\n')
     : body.replace(/Date: <YYYY-MM-DD>/, `Date: ${date}\n\n` + block)
