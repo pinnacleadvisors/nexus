@@ -61,6 +61,10 @@ const SPECS = [
   // but the listExistingH() title filter still picks it up via the broader
   // /cron-health dashboard (which scans for any "Nexus: " prefix).
   { title: 'Nexus: hmem-cron-health-alert',        path: '/api/cron/cron-health-alert',        schedule: { minutes: [0, 15, 30, 45], hours: [-1], mdays: [-1], months: [-1], wdays: [-1] } },
+  // v10: watches the alerter itself. Every 6h. If cron_alerts_state hasn't
+  // been touched in 4h (= alerter missed two cycles), Slack-pings the
+  // operator directly. Second line of defence behind the alerter.
+  { title: 'Nexus: hmem-alerter-self-check',       path: '/api/cron/cron-alerter-self-check',  schedule: { minutes: [0], hours: [0, 6, 12, 18], mdays: [-1], months: [-1], wdays: [-1] } },
 ]
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
