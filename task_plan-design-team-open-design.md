@@ -1,5 +1,7 @@
 # task_plan-design-team-open-design.md
 
+> **Architectural overlay:** this is one instance of the [departments + ecosystems abstraction](task_plan-departments-and-ecosystems.md). The Design **department** roster below is ecosystem-agnostic; open-design.ai is just the default `design` adapter. Swapping to Vercel v0 / Lovable / Galileo / Figma AI is a one-config-row change. Read the departments plan first for the adapter contract.
+
 Goal: A "Design Team" managed-agent roster, anchored on open-design.ai, that turns a brief into a coherent visual system — brand, layouts, components, landing pages, and ad creatives — with a built-in critic loop. Reusable across any business whose `niche` includes a creative surface (ad agency, ecommerce, info-product, SaaS).
 
 Success criteria:

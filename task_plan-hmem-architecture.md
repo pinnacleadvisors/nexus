@@ -1,5 +1,7 @@
 # task_plan-hmem-architecture.md
 
+> **Architectural overlay:** H-Mem is an evolution of the `memory-hq` adapter (kind = `memory` per the [ecosystem registry](task_plan-departments-and-ecosystems.md#part-2--ecosystems-the-adapter-layer)). The new `mol_temporal_node` + `mol_edge` tables ship as part of v1 (idempotent migration 061). The `memory_walk` MCP tool is wired in v1 but returns `[]` until the consolidation crons land in a later phase — so the adapter contract is right from day one.
+
 Goal: Evolve memory-hq from a flat Layer-2c atomic-fact store into an H-Mem-style hybrid system — a Temporal-Semantic Tree on top of the atom store, plus a Knowledge Graph layered over the tree — so multi-hop, time-aware queries that today require multiple `memory_search` calls become a single traversal. Built incrementally on the existing `mol_*` Supabase mirror; the canonical GitHub repo at `pinnacleadvisors/memory-hq` stays untouched.
 
 What H-Mem buys us (per the architecture comparison the operator pasted):
