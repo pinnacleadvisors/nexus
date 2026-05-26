@@ -24,6 +24,7 @@ interface BusinessLite {
   mission:               string | null   // null when migration 046 not applied
   money_model:           { thesis?: string } | null
   last_operator_at:      string | null
+  simulation:            boolean         // migration 070
 }
 
 interface SpendRow   { business_slug: string; payload: { usd?: number } | null }
@@ -49,7 +50,7 @@ async function fetchData(): Promise<{
 
   const [bizRes, spendRes, pendingRes] = await Promise.all([
     anyDb.from('business_operators')
-      .select('slug,name,niche,status,mission,money_model,last_operator_at')
+      .select('slug,name,niche,status,mission,money_model,last_operator_at,simulation')
       .order('last_operator_at', { ascending: false }),
     anyDb.from('experiment_metrics')
       .select('business_slug,payload')
@@ -116,6 +117,7 @@ export default async function BusinessesPage() {
               mission={b.mission ?? b.money_model?.thesis ?? null}
               spent30dUsd={spend.get(b.slug) ?? 0}
               pendingApprovals={pending.get(b.slug) ?? 0}
+              simulation={Boolean(b.simulation)}
             />
           ))}
         </div>
