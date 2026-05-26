@@ -18,6 +18,7 @@ import GoalsTreePanel from '@/components/businesses/GoalsTreePanel'
 import BillerSpendCard, { type BillerSpendRow } from '@/components/businesses/BillerSpendCard'
 import BudgetPolicyCard, { type BudgetPolicy } from '@/components/businesses/BudgetPolicyCard'
 import BudgetIncidentCard, { type BudgetIncident } from '@/components/businesses/BudgetIncidentCard'
+import RunNowButton from '@/components/businesses/RunNowButton'
 import { ArrowLeft, Goal, ListTodo, ShieldCheck, MessageSquare, Network } from 'lucide-react'
 
 interface BusinessRow {
@@ -28,6 +29,7 @@ interface BusinessRow {
   mission:       string | null
   brand_voice:   string | null
   parent_org_id: string | null
+  simulation:    boolean | null   // migration 070
 }
 
 interface GoalRow {
@@ -133,7 +135,7 @@ async function fetchData(slug: string): Promise<{
 
   const [bizRes, goalsRes, issueRes, approvalRes, budget] = await Promise.all([
     anyDb.from('business_operators')
-      .select('slug,name,niche,status,mission,brand_voice,parent_org_id')
+      .select('slug,name,niche,status,mission,brand_voice,parent_org_id,simulation')
       .eq('slug', slug)
       .maybeSingle(),
     anyDb.from('goals')
@@ -177,15 +179,28 @@ export default async function BusinessDetailPage({ params }: PageProps) {
 
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{business.name}</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            {business.name}
+            {business.simulation && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 font-mono uppercase tracking-wider text-[10px] text-violet-300"
+                title="Simulation business — cost-guard short-circuits real spend, money-moving verbs are blocked"
+              >
+                🧪 sim
+              </span>
+            )}
+          </h1>
           <p className="mt-1 text-sm text-zinc-400">{business.niche} · {business.status}</p>
         </div>
-        <Link
-          href={`/businesses/${slug}/chat`}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-violet-700/40 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 transition hover:bg-violet-500/15"
-        >
-          <MessageSquare className="h-4 w-4" /> Open chat
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <RunNowButton slug={slug} simulation={Boolean(business.simulation)} />
+          <Link
+            href={`/businesses/${slug}/chat`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800/70"
+          >
+            <MessageSquare className="h-4 w-4" /> Open chat
+          </Link>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
