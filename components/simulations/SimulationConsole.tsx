@@ -110,7 +110,7 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     })
   }
 
-  const startAB = (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => {
+  const startAB = (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number; synthetic_voice?: 'template' | 'llm' }) => {
     setError(null)
     startTransition(async () => {
       const res = await fetch('/api/simulations/multi', {
@@ -316,7 +316,7 @@ function EventFeed({ events }: { events: EventRow[] }) {
   )
 }
 
-function StartForm({ onStart, onStartAB, onImport, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => void; onStartAB: (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => void; onImport: (file: File) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+function StartForm({ onStart, onStartAB, onImport, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => void; onStartAB: (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number; synthetic_voice?: 'template' | 'llm' }) => void; onImport: (file: File) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
   const [mode, setMode]                  = useState<'manual' | 'auto' | 'ab-compare'>('manual')
   const [compress, setCompress]          = useState(30)
   const [budgetSec, setBudgetSec]        = useState(3_600)
@@ -401,7 +401,12 @@ function StartForm({ onStart, onStartAB, onImport, pending, error, lastRun, onRe
         <div className="flex gap-2">
           {mode === 'ab-compare' ? (
             <button
-              onClick={() => onStartAB({ policies: abPicked, compress_days: compress, wallclock_budget_sec: budgetSec })}
+              onClick={() => onStartAB({
+                policies:             abPicked,
+                compress_days:        compress,
+                wallclock_budget_sec: budgetSec,
+                synthetic_voice:      llmVoices ? 'llm' : 'template',
+              })}
               disabled={pending || abPicked.length < 2}
               className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
               title={abPicked.length < 2 ? 'Pick at least 2 policies' : `Compare ${abPicked.join(' vs ')}`}
