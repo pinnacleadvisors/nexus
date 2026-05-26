@@ -28,6 +28,8 @@ export interface GradedRunResult {
   signups_total:           number
   failures:                number
   critical_failures:       number
+  churned_count:           number   // v3 — customers who walked away
+  lost_ltv_cents:          number   // v3 — synthetic LTV lost to churn
   kpis_hit:                Record<string, boolean | null>
   takeaways:               string[]
 }
@@ -35,6 +37,7 @@ export interface GradedRunResult {
 interface SimulationEventRow {
   kind:           string
   payload:        Record<string, unknown>
+  outcome:        Record<string, unknown> | null
   approval_state: string | null
 }
 
@@ -58,7 +61,7 @@ export async function gradeRun(db: SupabaseClient, runId: string): Promise<Grade
     select: (c: string) => {
       eq: (c: string, v: string) => Promise<{ data: SimulationEventRow[] | null; error: { message: string } | null }>
     }
-  }).select('kind, payload, approval_state').eq('run_id', runId)
+  }).select('kind, payload, outcome, approval_state').eq('run_id', runId)
   const events = evRes.data ?? []
 
   const bizRes = await (db.from('business_operators' as never) as unknown as {
@@ -93,6 +96,17 @@ export async function gradeRun(db: SupabaseClient, runId: string): Promise<Grade
   const failures          = events.filter(e => e.kind === 'failure').length
   const critical_failures = events.filter(e => e.kind === 'failure' && (e.payload as { severity?: string }).severity === 'critical').length
 
+  // v3: churn events represent customers who walked away. Sum their
+  // simulated LTV (from outcome.lost_customer_ltv_cents in the engine)
+  // and subtract from sim_net so the policy comparison reflects
+  // long-term customer-loss cost, not just immediate revenue.
+  const churn_events     = events.filter(e => e.kind === 'churn')
+  const lost_ltv_cents   = churn_events.reduce((s, e) => {
+    const o = (e as unknown as { outcome?: { lost_customer_ltv_cents?: number } }).outcome ?? null
+    return s + Number(o?.lost_customer_ltv_cents ?? 0)
+  }, 0)
+  const churned_count    = churn_events.length
+
   // ── KPI grading vs targets (best-effort — unknown targets become null) ─────
   const kpis_hit: Record<string, boolean | null> = {}
   if (typeof targets.revenue_cents === 'number')
@@ -115,10 +129,13 @@ export async function gradeRun(db: SupabaseClient, runId: string): Promise<Grade
   } else if (failures > 0) {
     takeaways.push(`${failures} minor failures injected; all non-critical.`)
   }
+  if (churned_count > 0) {
+    takeaways.push(`${churned_count} customer${churned_count === 1 ? '' : 's'} churned (lost LTV $${(lost_ltv_cents / 100).toFixed(2)}).`)
+  }
   if (sim_revenue_cents > 0) {
-    const net = sim_revenue_cents - sim_spend_cents
+    const net = sim_revenue_cents - sim_spend_cents - lost_ltv_cents
     const sign = net >= 0 ? '+' : '−'
-    takeaways.push(`Simulated net: ${sign}$${Math.abs(net / 100).toFixed(2)} across the run.`)
+    takeaways.push(`Simulated net: ${sign}$${Math.abs(net / 100).toFixed(2)} across the run (including $${(lost_ltv_cents / 100).toFixed(2)} lost LTV from churn).`)
   }
   if (Object.keys(kpis_hit).length > 0) {
     const hitCount  = Object.values(kpis_hit).filter(v => v === true).length
@@ -134,10 +151,12 @@ export async function gradeRun(db: SupabaseClient, runId: string): Promise<Grade
     approvals,
     sim_revenue_cents,
     sim_spend_cents,
-    sim_net_cents:     sim_revenue_cents - sim_spend_cents,
+    sim_net_cents:     sim_revenue_cents - sim_spend_cents - lost_ltv_cents,
     signups_total,
     failures,
     critical_failures,
+    churned_count,
+    lost_ltv_cents,
     kpis_hit,
     takeaways,
   }

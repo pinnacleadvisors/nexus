@@ -124,6 +124,13 @@ async function synthesizeOutcome(
       return event.payload   // mirror back so the grader can read it from outcome
     case 'failure':
       return { remediated: Math.random() < 0.7 }
+    case 'churn':
+      // Customer walked away. Record what we lost (synthetic LTV) so
+      // the grader can subtract it from sim_net_cents.
+      return {
+        lost_customer_ltv_cents: 5_000 + Math.floor(Math.random() * 25_000),
+        notified_to:             'sales-cs',
+      }
     default:
       return {}
   }
