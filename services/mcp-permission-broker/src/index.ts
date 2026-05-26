@@ -48,6 +48,36 @@ const JOB_ID            = process.env.NEXUS_JOB_ID ?? ''
 const TIMEOUT_MS        = Number(process.env.BROKER_TIMEOUT_MS ?? 600_000)
 const POLL_MS           = Number(process.env.BROKER_POLL_INTERVAL_MS ?? 1000)
 
+// Audit sink — `/api/audit/tool-call` on the parent Nexus app. Wired by the
+// E3-partial follow-up (task_plan-platform-expansion.md) so every permission
+// decision is searchable from the unified /audit page alongside MCP tool calls.
+const AUDIT_BASE        = (process.env.NEXUS_AUDIT_BASE_URL ?? '').replace(/\/$/, '')
+const AUDIT_TOKEN       = process.env.NEXUS_AUDIT_TOKEN ?? ''
+const AGENT_SLUG        = process.env.NEXUS_AGENT_SLUG ?? 'platform-copilot'
+
+async function recordAudit(payload: Record<string, unknown>): Promise<void> {
+  if (!AUDIT_BASE) return
+  try {
+    await fetch(`${AUDIT_BASE}/api/audit/tool-call`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        ...(AUDIT_TOKEN ? { 'X-Audit-Token': AUDIT_TOKEN } : {}),
+      },
+      body:    JSON.stringify({
+        mcp_server: 'permission-broker',
+        agent_slug: AGENT_SLUG,
+        scope:      'admin',
+        user_id:    OPERATOR_USER_ID,
+        ...payload,
+      }),
+      signal:  AbortSignal.timeout(5_000),
+    })
+  } catch (err) {
+    console.warn('[permission-broker] audit POST failed:', err instanceof Error ? err.message : err)
+  }
+}
+
 function fatal(msg: string): never {
   console.error('[permission-broker] ' + msg)
   process.exit(2)
@@ -213,17 +243,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }))
 
 server.setRequestHandler(CallToolRequestSchema, async req => {
+  const start = Date.now()
+  const args  = (req.params.arguments ?? {}) as Record<string, unknown>
   if (req.params.name !== 'permission_prompt') {
+    await recordAudit({ tool_name: req.params.name, args, result_status: 'error', result: { error: 'unknown tool' }, latency_ms: Date.now() - start })
     return { content: [{ type: 'text', text: JSON.stringify({ behavior: 'deny', message: `unknown tool: ${req.params.name}` }) }] }
   }
-  const a = (req.params.arguments ?? {}) as Record<string, unknown>
+  const a = args
   const toolName  = typeof a.tool_name   === 'string'                    ? a.tool_name   : ''
   const toolInput = (a.input && typeof a.input === 'object')             ? a.input as Record<string, unknown> : {}
   const toolUseId = typeof a.tool_use_id === 'string'                    ? a.tool_use_id : null
   if (!toolName) {
+    await recordAudit({ tool_name: 'permission_prompt', args, result_status: 'error', result: { error: 'missing tool_name' }, latency_ms: Date.now() - start })
     return { content: [{ type: 'text', text: JSON.stringify({ behavior: 'deny', message: 'permission-broker: missing tool_name' }) }] }
   }
   const decision = await brokerPrompt({ toolName, toolInput, toolUseId })
+  // Map the Claude Code permission-prompt decision shape onto the audit
+  // status enum. 'allow' → ok, 'deny' → denied. tool_call_audit's
+  // ToolCallStatus does not have an 'allow' value — 'ok' is the canonical
+  // success row.
+  const auditStatus = decision.behavior === 'allow' ? 'ok' : 'denied'
+  await recordAudit({
+    tool_name:     'permission_prompt',
+    args:          { tool_name: toolName, tool_use_id: toolUseId, input: toolInput },
+    result_status: auditStatus,
+    result:        decision,
+    latency_ms:    Date.now() - start,
+  })
   // Claude Code's --permission-prompt-tool flag expects the decision as
   // a stringified JSON in the tool's `content` (per the SDK docs).
   return { content: [{ type: 'text', text: JSON.stringify(decision) }] }
