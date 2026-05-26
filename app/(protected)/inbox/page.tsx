@@ -26,6 +26,7 @@ import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import InboxClient from '@/components/inbox/InboxClient'
 import type { InboxItem, ApprovalItem, IssueItem, ActivityItem, TaskItem } from '@/components/inbox/types'
+import { listFleetPending } from '@/lib/approvals/fleet'
 import { Inbox as InboxIcon } from 'lucide-react'
 
 const APPROVAL_LIMIT = 50
@@ -93,8 +94,43 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
         payload:          (row.payload ?? null) as Record<string, unknown> | null,
         created_by_agent: (row.created_by_agent ?? null) as string | null,
         created_at:       row.created_at as string,
+        origin:           'operator-task',
       } satisfies ApprovalItem,
     })
+  }
+
+  // ALSO pull chat-emitted approvals via the unified fleet aggregator, so
+  // the inbox approval count matches the dashboard tile. The aggregator
+  // already includes the `approvals` table rows we just pulled above —
+  // we drop those duplicates here via the `kind: 'chat-emitted'` filter.
+  try {
+    const fleet = await listFleetPending(db, userId)
+    for (const f of fleet) {
+      if (f.kind !== 'chat-emitted') continue   // operator-task already loaded above
+      const slug = f.scope.startsWith('business:')
+        ? f.scope.slice('business:'.length)
+        : '__platform'
+      items.push({
+        kind:          'approval',
+        id:            f.message_id,
+        business_slug: slug,
+        created_at:    f.created_at,
+        data: {
+          id:               f.message_id,
+          business_slug:    slug,
+          type:             'chat_request',
+          status:           'pending',
+          payload:          { title: f.approval.title, items: f.approval.items },
+          created_by_agent: null,
+          created_at:       f.created_at,
+          origin:           'chat-emitted',
+          session_id:       f.session_id,
+          approval_id:      f.approval.approval_id,
+        } satisfies ApprovalItem,
+      })
+    }
+  } catch (err) {
+    console.warn('[/inbox] listFleetPending failed:', err instanceof Error ? err.message : err)
   }
   for (const row of (issuesRes.data ?? []) as Array<Record<string, unknown>>) {
     items.push({
