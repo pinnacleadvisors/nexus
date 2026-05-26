@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/oauth-providers'
 import { encryptIfConfigured } from '@/lib/crypto'
 import { audit } from '@/lib/audit'
+import { getInternalBaseUrl } from '@/lib/internal-fetch'
 
 export const runtime = 'nodejs'
 
@@ -48,7 +49,10 @@ export async function GET(
   // Exchange authorization code for access token
   const clientId = process.env[provider.envClientId] ?? ''
   const clientSecret = process.env[`${provider.envClientId.replace('CLIENT_ID', 'CLIENT_SECRET')}`] ?? ''
-  const appUrl = process.env.NEXUS_BASE_URL ?? new URL(req.url).origin
+  // getInternalBaseUrl() reads NEXUS_BASE_URL → VERCEL_URL → localhost.
+  // Avoids CodeQL js/request-forgery by removing the `new URL(req.url).origin`
+  // fallback in favour of env-only resolution.
+  const appUrl = getInternalBaseUrl()
   const redirectUri = `${appUrl}/api/oauth/callback/${providerId}`
 
   try {
