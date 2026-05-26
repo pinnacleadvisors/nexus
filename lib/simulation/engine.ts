@@ -26,6 +26,7 @@ import { generateTimeline, type SimEvent, type BusinessSnapshot } from './timeli
 import { decideApproval, type ApproverPolicy } from './auto-approver'
 import { gradeRun } from './grader'
 import { voiceTemplate, voiceLLM } from './persona-voice'
+import { readCachedVoice, writeCachedVoice } from './voice-cache'
 import { SIM_PERSONAS, type SimulationPersona } from './personas'
 
 const PER_CALL_WALLCLOCK_BUDGET_MS = 25_000
@@ -71,6 +72,7 @@ async function synthesizeOutcome(
   event: SimEvent,
   voiceMode: 'template' | 'llm',
   run: RunRow,
+  db: SupabaseClient,
 ): Promise<Record<string, unknown>> {
   switch (event.kind) {
     case 'inbound_ticket': {
@@ -91,9 +93,21 @@ async function synthesizeOutcome(
         for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19) }
         return ((h >>> 0) % 1_000_000) / 1_000_000
       }
-      const body = voiceMode === 'llm'
-        ? await voiceLLM(persona, ticketSeed)
-        : voiceTemplate(persona, ticketSeed, rng)
+      let body: string
+      if (voiceMode === 'llm') {
+        // Read-through cache. A/B groups pre-populate at startAB time so
+        // all N policies share bodies (single LLM call per event). Solo
+        // LLM runs hit voiceLLM on demand and write-through.
+        const cached = await readCachedVoice(db, run.seed, event.sim_day, event.sim_hour, persona.id)
+        if (cached) {
+          body = cached
+        } else {
+          body = await voiceLLM(persona, ticketSeed)
+          await writeCachedVoice(db, run.seed, event.sim_day, event.sim_hour, persona.id, body)
+        }
+      } else {
+        body = voiceTemplate(persona, ticketSeed, rng)
+      }
       return {
         triaged_to: 'sales-support',
         priority:   1 + Math.floor(Math.random() * 3),
@@ -262,7 +276,7 @@ export async function tickOnce(db: SupabaseClient, runId: string): Promise<TickR
 
   // Non-gate event → process immediately
   const voiceMode = (run.synthetic_voice ?? 'template') as 'template' | 'llm'
-  const outcome   = await synthesizeOutcome(event, voiceMode, run)
+  const outcome   = await synthesizeOutcome(event, voiceMode, run, db)
   await (db.from('simulation_events' as never) as unknown as {
     insert: (r: unknown) => Promise<unknown>
   }).insert({

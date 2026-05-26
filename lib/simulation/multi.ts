@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateTimeline } from './timeline'
+import { precomputeVoicesForSeed } from './voice-cache'
 import type { ApproverPolicy } from './auto-approver'
 
 export interface StartABInput {
@@ -102,6 +103,24 @@ export async function startAB(input: StartABInput): Promise<StartABResult> {
   }).insert(rows).select('id')
   if (insRes.error || !insRes.data) {
     return { ok: false, error: insRes.error?.message ?? 'insert_failed' }
+  }
+
+  // For A/B + LLM voices: pre-compute one body per event up-front so
+  // all N policy runs share. Single LLM call per event regardless of
+  // policy count. Best-effort + fail-soft: if pre-compute errors out,
+  // engines fall back to live voiceLLM() on demand (same UX as solo runs).
+  if (voice === 'llm') {
+    // Fire-and-forget so the route returns fast (operator's UI redirects
+    // to the comparison page; pre-compute fills the cache in the
+    // background; engines hit the cache as they tick).
+    void precomputeVoicesForSeed({
+      db:            input.db,
+      seed:          sharedSeed,
+      compress_days: input.compress_days,
+      business:      bizRes.data,
+    }).catch((err: unknown) => {
+      console.warn('[startAB] voice pre-compute failed (engines will fall back):', err instanceof Error ? err.message : err)
+    })
   }
 
   return {
