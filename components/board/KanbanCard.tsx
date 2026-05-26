@@ -16,14 +16,34 @@ const PRIORITY_COLOR: Record<KanbanCardType['priority'], string> = {
 // ── Asset type detection ──────────────────────────────────────────────────────
 type AssetType = 'github' | 'drive' | 'docs' | 'sheets' | 'pdf' | 'miro' | 'notion' | 'web'
 
+/**
+ * Detect asset type from URL. Uses parsed-URL hostname matching (not raw
+ * substring matching) so `evil.com/github.com/x` doesn't masquerade as
+ * a GitHub asset — fixes CodeQL js/incomplete-url-substring-sanitization.
+ */
 function detectAssetType(url: string): AssetType {
-  if (url.includes('github.com'))                         return 'github'
-  if (url.includes('drive.google.com'))                   return 'drive'
-  if (url.includes('docs.google.com/document'))           return 'docs'
-  if (url.includes('docs.google.com/spreadsheets'))       return 'sheets'
-  if (url.endsWith('.pdf') || url.includes('/pdf/'))      return 'pdf'
-  if (url.includes('miro.com'))                           return 'miro'
-  if (url.includes('notion.so') || url.includes('notion.site')) return 'notion'
+  let host = ''
+  let pathname = ''
+  try {
+    const u = new URL(url)
+    host     = u.hostname.toLowerCase()
+    pathname = u.pathname.toLowerCase()
+  } catch {
+    // Not a parseable URL — fall through to PDF / web defaults below.
+  }
+
+  const hostIs = (target: string) =>
+    host === target || host.endsWith(`.${target}`)
+
+  if (host && hostIs('github.com'))           return 'github'
+  if (host && hostIs('drive.google.com'))     return 'drive'
+  if (host && hostIs('docs.google.com')) {
+    if (pathname.startsWith('/document'))     return 'docs'
+    if (pathname.startsWith('/spreadsheets')) return 'sheets'
+  }
+  if (url.endsWith('.pdf') || pathname.includes('/pdf/')) return 'pdf'
+  if (host && hostIs('miro.com'))             return 'miro'
+  if (host && (hostIs('notion.so') || hostIs('notion.site'))) return 'notion'
   return 'web'
 }
 

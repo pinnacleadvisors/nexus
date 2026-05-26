@@ -61,7 +61,10 @@ function bearerOk(req: NextRequest): boolean {
 }
 
 function slugify(s: string): string {
+  // Cap input length BEFORE regex chain to defeat polynomial-redos worst-
+  // case on adversarial repetition. 1KB is far larger than any real title.
   return s
+    .slice(0, 1024)
     .toLowerCase()
     .replace(/[^\w\s-]/g, '')
     .replace(/\s+/g, '-')

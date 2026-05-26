@@ -63,7 +63,12 @@ export async function fetchDopplerSecrets(names: string[]): Promise<Record<strin
       if (err instanceof ComposioError && err.status === 401) throw err
       if (err instanceof ComposioError && err.status === 403) throw err
       if (process.env.NODE_ENV !== 'production') {
-        console.warn(`[composio-doppler] fetch failed for ${name}:`, err)
+        // Pass the secret name as a separate arg (not template-interpolated)
+        // so CodeQL js/tainted-format-string sees a constant first arg.
+        // Also JSON-encode the value so any '%' characters in adversarial
+        // names don't get misread as printf-style placeholders by upstream
+        // log shippers.
+        console.warn('[composio-doppler] fetch failed for secret:', JSON.stringify(name), err)
       }
     }
   }

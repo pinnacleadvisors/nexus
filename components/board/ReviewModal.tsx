@@ -27,7 +27,11 @@ function isGithubBranchUrl(url?: string): boolean {
   try {
     const clean = url.startsWith('git+') ? url.slice(4) : url
     const u = new URL(clean)
-    if (!u.hostname.endsWith('github.com')) return false
+    // Hostname must be exactly github.com OR a subdomain — endsWith alone
+    // matched `evil.github.com` AND `evilgithub.com`. The `host === target
+    // || host.endsWith('.target')` shape blocks the second case.
+    const host = u.hostname.toLowerCase()
+    if (host !== 'github.com' && !host.endsWith('.github.com')) return false
     if (/\/(tree|pull)\//.test(u.pathname)) return true
     if (u.hash && u.pathname.split('/').filter(Boolean).length === 2) return true
     return false

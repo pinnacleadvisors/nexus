@@ -33,8 +33,26 @@ interface SearchResult {
 }
 
 // ── Markdown renderer (minimal, no deps) ──────────────────────────────────────
+/**
+ * Escape HTML special characters BEFORE the markdown→HTML transforms below.
+ * Without this, a memory document containing `<script>...</script>` would
+ * pass straight through to dangerouslySetInnerHTML — CodeQL js/xss-through-dom.
+ *
+ * The regex transforms below only INTRODUCE whitelisted tags (h1/h2/h3, p,
+ * pre, code, strong, em, hr, li, blockquote, a) — applying them after the
+ * escape keeps them safe because any attacker-injected `<` is already `&lt;`.
+ */
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#39;')
+}
+
 function renderMarkdown(md: string): string {
-  return md
+  return escapeHtml(md)
     // code blocks
     .replace(/```[\w]*\n([\s\S]*?)```/g, '<pre class="md-pre"><code>$1</code></pre>')
     // headings
