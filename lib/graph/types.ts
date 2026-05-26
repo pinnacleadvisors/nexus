@@ -35,6 +35,7 @@ export type EdgeRelation =
   | 'extends'
   | 'links_to'
   | 'references'
+  | 'assigned_to'  // asset → agent edge synthesised from task.assignee strings
 
 // ── Core graph data ───────────────────────────────────────────────────────────
 
@@ -134,4 +135,5 @@ export const EDGE_COLORS: Record<EdgeRelation, string> = {
   extends:    '#ec4899',
   links_to:   '#6c63ff',
   references: '#94a3b8',
+  assigned_to: '#22d3ee',  // cyan — distinguishes synthetic assignee links
 }
