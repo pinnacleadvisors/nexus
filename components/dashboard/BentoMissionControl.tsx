@@ -118,7 +118,9 @@ export default function BentoMissionControl() {
           delta={state.spendDelta}
           loading={state.loading}
           accent="violet"
-          href="/dashboard/experiments"
+          // /dashboard/experiments has only a [slug] sub-route — there's no
+          // index page yet, so an href here 404s on RSC prefetch. Restore
+          // when the experiments index lands (tracked in PR #341 follow-up).
         />
         <StatTile
           icon={Activity}
