@@ -79,6 +79,15 @@ export default function AgentList() {
     [providers],
   )
 
+  /**
+   * Get a recommendation AND apply it as the agent's default model.
+   *
+   * Previously this only displayed the suggestion — the operator had to
+   * then pick it from the dropdown manually. That was confusing ("I
+   * already approved it, why isn't it applied?"). Now Recommend = pick.
+   * If the operator wants to preview without applying, the model
+   * dropdown's "Try" button is still per-turn-only.
+   */
   async function recommendOne(agent: AgentDefinition): Promise<ModelRecommendation | null> {
     setBusyRec(p => ({ ...p, [agent.slug]: true }))
     try {
@@ -90,6 +99,12 @@ export default function AgentList() {
       const j = (await res.json()) as { ok?: boolean; error?: string; recommendation?: ModelRecommendation }
       if (!j.ok || !j.recommendation) throw new Error(j.error ?? 'recommendation failed')
       setRecs(p => ({ ...p, [agent.slug]: j.recommendation! }))
+      // Persist as the new default for this agent. Best-effort; if the
+      // save fails we still surface the recommendation so the operator
+      // can pick manually.
+      if (j.recommendation.model && j.recommendation.model !== agent.model) {
+        await changeModel(agent, j.recommendation.model).catch(() => null)
+      }
       return j.recommendation
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'recommendation failed')

@@ -307,13 +307,17 @@ export async function POST(req: NextRequest) {
       metadata: { ok: cdx.ok, sessionId: sessionRow.id, sessionTag, durationMs: cdx.durationMs, error: cdx.error },
     })
     if (!cdx.ok) {
+      // Return 200 + {ok:false} per retry-storm rule. A real 502 from the
+      // Next.js route gets intercepted by Cloudflare's "502 Bad Gateway"
+      // HTML page which replaces our JSON body, so the operator sees raw
+      // <!DOCTYPE html> instead of the actionable error message.
       return NextResponse.json({
         ok:           false,
         mode:         'codex-direct',
         error:        cdx.error ?? 'codex dispatch failed',
-        fallbackHint: cdx.fallbackHint,
+        fallbackHint: cdx.fallbackHint ?? 'Codex gateway unreachable — try Claude instead, or check /settings → AI Providers for codex-gateway health.',
         code:         'codex_error',
-      }, { status: 502 })
+      })
     }
     return NextResponse.json({
       ok:        true,

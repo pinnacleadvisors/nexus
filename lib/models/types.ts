@@ -18,6 +18,7 @@ export type AiProviderKey =
   | 'meta'
   | 'mistral'
   | 'replicate'
+  | 'openrouter'
 
 /** What sort of work the model is most useful for. Drives recommender pruning. */
 export type ModelCapability =

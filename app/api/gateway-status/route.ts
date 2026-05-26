@@ -36,9 +36,33 @@ interface GatewayStatusResponse {
   gatewayHealthy: boolean
   loggedIn?:      boolean
   queueDepth?:    number
+  /** Codex gateway probe — independent of the Claude path. */
+  codexConfigured: boolean
+  codexHealthy:    boolean
+  /** OpenRouter API key configured — surfaced for the AI Providers list. */
+  openrouterConfigured: boolean
   spentUsd:       number
   capUsd:         number
   scope:          'user' | 'business'
+}
+
+/**
+ * Probe the codex gateway /health endpoint. Independent of the Claude
+ * gateway probe — the codex CLI is its own service (KVM4 post-2026-05-22).
+ * Returns false (not throw) on every error so a transient codex outage
+ * doesn't crash the gateway-status route.
+ */
+async function probeCodex(): Promise<{ configured: boolean; healthy: boolean }> {
+  const url = process.env.CODEX_GATEWAY_URL
+  if (!url) return { configured: false, healthy: false }
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/health`, {
+      signal: AbortSignal.timeout(1500),
+    })
+    return { configured: true, healthy: res.ok }
+  } catch {
+    return { configured: true, healthy: false }
+  }
 }
 
 export async function GET() {
@@ -91,6 +115,13 @@ export async function GET() {
     }
   }
 
+  // ── Codex gateway probe (independent of the Claude probe above) ────────
+  const codex = await probeCodex()
+
+  // ── OpenRouter — env-only check; we don't ping the API to avoid spending
+  //    on a settings-page load.
+  const openrouterConfigured = Boolean(process.env.OPENROUTER_API_KEY)
+
   // ── Spend ──────────────────────────────────────────────────────────────
   const cap = await assertUnderCostCap(userId)
 
@@ -100,6 +131,9 @@ export async function GET() {
     gatewayHealthy,
     loggedIn,
     queueDepth,
+    codexConfigured: codex.configured,
+    codexHealthy:    codex.healthy,
+    openrouterConfigured,
     spentUsd: cap.spentUsd,
     capUsd:   cap.capUsd,
     scope:    cap.scope,

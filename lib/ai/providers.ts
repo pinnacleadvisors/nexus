@@ -182,6 +182,20 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
       credentialsUrl: 'https://console.mistral.ai/api-keys/',
     },
   },
+  {
+    id:       'openrouter',
+    name:     'OpenRouter',
+    tagline:  'One API key, 300+ models. GPT, Claude, Gemini, Llama, DeepSeek, Mixtral — all via a unified router.',
+    accent:   '#a78bfa',
+    icon:     'Sparkles',
+    docsUrl:  'https://openrouter.ai/docs',
+    modes:    ['api'],
+    api: {
+      envVar:         'OPENROUTER_API_KEY',
+      instructions:   'OpenRouter unified-router key. Set LLM_PROVIDER=openrouter in Doppler to default the platform to it; per-call routing picks the model by slug (anthropic/claude-sonnet-4-6, openai/gpt-5, google/gemini-2.5-pro, …). See lib/llm/providers/openrouter.ts.',
+      credentialsUrl: 'https://openrouter.ai/keys',
+    },
+  },
 ] as const
 
 export function getProvider(id: AiProviderKey): AiProvider | undefined {
