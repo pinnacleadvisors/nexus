@@ -102,9 +102,20 @@ function readCachedBusinesses(): BusinessLink[] | null {
 }
 
 function useBusinessesForSidebar(): BusinessLink[] {
-  const [list, setList] = useState<BusinessLink[]>(() => readCachedBusinesses() ?? [])
+  // Start empty on both server + client to avoid hydration mismatch (React
+  // error #418). Reading sessionStorage during initialState made the server
+  // (always []) disagree with the client (could be cached) on hydration.
+  // We restore the cached value inside useEffect AFTER mount instead — the
+  // visible flash is one frame and matches the existing "fetch fresh from
+  // /api/businesses" pattern.
+  const [list, setList] = useState<BusinessLink[]>([])
   useEffect(() => {
     let cancelled = false
+    // Restore the sessionStorage cache first so the sidebar shows known
+    // businesses immediately on navigation, before the network round-trip.
+    const cached = readCachedBusinesses()
+    if (cached && cached.length > 0) setList(cached)
+
     ;(async () => {
       try {
         const res = await fetch('/api/businesses', { cache: 'no-store' })
