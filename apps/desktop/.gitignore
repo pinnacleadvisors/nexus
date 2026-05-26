@@ -1,0 +1,19 @@
+# Tauri build artefacts
+src-tauri/target/
+src-tauri/gen/
+src-tauri/Cargo.lock
+
+# Tauri icon cache (regenerated from public/icon.svg by the release workflow)
+src-tauri/icons/32x32.png
+src-tauri/icons/128x128.png
+src-tauri/icons/128x128@2x.png
+src-tauri/icons/icon.icns
+src-tauri/icons/icon.ico
+src-tauri/icons/icon.png
+
+# Node
+node_modules/
+package-lock.json
+
+# Output
+dist/

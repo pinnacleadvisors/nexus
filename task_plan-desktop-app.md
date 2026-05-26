@@ -74,11 +74,19 @@ The cleanest path is **PWA now + Docker self-host parallel + Tauri later**. Each
 - `POST /api/admin/import` — accepts the tar.gz, restores DB + blobs + decrypts secrets
 - CLI helpers: `nexus export > foo.tar.gz` and `nexus import foo.tar.gz`
 
-### Phase 6 — Tauri wrapper (optional, only if PWA gaps surface)
+### Phase 6 — Tauri wrapper ✅ (PR #387 — scaffolding shipped)
 
-- `apps/desktop/` — Tauri shell with Rust bootstrapper that spawns `next start` on a free port + opens a browser webview at localhost:<port>
-- Auto-updater via Tauri's built-in
-- App-store distribution: brew tap / scoop bucket / AUR / Flatpak
+- `apps/desktop/` — Tauri 2.0 shell wrapping a configurable URL (default `https://nexus.coolifycloudtunnel.uk`).
+- `apps/desktop/src-tauri/{Cargo.toml, tauri.conf.json, src/{main.rs, lib.rs}}` — minimal Rust entrypoint, no custom commands.
+- `apps/desktop/README.md` — develop / build / icons / known limits documented.
+- `.github/workflows/desktop-release.yml` — builds binaries for macOS (universal), Windows (x64), Linux (amd64) on every `desktop-v*` tag. Drafts a GitHub release with installer artefacts.
+- Operator action: run `npx @tauri-apps/cli icon ../../public/icon.svg` once locally OR rely on the release workflow's icon-gen step.
+
+Future v2 (deferred):
+- Auto-updater via `tauri-plugin-updater` (needs a signing key + update server)
+- Per-OS URL config file (`~/.config/nexus/url.txt` etc) so the operator can switch local ↔ Coolify without rebuild
+- Code signing + notarisation (Apple Developer / Microsoft cert)
+- App-store distribution: brew tap / scoop / AUR / Flatpak
 
 ## Open-source local-first stack choices
 
@@ -120,11 +128,11 @@ Phases 2-6 are separate PRs the operator can opt into when ready.
 - [x] LOCAL_MODE env flag stub
 
 ### Remaining (future PRs)
-- [ ] Phase 2 — LOCAL_MODE conditional code paths (skip Clerk / Composio / cron-job.org / Sentry)
-- [ ] Phase 3 — docker-compose.local.yaml + scripts/local-install.sh
-- [ ] Phase 4 — node-cron sidecar
-- [ ] Phase 5 — export-import primitive
-- [ ] Phase 6 — Tauri wrapper (only if PWA proves insufficient)
+- [x] Phase 2 — LOCAL_MODE conditional code paths (PR #382)
+- [x] Phase 3 — docker-compose.local.yaml + scripts/local-install.sh (PR #384)
+- [ ] Phase 4 — node-cron sidecar (replaces cron-job.org for LOCAL_MODE)
+- [x] Phase 5 — export-import primitive (PR #385)
+- [x] Phase 6 — Tauri wrapper scaffolding (PR #387 — first binary release pending operator running icon generator)
 
 ### Open questions
 - Should LOCAL_MODE single-user share user_id with the Coolify deployment for seamless export/import, or use a sentinel local-only id? My take: sentinel `local-operator` + export-rewrite-user-id pass on import. Cleaner audit trail.
