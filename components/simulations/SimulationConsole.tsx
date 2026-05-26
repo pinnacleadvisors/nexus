@@ -12,9 +12,9 @@
  * progress + recent events stay live without WebSockets.
  */
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Play, SkipForward, X, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, Play, SkipForward, X, CheckCircle2, XCircle, Download, Upload } from 'lucide-react'
 
 export interface SimulationRunRow {
   id:                    string
@@ -160,9 +160,33 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     })
   }
 
+  const importRun = (file: File) => {
+    setError(null)
+    startTransition(async () => {
+      try {
+        const text    = await file.text()
+        const payload = JSON.parse(text)
+        const res = await fetch('/api/simulations/import', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ payload, target_slug: slug }),
+        })
+        const body = await res.json() as { ok: boolean; run_id?: string; error?: string }
+        if (!body.ok || !body.run_id) {
+          setError(body.error ?? 'import failed')
+          return
+        }
+        router.refresh()
+        void refresh(body.run_id)
+      } catch (err) {
+        setError(`Import parse failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })
+  }
+
   // ── Render: no run → start form ────────────────────────────────────────────
   if (!run || TERMINAL_STATUSES.has(run.status)) {
-    return <StartForm onStart={start} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
+    return <StartForm onStart={start} onImport={importRun} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
   }
 
   // ── Render: active run ─────────────────────────────────────────────────────
@@ -266,11 +290,12 @@ function EventFeed({ events }: { events: EventRow[] }) {
   )
 }
 
-function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+function StartForm({ onStart, onImport, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; onImport: (file: File) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
   const [mode, setMode]                  = useState<'manual' | 'auto'>('manual')
   const [compress, setCompress]          = useState(30)
   const [budgetSec, setBudgetSec]        = useState(3_600)
   const [policy, setPolicy]              = useState<'permissive' | 'skeptical' | 'random'>('permissive')
+  const fileInputRef                     = useRef<HTMLInputElement>(null)
 
   return (
     <section className="space-y-4">
@@ -320,6 +345,26 @@ function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (m
               New from blank
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={pending}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800/70 disabled:opacity-50"
+            title="Replay a previously exported run (same seed → same timeline)"
+          >
+            <Upload className="h-4 w-4" /> Import…
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) onImport(file)
+              e.target.value = ''   // allow re-selecting the same file
+            }}
+          />
         </div>
       </div>
     </section>
@@ -328,6 +373,7 @@ function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (m
 
 function FinalReport({ run }: { run: SimulationRunRow }) {
   if (!run.result) return null
+  const exportUrl = `/api/simulations/${run.id}/export`
   const r = run.result as {
     events_processed?:    number
     approvals?:           { approved?: number; rejected?: number; auto_approved?: number; auto_rejected?: number }
@@ -344,7 +390,17 @@ function FinalReport({ run }: { run: SimulationRunRow }) {
     <div className="rounded-xl border border-emerald-700/40 bg-emerald-500/5 p-4 text-zinc-200">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-emerald-200">Run finished — {run.status}</h2>
-        <span className="font-mono text-xs text-emerald-300/60">{r.events_processed ?? 0} events · {run.compress_days} sim-days</span>
+        <div className="flex items-center gap-3">
+          <a
+            href={exportUrl}
+            download
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-700/50 bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-200 transition hover:bg-emerald-500/20"
+            title="Download this run as JSON. Re-import elsewhere to replay with identical seed."
+          >
+            <Download className="h-3 w-3" /> Export
+          </a>
+          <span className="font-mono text-xs text-emerald-300/60">{r.events_processed ?? 0} events · {run.compress_days} sim-days</span>
+        </div>
       </div>
       {r.takeaways && r.takeaways.length > 0 && (
         <ul className="mb-3 space-y-1 text-sm">
