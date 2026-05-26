@@ -110,6 +110,23 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     })
   }
 
+  const startAB = (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch('/api/simulations/multi', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_slug: slug, ...opts }),
+      })
+      const body = await res.json() as { ok: boolean; group_id?: string; error?: string }
+      if (!body.ok || !body.group_id) {
+        setError(body.error ?? 'A/B start failed')
+        return
+      }
+      router.push(`/businesses/${slug}/simulate/compare/${body.group_id}`)
+    })
+  }
+
   const tick = () => {
     if (!run) return
     setError(null)
@@ -162,7 +179,7 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
 
   // ── Render: no run → start form ────────────────────────────────────────────
   if (!run || TERMINAL_STATUSES.has(run.status)) {
-    return <StartForm onStart={start} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
+    return <StartForm onStart={start} onStartAB={startAB} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
   }
 
   // ── Render: active run ─────────────────────────────────────────────────────
@@ -266,11 +283,14 @@ function EventFeed({ events }: { events: EventRow[] }) {
   )
 }
 
-function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
-  const [mode, setMode]                  = useState<'manual' | 'auto'>('manual')
+function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; onStartAB: (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+  const [mode, setMode]                  = useState<'manual' | 'auto' | 'ab-compare'>('manual')
   const [compress, setCompress]          = useState(30)
   const [budgetSec, setBudgetSec]        = useState(3_600)
   const [policy, setPolicy]              = useState<'permissive' | 'skeptical' | 'random'>('permissive')
+  const [abPolicies, setAbPolicies]      = useState<Record<'permissive' | 'skeptical' | 'random', boolean>>({ permissive: true, skeptical: true, random: false })
+
+  const abPicked = (['permissive', 'skeptical', 'random'] as const).filter(p => abPolicies[p])
 
   return (
     <section className="space-y-4">
@@ -282,9 +302,10 @@ function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (m
         <div className="mb-3 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
             <span className="text-zinc-400">Mode</span>
-            <select value={mode} onChange={e => setMode(e.target.value as 'manual' | 'auto')} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100">
+            <select value={mode} onChange={e => setMode(e.target.value as 'manual' | 'auto' | 'ab-compare')} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100">
               <option value="manual">Manual (you approve each gate)</option>
               <option value="auto">Auto-pilot (heuristic decides)</option>
+              <option value="ab-compare">A/B compare (run 2-4 policies side-by-side)</option>
             </select>
           </label>
           <label className="text-sm">
@@ -305,16 +326,48 @@ function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (m
               </select>
             </label>
           )}
+          {mode === 'ab-compare' && (
+            <fieldset className="text-sm sm:col-span-2">
+              <legend className="text-zinc-400">Policies to compare (pick 2-4)</legend>
+              <div className="mt-1 flex flex-wrap gap-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2">
+                {(['permissive', 'skeptical', 'random'] as const).map(p => (
+                  <label key={p} className="flex items-center gap-1.5 text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={abPolicies[p]}
+                      onChange={e => setAbPolicies(s => ({ ...s, [p]: e.target.checked }))}
+                      className="h-4 w-4 accent-violet-500"
+                    />
+                    {p}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Same seed across all policies — like backtesting multiple strategies on the same historical bars.
+              </p>
+            </fieldset>
+          )}
         </div>
         {error && <p className="mb-2 text-sm text-rose-400">⚠︎ {error}</p>}
         <div className="flex gap-2">
-          <button
-            onClick={() => onStart(mode, { compress_days: compress, wallclock_budget_sec: budgetSec, approver_policy: mode === 'auto' ? policy : undefined })}
-            disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
-          >
-            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start
-          </button>
+          {mode === 'ab-compare' ? (
+            <button
+              onClick={() => onStartAB({ policies: abPicked, compress_days: compress, wallclock_budget_sec: budgetSec })}
+              disabled={pending || abPicked.length < 2}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+              title={abPicked.length < 2 ? 'Pick at least 2 policies' : `Compare ${abPicked.join(' vs ')}`}
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start A/B ({abPicked.length})
+            </button>
+          ) : (
+            <button
+              onClick={() => onStart(mode as 'manual' | 'auto', { compress_days: compress, wallclock_budget_sec: budgetSec, approver_policy: mode === 'auto' ? policy : undefined })}
+              disabled={pending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start
+            </button>
+          )}
           {lastRun && (
             <button onClick={onReplay} className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800/70">
               New from blank
