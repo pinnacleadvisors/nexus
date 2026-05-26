@@ -73,6 +73,15 @@ const OPERATOR_USER  = process.env.NEXUS_OPERATOR_USER_ID
 const TIMEOUT_MS     = Number(process.env.CODEX_DELEGATE_TIMEOUT_MS ?? 5 * 60_000)
 const POLL_MS        = Number(process.env.CODEX_DELEGATE_POLL_MS    ?? 3_000)
 
+// Audit sink — `/api/audit/tool-call` on the parent Nexus app. Wired by the
+// E3-partial follow-up (task_plan-platform-expansion.md) so every MCP tool
+// invocation lands in the unified `tool_call_audit` table the operator sees
+// at /audit. Soft-fail: when AUDIT_BASE / AUDIT_TOKEN are unset, recordAudit
+// drops the row with a single console.warn rather than throwing.
+const AUDIT_BASE     = (process.env.NEXUS_AUDIT_BASE_URL ?? '').replace(/\/$/, '')
+const AUDIT_TOKEN    = process.env.NEXUS_AUDIT_TOKEN ?? ''
+const AGENT_SLUG     = process.env.NEXUS_AGENT_SLUG ?? 'platform-copilot'
+
 function fatal(msg: string): never {
   console.error('[codex-delegate] ' + msg)
   process.exit(2)
@@ -80,6 +89,23 @@ function fatal(msg: string): never {
 
 if (!GATEWAY_URL) fatal('CODEX_GATEWAY_URL is required')
 if (!BEARER)      fatal('CODEX_GATEWAY_BEARER_TOKEN is required')
+
+async function recordAudit(payload: Record<string, unknown>): Promise<void> {
+  if (!AUDIT_BASE) return
+  try {
+    await fetch(`${AUDIT_BASE}/api/audit/tool-call`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        ...(AUDIT_TOKEN ? { 'X-Audit-Token': AUDIT_TOKEN } : {}),
+      },
+      body:    JSON.stringify({ mcp_server: 'codex-delegate', agent_slug: AGENT_SLUG, scope: 'admin', ...payload }),
+      signal:  AbortSignal.timeout(5_000),
+    })
+  } catch (err) {
+    console.warn('[codex-delegate] audit POST failed:', err instanceof Error ? err.message : err)
+  }
+}
 
 function sign(bodyText: string, secret: string): string {
   return 'sha256=' + createHmac('sha256', secret).update(bodyText).digest('hex')
@@ -243,10 +269,14 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: rawArgs } = request.params
     const args = (rawArgs ?? {}) as Record<string, unknown>
+    const start = Date.now()
 
     if (name === 'delegate_to_codex') {
       const task = String(args.task ?? '').trim()
-      if (!task) throw new Error('task is required')
+      if (!task) {
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'task is required' }, latency_ms: Date.now() - start })
+        throw new Error('task is required')
+      }
       const agent = typeof args.agent === 'string' && args.agent.trim()
         ? args.agent.trim()
         : 'codex-operator'
@@ -263,11 +293,25 @@ async function main() {
           ``,
           out.content || '(codex returned an empty final message — usually means it finished without writing a synthesis)',
         ].join('\n')
+        await recordAudit({
+          tool_name:     name,
+          args:          { task: task.slice(0, 500), agent },
+          result_status: 'ok',
+          result:        { jobId: out.jobId, durationMs: out.durationMs, contentLength: (out.content ?? '').length },
+          latency_ms:    Date.now() - start,
+        })
         return {
           content: [{ type: 'text', text: summary }],
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        await recordAudit({
+          tool_name:     name,
+          args:          { task: task.slice(0, 500), agent },
+          result_status: 'error',
+          result:        { error: msg },
+          latency_ms:    Date.now() - start,
+        })
         return {
           content: [{ type: 'text', text: `Codex delegation failed: ${msg}` }],
           isError: true,
@@ -275,6 +319,7 @@ async function main() {
       }
     }
 
+    await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'unknown tool' }, latency_ms: Date.now() - start })
     throw new Error(`unknown tool: ${name}`)
   })
 

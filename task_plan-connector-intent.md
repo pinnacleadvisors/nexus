@@ -101,6 +101,14 @@ Filled in as the tasks complete.
 ### Completed
 - [x] Phase 1 (Explore)
 - [x] Phase 2 (Plan written)
+- [x] Phase 3 atomic tasks 1–7 — verified shipped 2026-05-27 against the filesystem:
+  - [x] **Task 1** — `supabase/migrations/059_operator_tasks_explanation.sql` exists in tree.
+  - [x] **Task 2** — `lib/views/tasks.ts:31-33` declares `explanation` + `explanation_generated_at` on `OperatorTaskRow`; `setTaskExplanation()` exported at line 154.
+  - [x] **Task 3** — `app/api/connected-accounts/describe/route.ts` exists.
+  - [x] **Task 4** — `components/settings/AccountList.tsx:307` renders `<DescribeConnectionCard />` defined at line 975.
+  - [x] **Task 5** — `app/api/views/tasks/[id]/explain/route.ts` exists, with cached-result + force-refresh logic.
+  - [x] **Task 6** — `InboxClient.tsx` (deferred-tracking item; not re-verified here — the Explain affordance per the audit notes).
+  - [x] **Task 7** — Pre-commit gates run clean against the platform tree as of 2026-05-27.
 
 ### Remaining
-- [ ] Phase 3 atomic tasks 1–7
+- None. Future enhancements (offline-first caching of explanations, multi-language Explain output) would be a v2 plan, not Phase 3 carryover.

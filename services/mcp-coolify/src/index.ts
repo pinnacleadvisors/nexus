@@ -125,6 +125,60 @@ async function recentWriteCount(sinceMs: number): Promise<number> {
 
 type AuditResult = 'success' | 'error' | 'rate_limited' | 'protected_uuid' | 'kill_switch' | 'unauthorized_scope'
 
+// Map coolify's local AuditResult (the original schema) onto the unified
+// tool_call_audit ToolCallStatus enum so the /audit page sees a consistent
+// status across every MCP wrapper. 'success' is the only oddball — local
+// schema predates 'ok' as the canonical success value.
+function mapStatusForToolCallAudit(r: AuditResult): 'ok' | 'error' | 'rate_limited' | 'denied' | 'kill_switch' {
+  if (r === 'success')             return 'ok'
+  if (r === 'protected_uuid')      return 'denied'
+  if (r === 'unauthorized_scope')  return 'denied'
+  return r
+}
+
+// Audit sink — parallel write to `/api/audit/tool-call` on the parent Nexus
+// app. Wired by the E3-partial follow-up (task_plan-platform-expansion.md)
+// so the operator's /audit page sees Coolify alongside every other MCP. The
+// existing coolify_audit_log table stays as-is (its richer schema with
+// target_uuid / args_redacted is useful for the Coolify-only audit UI).
+const AUDIT_BASE    = (process.env.NEXUS_AUDIT_BASE_URL ?? '').replace(/\/$/, '')
+const AUDIT_TOKEN   = process.env.NEXUS_AUDIT_TOKEN ?? ''
+const AGENT_SLUG    = process.env.NEXUS_AGENT_SLUG ?? 'platform-copilot'
+
+async function recordToolCallAudit(input: {
+  action:        string
+  targetUuid:    string | null
+  argsRedacted:  Record<string, unknown>
+  result:        AuditResult
+  errorMessage?: string
+  durationMs?:   number
+}): Promise<void> {
+  if (!AUDIT_BASE) return
+  try {
+    await fetch(`${AUDIT_BASE}/api/audit/tool-call`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        ...(AUDIT_TOKEN ? { 'X-Audit-Token': AUDIT_TOKEN } : {}),
+      },
+      body:    JSON.stringify({
+        mcp_server:    'coolify',
+        agent_slug:    AGENT_SLUG,
+        scope:         SCOPE_STR,
+        user_id:       OPERATOR_USER_ID,
+        tool_name:     input.action,
+        args:          { ...input.argsRedacted, ...(input.targetUuid ? { uuid: input.targetUuid } : {}) },
+        result_status: mapStatusForToolCallAudit(input.result),
+        result:        input.errorMessage ? { error: input.errorMessage.slice(0, 1000) } : { ok: true },
+        latency_ms:    input.durationMs ?? null,
+      }),
+      signal:  AbortSignal.timeout(5_000),
+    })
+  } catch (err) {
+    console.warn('[coolify] tool-call audit POST failed:', err instanceof Error ? err.message : err)
+  }
+}
+
 async function audit(input: { action: string; targetUuid: string | null; argsRedacted: Record<string, unknown>; result: AuditResult; errorMessage?: string; durationMs?: number }) {
   try {
     await sbFetch('/rest/v1/coolify_audit_log', {
@@ -142,6 +196,11 @@ async function audit(input: { action: string; targetUuid: string | null; argsRed
       }),
     })
   } catch (err) { console.error('[coolify/audit]', err instanceof Error ? err.message : err) }
+  // Fire-and-forget the unified tool_call_audit row in parallel — defense in
+  // depth so even when the coolify_audit_log write succeeds, the unified
+  // /audit page sees the same row. Order matters: this MUST come after the
+  // local write so a coolify_audit_log failure doesn't block the call site.
+  void recordToolCallAudit(input)
 }
 
 // ── Coolify REST wrapper ─────────────────────────────────────────────────────

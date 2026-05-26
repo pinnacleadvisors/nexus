@@ -65,6 +65,13 @@ const OPERATOR_USER_ID  = process.env.NEXUS_OPERATOR_USER_ID
   ?? (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0]
   ?? ''
 
+// Audit sink — `/api/audit/tool-call` on the parent Nexus app. Wired by the
+// E3-partial follow-up (task_plan-platform-expansion.md) so every MCP tool
+// invocation lands in the unified `tool_call_audit` table.
+const AUDIT_BASE        = (process.env.NEXUS_AUDIT_BASE_URL ?? '').replace(/\/$/, '')
+const AUDIT_TOKEN       = process.env.NEXUS_AUDIT_TOKEN ?? ''
+const AGENT_SLUG        = process.env.NEXUS_AGENT_SLUG ?? 'platform-copilot'
+
 function fatal(msg: string): never {
   console.error('[composio-admin] ' + msg)
   process.exit(2)
@@ -74,6 +81,29 @@ if (!COMPOSIO_API_KEY) fatal('COMPOSIO_API_KEY is required')
 if (!SUPABASE_URL)     fatal('NEXT_PUBLIC_SUPABASE_URL is required')
 if (!SUPABASE_KEY)     fatal('SUPABASE_SERVICE_ROLE_KEY is required')
 if (!OPERATOR_USER_ID) fatal('NEXUS_OPERATOR_USER_ID or ALLOWED_USER_IDS must be set so we know whose admin scope to load')
+
+async function recordAudit(payload: Record<string, unknown>): Promise<void> {
+  if (!AUDIT_BASE) return
+  try {
+    await fetch(`${AUDIT_BASE}/api/audit/tool-call`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        ...(AUDIT_TOKEN ? { 'X-Audit-Token': AUDIT_TOKEN } : {}),
+      },
+      body:    JSON.stringify({
+        mcp_server: 'composio-admin',
+        agent_slug: AGENT_SLUG,
+        scope:      'admin',
+        user_id:    OPERATOR_USER_ID,
+        ...payload,
+      }),
+      signal:  AbortSignal.timeout(5_000),
+    })
+  } catch (err) {
+    console.warn('[composio-admin] audit POST failed:', err instanceof Error ? err.message : err)
+  }
+}
 
 // ── Admin-scope account loader ───────────────────────────────────────────────
 interface AdminAccount {
@@ -201,32 +231,41 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: rawArgs } = request.params
     const args = (rawArgs ?? {}) as Record<string, unknown>
+    const start = Date.now()
 
     if (name === 'admin_list_connected_platforms') {
+      const platforms = [...accounts.values()].map(a => ({
+        platform:     a.platform,
+        last_used_at: a.last_used_at,
+      }))
+      await recordAudit({ tool_name: name, args, result_status: 'ok', result: { count: platforms.length }, latency_ms: Date.now() - start })
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify(
-            [...accounts.values()].map(a => ({
-              platform:     a.platform,
-              last_used_at: a.last_used_at,
-            })),
-            null, 2,
-          ),
+          text: JSON.stringify(platforms, null, 2),
         }],
       }
     }
 
     if (name === 'admin_list_actions') {
       const platform = String(args.platform ?? '').toLowerCase().trim()
-      if (!platform)              throw new Error('platform is required')
+      if (!platform) {
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'platform is required' }, latency_ms: Date.now() - start })
+        throw new Error('platform is required')
+      }
       const account = accounts.get(platform)
-      if (!account)               throw new Error(`platform '${platform}' is not in admin scope. Connect it at /settings/accounts → Admin first, then redeploy the gateway.`)
+      if (!account) {
+        const error = `platform '${platform}' is not in admin scope. Connect it at /settings/accounts → Admin first, then redeploy the gateway.`
+        await recordAudit({ tool_name: name, args, result_status: 'denied', result: { error }, latency_ms: Date.now() - start })
+        throw new Error(error)
+      }
       try {
         const data = await composioListActions(platform)
+        await recordAudit({ tool_name: name, args, result_status: 'ok', result: { actionCount: Array.isArray(data) ? data.length : undefined }, latency_ms: Date.now() - start })
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: msg }, latency_ms: Date.now() - start })
         return { content: [{ type: 'text', text: `error: ${msg}` }], isError: true }
       }
     }
@@ -234,22 +273,38 @@ async function main() {
     if (name === 'admin_execute_action') {
       const platform = String(args.platform ?? '').toLowerCase().trim()
       const action   = String(args.action ?? '').trim()
-      if (!platform)              throw new Error('platform is required')
-      if (!action)                throw new Error('action is required')
+      // Pass the FULL args envelope (platform/action/args.*) to audit so the
+      // operator can replay what was attempted. The action payload itself is
+      // redacted by lib/audit/tool-call.ts on the receiving side.
+      if (!platform) {
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'platform is required' }, latency_ms: Date.now() - start })
+        throw new Error('platform is required')
+      }
+      if (!action) {
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'action is required' }, latency_ms: Date.now() - start })
+        throw new Error('action is required')
+      }
       const account = accounts.get(platform)
-      if (!account)               throw new Error(`platform '${platform}' is not in admin scope. Connect it at /settings/accounts → Admin first, then redeploy the gateway. Available admin platforms: ${[...accounts.keys()].join(', ') || '(none)'}.`)
+      if (!account) {
+        const error = `platform '${platform}' is not in admin scope. Connect it at /settings/accounts → Admin first, then redeploy the gateway. Available admin platforms: ${[...accounts.keys()].join(', ') || '(none)'}.`
+        await recordAudit({ tool_name: name, args, result_status: 'denied', result: { error }, latency_ms: Date.now() - start })
+        throw new Error(error)
+      }
       try {
         // Pass the operator's Clerk user_id as Composio's entity_id — required
         // by Composio's REST policy (error 1811 otherwise on every write
         // action, including GITHUB_CREATE_A_PULL_REQUEST).
         const data = await composioExecute(action, account.composio_account_id, OPERATOR_USER_ID, args.args)
+        await recordAudit({ tool_name: name, args, result_status: 'ok', result: { platform, action, executed: true }, latency_ms: Date.now() - start })
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: msg }, latency_ms: Date.now() - start })
         return { content: [{ type: 'text', text: `error: ${msg}` }], isError: true }
       }
     }
 
+    await recordAudit({ tool_name: name, args, result_status: 'error', result: { error: 'unknown tool' }, latency_ms: Date.now() - start })
     throw new Error(`unknown tool: ${name}`)
   })
 
