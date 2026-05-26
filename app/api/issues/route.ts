@@ -30,6 +30,27 @@ import { insertIssue } from '@/lib/issues/insert'
 export const runtime    = 'nodejs'
 export const maxDuration = 15
 
+/**
+ * Resolve the canonical internal base URL for same-origin fetches.
+ *
+ * Used in place of `new URL(req.url).origin` to satisfy CodeQL's
+ * js/request-forgery rule — req.url's origin technically depends on the
+ * Host header which is user-influenced. NEXUS_BASE_URL is set in Doppler
+ * (server-side) and never derived from incoming request data.
+ *
+ * Resolution order:
+ *   1. process.env.NEXUS_BASE_URL  (production — set in Doppler)
+ *   2. process.env.VERCEL_URL      (preview deploys, prefix with https://)
+ *   3. http://localhost:<PORT>     (dev fallback)
+ */
+function resolveInternalBaseUrl(): string {
+  const env = process.env.NEXUS_BASE_URL?.trim()
+  if (env) return env.replace(/\/$/, '')
+  const vercel = process.env.VERCEL_URL?.trim()
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+  return `http://localhost:${process.env.PORT?.trim() || '3000'}`
+}
+
 interface PostBody {
   business_slug?: unknown
   title?:         unknown
@@ -112,8 +133,13 @@ export async function POST(req: NextRequest) {
   let dispatched = false
   if (wantsDispatch) {
     try {
-      const origin    = new URL(req.url).origin
-      const dispatchRes = await fetch(`${origin}/api/claude-session/dispatch`, {
+      // SSRF-safe: resolve the dispatch URL from env, NOT from req.url.
+      // CodeQL js/request-forgery flagged the prior `new URL(req.url).origin`
+      // path because Host header is user-controllable in theory. NEXUS_BASE_URL
+      // is set in Doppler and never sourced from the request. Falls back to
+      // localhost only in dev — production must set NEXUS_BASE_URL.
+      const base       = resolveInternalBaseUrl()
+      const dispatchRes = await fetch(`${base}/api/claude-session/dispatch`, {
         method:  'POST',
         headers: {
           'Content-Type': 'application/json',
