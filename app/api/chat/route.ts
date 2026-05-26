@@ -170,7 +170,11 @@ function buildConversationPrompt(messages: UIMessage[], system: SystemModelMessa
   const lines: string[] = [`${system.content}\n\n---`]
   for (const msg of messages) {
     const role = msg.role === 'user' ? 'User' : 'Assistant'
+    // Cap input length BEFORE regex to defeat the CodeQL polynomial-redos
+    // worst-case (long string of fake <milestones> boundaries forcing
+    // backtracking). 100KB is far larger than any real chat message.
     const text = getMessageText(msg)
+      .slice(0, 100_000)
       .replace(/<milestones>[\s\S]*?<\/milestones>/g, '')
       .trim()
     lines.push(`${role}: ${text}`)

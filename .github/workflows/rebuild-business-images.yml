@@ -42,6 +42,14 @@ on:
       - 'services/claude-gateway/package-lock.json'
       - 'services/claude-gateway/src/**'
 
+# Restrict GITHUB_TOKEN to the minimum scope the matrix jobs actually need:
+#   contents: read     — checkout the source
+#   packages: write    — push the built image to ghcr.io
+# Closes CodeQL actions/missing-workflow-permissions.
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   list-businesses:
     runs-on: ubuntu-latest

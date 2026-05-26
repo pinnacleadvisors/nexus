@@ -192,10 +192,25 @@ export async function searchPages(token: string, query: string, limit = 5): Prom
   } catch { return [] }
 }
 
+/**
+ * Validate a Notion page id — 32 hex chars (with optional dashes, lower or
+ * upper). Refuses anything else so a `pageId` like `../../bad` or
+ * `//evil.com/path` can't escape the BASE template. Closes CodeQL
+ * js/request-forgery on the fetch templates below.
+ */
+function sanitizePageId(pageId: string): string {
+  const stripped = pageId.replace(/-/g, '').toLowerCase()
+  if (!/^[0-9a-f]{32}$/.test(stripped)) {
+    throw new Error(`Notion: invalid pageId format (expected 32 hex chars, got: ${pageId.slice(0, 40)})`)
+  }
+  return stripped
+}
+
 /** Get all text content from a page (for RAG injection) */
 export async function getPageContent(token: string, pageId: string): Promise<string> {
   try {
-    const res = await fetch(`${BASE}/blocks/${pageId.replace(/-/g, '')}/children?page_size=100`, {
+    const safe = sanitizePageId(pageId)
+    const res = await fetch(`${BASE}/blocks/${safe}/children?page_size=100`, {
       headers: headers(token),
       signal:  notionSignal(),
     })
@@ -270,7 +285,8 @@ export async function appendBlocks(
   blocks: NotionBlock[],
 ): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/blocks/${pageId}/children`, {
+    const safe = sanitizePageId(pageId)
+    const res = await fetch(`${BASE}/blocks/${safe}/children`, {
       method:  'PATCH',
       headers: headers(token),
       signal:  notionSignal(),

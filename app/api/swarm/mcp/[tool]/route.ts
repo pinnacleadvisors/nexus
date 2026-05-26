@@ -36,10 +36,21 @@ export async function POST(
   const { tool } = await params
   const body = await req.json() as Record<string, unknown>
 
+  // Resolve the internal base URL from server-side env (Doppler-set, never
+  // user-influenced) instead of req.nextUrl.origin so CodeQL
+  // js/request-forgery doesn't flag this same-origin proxy.
+  const internalBase = (() => {
+    const env = process.env.NEXUS_BASE_URL?.trim()
+    if (env) return env.replace(/\/$/, '')
+    const vercel = process.env.VERCEL_URL?.trim()
+    if (vercel) return `https://${vercel.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+    return `http://localhost:${process.env.PORT?.trim() || '3000'}`
+  })()
+
   switch (tool) {
     case 'create_swarm': {
       // Proxy to the dispatch endpoint
-      const dispatchUrl = `${req.nextUrl.origin}/api/swarm/dispatch`
+      const dispatchUrl = `${internalBase}/api/swarm/dispatch`
       const res = await fetch(dispatchUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', cookie: req.headers.get('cookie') ?? '' },
@@ -85,7 +96,11 @@ export async function POST(
     case 'abort_swarm': {
       const swarmId = String(body.swarmId ?? '')
       if (!swarmId) return badRequest('swarmId required')
-      const abortUrl = `${req.nextUrl.origin}/api/swarm/${swarmId}`
+      // Validate swarmId — UUID/slug shape only — so it can't escape the
+      // /api/swarm/ path into another route or off-host. Combined with
+      // the internalBase guard above, this closes CodeQL js/request-forgery.
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(swarmId)) return badRequest('invalid swarmId')
+      const abortUrl = `${internalBase}/api/swarm/${swarmId}`
       const res = await fetch(abortUrl, {
         method:  'DELETE',
         headers: { cookie: req.headers.get('cookie') ?? '' },

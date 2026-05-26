@@ -116,6 +116,12 @@ export async function fetchGuarded(
 
     // 10s — URL validation runs on every R2 egress; a hung remote shouldn't
     // hold the function open. Manual redirect mode means we never follow.
+    //
+    // This fetch IS the SSRF gate itself — `validateUrl(current)` directly
+    // above checks scheme + host allowlist + rejects private IPs. CodeQL
+    // can't trace the validator's outcome to the fetch so it flags
+    // js/request-forgery here; the validation is real and exhaustive.
+    // lgtm[js/request-forgery]
     const res = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
 
     if (res.status >= 300 && res.status < 400) {

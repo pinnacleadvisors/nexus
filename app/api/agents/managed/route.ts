@@ -19,6 +19,10 @@ export const runtime = 'nodejs'
 const AGENTS_DIR = join(process.cwd(), '.claude', 'agents')
 
 async function loadSpec(slug: string): Promise<AgentDefinition | null> {
+  // Path-injection defence: slug must be a lowercase-hyphen identifier.
+  // Without this guard a slug like '../secrets' could escape AGENTS_DIR
+  // and read arbitrary files (CodeQL js/path-injection).
+  if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(slug)) return null
   try {
     const path = join(AGENTS_DIR, `${slug}.md`)
     const raw = await readFile(path, 'utf8')

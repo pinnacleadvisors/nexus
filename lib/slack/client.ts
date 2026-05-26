@@ -228,7 +228,16 @@ export async function postVerification(
     { type: 'context', elements: [{ type: 'mrkdwn', text: channelLine }] },
   ]
   try {
-    const res = await fetch(webhookUrl, {
+    // SSRF defence: Slack webhook URLs MUST be hosted on hooks.slack.com.
+    // Any other host means the operator pasted the wrong value (or it's
+    // a hostile redirect). Refuse to POST.
+    const parsed = new URL(webhookUrl)
+    const host   = parsed.hostname.toLowerCase()
+    if (host !== 'hooks.slack.com' && !host.endsWith('.hooks.slack.com')) {
+      console.warn('[slack] refused webhook on non-Slack host:', host)
+      return { ok: false, status: 0, reason: 'non_slack_host', silent: false }
+    }
+    const res = await fetch(parsed.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({

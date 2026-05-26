@@ -88,8 +88,25 @@ export async function POST(req: NextRequest) {
 
   // Acknowledge inline by updating the original message via response_url.
   // Phase B: persist to a decisions table + advance the Run controller.
+  //
+  // SSRF defence: response_url comes from Slack's signed payload but a
+  // future signature-bypass would let an attacker steer this fetch
+  // anywhere. Pin the host to hooks.slack.com — Slack always uses that
+  // host for response_url. Closes CodeQL js/request-forgery.
   if (payload.response_url) {
-    void fetch(payload.response_url, {
+    let validated: string | null = null
+    try {
+      const u = new URL(payload.response_url)
+      const host = u.hostname.toLowerCase()
+      if (host === 'hooks.slack.com' || host.endsWith('.hooks.slack.com')) {
+        validated = u.toString()
+      }
+    } catch { /* ignore — validated stays null */ }
+    if (!validated) {
+      console.warn('[slack/decision] refused response_url on non-Slack host:', payload.response_url?.slice(0, 80))
+      return NextResponse.json({ ok: true, warning: 'non_slack_response_url' })
+    }
+    void fetch(validated, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

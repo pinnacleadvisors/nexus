@@ -5,6 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Restrict GITHUB_TOKEN — this workflow reads repo contents only. Closes
+# CodeQL actions/missing-workflow-permissions. Writes happen via the
+# separate MEMORY_TOKEN (PAT for the memory-hq repo), not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest

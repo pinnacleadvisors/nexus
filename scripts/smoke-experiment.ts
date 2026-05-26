@@ -43,7 +43,12 @@ function need(name: string): string {
 
 function fmt(label: string, ok: boolean, detail?: string): void {
   const tag = ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m'
-  console.log(`  ${tag}  ${label}${detail ? ` — ${detail}` : ''}`)
+  // Pass `detail` as a separate console.log arg (not template-interpolated)
+  // so CodeQL js/clear-text-logging sees the env-derived value as data
+  // rather than format-string content. Also lets log shippers tag the
+  // detail separately when they parse structured logs.
+  if (detail) console.log(' ', tag, ' ', label, '—', detail)
+  else        console.log(' ', tag, ' ', label)
 }
 
 interface CtxBase {

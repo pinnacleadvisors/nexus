@@ -181,8 +181,24 @@ async function delegateToCodex(task: string, agentSlug: string | null): Promise<
 }
 
 // ── MCP server ───────────────────────────────────────────────────────────────
+
+/** Redact env-sourced strings so they don't land in logs verbatim. */
+function redact(value: string | undefined | null): string {
+  if (!value) return '(unset)'
+  return value.length > 8 ? `${value.slice(0, 6)}…(redacted)` : '(set)'
+}
+
 async function main() {
-  console.error(`[codex-delegate] gateway=${GATEWAY_URL} timeout=${TIMEOUT_MS}ms poll=${POLL_MS}ms operator=${OPERATOR_USER || '(unset)'}`)
+  // Redact env-derived values to satisfy CodeQL js/clear-text-logging — the
+  // prefix is enough for "did it start up with the right gateway?" debugging
+  // without dumping the full URL / operator id to log aggregators.
+  console.error(
+    '[codex-delegate] startup ' +
+    `gateway=${redact(GATEWAY_URL)} ` +
+    `timeout=${TIMEOUT_MS}ms ` +
+    `poll=${POLL_MS}ms ` +
+    `operator=${redact(OPERATOR_USER)}`,
+  )
 
   const server = new Server(
     { name: 'codex-delegate', version: '0.1.0' },

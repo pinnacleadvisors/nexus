@@ -86,7 +86,15 @@ export async function uploadPdfFromUrl(
   opts: { name: string; url: string; folderId?: string },
 ): Promise<DriveFile | null> {
   try {
-    const pdfRes = await fetch(opts.url, { signal: AbortSignal.timeout(30_000) })
+    // SSRF defence: require https + a hostname (rejects file://, http://,
+    // and IP-literal URLs). Caller is expected to validate the asset
+    // origin further before passing — this is the floor, not the ceiling.
+    const parsed = new URL(opts.url)
+    if (parsed.protocol !== 'https:' || !parsed.hostname) {
+      console.warn('[gdrive] refused upload from non-https URL:', parsed.protocol)
+      return null
+    }
+    const pdfRes = await fetch(parsed.toString(), { signal: AbortSignal.timeout(30_000) })
     if (!pdfRes.ok) return null
     const bytes = new Uint8Array(await pdfRes.arrayBuffer())
     return uploadFile(token, {

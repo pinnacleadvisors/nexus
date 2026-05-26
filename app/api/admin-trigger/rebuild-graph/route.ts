@@ -21,10 +21,10 @@ import { guardRequest } from '@/lib/guard'
 import { buildMemoryGraph } from '@/lib/graph/memory-builder'
 import { recordSamples } from '@/lib/observability'
 import { promisify } from 'node:util'
-import { exec as execCb } from 'node:child_process'
+import { execFile as execFileCb } from 'node:child_process'
 import path from 'node:path'
 
-const exec = promisify(execCb)
+const execFile = promisify(execFileCb)
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
@@ -47,9 +47,22 @@ interface CliStep {
   stderr: string
 }
 
-async function runCli(cmd: string, cwd: string): Promise<CliStep> {
+/**
+ * Run the molecularmemory_local CLI without going through a shell.
+ *
+ * Uses `execFile` (NOT `exec`) so each argument is passed as a discrete
+ * value — closes CodeQL js/shell-command-injection-from-environment.
+ * `node` is resolved via PATH; the cli script + sub-command are server-
+ * controlled (built from process.cwd() at the call site).
+ */
+async function runCli(args: string[], cwd: string): Promise<CliStep> {
+  const cmd = `node ${args.join(' ')}`
   try {
-    const { stdout, stderr } = await exec(cmd, { cwd, timeout: 45_000, maxBuffer: 2 * 1024 * 1024 })
+    const { stdout, stderr } = await execFile('node', args, {
+      cwd,
+      timeout: 45_000,
+      maxBuffer: 2 * 1024 * 1024,
+    })
     return { cmd, ok: true, stdout: stdout.slice(-500), stderr: stderr.slice(-500) }
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string }
@@ -98,8 +111,8 @@ export async function POST(req: NextRequest) {
   // Best-effort CLI refresh. If node/cli.mjs is absent (serverless env), skip.
   const steps: CliStep[] = []
   try {
-    steps.push(await runCli(`node ${JSON.stringify(cliPath)} graph`,    cwd))
-    steps.push(await runCli(`node ${JSON.stringify(cliPath)} reindex`,  cwd))
+    steps.push(await runCli([cliPath, 'graph'],   cwd))
+    steps.push(await runCli([cliPath, 'reindex'], cwd))
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[rebuild-graph] CLI step failed:', err)

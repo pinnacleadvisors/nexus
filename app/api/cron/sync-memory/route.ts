@@ -86,6 +86,13 @@ function parseFrontmatter(content: string): ParsedNote {
 }
 
 async function getFile(path: string): Promise<{ content: string; sha: string } | null> {
+  // SSRF defence: path must be a relative repo path. Reject leading slashes
+  // and parent-dir traversal so it can't escape the GitHub-API base into an
+  // attacker-controlled host or read outside the configured repo.
+  // CodeQL js/request-forgery flagged the template below.
+  if (path.startsWith('/') || path.includes('..')) {
+    throw new Error(`getFile: invalid path (rejected leading "/" or "..")`)
+  }
   const res = await fetch(`${BASE}/repos/${repo()}/contents/${encodeURI(path)}`, { headers: ghHeaders() })
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`get ${path} ${res.status}`)

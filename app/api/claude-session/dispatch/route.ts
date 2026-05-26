@@ -116,6 +116,10 @@ function slugIsSafe(slug: string): boolean {
 }
 
 async function specExists(slug: string): Promise<boolean> {
+  // Defence-in-depth — slug should already have passed slugIsSafe at the
+  // route entry. Re-check here so CodeQL js/path-injection can verify
+  // locally that this function never composes an unsafe path.
+  if (!slugIsSafe(slug)) return false
   try {
     await fs.access(path.join(AGENTS_DIR, `${slug}.md`))
     return true
@@ -192,6 +196,9 @@ All tools in the frontmatter map to generic primitives (file read / edit, shell,
 }
 
 async function ensureAgentSpec(args: SpecTemplateArgs): Promise<{ created: boolean; path: string }> {
+  // Re-check slug shape locally — CodeQL js/path-injection wants to see the
+  // guard adjacent to the path.join() call, not "trust me, the caller did it".
+  if (!slugIsSafe(args.slug)) throw new Error(`ensureAgentSpec: unsafe slug "${args.slug}"`)
   const file = path.join(AGENTS_DIR, `${args.slug}.md`)
   if (await specExists(args.slug)) return { created: false, path: file }
 

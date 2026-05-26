@@ -30,7 +30,11 @@ export function parseBranchUrl(raw: string): BranchRef | null {
   if (!raw) return null
   try {
     const url = raw.startsWith('git+') ? new URL(raw.slice(4)) : new URL(raw)
-    if (!url.hostname.endsWith('github.com')) return null
+    // host must EXACTLY equal github.com OR be a subdomain. `endsWith` alone
+    // matched evilgithub.com — close the CodeQL js/incomplete-url-substring-
+    // sanitization gap.
+    const host = url.hostname.toLowerCase()
+    if (host !== 'github.com' && !host.endsWith('.github.com')) return null
     const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/')
     if (parts.length < 2) return null
     const [owner, repo, kind, ...rest] = parts
@@ -57,6 +61,12 @@ interface GhOptions {
 }
 
 async function ghFetch<T>(path: string, opts: GhOptions & { method?: string; body?: unknown } = { token: '' }): Promise<T> {
+  // SSRF defence: path must start with a single '/' and have no '//' prefix
+  // that would escape the GH_API base into an attacker-controlled host.
+  // CodeQL js/request-forgery flagged the prior `${GH_API}${path}` template.
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    throw new Error(`ghFetch: path must start with "/" without leading "//", got: ${path.slice(0, 80)}`)
+  }
   const res = await fetch(`${GH_API}${path}`, {
     method:  opts.method ?? 'GET',
     headers: {
