@@ -16,6 +16,7 @@
 
 import { createServerClient } from '@/lib/supabase'
 import { isLeanMode, leanModeDailyUsdLimit } from '@/lib/lean-mode'
+import { isSimulationBusiness } from '@/lib/simulation/check'
 
 const DEFAULT_USER_DAILY_USD     = 25
 const DEFAULT_BUSINESS_DAILY_USD = 10
@@ -74,6 +75,15 @@ export async function assertUnderCostCap(
   userId: string,
   businessSlug?: string | null,
 ): Promise<CostCapResult> {
+  // Simulation businesses don't count against the operator's real cap — the
+  // RD-Agent chaos harness needs unlimited room to drive synthetic activity
+  // without depleting today's spend budget. We still return the same shape
+  // so callers don't branch; the cap is set to Infinity and scope='user'
+  // (the natural "no business specific cap was tripped" answer).
+  if (businessSlug && await isSimulationBusiness(businessSlug)) {
+    return { ok: true, spentUsd: 0, capUsd: Number.POSITIVE_INFINITY, scope: 'user' }
+  }
+
   // Lean mode collapses the per-business + per-user tiered model into a single
   // global daily cap. The business cap is irrelevant when there's one tenant.
   if (isLeanMode()) {
