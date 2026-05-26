@@ -19,6 +19,7 @@ import BillerSpendCard, { type BillerSpendRow } from '@/components/businesses/Bi
 import BudgetPolicyCard, { type BudgetPolicy } from '@/components/businesses/BudgetPolicyCard'
 import BudgetIncidentCard, { type BudgetIncident } from '@/components/businesses/BudgetIncidentCard'
 import RunNowButton from '@/components/businesses/RunNowButton'
+import GraduateButton from '@/components/businesses/GraduateButton'
 import { ArrowLeft, Goal, ListTodo, ShieldCheck, MessageSquare, Network, Zap } from 'lucide-react'
 
 interface BusinessRow {
@@ -195,13 +196,16 @@ export default async function BusinessDetailPage({ params }: PageProps) {
         <div className="flex flex-wrap items-center gap-2">
           <RunNowButton slug={slug} simulation={Boolean(business.simulation)} />
           {business.simulation && (
-            <Link
-              href={`/businesses/${slug}/simulate`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-700/50 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 transition hover:bg-violet-500/20"
-              title="Hyperbolic chamber: compress 30 sim-days into ~1 hour. Manual or auto-pilot."
-            >
-              <Zap className="h-4 w-4" /> Hyperbolic chamber
-            </Link>
+            <>
+              <Link
+                href={`/businesses/${slug}/simulate`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-700/50 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 transition hover:bg-violet-500/20"
+                title="Hyperbolic chamber: compress 30 sim-days into ~1 hour. Manual or auto-pilot."
+              >
+                <Zap className="h-4 w-4" /> Hyperbolic chamber
+              </Link>
+              <GraduateButton slug={slug} />
+            </>
           )}
           <Link
             href={`/businesses/${slug}/chat`}
