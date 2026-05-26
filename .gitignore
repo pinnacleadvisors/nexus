@@ -61,3 +61,6 @@ memory/*/molecular/.graph.json
 .env.sentry-build-plugin
 .env*.local
 .claude/scheduled_tasks.lock
+
+# Persistent Chrome profile for live-driven E2E sessions
+.claude/profiles/
