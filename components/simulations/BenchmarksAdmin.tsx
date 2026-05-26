@@ -2,12 +2,14 @@
 
 /**
  * Benchmarks admin table + create form. Drives the CRUD APIs at
- * /api/simulations/benchmarks{/[id], /[id]/reset-baseline, /[id]/run-now}.
+ * /api/simulations/benchmarks{/[id], /[id]/reset-baseline, /[id]/run-now,
+ * /[id]/history}.
  */
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Play, Plus, RotateCcw, Trash2, Power } from 'lucide-react'
+import Sparkline from './Sparkline'
 
 export interface BenchmarkRowView {
   id:                   string
@@ -32,6 +34,8 @@ interface SimBusiness {
   name: string
 }
 
+interface HistoryEntry { drift_pct: number | null; ran_at: string }
+
 export default function BenchmarksAdmin({ initialRows, simBusinesses }: { initialRows: BenchmarkRowView[]; simBusinesses: SimBusiness[] }) {
   const router = useRouter()
   const [rows, setRows]     = useState(initialRows)
@@ -39,6 +43,22 @@ export default function BenchmarksAdmin({ initialRows, simBusinesses }: { initia
   const [error, setError]   = useState<string | null>(null)
   const [showForm, setShow] = useState(false)
   const [runningId, setRun] = useState<string | null>(null)
+  // Per-benchmark drift history — fetched on mount + after each Run/Reset.
+  const [history, setHistory] = useState<Record<string, HistoryEntry[]>>({})
+
+  const fetchHistory = async (id: string) => {
+    try {
+      const res  = await fetch(`/api/simulations/benchmarks/${id}/history`, { cache: 'no-store' })
+      const body = await res.json() as { ok: boolean; history?: HistoryEntry[] }
+      if (body.ok && body.history) setHistory(prev => ({ ...prev, [id]: body.history! }))
+    } catch { /* fail silent — sparkline just doesn't render */ }
+  }
+
+  // On mount, pull history for every benchmark in parallel
+  useEffect(() => {
+    rows.forEach(r => { void fetchHistory(r.id) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const refresh = async () => {
     try {
@@ -82,6 +102,7 @@ export default function BenchmarksAdmin({ initialRows, simBusinesses }: { initia
       if (!body.ok) setError(body.error ?? 'run failed')
       setRun(null)
       await refresh()
+      await fetchHistory(id)   // re-pull sparkline series after the new history row landed
       router.refresh()
     })
   }
@@ -128,6 +149,7 @@ export default function BenchmarksAdmin({ initialRows, simBusinesses }: { initia
                 <th className="px-3 py-2">Config</th>
                 <th className="px-3 py-2">Baseline</th>
                 <th className="px-3 py-2">Last run · drift</th>
+                <th className="px-3 py-2">History</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
@@ -159,6 +181,12 @@ export default function BenchmarksAdmin({ initialRows, simBusinesses }: { initia
                     <td className="px-3 py-2 text-xs">
                       <div className={driftClass}>{drift === null ? '—' : `${drift > 0 ? '+' : ''}${drift}%`}</div>
                       {r.last_run_at && <div className="text-[10px] text-zinc-500">{new Date(r.last_run_at).toLocaleString()}</div>}
+                    </td>
+                    <td className="px-3 py-2" title="Drift % over the last 30 runs. Red line = at least one recent value exceeded the threshold.">
+                      <Sparkline
+                        values={(history[r.id] ?? []).map(h => h.drift_pct)}
+                        dangerThreshold={r.drift_threshold_pct}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
