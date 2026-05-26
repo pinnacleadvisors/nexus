@@ -52,7 +52,9 @@ export type Database = {
           created_at: string
           description: string
           env_vars: string[]
+          hooks: Json
           id: string
+          inject_platform_brief: boolean
           model: string
           name: string
           slug: string
@@ -68,7 +70,9 @@ export type Database = {
           created_at?: string
           description: string
           env_vars?: string[]
+          hooks?: Json
           id?: string
+          inject_platform_brief?: boolean
           model?: string
           name: string
           slug: string
@@ -84,7 +88,9 @@ export type Database = {
           created_at?: string
           description?: string
           env_vars?: string[]
+          hooks?: Json
           id?: string
+          inject_platform_brief?: boolean
           model?: string
           name?: string
           slug?: string
@@ -97,6 +103,63 @@ export type Database = {
           version?: number
         }
         Relationships: []
+      }
+      agent_roles: {
+        Row: {
+          assigned_agent_slug: string | null
+          assigned_user_id: string | null
+          business_slug: string | null
+          created_at: string
+          id: string
+          parent_role_id: string | null
+          reports_to_summary: string | null
+          responsibilities: string | null
+          role_title: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          assigned_agent_slug?: string | null
+          assigned_user_id?: string | null
+          business_slug?: string | null
+          created_at?: string
+          id?: string
+          parent_role_id?: string | null
+          reports_to_summary?: string | null
+          responsibilities?: string | null
+          role_title: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          assigned_agent_slug?: string | null
+          assigned_user_id?: string | null
+          business_slug?: string | null
+          created_at?: string
+          id?: string
+          parent_role_id?: string | null
+          reports_to_summary?: string | null
+          responsibilities?: string | null
+          role_title?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_roles_business_slug_fkey"
+            columns: ["business_slug"]
+            isOneToOne: false
+            referencedRelation: "business_operators"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "agent_roles_parent_role_id_fkey"
+            columns: ["parent_role_id"]
+            isOneToOne: false
+            referencedRelation: "agent_roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       agent_templates: {
         Row: {
@@ -389,6 +452,78 @@ export type Database = {
           },
         ]
       }
+      background_tasks: {
+        Row: {
+          cancelled_at: string | null
+          chat_session_id: string | null
+          created_at: string
+          description: string | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          parent_id: string | null
+          payload: Json
+          result: Json | null
+          scope: string
+          started_at: string | null
+          status: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          chat_session_id?: string | null
+          created_at?: string
+          description?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind: string
+          parent_id?: string | null
+          payload?: Json
+          result?: Json | null
+          scope: string
+          started_at?: string | null
+          status?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          chat_session_id?: string | null
+          created_at?: string
+          description?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          parent_id?: string | null
+          payload?: Json
+          result?: Json | null
+          scope?: string
+          started_at?: string | null
+          status?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "background_tasks_chat_session_id_fkey"
+            columns: ["chat_session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "background_tasks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "background_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bug_hunt_findings: {
         Row: {
           branch: string | null
@@ -544,6 +679,8 @@ export type Database = {
           name: string
           niche: string
           parent_org_id: string | null
+          simulation: boolean
+          simulation_seed_at: string | null
           slack_channel: string | null
           slack_webhook_url: string | null
           slack_webhook_url_enc: string | null
@@ -567,6 +704,8 @@ export type Database = {
           name: string
           niche: string
           parent_org_id?: string | null
+          simulation?: boolean
+          simulation_seed_at?: string | null
           slack_channel?: string | null
           slack_webhook_url?: string | null
           slack_webhook_url_enc?: string | null
@@ -590,6 +729,8 @@ export type Database = {
           name?: string
           niche?: string
           parent_org_id?: string | null
+          simulation?: boolean
+          simulation_seed_at?: string | null
           slack_channel?: string | null
           slack_webhook_url?: string | null
           slack_webhook_url_enc?: string | null
@@ -909,6 +1050,30 @@ export type Database = {
         }
         Relationships: []
       }
+      cron_alerts_state: {
+        Row: {
+          id: number
+          last_alert_at: string | null
+          last_red_titles: string[]
+          last_thread_ts: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          last_alert_at?: string | null
+          last_red_titles?: string[]
+          last_thread_ts?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          last_alert_at?: string | null
+          last_red_titles?: string[]
+          last_thread_ts?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       daily_streaks: {
         Row: {
           current_streak: number
@@ -939,6 +1104,42 @@ export type Database = {
           user_id?: string
           xp_today?: number
           xp_total?: number
+        }
+        Relationships: []
+      }
+      departments_custom: {
+        Row: {
+          approval_gates: string[]
+          created_at: string
+          default_ecosystem_kinds: string[]
+          id: string
+          label: string
+          purpose: string
+          roles: string[]
+          slug: string
+          user_id: string
+        }
+        Insert: {
+          approval_gates?: string[]
+          created_at?: string
+          default_ecosystem_kinds?: string[]
+          id?: string
+          label: string
+          purpose: string
+          roles?: string[]
+          slug: string
+          user_id: string
+        }
+        Update: {
+          approval_gates?: string[]
+          created_at?: string
+          default_ecosystem_kinds?: string[]
+          id?: string
+          label?: string
+          purpose?: string
+          roles?: string[]
+          slug?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1676,6 +1877,57 @@ export type Database = {
         }
         Relationships: []
       }
+      mol_edge: {
+        Row: {
+          confidence: number
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision: string | null
+          dst_id: string
+          dst_kind: string
+          id: string
+          pending_approval: boolean
+          predicate: string
+          scope_id: string
+          source: string
+          src_id: string
+          src_kind: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          dst_id: string
+          dst_kind: string
+          id?: string
+          pending_approval?: boolean
+          predicate: string
+          scope_id: string
+          source: string
+          src_id: string
+          src_kind: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision?: string | null
+          dst_id?: string
+          dst_kind?: string
+          id?: string
+          pending_approval?: boolean
+          predicate?: string
+          scope_id?: string
+          source?: string
+          src_id?: string
+          src_kind?: string
+        }
+        Relationships: []
+      }
       mol_entities: {
         Row: {
           body_md: string
@@ -1826,6 +2078,87 @@ export type Database = {
         }
         Relationships: []
       }
+      mol_temporal_node: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          level: number
+          parent_id: string | null
+          scope_id: string
+          source_atom_ids: string[]
+          superseded_by: string | null
+          title: string
+          ts_end: string
+          ts_start: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          level: number
+          parent_id?: string | null
+          scope_id: string
+          source_atom_ids?: string[]
+          superseded_by?: string | null
+          title: string
+          ts_end: string
+          ts_start: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          level?: number
+          parent_id?: string | null
+          scope_id?: string
+          source_atom_ids?: string[]
+          superseded_by?: string | null
+          title?: string
+          ts_end?: string
+          ts_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mol_temporal_node_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "mol_temporal_node"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mol_temporal_node_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "mol_temporal_node"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_notes: {
+        Row: {
+          body: string
+          id: string
+          scope: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          id?: string
+          scope: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          id?: string
+          scope?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       operator_tasks: {
         Row: {
           completed_at: string | null
@@ -1833,6 +2166,8 @@ export type Database = {
           description: string | null
           done: boolean
           due_at: string | null
+          explanation: string | null
+          explanation_generated_at: string | null
           id: string
           scope: string
           source: string
@@ -1846,6 +2181,8 @@ export type Database = {
           description?: string | null
           done?: boolean
           due_at?: string | null
+          explanation?: string | null
+          explanation_generated_at?: string | null
           id?: string
           scope: string
           source?: string
@@ -1859,6 +2196,8 @@ export type Database = {
           description?: string | null
           done?: boolean
           due_at?: string | null
+          explanation?: string | null
+          explanation_generated_at?: string | null
           id?: string
           scope?: string
           source?: string
@@ -1875,6 +2214,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      org_templates: {
+        Row: {
+          blueprint: Json
+          created_at: string
+          id: string
+          name: string
+          niche: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          blueprint: Json
+          created_at?: string
+          id?: string
+          name: string
+          niche?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          blueprint?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          niche?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       plan_patterns: {
         Row: {
@@ -2505,6 +2874,114 @@ export type Database = {
           },
         ]
       }
+      team_members: {
+        Row: {
+          agent_spec_path: string | null
+          borrowed_from_team_id: string | null
+          created_at: string
+          ecosystem_overrides: Json
+          id: string
+          role_slug: string
+          team_id: string
+          tool_budget: string[]
+          tool_budget_override: string[] | null
+        }
+        Insert: {
+          agent_spec_path?: string | null
+          borrowed_from_team_id?: string | null
+          created_at?: string
+          ecosystem_overrides?: Json
+          id?: string
+          role_slug: string
+          team_id: string
+          tool_budget?: string[]
+          tool_budget_override?: string[] | null
+        }
+        Update: {
+          agent_spec_path?: string | null
+          borrowed_from_team_id?: string | null
+          created_at?: string
+          ecosystem_overrides?: Json
+          id?: string
+          role_slug?: string
+          team_id?: string
+          tool_budget?: string[]
+          tool_budget_override?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_borrowed_from_team_id_fkey"
+            columns: ["borrowed_from_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          business_slug: string | null
+          created_at: string
+          department_slug: string
+          ecosystem_bindings: Json
+          expires_at: string | null
+          id: string
+          parent_team_id: string | null
+          status: string
+          template_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_slug?: string | null
+          created_at?: string
+          department_slug: string
+          ecosystem_bindings?: Json
+          expires_at?: string | null
+          id?: string
+          parent_team_id?: string | null
+          status?: string
+          template_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_slug?: string | null
+          created_at?: string
+          department_slug?: string
+          ecosystem_bindings?: Json
+          expires_at?: string | null
+          id?: string
+          parent_team_id?: string | null
+          status?: string
+          template_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_parent_team_id_fkey"
+            columns: ["parent_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "org_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       token_events: {
         Row: {
           agent_id: string | null
@@ -2548,6 +3025,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tool_call_audit: {
+        Row: {
+          agent_slug: string | null
+          approval_id: string | null
+          args_redacted: Json | null
+          business_slug: string | null
+          goal_id: string | null
+          id: string
+          issue_id: string | null
+          latency_ms: number | null
+          mcp_server: string
+          result_excerpt: string | null
+          result_status: string | null
+          run_id: string | null
+          scope: string | null
+          tool_name: string
+          ts: string
+          user_id: string | null
+        }
+        Insert: {
+          agent_slug?: string | null
+          approval_id?: string | null
+          args_redacted?: Json | null
+          business_slug?: string | null
+          goal_id?: string | null
+          id?: string
+          issue_id?: string | null
+          latency_ms?: number | null
+          mcp_server: string
+          result_excerpt?: string | null
+          result_status?: string | null
+          run_id?: string | null
+          scope?: string | null
+          tool_name: string
+          ts?: string
+          user_id?: string | null
+        }
+        Update: {
+          agent_slug?: string | null
+          approval_id?: string | null
+          args_redacted?: Json | null
+          business_slug?: string | null
+          goal_id?: string | null
+          id?: string
+          issue_id?: string | null
+          latency_ms?: number | null
+          mcp_server?: string
+          result_excerpt?: string | null
+          result_status?: string | null
+          run_id?: string | null
+          scope?: string | null
+          tool_name?: string
+          ts?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       user_secrets: {
         Row: {
@@ -2738,6 +3272,7 @@ export type Database = {
           title: string
         }[]
       }
+      pg_exec: { Args: { p_params?: Json; p_sql: string }; Returns: Json }
       release_issue: {
         Args: { p_issue_id: string; p_run_id: string }
         Returns: boolean
