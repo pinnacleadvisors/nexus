@@ -274,7 +274,7 @@ export default function GraphPage() {
           <div className="px-4 py-4 space-y-1" style={{ borderBottom: '1px solid #1a1a2e' }}>
             <div className="flex items-center gap-2">
               <Share2 size={14} style={{ color: '#6c63ff' }} />
-              <h2 className="text-sm font-bold" style={{ color: '#e8e8f0' }}>Knowledge Graph</h2>
+              <h1 className="text-sm font-bold" style={{ color: '#e8e8f0' }}>Knowledge Graph</h1>
             </div>
             {graph && (
               <p className="text-xs" style={{ color: '#55556a' }}>

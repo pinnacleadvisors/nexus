@@ -190,7 +190,7 @@ export default async function BusinessDetailPage({ params }: PageProps) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
-          <MissionPanel mission={business.mission} brandVoice={business.brand_voice} />
+          <MissionPanel slug={business.slug} mission={business.mission} brandVoice={business.brand_voice} />
           <GoalsTreePanel goals={goals} />
         </div>
 
