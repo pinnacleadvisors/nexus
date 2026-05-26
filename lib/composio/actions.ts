@@ -126,6 +126,16 @@ export async function executeBusinessAction(input: ExecuteBusinessActionInput): 
     }
   }
 
+  // LOCAL_MODE — operator runs Nexus as a personal-OS install. Composio
+  // isn't reachable (the broker config lives in Doppler, which local mode
+  // bypasses). Surface a clear error so the calling agent shows a
+  // "connect <platform>" prompt rather than failing on a missing
+  // connected_account lookup that wouldn't make sense locally.
+  const { isLocalMode } = await import('@/lib/platform/local-mode')
+  if (isLocalMode()) {
+    throw new ConnectedAccountMissingError(input.platform, input.businessSlug ?? null)
+  }
+
   const account = await findActiveAccount(input.userId, input.businessSlug, input.platform)
   if (!account) {
     throw new ConnectedAccountMissingError(input.platform, input.businessSlug)

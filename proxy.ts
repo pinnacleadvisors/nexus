@@ -1,6 +1,20 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
 
+/**
+ * Read LOCAL_MODE at module load. When true, the operator is running
+ * Nexus as a personal-OS install (single-user localhost) and Clerk is
+ * intentionally skipped. See task_plan-desktop-app.md Phase 2.
+ *
+ * Inlined here (not via lib/platform/local-mode.ts) so the proxy stays
+ * dependency-free — middleware runs in the Edge runtime and importing
+ * heavyweight server helpers would bloat it.
+ */
+function isLocalMode(): boolean {
+  const v = (process.env.LOCAL_MODE ?? process.env.NEXUS_LOCAL_MODE ?? '').toLowerCase()
+  return v === '1' || v === 'true' || v === 'yes'
+}
+
 const isProtectedRoute = createRouteMatcher([
   '/dashboard(.*)',
   '/forge(.*)',
@@ -46,6 +60,14 @@ const _clerk = clerkMiddleware(async (auth, req) => {
 })
 
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
+  // LOCAL_MODE — personal-OS install. Skip Clerk entirely; treat every
+  // request as the single local operator. The layout + api routes that
+  // call auth() return a sentinel user_id ('local-operator', see
+  // lib/platform/local-mode.ts) instead of crashing.
+  if (isLocalMode()) {
+    return NextResponse.next()
+  }
+
   // If Clerk is not configured at all, pass through cleanly.
   // The layout will render the "Setup Required" page.
   //
