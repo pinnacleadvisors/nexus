@@ -94,12 +94,19 @@ export async function POST(req: NextRequest) {
   // anywhere. Pin the host to hooks.slack.com — Slack always uses that
   // host for response_url. Closes CodeQL js/request-forgery.
   if (payload.response_url) {
-    let validated: string | null = null
+    // SSRF defence: rebuild against a literal host base so CodeQL's
+    // data-flow analysis can see the pin. Parsing the response_url and
+    // checking its hostname is necessary but not sufficient for
+    // js/request-forgery — the analyser doesn't follow validation
+    // through `u.toString()`. Constructing a NEW URL with the literal
+    // `https://hooks.slack.com` base preserves Slack's actual path
+    // (which carries the team + token) while pinning the host.
+    let validated: URL | null = null
     try {
       const u = new URL(payload.response_url)
       const host = u.hostname.toLowerCase()
       if (host === 'hooks.slack.com' || host.endsWith('.hooks.slack.com')) {
-        validated = u.toString()
+        validated = new URL(`${u.pathname}${u.search}`, 'https://hooks.slack.com')
       }
     } catch { /* ignore — validated stays null */ }
     if (!validated) {
