@@ -417,6 +417,15 @@ export async function buildGraph(forceRebuild = false): Promise<GraphData> {
     const { data: tasks } = await (db as unknown as {
       from: (t: string) => { select: (c: string) => { limit: (n: number) => Promise<{ data: TaskRow[] | null }> } }
     }).from('tasks').select('id,title,assignee,project_id,business_slug,created_at').limit(100)
+    // Track which assignee strings we've already minted synthetic agent nodes
+    // for. Assignees are free-text strings on the task row (e.g. "Research
+    // Loop", "n8n maintain") — they describe automation paths that don't
+    // have rows in the `agents` table. Without this, orphan tasks (no
+    // project_id, no business_slug) leave the graph as floating nodes with
+    // zero edges. Synthesising agent-* nodes for unique assignees gives the
+    // operator at least one edge per asset, which is what the /graph view
+    // actually exists to show.
+    const assigneeNodeId = new Map<string, string>()
     for (const t of tasks ?? []) {
       nodes.push({
         id: `asset-${t.id}`, type: 'asset', label: t.title ?? 'Asset',
@@ -428,6 +437,31 @@ export async function buildGraph(forceRebuild = false): Promise<GraphData> {
       }
       if (t.business_slug) {
         edges.push({ id: uid(), source: `asset-${t.id}`, target: `biz-${t.business_slug}`, relation: 'belongs_to', weight: 0.7, createdAt: t.created_at ?? iso() })
+      }
+      // Assignee → synthetic agent node + edge. Stable id from a slug of the
+      // assignee string so repeat assignees collapse onto one node.
+      if (t.assignee && t.assignee.trim().length > 0) {
+        const slug = t.assignee.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60)
+        if (slug) {
+          const agentNodeId = `agent-assignee-${slug}`
+          if (!assigneeNodeId.has(slug)) {
+            assigneeNodeId.set(slug, agentNodeId)
+            nodes.push({
+              id: agentNodeId, type: 'agent', label: t.assignee,
+              metadata: { source: 'task_assignee' },
+              position3d: { x: (Math.random() - 0.5) * 120, y: (Math.random() - 0.5) * 120, z: (Math.random() - 0.5) * 120 },
+              clusterId: 0, pageRank: 0, connections: 0, createdAt: t.created_at ?? iso(),
+            })
+          }
+          edges.push({
+            id: uid(),
+            source:    `asset-${t.id}`,
+            target:    agentNodeId,
+            relation:  'assigned_to',
+            weight:    0.5,
+            createdAt: t.created_at ?? iso(),
+          })
+        }
       }
     }
 
