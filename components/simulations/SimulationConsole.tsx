@@ -92,7 +92,7 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     return () => window.clearInterval(intervalId)
   }, [run, refresh])
 
-  const start = (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => {
+  const start = (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => {
     setError(null)
     startTransition(async () => {
       const res = await fetch('/api/simulations', {
@@ -244,10 +244,11 @@ function EventFeed({ events }: { events: EventRow[] }) {
       <h3 className="mb-3 text-sm font-medium text-zinc-200">Recent activity</h3>
       <ul className="space-y-2">
         {events.slice(0, 20).map(ev => {
-          const p = ev.payload as { persona_name?: string; agent?: string; action_title?: string; gate_kind?: string; source?: string; severity?: string }
+          const p = ev.payload as { persona_name?: string; agent?: string; action_title?: string; gate_kind?: string; source?: string; severity?: string; title?: string }
+          const outcome = (ev.outcome ?? {}) as { body?: string }
           let line: string
           switch (ev.kind) {
-            case 'inbound_ticket':  line = `📩 ticket from ${p.persona_name ?? 'someone'}`; break
+            case 'inbound_ticket':  line = `📩 ${p.persona_name ?? 'someone'} — ${p.title ?? 'ticket'}`; break
             case 'agent_action':    line = `🤖 ${p.agent ?? 'agent'} — ${p.action_title ?? 'action'}`; break
             case 'approval_gate':   line = `🚦 gate [${p.gate_kind ?? '?'}] ${ev.approval_state ?? 'pending'}${ev.approved_by ? ` by ${ev.approved_by}` : ''}`; break
             case 'kpi_snapshot':    line = `📊 EOD snapshot`; break
@@ -255,9 +256,16 @@ function EventFeed({ events }: { events: EventRow[] }) {
             default:                line = ev.kind
           }
           return (
-            <li key={ev.id} className="flex items-center justify-between gap-2 text-sm text-zinc-300">
-              <span className="truncate">{line}</span>
-              <span className="font-mono text-xs text-zinc-500">day {ev.sim_day} · {ev.sim_hour.toFixed(1)}h</span>
+            <li key={ev.id} className="text-sm text-zinc-300">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{line}</span>
+                <span className="font-mono text-xs text-zinc-500">day {ev.sim_day} · {ev.sim_hour.toFixed(1)}h</span>
+              </div>
+              {ev.kind === 'inbound_ticket' && outcome.body && (
+                <p className="ml-6 mt-0.5 text-xs italic text-zinc-500" title={outcome.body}>
+                  {outcome.body.length > 140 ? outcome.body.slice(0, 137) + '…' : outcome.body}
+                </p>
+              )}
             </li>
           )
         })}
@@ -266,11 +274,12 @@ function EventFeed({ events }: { events: EventRow[] }) {
   )
 }
 
-function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
   const [mode, setMode]                  = useState<'manual' | 'auto'>('manual')
   const [compress, setCompress]          = useState(30)
   const [budgetSec, setBudgetSec]        = useState(3_600)
   const [policy, setPolicy]              = useState<'permissive' | 'skeptical' | 'random'>('permissive')
+  const [llmVoices, setLlmVoices]        = useState(false)
 
   return (
     <section className="space-y-4">
@@ -305,11 +314,30 @@ function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (m
               </select>
             </label>
           )}
+          <label className="flex items-start gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={llmVoices}
+              onChange={e => setLlmVoices(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-violet-500"
+            />
+            <span>
+              <span className="text-zinc-200">LLM-generated ticket bodies</span>
+              <span className="ml-1 text-xs text-zinc-500">
+                (~$0.02 per run at default model. Each inbound_ticket gets a 1-2 sentence body in the persona&apos;s voice. Default off; templates stay $0.)
+              </span>
+            </span>
+          </label>
         </div>
         {error && <p className="mb-2 text-sm text-rose-400">⚠︎ {error}</p>}
         <div className="flex gap-2">
           <button
-            onClick={() => onStart(mode, { compress_days: compress, wallclock_budget_sec: budgetSec, approver_policy: mode === 'auto' ? policy : undefined })}
+            onClick={() => onStart(mode, {
+              compress_days:        compress,
+              wallclock_budget_sec: budgetSec,
+              approver_policy:      mode === 'auto' ? policy : undefined,
+              synthetic_voice:      llmVoices ? 'llm' : 'template',
+            })}
             disabled={pending}
             className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
           >
