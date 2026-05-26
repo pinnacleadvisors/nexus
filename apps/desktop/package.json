@@ -1,0 +1,15 @@
+{
+  "name": "nexus-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native desktop shell for Nexus — wraps a Coolify or localhost deployment in a Tauri window. Phase 6 of task_plan-desktop-app.md.",
+  "scripts": {
+    "tauri":  "tauri",
+    "dev":    "tauri dev",
+    "build":  "tauri build",
+    "build:debug": "tauri build --debug"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

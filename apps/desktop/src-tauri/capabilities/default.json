@@ -1,0 +1,9 @@
+{
+  "$schema":     "../gen/schemas/desktop-schema.json",
+  "identifier":  "default",
+  "description": "Default permissions — minimum surface for the URL-wrapper shell. We don't expose any custom Rust commands yet; the Next.js app does everything via HTTPS.",
+  "windows":     ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
