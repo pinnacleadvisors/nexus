@@ -198,14 +198,28 @@ These were in the broader tier list but defer to a future plan once Blocks A-D l
 ### Completed
 - [x] Phase 1 exploration — filesystem-verified that 3 of 6 original Tier-1 items already shipped.
 - [x] Phase 2 plan written.
+- [x] **Block A1** — PR #308 (migration-doc banners) MERGED 2026-05-24 (`gh pr view 308 → state: MERGED, mergedAt: 2026-05-24T08:25:18Z`).
+- [x] **Block B1** — Esc-close on `ViewsPanel` shipped. See `components/chat-views/ViewsPanel.tsx:46-52` (keydown listener calls `onClose` on 'Escape', covers both desktop panel + mobile sheet).
+- [x] **Block B2–B5** — Notes view fully shipped:
+  - `supabase/migrations/056_operator_notes.sql` (or near-equivalent numbering — `operator_notes` table exists with `user_id + scope` unique constraint per the spec)
+  - `app/api/views/notes/route.ts` (GET + PUT with optimistic-concurrency)
+  - `components/chat-views/NotesView.tsx` (debounced 800 ms PUT, conflict banner)
+  - Wired into `ViewsDropdown.tsx` (`{ id: 'notes', label: 'Notes', Icon: StickyNote }` line 40) AND rendered in both `PlatformChat.tsx` (line 1054) + `BusinessChat.tsx` (line 873) on `activeView === 'notes'`.
+- [x] **Block C2–C3** — Stale-card cleanup cron shipped:
+  - `app/api/cron/sweep-orphan-cards/route.ts` — POST + GET (dryRun mode), CRON_SECRET-or-operator-authed, audit-log writes per delete, retry-storm-safe (always 200).
+  - `vercel.json` wires the cron at the planned schedule.
+  - `components/admin/HealthPanel.tsx` exposes the operator-driven preview + confirm-delete UI inside `/manage-platform → Health` (so Block C4 is also done — the "Clean orphans now" button is a section inside HealthPanel, not a separate manage-platform-page edit).
+- [x] **Block C5 (partial)** — `insertTask` helper in `lib/board/insert-task.ts` accepts `idea_id`, `run_id`, `business_slug` with migration-025-missing fail-soft path. Call sites with available lineage stamp it: `app/api/webhooks/n8n/route.ts` (business_slug + run_id), `app/api/webhooks/claw/route.ts` (business_slug + run_id), `app/api/agent/route.ts` (business_slug), `app/api/businesses/route.ts` (business_slug). Remaining call sites (`app/api/n8n/bridge/route.ts`, `app/api/build/research/route.ts`) don't currently have lineage in their body shape — extending those is a future polish, not blocking.
+- [x] **Block D1–D2** — Slack webhook verify shipped:
+  - `lib/slack/client.ts` exports `postVerification()` with detect-hard-fail-vs-silent-fail logic + SSRF defense (host pinned to `hooks.slack.com`).
+  - `app/api/businesses/route.ts` (line 91-132) calls `postVerification` on PATCH when `slack_webhook_url` changes (or `forceVerify`), returns `slack_warning` + `slack_verified` in the response, drops a "🔌 Slack connected" card on first successful verify.
+- [x] **Block D3** — `/settings/businesses` UI surfaces `slack_warning` inline. See `app/(protected)/settings/businesses/page.tsx:21` (`slack_warning?` in `ApiUpsert`) + line 72 reads it into per-slug state.
 
-### Awaiting operator approval
-- [ ] Block A — PR #308 merge + Task #16 RCA
-- [ ] Block B — chat-views V1 (Esc + Notes)
-- [ ] Block C — stale-card cleanup (migration 057 + cron + UI + insert paths)
-- [ ] Block D — Slack webhook verify + auto-card
+### Remaining (genuinely open)
+- [ ] **Block A2** — RCA on the qa-runner 401 against `/api/cron/*`. Tracked under task #16 in the platform task list; root cause hypothesis is qa-runner bearer-token mismatch — needs operator to run a smoke-curl to confirm. Not blocking on code.
+- [ ] **Block C5 (full)** — extend `app/api/n8n/bridge/route.ts` + `app/api/build/research/route.ts` body shapes to accept optional `businessSlug` / `runId` so those insertTask call sites can stamp lineage too. ~50 LOC each. Future polish.
 
-### Open questions
-- Block B Notes: confirm migration number 056 isn't claimed by an in-flight branch I can't see. (Latest in tree: 055_agent_library_hooks.sql.)
-- Block C: should the orphan sweep be soft-delete (set deleted_at) or hard DELETE? Plan defaults to hard DELETE + audit log — matches the original Track 2 spec.
-- Block D: if a business has multiple `slack_webhook_url`s over time (re-paste), do we re-verify each time or only when the value changes? Plan says only when the value changes (PATCH semantics).
+### Closed questions
+- Migration 056 vs 081 conflict: this plan's "056" claim was advisory; in practice migrations 056-058 were never created and the operator_notes table shipped under a later number when the work actually landed. Future plans should claim numbers immediately before commit, not at plan-writing time, to avoid stale reservations.
+- Orphan sweep delete strategy: shipped as hard DELETE with audit-log row per deletion (matches the Track 2 spec; soft-delete via `deleted_at` was the alternative).
+- Slack re-verify cadence: shipped as "only when value changes OR explicit forceVerify=true from a 'Send test' button" (the PATCH-semantics answer).
