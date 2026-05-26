@@ -24,6 +24,7 @@ export type SimEventKind =
   | 'approval_gate'
   | 'kpi_snapshot'
   | 'failure'
+  | 'churn'
 
 export interface SimEvent {
   sim_day:  number          // 0..(compress_days - 1)
@@ -144,9 +145,13 @@ export function generateTimeline(opts: {
       const persona  = SIM_PERSONAS[Math.floor(rng() * SIM_PERSONAS.length)]
       const titles   = TICKET_TITLE_POOL[persona.archetype] ?? TICKET_TITLE_POOL.happy_customer
       const title    = titles[Math.floor(rng() * titles.length)]
+      // v3: each ticket gets a deterministic chain_id so follow-ups +
+      // churn events link back. Same seed → same chain trees.
+      const chainId    = `chain-${day}-${t}`
+      const ticketHour = Number((rng() * 18 + 6).toFixed(2))
       events.push({
         sim_day:  day,
-        sim_hour: Number((rng() * 18 + 6).toFixed(2)),
+        sim_hour: ticketHour,
         kind:     'inbound_ticket',
         payload: {
           persona_id:    persona.id,
@@ -155,8 +160,58 @@ export function generateTimeline(opts: {
           email:         persona.email,
           voice:         persona.voice,
           title,
+          chain_id:      chainId,
+          chain_step:    0,
         },
       })
+
+      // v3 follow-up generation. 40% of tickets get a follow-up
+      // 2-5 days later. press_inquirer + happy_customer skip (one-shot).
+      // churn_threat that DON'T get a follow-up have a 50% churn event.
+      const isOneAndDone = persona.archetype === 'press_inquirer' || persona.archetype === 'happy_customer'
+      const willFollowUp = !isOneAndDone && rng() < 0.4
+      const followUpDay  = day + 2 + Math.floor(rng() * 4)
+
+      if (willFollowUp && followUpDay < opts.compress_days) {
+        const followUpArchetype = (
+          persona.archetype === 'pushy_manager'   ? 'churn_threat'   :
+          persona.archetype === 'discount_seeker' ? 'silent_lurker'  :
+          persona.archetype
+        ) as typeof persona.archetype
+        const fuTitles = TICKET_TITLE_POOL[followUpArchetype] ?? titles
+        events.push({
+          sim_day:  followUpDay,
+          sim_hour: Number(((ticketHour + rng() * 4) % 24).toFixed(2)),
+          kind:     'inbound_ticket',
+          payload: {
+            persona_id:          persona.id,
+            persona_name:        persona.name,
+            archetype:           followUpArchetype,
+            email:                persona.email,
+            voice:                persona.voice,
+            title:                `re: ${fuTitles[Math.floor(rng() * fuTitles.length)]}`,
+            chain_id:             chainId,
+            chain_step:           1,
+            in_response_to_day:   day,
+            in_response_to_hour:  ticketHour,
+          },
+        })
+      } else if (persona.archetype === 'churn_threat' && followUpDay < opts.compress_days && rng() < 0.5) {
+        events.push({
+          sim_day:  followUpDay,
+          sim_hour: 23.5,
+          kind:     'churn',
+          payload: {
+            persona_id:   persona.id,
+            persona_name: persona.name,
+            archetype:    persona.archetype,
+            email:        persona.email,
+            chain_id:     chainId,
+            reason:       'no_response_to_threat',
+            origin_day:   day,
+          },
+        })
+      }
     }
 
     // Agent actions
