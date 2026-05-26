@@ -230,14 +230,21 @@ export async function postVerification(
   try {
     // SSRF defence: Slack webhook URLs MUST be hosted on hooks.slack.com.
     // Any other host means the operator pasted the wrong value (or it's
-    // a hostile redirect). Refuse to POST.
+    // a hostile redirect). We REBUILD the URL from a literal host base so
+    // CodeQL's data-flow analysis can see the pin (parsing + hostname
+    // check alone trips js/request-forgery because the analyser can't
+    // follow validation through string round-trips).
     const parsed = new URL(webhookUrl)
     const host   = parsed.hostname.toLowerCase()
     if (host !== 'hooks.slack.com' && !host.endsWith('.hooks.slack.com')) {
       console.warn('[slack] refused webhook on non-Slack host:', host)
       return { ok: false, status: 0, reason: 'non_slack_host', silent: false }
     }
-    const res = await fetch(parsed.toString(), {
+    // Rebuild against the literal host (port-less, https). The path +
+    // search are the only user-controllable parts at this point; the
+    // host is a constant.
+    const safeUrl = new URL(`${parsed.pathname}${parsed.search}`, 'https://hooks.slack.com')
+    const res = await fetch(safeUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({

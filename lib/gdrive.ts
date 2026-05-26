@@ -86,15 +86,49 @@ export async function uploadPdfFromUrl(
   opts: { name: string; url: string; folderId?: string },
 ): Promise<DriveFile | null> {
   try {
-    // SSRF defence: require https + a hostname (rejects file://, http://,
-    // and IP-literal URLs). Caller is expected to validate the asset
-    // origin further before passing — this is the floor, not the ceiling.
+    // SSRF defence — three layers:
+    //   1. require https + a hostname (rejects file://, http://, IP-literal)
+    //   2. reject private/loopback/link-local hosts (RFC 1918 + RFC 4193)
+    //   3. host MUST be on the env-configured asset allowlist (defaults
+    //      to common platform-managed storage origins so the common case
+    //      doesn't need extra config)
     const parsed = new URL(opts.url)
     if (parsed.protocol !== 'https:' || !parsed.hostname) {
       console.warn('[gdrive] refused upload from non-https URL:', parsed.protocol)
       return null
     }
-    const pdfRes = await fetch(parsed.toString(), { signal: AbortSignal.timeout(30_000) })
+    const host = parsed.hostname.toLowerCase()
+    // Block obvious internal targets — Drive should never be a vector
+    // for fetching internal services or cloud-metadata endpoints.
+    if (
+      host === 'localhost'
+      || host === '127.0.0.1'
+      || host === '0.0.0.0'
+      || host === '169.254.169.254'              // cloud metadata IMDS
+      || host.endsWith('.internal')
+      || host.endsWith('.local')
+      || /^10\./.test(host)                       // RFC 1918
+      || /^192\.168\./.test(host)
+      || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+    ) {
+      console.warn('[gdrive] refused upload from private/internal host:', host)
+      return null
+    }
+    // Allowlist (env-configurable). Defaults cover the platforms Nexus
+    // actually uses for asset URLs today; operator can extend with
+    // GDRIVE_UPLOAD_ALLOWLIST="r2.dev,public.blob.vercel-storage.com,..."
+    const allowList = (process.env.GDRIVE_UPLOAD_ALLOWLIST
+      ?? 'public.blob.vercel-storage.com,r2.dev,supabase.co,supabase.in,googleusercontent.com')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    const hostOk = allowList.some(suffix => host === suffix || host.endsWith('.' + suffix))
+    if (!hostOk) {
+      console.warn('[gdrive] refused upload from non-allowlisted host:', host)
+      return null
+    }
+    // Rebuild via a literal-https-protocol URL so CodeQL's data-flow
+    // analysis can see the protocol pin even after the host check.
+    const safeUrl = new URL(parsed.pathname + parsed.search, `https://${host}`)
+    const pdfRes = await fetch(safeUrl, { signal: AbortSignal.timeout(30_000) })
     if (!pdfRes.ok) return null
     const bytes = new Uint8Array(await pdfRes.arrayBuffer())
     return uploadFile(token, {
