@@ -70,6 +70,22 @@ function poisson(rng: () => number, lambda: number): number {
   return k - 1
 }
 
+// Per-archetype subject-line pool. The body is filled later by the
+// voice generator (lib/simulation/persona-voice.ts) — template or LLM
+// depending on the run's synthetic_voice setting.
+const TICKET_TITLE_POOL: Record<string, string[]> = {
+  happy_customer:     ['thanks 🙌', 'shoutout', 'one thing that worked great'],
+  silent_lurker:      ['quick question on Team plan', 'curious about pricing', 'demo request'],
+  pushy_manager:      ['URGENT: SOC2 questionnaire', 'need this before EOD', 'CEO wants context — pls reply'],
+  confused_newbie:    ['how do I cancel?', 'got charged?? help', 'i thought i was on free'],
+  discount_seeker:    ['black friday discount?', 'non-profit pricing?', 'annual vs monthly?'],
+  churn_threat:       ['THIRD time this happened', 'last warning before I cancel', 'unhappy customer'],
+  integrator_partner: ['follow-up: white-label timeline', 'partnership next steps', 'API quota increase'],
+  press_inquirer:     ['one-line quote for tomorrow\'s piece', 'comment for our Q3 feature', 'background convo?'],
+  support_storm:      ['multiple users blocked on /signup', '/checkout returning 500', 'site down??'],
+  evangelist:         ['product idea: shareable templates', 'community demo idea', 'what if we let users…'],
+}
+
 const AGENT_POOL = [
   'business-operator',
   'engineering-lead',
@@ -125,7 +141,9 @@ export function generateTimeline(opts: {
     // Inbound tickets
     const ticketCount = Math.min(5, poisson(rng, 2))
     for (let t = 0; t < ticketCount; t++) {
-      const persona = SIM_PERSONAS[Math.floor(rng() * SIM_PERSONAS.length)]
+      const persona  = SIM_PERSONAS[Math.floor(rng() * SIM_PERSONAS.length)]
+      const titles   = TICKET_TITLE_POOL[persona.archetype] ?? TICKET_TITLE_POOL.happy_customer
+      const title    = titles[Math.floor(rng() * titles.length)]
       events.push({
         sim_day:  day,
         sim_hour: Number((rng() * 18 + 6).toFixed(2)),
@@ -136,6 +154,7 @@ export function generateTimeline(opts: {
           archetype:     persona.archetype,
           email:         persona.email,
           voice:         persona.voice,
+          title,
         },
       })
     }

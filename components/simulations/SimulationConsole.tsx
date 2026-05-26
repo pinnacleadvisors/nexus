@@ -12,9 +12,9 @@
  * progress + recent events stay live without WebSockets.
  */
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Play, SkipForward, X, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, Play, SkipForward, X, CheckCircle2, XCircle, Download, Upload } from 'lucide-react'
 
 export interface SimulationRunRow {
   id:                    string
@@ -92,7 +92,7 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     return () => window.clearInterval(intervalId)
   }, [run, refresh])
 
-  const start = (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => {
+  const start = (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => {
     setError(null)
     startTransition(async () => {
       const res = await fetch('/api/simulations', {
@@ -177,9 +177,34 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     })
   }
 
+  const importRun = (file: File) => {
+    setError(null)
+    startTransition(async () => {
+      try {
+        const text    = await file.text()
+        const payload = JSON.parse(text)
+        const res = await fetch('/api/simulations/import', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ payload, target_slug: slug }),
+        })
+        const body = await res.json() as { ok: boolean; run_id?: string; error?: string }
+        if (!body.ok || !body.run_id) {
+          setError(body.error ?? 'import failed')
+          return
+        }
+        router.refresh()
+        void refresh(body.run_id)
+      } catch (err) {
+        setError(`Import parse failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })
+  }
+
   // ── Render: no run → start form ────────────────────────────────────────────
   if (!run || TERMINAL_STATUSES.has(run.status)) {
-    return <StartForm onStart={start} onStartAB={startAB} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
+    return <StartForm onStart={start} onStartAB={startAB} onImport={importRun} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
+
   }
 
   // ── Render: active run ─────────────────────────────────────────────────────
@@ -261,10 +286,11 @@ function EventFeed({ events }: { events: EventRow[] }) {
       <h3 className="mb-3 text-sm font-medium text-zinc-200">Recent activity</h3>
       <ul className="space-y-2">
         {events.slice(0, 20).map(ev => {
-          const p = ev.payload as { persona_name?: string; agent?: string; action_title?: string; gate_kind?: string; source?: string; severity?: string }
+          const p = ev.payload as { persona_name?: string; agent?: string; action_title?: string; gate_kind?: string; source?: string; severity?: string; title?: string }
+          const outcome = (ev.outcome ?? {}) as { body?: string }
           let line: string
           switch (ev.kind) {
-            case 'inbound_ticket':  line = `📩 ticket from ${p.persona_name ?? 'someone'}`; break
+            case 'inbound_ticket':  line = `📩 ${p.persona_name ?? 'someone'} — ${p.title ?? 'ticket'}`; break
             case 'agent_action':    line = `🤖 ${p.agent ?? 'agent'} — ${p.action_title ?? 'action'}`; break
             case 'approval_gate':   line = `🚦 gate [${p.gate_kind ?? '?'}] ${ev.approval_state ?? 'pending'}${ev.approved_by ? ` by ${ev.approved_by}` : ''}`; break
             case 'kpi_snapshot':    line = `📊 EOD snapshot`; break
@@ -272,9 +298,16 @@ function EventFeed({ events }: { events: EventRow[] }) {
             default:                line = ev.kind
           }
           return (
-            <li key={ev.id} className="flex items-center justify-between gap-2 text-sm text-zinc-300">
-              <span className="truncate">{line}</span>
-              <span className="font-mono text-xs text-zinc-500">day {ev.sim_day} · {ev.sim_hour.toFixed(1)}h</span>
+            <li key={ev.id} className="text-sm text-zinc-300">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{line}</span>
+                <span className="font-mono text-xs text-zinc-500">day {ev.sim_day} · {ev.sim_hour.toFixed(1)}h</span>
+              </div>
+              {ev.kind === 'inbound_ticket' && outcome.body && (
+                <p className="ml-6 mt-0.5 text-xs italic text-zinc-500" title={outcome.body}>
+                  {outcome.body.length > 140 ? outcome.body.slice(0, 137) + '…' : outcome.body}
+                </p>
+              )}
             </li>
           )
         })}
@@ -283,12 +316,14 @@ function EventFeed({ events }: { events: EventRow[] }) {
   )
 }
 
-function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; onStartAB: (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+function StartForm({ onStart, onStartAB, onImport, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string; synthetic_voice?: 'template' | 'llm' }) => void; onStartAB: (opts: { policies: string[]; compress_days: number; wallclock_budget_sec: number }) => void; onImport: (file: File) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
   const [mode, setMode]                  = useState<'manual' | 'auto' | 'ab-compare'>('manual')
   const [compress, setCompress]          = useState(30)
   const [budgetSec, setBudgetSec]        = useState(3_600)
   const [policy, setPolicy]              = useState<'permissive' | 'skeptical' | 'random'>('permissive')
+  const [llmVoices, setLlmVoices]        = useState(false)
   const [abPolicies, setAbPolicies]      = useState<Record<'permissive' | 'skeptical' | 'random', boolean>>({ permissive: true, skeptical: true, random: false })
+  const fileInputRef                     = useRef<HTMLInputElement>(null)
 
   const abPicked = (['permissive', 'skeptical', 'random'] as const).filter(p => abPolicies[p])
 
@@ -347,6 +382,20 @@ function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { 
               </p>
             </fieldset>
           )}
+          <label className="flex items-start gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={llmVoices}
+              onChange={e => setLlmVoices(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-violet-500"
+            />
+            <span>
+              <span className="text-zinc-200">LLM-generated ticket bodies</span>
+              <span className="ml-1 text-xs text-zinc-500">
+                (~$0.02 per run at default model. Each inbound_ticket gets a 1-2 sentence body in the persona&apos;s voice. Default off; templates stay $0.)
+              </span>
+            </span>
+          </label>
         </div>
         {error && <p className="mb-2 text-sm text-rose-400">⚠︎ {error}</p>}
         <div className="flex gap-2">
@@ -361,7 +410,12 @@ function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { 
             </button>
           ) : (
             <button
-              onClick={() => onStart(mode as 'manual' | 'auto', { compress_days: compress, wallclock_budget_sec: budgetSec, approver_policy: mode === 'auto' ? policy : undefined })}
+              onClick={() => onStart(mode as 'manual' | 'auto', {
+                compress_days:        compress,
+                wallclock_budget_sec: budgetSec,
+                approver_policy:      mode === 'auto' ? policy : undefined,
+                synthetic_voice:      llmVoices ? 'llm' : 'template',
+              })}
               disabled={pending}
               className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
             >
@@ -373,6 +427,26 @@ function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { 
               New from blank
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={pending}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800/70 disabled:opacity-50"
+            title="Replay a previously exported run (same seed → same timeline)"
+          >
+            <Upload className="h-4 w-4" /> Import…
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) onImport(file)
+              e.target.value = ''   // allow re-selecting the same file
+            }}
+          />
         </div>
       </div>
     </section>
@@ -381,6 +455,7 @@ function StartForm({ onStart, onStartAB, pending, error, lastRun, onReplay }: { 
 
 function FinalReport({ run }: { run: SimulationRunRow }) {
   if (!run.result) return null
+  const exportUrl = `/api/simulations/${run.id}/export`
   const r = run.result as {
     events_processed?:    number
     approvals?:           { approved?: number; rejected?: number; auto_approved?: number; auto_rejected?: number }
@@ -397,7 +472,17 @@ function FinalReport({ run }: { run: SimulationRunRow }) {
     <div className="rounded-xl border border-emerald-700/40 bg-emerald-500/5 p-4 text-zinc-200">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-emerald-200">Run finished — {run.status}</h2>
-        <span className="font-mono text-xs text-emerald-300/60">{r.events_processed ?? 0} events · {run.compress_days} sim-days</span>
+        <div className="flex items-center gap-3">
+          <a
+            href={exportUrl}
+            download
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-700/50 bg-emerald-500/10 px-2 py-1 font-mono text-xs text-emerald-200 transition hover:bg-emerald-500/20"
+            title="Download this run as JSON. Re-import elsewhere to replay with identical seed."
+          >
+            <Download className="h-3 w-3" /> Export
+          </a>
+          <span className="font-mono text-xs text-emerald-300/60">{r.events_processed ?? 0} events · {run.compress_days} sim-days</span>
+        </div>
       </div>
       {r.takeaways && r.takeaways.length > 0 && (
         <ul className="mb-3 space-y-1 text-sm">

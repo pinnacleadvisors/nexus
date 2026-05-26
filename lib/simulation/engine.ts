@@ -25,6 +25,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateTimeline, type SimEvent, type BusinessSnapshot } from './timeline'
 import { decideApproval, type ApproverPolicy } from './auto-approver'
 import { gradeRun } from './grader'
+import { voiceTemplate, voiceLLM } from './persona-voice'
+import { SIM_PERSONAS, type SimulationPersona } from './personas'
 
 const PER_CALL_WALLCLOCK_BUDGET_MS = 25_000
 const MAX_EVENTS_PER_CALL          = 5_000
@@ -44,6 +46,7 @@ interface RunRow {
   current_event_idx:     number
   total_events:          number
   started_at:            string | null
+  synthetic_voice:       'template' | 'llm' | null
 }
 
 async function loadRun(db: SupabaseClient, runId: string): Promise<RunRow | null> {
@@ -64,10 +67,39 @@ function regenerateTimeline(run: RunRow, biz: BusinessSnapshot | null): SimEvent
   return generateTimeline({ seed: run.seed, compress_days: run.compress_days, business: biz })
 }
 
-function synthesizeOutcome(event: SimEvent): Record<string, unknown> {
+async function synthesizeOutcome(
+  event: SimEvent,
+  voiceMode: 'template' | 'llm',
+  run: RunRow,
+): Promise<Record<string, unknown>> {
   switch (event.kind) {
-    case 'inbound_ticket':
-      return { triaged_to: 'sales-support', priority: 1 + Math.floor(Math.random() * 3) }
+    case 'inbound_ticket': {
+      const payload = event.payload as { persona_id?: string; archetype?: string; title?: string }
+      const persona = SIM_PERSONAS.find(p => p.id === payload.persona_id)
+        ?? ({ id: 'unknown', name: 'Anon', email: 'anon@example.org', archetype: 'happy_customer', notes: '', weight: 1, voice: 'casual' } as SimulationPersona)
+      const ticketSeed = {
+        title:     String(payload.title ?? 'general inquiry'),
+        archetype: persona.archetype,
+        sim_day:   event.sim_day,
+        sim_hour:  event.sim_hour,
+      }
+      // Use a tiny per-event RNG seeded from run.seed + indices so the
+      // template scramble is deterministic across replays.
+      const rng = () => {
+        const seed = `${run.seed}:t:${event.sim_day}:${event.sim_hour}`
+        let h = 1779033703 ^ seed.length
+        for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19) }
+        return ((h >>> 0) % 1_000_000) / 1_000_000
+      }
+      const body = voiceMode === 'llm'
+        ? await voiceLLM(persona, ticketSeed)
+        : voiceTemplate(persona, ticketSeed, rng)
+      return {
+        triaged_to: 'sales-support',
+        priority:   1 + Math.floor(Math.random() * 3),
+        body,
+      }
+    }
     case 'agent_action':
       return {
         dispatched:           false,
@@ -93,6 +125,7 @@ export interface StartRunInput {
   compress_days:        number
   wallclock_budget_sec: number
   approver_policy?:     ApproverPolicy
+  synthetic_voice?:     'template' | 'llm'
 }
 
 export interface StartRunResult {
@@ -133,6 +166,7 @@ export async function startRun(input: StartRunInput): Promise<StartRunResult> {
     status:               'running',
     total_events:         timeline.length,
     started_at:           new Date().toISOString(),
+    synthetic_voice:      input.synthetic_voice ?? 'template',
   }).select('id').single()
   if (ins.error || !ins.data) return { ok: false, error: ins.error?.message ?? 'insert_failed' }
 
@@ -227,6 +261,8 @@ export async function tickOnce(db: SupabaseClient, runId: string): Promise<TickR
   }
 
   // Non-gate event → process immediately
+  const voiceMode = (run.synthetic_voice ?? 'template') as 'template' | 'llm'
+  const outcome   = await synthesizeOutcome(event, voiceMode, run)
   await (db.from('simulation_events' as never) as unknown as {
     insert: (r: unknown) => Promise<unknown>
   }).insert({
@@ -235,7 +271,7 @@ export async function tickOnce(db: SupabaseClient, runId: string): Promise<TickR
     sim_hour: event.sim_hour,
     kind:     event.kind,
     payload:  event.payload,
-    outcome:  synthesizeOutcome(event),
+    outcome,
   })
   await (db.from('simulation_runs' as never) as unknown as {
     update: (r: unknown) => { eq: (c: string, v: string) => Promise<unknown> }

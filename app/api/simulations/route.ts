@@ -20,6 +20,7 @@ interface StartBody {
   compress_days?:        number
   wallclock_budget_sec?: number
   approver_policy?:      'permissive' | 'skeptical' | 'random'
+  synthetic_voice?:      'template' | 'llm'
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const db = createServerClient()
   if (!db) return NextResponse.json({ ok: false, error: 'supabase_unconfigured' })
 
+  const synthetic_voice = body.synthetic_voice === 'llm' ? 'llm' : 'template'
+
   const out = await startRun({
     db,
     userId:               g.userId,
@@ -48,6 +51,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     compress_days,
     wallclock_budget_sec,
     approver_policy:      body.approver_policy,
+    synthetic_voice,
   })
 
   return NextResponse.json(out)
