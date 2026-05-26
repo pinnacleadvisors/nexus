@@ -5,16 +5,24 @@
  *
  * Lists every skill installed at .claude/skills/<name>/SKILL.md. Each row
  * shows the slug, the operator-friendly name, the description from the
- * frontmatter, and a status pill (verified vs draft). Hand-curated skills
- * land as `verified`; skill-trainer auto-generated drafts await operator
- * promotion.
+ * frontmatter, and a status pill (verified vs draft).
  *
- * Read-only for V1. Future affordances: invocations counter, promote-to-
- * verified button, last-used timestamp (needs a skill_invocations table).
+ * Hand-curated skills land as `verified`; the `skill-trainer` agent's
+ * auto-generated outputs land as `draft` and await operator promotion. The
+ * Promote button in this list calls POST /api/skills/[slug]/promote which
+ * flips `status: draft → verified` in the SKILL.md frontmatter on disk —
+ * operator commits + redeploys for the change to persist past container
+ * rebuilds (the SKILL.md tree lives in `.claude/skills/` which is built
+ * into the image, not mounted).
+ *
+ * Lean-mode Task 17 follow-up (task_plan-lean-mode.md "Board UI integration
+ * for skill promote" remaining item). Lives in the Settings → Skills tab
+ * instead of the Board ReviewModal — closer to where draft skills naturally
+ * surface and matches the per-skill model-recommend affordance from PR #388.
  */
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles, Wand2, X } from 'lucide-react'
+import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles, Wand2, X, ShieldCheck } from 'lucide-react'
 
 interface SkillRow {
   slug:           string
@@ -59,6 +67,7 @@ export default function SkillsList() {
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState<string | null>(null)
   const [busyRec, setBusyRec] = useState<Record<string, boolean>>({})
+  const [busyPromote, setBusyPromote] = useState<Record<string, boolean>>({})
   const [, startTx]           = useTransition()
 
   const load = useCallback(async () => {
@@ -125,6 +134,35 @@ export default function SkillsList() {
       const body = await res.json() as { ok: boolean; error?: string }
       if (!body.ok) setErr(body.error ?? 'clear failed')
       await load()
+    })
+  }, [load])
+
+  // Promote a draft skill to `verified`. The route patches SKILL.md
+  // frontmatter on disk; the operator must commit + redeploy for the change
+  // to outlive the next container rebuild. confirm() makes that contract
+  // explicit so a stray click doesn't surprise-promote a half-baked skill.
+  const promote = useCallback((skill: SkillRow) => {
+    if (typeof window !== 'undefined' && !window.confirm(
+      `Promote '${skill.slug}' from draft → verified?\n\nThis edits SKILL.md on disk. Commit + redeploy to persist past the next container rebuild.`,
+    )) return
+    setErr(null)
+    setBusyPromote(p => ({ ...p, [skill.slug]: true }))
+    startTx(async () => {
+      try {
+        const res  = await fetch(`/api/skills/${encodeURIComponent(skill.slug)}/promote`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({}),
+        })
+        const body = await res.json() as { ok: boolean; status?: string; error?: string }
+        if (!body.ok) {
+          setErr(body.error ?? 'promote failed')
+          return
+        }
+        await load()
+      } finally {
+        setBusyPromote(p => ({ ...p, [skill.slug]: false }))
+      }
     })
   }, [load])
 
@@ -202,8 +240,10 @@ export default function SkillsList() {
               key={s.slug}
               skill={s}
               busyRec={Boolean(busyRec[s.slug])}
+              busyPromote={Boolean(busyPromote[s.slug])}
               onRecommend={() => recommend(s)}
               onClearOverride={() => clearOverride(s)}
+              onPromote={() => promote(s)}
             />
           ))}
         </div>
@@ -212,11 +252,13 @@ export default function SkillsList() {
   )
 }
 
-function SkillCard({ skill, busyRec, onRecommend, onClearOverride }: {
+function SkillCard({ skill, busyRec, busyPromote, onRecommend, onClearOverride, onPromote }: {
   skill:           SkillRow
   busyRec:         boolean
+  busyPromote:     boolean
   onRecommend:     () => void
   onClearOverride: () => void
+  onPromote:       () => void
 }) {
   const verified = skill.status === 'verified'
   return (
@@ -265,10 +307,28 @@ function SkillCard({ skill, busyRec, onRecommend, onClearOverride }: {
               verified
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono"
-              style={{ background: 'rgba(251,191,36,0.10)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.22)' }}>
-              draft
-            </span>
+            <>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono"
+                style={{ background: 'rgba(251,191,36,0.10)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.22)' }}>
+                draft
+              </span>
+              <button
+                type="button"
+                onClick={onPromote}
+                disabled={busyPromote}
+                title="Flip SKILL.md frontmatter status: draft → verified. The skill becomes invokable by the routing layer. Commit + redeploy to persist."
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono transition"
+                style={{
+                  background: 'rgba(74,222,128,0.10)',
+                  color:      '#86efac',
+                  border:     '1px solid rgba(74,222,128,0.25)',
+                  opacity:    busyPromote ? 0.5 : 1,
+                }}
+              >
+                {busyPromote ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
+                Promote
+              </button>
+            </>
           )}
         </div>
       </div>

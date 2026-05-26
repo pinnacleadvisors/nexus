@@ -209,6 +209,15 @@ export async function POST(req: NextRequest) {
     description:      string
     businessContext?: string
     projectId?:       string
+    /** Optional lineage stamps for the board card insertTask call at the
+     *  bottom of this handler. Plumbed into tasks.business_slug / .run_id /
+     *  .idea_id when provided, so the orphan-card sweep can detect bridged
+     *  cards whose parent business/run/idea has been deleted. Backwards-
+     *  compatible: every field is optional. Block C5 lineage stamping
+     *  follow-up from task_plan-this-week.md. */
+    businessSlug?:    string
+    runId?:           string
+    ideaId?:          string
   }
 
   if (!body.description?.trim()) {
@@ -304,13 +313,20 @@ export async function POST(req: NextRequest) {
 
     // Use insertTask so a missing migration 025 doesn't 5xx this endpoint
     // (n8n bridge routes can be invoked from auto-retried workflow steps).
+    // Lineage stamps (business_slug / run_id / idea_id) are passed when the
+    // caller supplies them so the orphan-card sweep can detect bridged
+    // cards whose parent has been deleted. insertTask's fail-soft path
+    // drops the new columns silently when migration 025 isn't applied.
     await insertTask(db, {
-      title:       cardTitle,
-      description: details,
-      column_id:   'backlog',
-      priority:    plan.hybridRequired ? 'high' : 'medium',
-      project_id:  body.projectId ?? null,
-      position:    0,
+      title:         cardTitle,
+      description:   details,
+      column_id:     'backlog',
+      priority:      plan.hybridRequired ? 'high' : 'medium',
+      project_id:    body.projectId ?? null,
+      business_slug: body.businessSlug?.trim() || null,
+      run_id:        body.runId?.trim()        || null,
+      idea_id:       body.ideaId?.trim()       || null,
+      position:      0,
     }).then(({ error }) => {
       if (error) console.error('[n8n/bridge] board card:', error.message)
     })
