@@ -59,10 +59,32 @@ export interface TaskItem {
   created_at:  string
 }
 
-export type InboxKind = 'approval' | 'issue' | 'activity' | 'task'
+/**
+ * Read-only system alert — cron failing, run stalled, budget kill-switch
+ * fired. Sibling to the dashboard surface added in PR #370. Auto-clears
+ * when the underlying source recovers (no operator action needed).
+ *
+ *   - source:   discriminator for the icon + colour
+ *   - title:    human-readable headline
+ *   - meta:     short subtitle (e.g. "$50.00 / $50.00 cap")
+ *   - href:     deep link to investigate (e.g. /cron-health,
+ *               /businesses/<slug>/simulate, /api/health/deep)
+ */
+export interface SystemAlertItem {
+  id:          string
+  source:      'cron-alert' | 'stalled-run' | 'budget-incident'
+  scope:       string         // 'admin' | 'business:<slug>'
+  title:       string
+  meta:        string | null
+  href:        string | null
+  created_at:  string
+}
+
+export type InboxKind = 'approval' | 'issue' | 'activity' | 'task' | 'system-alert'
 
 export type InboxItem =
-  | { kind: 'approval'; id: string; business_slug: string; created_at: string; data: ApprovalItem }
-  | { kind: 'issue';    id: string; business_slug: string; created_at: string; data: IssueItem }
-  | { kind: 'activity'; id: string; business_slug: string; created_at: string; data: ActivityItem }
-  | { kind: 'task';     id: string; business_slug: string; created_at: string; data: TaskItem }
+  | { kind: 'approval';     id: string; business_slug: string; created_at: string; data: ApprovalItem }
+  | { kind: 'issue';        id: string; business_slug: string; created_at: string; data: IssueItem }
+  | { kind: 'activity';     id: string; business_slug: string; created_at: string; data: ActivityItem }
+  | { kind: 'task';         id: string; business_slug: string; created_at: string; data: TaskItem }
+  | { kind: 'system-alert'; id: string; business_slug: string; created_at: string; data: SystemAlertItem }

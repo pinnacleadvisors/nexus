@@ -25,8 +25,9 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import InboxClient from '@/components/inbox/InboxClient'
-import type { InboxItem, ApprovalItem, IssueItem, ActivityItem, TaskItem } from '@/components/inbox/types'
+import type { InboxItem, ApprovalItem, IssueItem, ActivityItem, TaskItem, SystemAlertItem } from '@/components/inbox/types'
 import { listFleetPending } from '@/lib/approvals/fleet'
+import { loadAllSystemAlerts } from '@/lib/approvals/system-alerts'
 import { Inbox as InboxIcon } from 'lucide-react'
 
 const APPROVAL_LIMIT = 50
@@ -185,6 +186,50 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
         created_at:    row.created_at as string,
       } satisfies ActivityItem,
     })
+  }
+
+  // System alerts (cron / stalled runs / budget incidents) — sibling
+  // surface to PR #370's dashboard widget; we map FleetPendingItem-shaped
+  // alerts back into the inbox's `system-alert` kind so the operator's
+  // standalone /inbox page also shows them.
+  try {
+    const sys = await loadAllSystemAlerts(db, userId)
+    for (const f of sys) {
+      // f.kind is one of cron-alert | stalled-run | budget-incident
+      const source = f.kind as SystemAlertItem['source']
+      const business_slug = f.scope.startsWith('business:')
+        ? f.scope.slice('business:'.length)
+        : '__platform'
+      let href: string | null = null
+      let meta: string | null = null
+      if (source === 'cron-alert') {
+        href = '/cron-health'
+        meta = 'Check the cron — failing for long enough to risk auto-disable.'
+      } else if (source === 'stalled-run') {
+        href = business_slug === '__platform' ? null : `/businesses/${business_slug}/simulate`
+        meta = `Stalled > 4h. Cancel from the business page if it hung.`
+      } else if (source === 'budget-incident') {
+        href = '/dashboard'
+        meta = 'Cost-guard kill-switch fired in the last 7d. Inspect cash_spend rows.'
+      }
+      items.push({
+        kind:          'system-alert',
+        id:            f.message_id,
+        business_slug,
+        created_at:    f.created_at,
+        data: {
+          id:         f.message_id,
+          source,
+          scope:      f.scope,
+          title:      f.session_title,
+          meta,
+          href,
+          created_at: f.created_at,
+        } satisfies SystemAlertItem,
+      })
+    }
+  } catch (err) {
+    console.warn('[/inbox] loadAllSystemAlerts failed:', err instanceof Error ? err.message : err)
   }
 
   // Single chronological merge — newest first.

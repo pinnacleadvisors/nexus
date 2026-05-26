@@ -2,32 +2,35 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ShieldCheck, ListTodo, Activity, Filter, CheckSquare, Loader2, Sparkles, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
+import { ShieldCheck, ListTodo, Activity, Filter, CheckSquare, Loader2, Sparkles, BookOpen, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import ApprovalCard from '@/components/approvals/ApprovalCard'
 import type { InboxItem, InboxKind } from './types'
 
-type FilterKind = 'all' | 'approval' | 'issue' | 'task' | 'activity'
+type FilterKind = 'all' | 'approval' | 'issue' | 'task' | 'activity' | 'system-alert'
 
 const FILTER_LABEL: Record<FilterKind, string> = {
-  all:      'All',
-  approval: 'Approvals',
-  issue:    'Mine',
-  task:     'To-dos',
-  activity: 'Recent',
+  all:            'All',
+  approval:       'Approvals',
+  issue:          'Mine',
+  task:           'To-dos',
+  activity:       'Recent',
+  'system-alert': 'Alerts',
 }
 
 const KIND_ICON: Record<InboxKind, typeof ShieldCheck> = {
-  approval: ShieldCheck,
-  issue:    ListTodo,
-  task:     CheckSquare,
-  activity: Activity,
+  approval:       ShieldCheck,
+  issue:          ListTodo,
+  task:           CheckSquare,
+  activity:       Activity,
+  'system-alert': AlertTriangle,
 }
 
 const KIND_COLOR: Record<InboxKind, string> = {
-  approval: 'text-amber-400',
-  issue:    'text-cyan-400',
-  task:     'text-emerald-400',
-  activity: 'text-zinc-500',
+  approval:       'text-amber-400',
+  issue:          'text-cyan-400',
+  task:           'text-emerald-400',
+  activity:       'text-zinc-500',
+  'system-alert': 'text-orange-400',
 }
 
 function shortRelative(iso: string): string {
@@ -54,7 +57,7 @@ export default function InboxClient({ items: initialItems }: Props) {
   }, [])
 
   const counts = useMemo(() => {
-    const c = { all: items.length, approval: 0, issue: 0, task: 0, activity: 0 }
+    const c: Record<FilterKind, number> = { all: items.length, approval: 0, issue: 0, task: 0, activity: 0, 'system-alert': 0 }
     for (const it of items) c[it.kind]++
     return c
   }, [items])
@@ -136,6 +139,32 @@ function InboxRow({ item, onTaskDone }: { item: InboxItem; onTaskDone?: (id: str
 
   if (item.kind === 'task') {
     return <TaskRow data={item.data} Icon={Icon} iconColor={iconColor} onDone={onTaskDone} />
+  }
+
+  if (item.kind === 'system-alert') {
+    const d = item.data
+    const body = (
+      <div className="flex items-start gap-3">
+        <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${iconColor}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-200">{d.title}</span>
+            <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-orange-300">
+              {d.source.replace('-', ' ')}
+            </span>
+          </div>
+          {d.meta && <div className="mt-0.5 text-xs text-zinc-400">{d.meta}</div>}
+          <div className="mt-0.5 text-[10px] text-zinc-500">{shortRelative(d.created_at)} · auto-clears when resolved</div>
+        </div>
+      </div>
+    )
+    return d.href ? (
+      <Link href={d.href} className="block rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 transition hover:border-orange-700/40 hover:bg-zinc-900/60">
+        {body}
+      </Link>
+    ) : (
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">{body}</div>
+    )
   }
 
   if (item.kind === 'issue') {
