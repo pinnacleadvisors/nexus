@@ -151,7 +151,12 @@ export default async function PlatformIssuesPage({ searchParams }: PageProps) {
 
       {issues.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
-          <p className="text-zinc-400">No issues match the current filters. Apply migrations 047/048 if you expected rows here.</p>
+          <p className="mb-2 text-sm text-zinc-300">No issues yet — file your first one above.</p>
+          <p className="mx-auto max-w-md text-xs text-zinc-500">
+            Two options: pick <strong>engineering-lead</strong> to route to the right dept-role,
+            or <strong>Nexus dev team</strong> for autonomous implementation (opens a draft PR
+            within ~30 min — you just review + merge).
+          </p>
         </div>
       ) : (
         <div className="space-y-6">

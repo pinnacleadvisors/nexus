@@ -90,8 +90,8 @@ export default function ABComparisonView({ groupId, slug }: { groupId: string; s
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800">
-        <table className="w-full text-left text-sm">
+      <div className="overflow-x-auto rounded-xl border border-zinc-800">
+        <table className="w-full min-w-[600px] text-left text-sm">
           <thead className="bg-zinc-900/60 text-xs uppercase tracking-wider text-zinc-400">
             <tr>
               <th className="px-3 py-2">Policy</th>

@@ -78,7 +78,13 @@ export default async function CompanyIssuesPage({ params }: PageProps) {
 
       {issues.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
-          <p className="text-zinc-400">No issues yet. Apply migrations 047/048 and seed via <code className="rounded bg-zinc-800/60 px-1 py-0.5 text-xs">lib/issues/insert.ts</code>.</p>
+          <p className="mb-3 text-sm text-zinc-300">No issues for this business yet.</p>
+          <p className="mx-auto max-w-md text-xs text-zinc-500">
+            File one from{' '}
+            <a className="text-violet-300 underline hover:text-violet-200" href="/issues">/issues</a>
+            {' — '}or pick &quot;Nexus dev team&quot; on the issue form for autonomous auto-implementation
+            (a draft PR opens for your review within ~30 min).
+          </p>
         </div>
       ) : (
         <div className="space-y-6">
