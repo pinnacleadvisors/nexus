@@ -26,7 +26,7 @@ const BENCHMARK_WALLCLOCK_BUDGET_MS = 5 * 60 * 1000          // 5 min total per 
 const BENCHMARK_OWNER_USER_ID       = (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0] ?? ''
 const ALERT_COOLDOWN_MS             = 12 * 60 * 60 * 1000    // 12 h between repeat alerts on sustained drift
 
-interface BenchmarkRow {
+export interface BenchmarkRow {
   id:                   string
   name:                 string
   business_slug:        string
@@ -106,7 +106,7 @@ async function bootstrapDefaultBenchmark(db: SupabaseClient): Promise<BenchmarkR
   return insRes.data
 }
 
-async function runOneBenchmark(db: SupabaseClient, b: BenchmarkRow): Promise<BenchmarkRunSummary> {
+export async function runOneBenchmark(db: SupabaseClient, b: BenchmarkRow): Promise<BenchmarkRunSummary> {
   if (!BENCHMARK_OWNER_USER_ID) {
     return { name: b.name, status: 'skipped', error: 'no_owner_user_id_in_env' }
   }
