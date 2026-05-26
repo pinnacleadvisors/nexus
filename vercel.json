@@ -54,6 +54,10 @@
     {
       "path": "/api/cron/simulation-benchmark",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/platform-dev-tick",
+      "schedule": "*/30 * * * *"
     }
   ],
   "experimentalServices": {
