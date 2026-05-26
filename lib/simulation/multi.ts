@@ -28,6 +28,17 @@ export interface StartABInput {
   policies:             ApproverPolicy[]   // 2-4 entries, no duplicates
   compress_days:        number
   wallclock_budget_sec: number
+  /**
+   * Per-row voice. 'template' is free + deterministic. 'llm' multiplies
+   * the run's wall-cost by the number of policies — each engine generates
+   * its own ticket bodies independently. Caveat: LLM sampling means
+   * identical (persona, ticket) inputs produce DIFFERENT outputs per
+   * policy, which adds noise to the comparison. For routine A/B sanity
+   * checks, prefer 'template'. For "how does each policy handle the same
+   * LLM-flavoured chaos at p99 realism", flip to 'llm' and accept the
+   * cost + sampling variance.
+   */
+  synthetic_voice?:     'template' | 'llm'
 }
 
 export interface StartABResult {
@@ -70,6 +81,7 @@ export async function startAB(input: StartABInput): Promise<StartABResult> {
   })
   const groupId = randomUUID()
 
+  const voice = input.synthetic_voice ?? 'template'
   const rows = input.policies.map(policy => ({
     user_id:              input.userId,
     business_slug:        input.businessSlug,
@@ -77,6 +89,7 @@ export async function startAB(input: StartABInput): Promise<StartABResult> {
     compress_days:        input.compress_days,
     wallclock_budget_sec: input.wallclock_budget_sec,
     approver_policy:      policy,
+    synthetic_voice:      voice,
     seed:                 sharedSeed,
     status:               'running',
     total_events:         timeline.length,

@@ -21,9 +21,11 @@ interface MultiBody {
   policies?:             ApproverPolicy[]
   compress_days?:        number
   wallclock_budget_sec?: number
+  synthetic_voice?:      'template' | 'llm'
 }
 
 const VALID_POLICIES: ReadonlySet<ApproverPolicy> = new Set(['permissive', 'skeptical', 'random'])
+const VALID_VOICES:   ReadonlySet<string>         = new Set(['template', 'llm'])
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const g = await guardRequest(req, {
@@ -40,6 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const compress_days = Math.max(1, Math.min(365, Number(body.compress_days ?? 30)))
   const wallclock_budget_sec = Math.max(60, Math.min(86_400, Number(body.wallclock_budget_sec ?? 3_600)))
+  const voice = (body.synthetic_voice && VALID_VOICES.has(body.synthetic_voice))
+    ? body.synthetic_voice
+    : 'template'
 
   const db = createServerClient()
   if (!db) return NextResponse.json({ ok: false, error: 'supabase_unconfigured' })
@@ -51,6 +56,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     policies,
     compress_days,
     wallclock_budget_sec,
+    synthetic_voice:      voice,
   })
   return NextResponse.json(out)
 }
