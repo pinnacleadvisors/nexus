@@ -135,8 +135,14 @@ const DAY     = 24 * 60 * 60 * 1000
 const now     = Date.now()
 const warnings = []
 
+// Redact the operator's full Clerk id from logs — CodeQL js/clear-text-logging
+// flagged the full value because it's sourced from process.env (which the
+// rule treats as sensitive by default). The prefix is enough for debugging
+// "did the seeder run as the right user?" without leaking the full id to
+// log aggregators.
+const ownerRedacted = ownerId.slice(0, 8) + '…'
 console.log(`🧪  Seeding simulation business: ${slug}`)
-console.log(`    Owner:      ${ownerId}`)
+console.log(`    Owner:      ${ownerRedacted} (redacted)`)
 console.log(`    History:    ${daysHistory} days`)
 console.log(`    Personas:   ${personaCount}`)
 console.log(`    PRNG seed:  ${seedInt}\n`)
