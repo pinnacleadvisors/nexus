@@ -13,6 +13,10 @@ interface ApprovalRow {
   payload:          Record<string, unknown> | null
   created_by_agent: string | null
   created_at:       string
+  /** Where the row came from — drives a small badge + (for chat-emitted) deep-link. */
+  origin?:          'chat-emitted' | 'operator-task'
+  session_id?:      string
+  approval_id?:     string
 }
 
 interface Props {
@@ -81,6 +85,22 @@ export default function ApprovalCard({ approval }: Props) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs ${color}`}>{label}</span>
+              {approval.origin === 'chat-emitted' && (
+                <span
+                  className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-cyan-300"
+                  title="Approval emitted inside a chat session — resolve by replying APPROVAL [id]: ... or click the ✓ on the dashboard inbox."
+                >
+                  chat
+                </span>
+              )}
+              {(!approval.origin || approval.origin === 'operator-task') && (
+                <span
+                  className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-violet-300"
+                  title="Row in the `approvals` Postgres table — decided via the Approve / Reject buttons below."
+                >
+                  task
+                </span>
+              )}
               <Link href={`/businesses/${approval.business_slug}`} className="text-sm text-zinc-300 hover:text-zinc-100">
                 {approval.business_slug}
               </Link>

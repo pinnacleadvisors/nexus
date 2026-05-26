@@ -47,11 +47,26 @@ interface Chain<T> {
   limit: (n: number) => Promise<{ data: T[] | null; error: { message: string } | null }>
 }
 
+/**
+ * Where the approval originated. The /inbox + dashboard FleetApprovalInbox
+ * read both kinds via this aggregator so the operator sees a single feed,
+ * each row labelled with its origin.
+ *
+ *   - 'chat-emitted'   — approval_request block parsed out of chat_messages
+ *                        metadata (the dispatch / Ralph-loop pattern)
+ *   - 'operator-task'  — row in the `approvals` Postgres table (the older
+ *                        approval-card flow that pre-dates the chat-emitted
+ *                        path; still used by some workflow paths)
+ */
+export type ApprovalKind = 'chat-emitted' | 'operator-task'
+
 export interface FleetPendingItem {
   /** 'platform' OR 'business:<slug>' — what scope this approval lives in. */
   scope:         string
   /** Human-readable scope name — 'Platform' or the business's display name. */
   scope_label:   string
+  /** Origin of the approval — discriminates chat-emitted vs DB-table rows. */
+  kind:          ApprovalKind
   session_id:    string
   session_title: string
   message_id:    string
@@ -148,6 +163,7 @@ export async function listFleetPending(
         pending.push({
           scope:         externalScope(meta.scope),
           scope_label:   scopeLabel(meta.scope),
+          kind:          'chat-emitted',
           session_id:    sid,
           session_title: meta.title ?? 'Untitled chat',
           message_id:    m.id,
@@ -158,6 +174,72 @@ export async function listFleetPending(
     })
   }
 
+  // Also pull pending rows from the `approvals` Postgres table — that's the
+  // older approval-card flow that pre-dates the chat-emitted path. Before
+  // this aggregation existed, /inbox and /dashboard showed disjoint counts.
+  try {
+    const apprRes = await (db.from('approvals' as never) as unknown as { select: (c: string) => {
+      eq:    (c: string, v: string) => {
+        order: (c: string, opts: { ascending: boolean }) => {
+          limit: (n: number) => Promise<{ data: ApprovalsRow[] | null; error: { message: string } | null }>
+        }
+      }
+    } })
+      .select('id, business_slug, type, payload, created_by_agent, created_at')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    const rows = apprRes.data ?? []
+    for (const row of rows) {
+      if (!row.business_slug) continue
+      pending.push({
+        scope:         `business:${row.business_slug}`,
+        scope_label:   nameBySlug.get(row.business_slug) ?? row.business_slug,
+        kind:          'operator-task',
+        session_id:    `approvals-table:${row.id}`,
+        session_title: row.created_by_agent
+          ? `Approval (${row.type}) from ${row.created_by_agent}`
+          : `Approval (${row.type})`,
+        message_id:    row.id,
+        created_at:    row.created_at,
+        approval:      synthesiseApprovalRequest(row),
+      })
+    }
+  } catch (err) {
+    console.warn('[lib/approvals/fleet] approvals-table fetch failed:', err instanceof Error ? err.message : err)
+  }
+
   pending.sort((a, b) => b.created_at.localeCompare(a.created_at))
   return pending
+}
+
+interface ApprovalsRow {
+  id:                string
+  business_slug:     string | null
+  type:              string
+  payload:           Record<string, unknown> | null
+  created_by_agent:  string | null
+  created_at:        string
+}
+
+/**
+ * The `approvals` table doesn't store an ApprovalRequest object directly —
+ * it stores `{ type, payload }`. Synthesise a chat-style ApprovalRequest
+ * shape so the operator's UI can render both sources with the same row
+ * component.
+ */
+function synthesiseApprovalRequest(row: ApprovalsRow): ApprovalRequest {
+  const payload = row.payload ?? {}
+  const title =
+    (typeof payload.title === 'string' && payload.title) ||
+    `${row.type.replace(/_/g, ' ')} approval`
+  return {
+    approval_id: `approvals-table:${row.id}`,
+    title,
+    items: [{
+      id:                 'approve',
+      label:              `Approve ${row.type.replace(/_/g, ' ')}`,
+      approved_by_default: false,
+    }],
+  } as ApprovalRequest
 }

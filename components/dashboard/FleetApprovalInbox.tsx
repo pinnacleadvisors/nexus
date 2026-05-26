@@ -18,9 +18,12 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, AlertCircle, ChevronRight, Loader2, Inbox, RefreshCw, Check } from 'lucide-react'
 
+type ApprovalKind = 'chat-emitted' | 'operator-task'
+
 interface FleetPendingItem {
   scope:         string  // 'admin' OR 'business:<slug>'
   scope_label:   string  // 'Platform' OR business display name
+  kind:          ApprovalKind  // origin discriminator
   session_id:    string
   session_title: string
   message_id:    string
@@ -30,6 +33,15 @@ interface FleetPendingItem {
     approval_id: string
     items:       Array<{ id: string; label: string; approved_by_default?: boolean }>
   }
+}
+
+const KIND_LABEL: Record<ApprovalKind, string> = {
+  'chat-emitted':  'chat',
+  'operator-task': 'task',
+}
+const KIND_STYLE: Record<ApprovalKind, { bg: string; color: string; border: string }> = {
+  'chat-emitted':  { bg: 'rgba(34,211,238,0.12)',  color: '#67e8f9', border: '1px solid rgba(34,211,238,0.25)' },
+  'operator-task': { bg: 'rgba(168,85,247,0.12)',  color: '#c4b5fd', border: '1px solid rgba(168,85,247,0.25)' },
 }
 
 interface ApiOk  { ok: true;  pending: FleetPendingItem[] }
@@ -250,6 +262,15 @@ export default function FleetApprovalInbox() {
                         title={`scope: ${p.scope}`}
                       >
                         {p.scope_label}
+                      </span>
+                      <span
+                        className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider rounded shrink-0"
+                        style={KIND_STYLE[p.kind]}
+                        title={p.kind === 'chat-emitted'
+                          ? 'Approval emitted as a chat block — resolve by replying APPROVAL [id]: ... or click ✓'
+                          : 'Approval row in the approvals Postgres table — decided via the approval-card form'}
+                      >
+                        {KIND_LABEL[p.kind]}
                       </span>
                       <span className="text-xs font-medium truncate" style={{ color: '#e8e8f0' }}>
                         {p.approval.title}
