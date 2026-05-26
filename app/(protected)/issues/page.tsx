@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase'
 import IssueRow from '@/components/issues/IssueRow'
+import ReportIssueForm from '@/components/issues/ReportIssueForm'
 import { ListTodo } from 'lucide-react'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
@@ -104,6 +105,8 @@ export default async function PlatformIssuesPage({ searchParams }: PageProps) {
           <p className="text-sm text-zinc-400">{issues.length} total across {businessSlug ? `business "${businessSlug}"` : 'all businesses'}.</p>
         </div>
       </header>
+
+      <ReportIssueForm businesses={businesses} />
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-3 text-sm">
         <label className="flex items-center gap-2">
