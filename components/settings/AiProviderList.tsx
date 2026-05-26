@@ -34,6 +34,9 @@ interface GatewayStatus {
   gatewayHealthy: boolean
   loggedIn?:      boolean
   queueDepth?:    number
+  codexConfigured?:     boolean
+  codexHealthy?:        boolean
+  openrouterConfigured?: boolean
 }
 
 export default function AiProviderList({ businessSlug }: { businessSlug?: string | null }) {
@@ -180,10 +183,21 @@ function deriveSubscriptionState(providerId: string, gateway: GatewayStatus | nu
     return null
   }
   if (providerId === 'openai') {
-    // We don't have a dedicated codex-gateway health endpoint yet — surface
-    // "configured" when the env-var pair is present (reflected in env scope).
-    const hasCodex = Boolean(process.env.NEXT_PUBLIC_CODEX_GATEWAY_CONFIGURED)
-    return hasCodex ? { active: true, detail: 'Codex gateway configured' } : null
+    // /api/gateway-status now does a real probe on CODEX_GATEWAY_URL.
+    // Falls back to the legacy NEXT_PUBLIC_CODEX_GATEWAY_CONFIGURED env
+    // for dev / non-server scopes where the probe field is undefined.
+    if (gateway.codexConfigured) {
+      return gateway.codexHealthy
+        ? { active: true,  detail: 'Codex gateway (KVM4) — healthy' }
+        : { active: false, detail: 'Codex gateway configured but /health probe failed' }
+    }
+    const hasCodexLegacy = Boolean(process.env.NEXT_PUBLIC_CODEX_GATEWAY_CONFIGURED)
+    return hasCodexLegacy ? { active: true, detail: 'Codex gateway configured' } : null
+  }
+  if (providerId === 'openrouter') {
+    return gateway.openrouterConfigured
+      ? { active: true, detail: 'OPENROUTER_API_KEY set — 300+ models via one router' }
+      : null
   }
   return null
 }

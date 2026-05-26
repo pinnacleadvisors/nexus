@@ -26,7 +26,12 @@ import type {
   RecommendInput,
 } from './types'
 
-const JUDGE_MODEL  = 'claude-sonnet-4-6'
+/**
+ * Model used BY the recommender to pick models FOR agents. Sonnet 4.6 is
+ * the default (fast + cheap + smart enough). Operator can switch to
+ * haiku-4-5 for ~5x cheaper / faster via the env var.
+ */
+const JUDGE_MODEL = process.env.RECOMMENDER_MODEL_ID?.trim() || 'claude-sonnet-4-6'
 const MAX_LATENCY_MS = 12_000
 
 /** Slim catalog representation for the prompt — leaves out long benchmark detail. */

@@ -184,13 +184,15 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
       metadata: { businessSlug: slug, ok: cdx.ok, sessionId, sessionTag, durationMs: cdx.durationMs, error: cdx.error },
     })
     if (!cdx.ok) {
+      // 200 + {ok:false} per retry-storm rule. Real 502 gets replaced by
+      // Cloudflare's HTML error page (operator-reported 2026-05-26).
       return NextResponse.json({
         ok:           false,
         mode:         'codex-direct',
         error:        cdx.error ?? 'codex dispatch failed',
-        fallbackHint: cdx.fallbackHint,
+        fallbackHint: cdx.fallbackHint ?? 'Codex gateway unreachable — try Claude instead, or check /settings → AI Providers for codex-gateway health.',
         code:         'codex_error',
-      }, { status: 502 })
+      })
     }
     return NextResponse.json({
       ok:        true,
