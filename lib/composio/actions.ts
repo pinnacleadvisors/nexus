@@ -112,6 +112,20 @@ export async function executeBusinessAction(input: ExecuteBusinessActionInput): 
     throw new Error(`Unknown platform: ${input.platform}`)
   }
 
+  // Simulation safety: when the target business is flagged simulation=true,
+  // refuse money-moving / customer-facing actions. The chaos harness exists
+  // exactly so agents can practice WITHOUT touching real Stripe / real
+  // recipients. classifyMoneyMovingVerb returns null for read-only / safe
+  // actions so they still go through.
+  if (input.businessSlug) {
+    const { isSimulationBusiness, classifyMoneyMovingVerb, SimulationGuardError } =
+      await import('@/lib/simulation/check')
+    const category = classifyMoneyMovingVerb(input.action)
+    if (category && await isSimulationBusiness(input.businessSlug)) {
+      throw new SimulationGuardError(input.action, input.businessSlug, category)
+    }
+  }
+
   const account = await findActiveAccount(input.userId, input.businessSlug, input.platform)
   if (!account) {
     throw new ConnectedAccountMissingError(input.platform, input.businessSlug)
