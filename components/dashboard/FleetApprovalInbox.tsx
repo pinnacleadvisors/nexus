@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { CheckCircle2, AlertCircle, ChevronRight, Loader2, Inbox, RefreshCw } from 'lucide-react'
+import { CheckCircle2, AlertCircle, ChevronRight, Loader2, Inbox, RefreshCw, Check } from 'lucide-react'
 
 interface FleetPendingItem {
   scope:         string  // 'admin' OR 'business:<slug>'
@@ -47,6 +47,9 @@ export default function FleetApprovalInbox() {
   const [pending, setPending]   = useState<FleetPendingItem[] | null>(null)
   const [error, setError]       = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // Tracks the approval_ids currently being dismissed so the operator can't
+  // double-click + the button shows a spinner.
+  const [resolving, setResolving] = useState<Set<string>>(() => new Set())
 
   const reload = useCallback(async () => {
     setRefreshing(true)
@@ -68,6 +71,49 @@ export default function FleetApprovalInbox() {
   }, [])
 
   useEffect(() => { void reload() }, [reload])
+
+  /**
+   * Mark a single approval resolved without leaving the inbox. POSTs to
+   * /api/approvals/resolve which writes an APPROVAL [id]: user message
+   * into the source chat. The next reload sees the reply via isResolved
+   * and the row drops out of the pending list. Optimistically removes
+   * the row from local state so the UI feels instant.
+   */
+  const resolveOne = useCallback(async (item: FleetPendingItem) => {
+    const id = item.approval.approval_id
+    if (resolving.has(id)) return
+    setResolving(prev => new Set(prev).add(id))
+    // Optimistic removal — restore on failure.
+    const prev = pending
+    setPending(p => (p ?? []).filter(x => x.approval.approval_id !== id))
+    try {
+      const res = await fetch('/api/approvals/resolve', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({
+          session_id:  item.session_id,
+          approval_id: id,
+        }),
+        cache:  'no-store',
+        signal: AbortSignal.timeout(15_000),
+      })
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+      if (!j.ok) {
+        // Rollback optimistic removal.
+        setPending(prev)
+        setError(`Could not mark resolved: ${j.error ?? 'unknown'}`)
+      }
+    } catch (e) {
+      setPending(prev)
+      setError(e instanceof Error ? e.message : 'failed to mark resolved')
+    } finally {
+      setResolving(curr => {
+        const next = new Set(curr)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [pending, resolving])
 
   // Silent on hard error — the dashboard has other panels and a fleet
   // inbox that fails shouldn't blank the page.
@@ -172,51 +218,80 @@ export default function FleetApprovalInbox() {
       </div>
 
       <div className="space-y-1.5">
-        {pending.slice(0, 8).map(p => (
-          <Link
-            key={`${p.scope}-${p.session_id}-${p.approval.approval_id}`}
-            href={landingPathFor(p.scope, p.session_id, p.approval.approval_id)}
-            className="block rounded-lg p-2.5 transition-colors"
-            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
-          >
-            <div className="flex items-start gap-2">
-              <AlertCircle size={11} style={{ color: '#f59e0b' }} className="mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider rounded shrink-0"
-                    style={{
-                      background: p.scope === 'admin'
-                        ? 'rgba(108,99,255,0.12)'
-                        : 'rgba(34,197,94,0.10)',
-                      color: p.scope === 'admin' ? '#a8a3ff' : '#4ade80',
-                      border: p.scope === 'admin'
-                        ? '1px solid rgba(108,99,255,0.25)'
-                        : '1px solid rgba(34,197,94,0.22)',
-                    }}
-                    title={`scope: ${p.scope}`}
-                  >
-                    {p.scope_label}
-                  </span>
-                  <span className="text-xs font-medium truncate" style={{ color: '#e8e8f0' }}>
-                    {p.approval.title}
-                  </span>
+        {pending.slice(0, 8).map(p => {
+          const isResolving = resolving.has(p.approval.approval_id)
+          return (
+            <div
+              key={`${p.scope}-${p.session_id}-${p.approval.approval_id}`}
+              className="relative rounded-lg p-2.5 transition-colors"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
+            >
+              <Link
+                href={landingPathFor(p.scope, p.session_id, p.approval.approval_id)}
+                className="block"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={11} style={{ color: '#f59e0b' }} className="mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0 pr-7">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider rounded shrink-0"
+                        style={{
+                          background: p.scope === 'admin'
+                            ? 'rgba(108,99,255,0.12)'
+                            : 'rgba(34,197,94,0.10)',
+                          color: p.scope === 'admin' ? '#a8a3ff' : '#4ade80',
+                          border: p.scope === 'admin'
+                            ? '1px solid rgba(108,99,255,0.25)'
+                            : '1px solid rgba(34,197,94,0.22)',
+                        }}
+                        title={`scope: ${p.scope}`}
+                      >
+                        {p.scope_label}
+                      </span>
+                      <span className="text-xs font-medium truncate" style={{ color: '#e8e8f0' }}>
+                        {p.approval.title}
+                      </span>
+                    </div>
+                    <div className="text-[10px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
+                      {p.approval.items.length} item{p.approval.items.length === 1 ? '' : 's'}
+                      {' · in '}
+                      <span className="font-medium">{p.session_title}</span>
+                    </div>
+                    <div className="text-[10px] mt-0.5" style={{ color: '#55556a' }}>
+                      {new Date(p.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <ChevronRight size={11} style={{ color: '#55556a' }} className="mt-0.5 shrink-0" />
                 </div>
-                <div className="text-[10px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
-                  {p.approval.items.length} item{p.approval.items.length === 1 ? '' : 's'}
-                  {' · in '}
-                  <span className="font-medium">{p.session_title}</span>
-                </div>
-                <div className="text-[10px] mt-0.5" style={{ color: '#55556a' }}>
-                  {new Date(p.created_at).toLocaleString()}
-                </div>
-              </div>
-              <ChevronRight size={11} style={{ color: '#55556a' }} className="mt-0.5 shrink-0" />
+              </Link>
+              {/*
+                Mark-resolved button — absolutely positioned so the parent
+                Link covers the rest of the row, but a click on the check
+                doesn't propagate. Sits in the gap right of the chevron.
+              */}
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void resolveOne(p) }}
+                disabled={isResolving}
+                className="absolute right-2 top-2 inline-flex items-center justify-center rounded-md p-1 transition-colors disabled:opacity-50"
+                style={{
+                  color:      '#9090b0',
+                  background: 'rgba(255,255,255,0.04)',
+                  border:     '1px solid rgba(255,255,255,0.08)',
+                }}
+                title="Mark resolved — writes an APPROVAL [id]: reply into the source chat so this clears from the inbox. Use when you already shipped the fix out of band."
+                aria-label="Mark approval resolved"
+              >
+                {isResolving
+                  ? <Loader2 size={10} className="animate-spin" />
+                  : <Check size={10} />}
+              </button>
             </div>
-          </Link>
-        ))}
+          )
+        })}
         {pending.length > 8 && (
           <div className="text-[10px] text-center pt-1" style={{ color: '#55556a' }}>
             …and {pending.length - 8} more — open each chat to clear them.
