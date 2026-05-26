@@ -20,6 +20,8 @@
     "check:all": "npm run lint && npx tsc --noEmit && npm run check:retry-storm && npm run check:sentry-config && npm run check:lockfile && npm run check:topology && npm run check:agent-spec-freshness && npm run check:provider-agnostic && npm run check:cron-route",
     "migrate": "doppler run -- node scripts/migrate.mjs",
     "migrate:local": "node scripts/migrate.mjs",
+    "sync:agents": "doppler run -- node scripts/sync-agent-library.mjs",
+    "sync:agents:dry": "doppler run -- node scripts/sync-agent-library.mjs --dry-run",
     "types:regen": "doppler run -- node scripts/regenerate-database-types.mjs",
     "types:regen:local": "node scripts/regenerate-database-types.mjs",
     "diagnose:codex": "doppler run -- node scripts/diagnose-codex-gateway.mjs",
