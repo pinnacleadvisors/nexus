@@ -158,6 +158,9 @@ export async function runOneBenchmark(db: SupabaseClient, b: BenchmarkRow): Prom
   }
   const currentResult = fetchRes.data.result
 
+  const netCents      = getMetric(currentResult, 'sim_net_cents')
+  const failuresCount = getMetric(currentResult, 'failures')
+
   // Bootstrap baseline if missing
   if (!b.baseline_result) {
     await (db.from('simulation_benchmarks' as never) as unknown as {
@@ -172,6 +175,7 @@ export async function runOneBenchmark(db: SupabaseClient, b: BenchmarkRow): Prom
       last_drift_pct:   0,
       updated_at:       new Date().toISOString(),
     }).eq('id', b.id)
+    await recordRunHistory(db, b.id, runId, { drift_pct: null, sim_net_cents: netCents, failures: failuresCount, bootstrapped: true, alerted: false, result_snapshot: currentResult })
     return { name: b.name, status: 'done', run_id: runId, bootstrapped: true, drift_pct: 0 }
   }
 
@@ -209,7 +213,47 @@ export async function runOneBenchmark(db: SupabaseClient, b: BenchmarkRow): Prom
     updated_at:       new Date().toISOString(),
   }).eq('id', b.id)
 
+  await recordRunHistory(db, b.id, runId, {
+    drift_pct:       Number(drift.toFixed(2)),
+    sim_net_cents:   netCents,
+    failures:        failuresCount,
+    bootstrapped:    false,
+    alerted:         alertDue,
+    result_snapshot: currentResult,
+  })
+
   return { name: b.name, status: 'done', run_id: runId, drift_pct: Number(drift.toFixed(2)), alerted: alertDue }
+}
+
+async function recordRunHistory(
+  db: SupabaseClient,
+  benchmarkId: string,
+  runId: string,
+  fields: {
+    drift_pct:       number | null
+    sim_net_cents:   number
+    failures:        number
+    bootstrapped:    boolean
+    alerted:         boolean
+    result_snapshot: Record<string, unknown>
+  },
+): Promise<void> {
+  try {
+    await (db.from('simulation_benchmark_runs' as never) as unknown as {
+      insert: (r: unknown) => Promise<{ error: { message: string } | null }>
+    }).insert({
+      benchmark_id:    benchmarkId,
+      run_id:          runId,
+      drift_pct:       fields.drift_pct,
+      sim_net_cents:   fields.sim_net_cents,
+      failures:        fields.failures,
+      bootstrapped:    fields.bootstrapped,
+      alerted:         fields.alerted,
+      result_snapshot: fields.result_snapshot,
+    })
+  } catch (err) {
+    console.warn('[benchmark:history] insert failed:', err instanceof Error ? err.message : err)
+  }
 }
 
 export async function runBenchmarks(db: SupabaseClient): Promise<RunBenchmarksResult> {
