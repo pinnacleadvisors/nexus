@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexus — offline</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #09090b; color: #e4e4e7; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    main { max-width: 32rem; margin: 0 auto; padding: 4rem 1.5rem; text-align: center; }
+    h1 { font-size: 1.5rem; margin: 0 0 0.5rem; font-weight: 600; }
+    p { color: #a1a1aa; line-height: 1.6; margin: 0.75rem 0; }
+    code { background: #18181b; padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-size: 0.875rem; }
+    a { color: #a78bfa; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>You&apos;re offline</h1>
+    <p>Nexus needs a network connection to fetch fresh data. Reconnect and reload.</p>
+    <p>If you&apos;re running Nexus locally and the Postgres + LLM services are still up, this page may be a transient. Try <code>docker compose logs</code> in the install directory.</p>
+  </main>
+</body>
+</html>

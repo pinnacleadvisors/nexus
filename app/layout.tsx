@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { Geist, Geist_Mono } from 'next/font/google'
+import ServiceWorkerRegister from '@/components/pwa/ServiceWorkerRegister'
 import './globals.css'
 
 const geistSans = Geist({
@@ -14,8 +15,19 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Nexus',
-  description: 'Business management and agent automation platform',
+  title:           'Nexus',
+  description:     'Business management and agent automation platform',
+  manifest:        '/manifest.webmanifest',
+  applicationName: 'Nexus',
+  appleWebApp: {
+    capable:        true,
+    title:          'Nexus',
+    statusBarStyle: 'black-translucent',
+  },
+  icons: {
+    icon:  [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    apple: [{ url: '/icon.svg' }],
+  },
 }
 
 /**
@@ -104,6 +116,7 @@ export default function RootLayout({
         >
           {children}
         </ClerkProvider>
+        <ServiceWorkerRegister />
       </body>
     </html>
   )
