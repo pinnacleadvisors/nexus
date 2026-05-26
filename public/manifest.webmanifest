@@ -1,0 +1,41 @@
+{
+  "name":             "Nexus",
+  "short_name":       "Nexus",
+  "description":      "Business management + agent automation platform. Personal OS for one-operator businesses.",
+  "start_url":        "/dashboard",
+  "scope":            "/",
+  "display":          "standalone",
+  "orientation":      "any",
+  "background_color": "#09090b",
+  "theme_color":      "#09090b",
+  "lang":             "en",
+  "categories":       ["productivity", "business", "developer"],
+  "icons": [
+    {
+      "src":     "/icon.svg",
+      "sizes":   "any",
+      "type":    "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name":        "Dashboard",
+      "short_name":  "Dash",
+      "description": "Open the operator dashboard",
+      "url":         "/dashboard"
+    },
+    {
+      "name":        "Inbox",
+      "short_name":  "Inbox",
+      "description": "Approvals + tasks needing attention",
+      "url":         "/inbox"
+    },
+    {
+      "name":        "New issue",
+      "short_name":  "New issue",
+      "description": "File an issue or send to Nexus dev team",
+      "url":         "/issues"
+    }
+  ]
+}
