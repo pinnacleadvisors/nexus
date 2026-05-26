@@ -36,6 +36,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/simulation-tick",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/cron/solopreneur-tick",
       "schedule": "0 9,12,15,21 * * *"
     },
