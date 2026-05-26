@@ -27,6 +27,20 @@ export const maxDuration = 30
 
 interface RouteCtx { params: Promise<{ slug: string }> }
 
+/**
+ * Resolve the canonical internal base URL for same-origin fetches.
+ * Used instead of `new URL(req.url).origin` so CodeQL js/request-forgery
+ * sees a server-controlled string (Doppler-set NEXUS_BASE_URL) rather than
+ * a request-header-derived one.
+ */
+function resolveInternalBaseUrl(): string {
+  const env = process.env.NEXUS_BASE_URL?.trim()
+  if (env) return env.replace(/\/$/, '')
+  const vercel = process.env.VERCEL_URL?.trim()
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+  return `http://localhost:${process.env.PORT?.trim() || '3000'}`
+}
+
 interface TickBody {
   prompt?: unknown
   dryRun?: unknown
@@ -104,10 +118,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
   // Fire the dispatch. Same-origin, cookie-authed so the dispatch sees the
   // operator's session (its rate-limit + ALLOWED_USER_IDS gates apply on
-  // top of ours).
+  // top of ours). Base URL resolved from NEXUS_BASE_URL env (Doppler-set,
+  // server-side, never user-influenced) to satisfy CodeQL js/request-forgery.
   try {
-    const origin = new URL(req.url).origin
-    const dispatchRes = await fetch(`${origin}/api/claude-session/dispatch`, {
+    const base = resolveInternalBaseUrl()
+    const dispatchRes = await fetch(`${base}/api/claude-session/dispatch`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
