@@ -28,6 +28,9 @@ interface ConnectedAccount {
   lastUsedAt:   string | null
 }
 
+interface DisabledProviderRow { provider: string }
+interface DisabledProvidersResponse { disabled: DisabledProviderRow[] }
+
 interface GatewayStatus {
   provider:       'gateway' | 'openclaw' | 'api' | 'none'
   gatewayUrl?:    string
@@ -44,6 +47,10 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
   const errorParam  = params?.get('error') ?? null
   const [accounts, setAccounts]   = useState<ConnectedAccount[]>([])
   const [gateway,  setGateway]    = useState<GatewayStatus | null>(null)
+  // Set of provider IDs the operator has explicitly disabled. Even when the
+  // provider is connected, a disabled entry tells detectAvailableProviders()
+  // to skip it so the recommender + chat fallback picks the next best.
+  const [disabled, setDisabled]   = useState<Set<string>>(new Set())
   const [loading,  setLoading]    = useState(true)
   const [err,      setErr]        = useState<string | null>(errorParam)
 
@@ -51,9 +58,10 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
     setLoading(true)
     try {
       const url = businessSlug ? `/api/connected-accounts?businessSlug=${businessSlug}` : '/api/connected-accounts'
-      const [accRes, gwRes] = await Promise.all([
+      const [accRes, gwRes, disRes] = await Promise.all([
         fetch(url),
         fetch('/api/gateway-status'),
+        fetch('/api/models/providers'),
       ])
       if (accRes.status === 401) {
         window.location.href = '/sign-in?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search)
@@ -67,6 +75,10 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
         const json = (await gwRes.json()) as GatewayStatus
         setGateway(json)
       }
+      if (disRes.ok) {
+        const json = (await disRes.json()) as DisabledProvidersResponse
+        setDisabled(new Set((json.disabled ?? []).map(r => r.provider)))
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'failed to load AI providers')
     } finally {
@@ -75,6 +87,34 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
   }
 
   useEffect(() => { void load() }, [businessSlug])
+
+  /** Flip the disable state for one provider. Optimistic UI — updates the
+   *  Set immediately so the toggle feels instant; reverts on error. */
+  async function toggleProviderDisabled(providerId: string, next: boolean): Promise<void> {
+    setDisabled(prev => {
+      const out = new Set(prev)
+      if (next) out.add(providerId); else out.delete(providerId)
+      return out
+    })
+    try {
+      const res = await fetch(`/api/models/providers/${encodeURIComponent(providerId)}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ disabled: next }),
+      })
+      const json = await res.json() as { ok: boolean; error?: string; degraded?: string }
+      if (!json.ok) throw new Error(json.error ?? 'toggle failed')
+      if (json.degraded) setErr(`Toggle saved but degraded: ${json.error ?? json.degraded}`)
+    } catch (e) {
+      // Revert optimistic flip on error
+      setDisabled(prev => {
+        const out = new Set(prev)
+        if (next) out.delete(providerId); else out.add(providerId)
+        return out
+      })
+      setErr(e instanceof Error ? e.message : 'toggle failed')
+    }
+  }
 
   async function saveApiKey(platform: string, apiKey: string) {
     const res = await fetch('/api/connected-accounts/api-key', {
@@ -157,6 +197,8 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
                 provider={p}
                 connection={connection}
                 models={models}
+                disabled={disabled.has(p.id)}
+                onToggleDisabled={(next: boolean) => toggleProviderDisabled(p.id, next)}
                 onSaveApiKey={(k: string) => saveApiKey(p.id, k)}
                 onRevokeApiKey={() => revokeApiKey(p.id)}
               />
