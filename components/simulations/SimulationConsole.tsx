@@ -1,0 +1,376 @@
+'use client'
+
+/**
+ * Hyperbolic-chamber console — drives the simulation lifecycle:
+ *   - if no run is active, render the start form
+ *   - if run is paused on a gate, render the Approve/Reject prompt
+ *   - if running (auto), render the progress + run-to-completion control
+ *   - if running (manual), render the "Next event" button
+ *   - if done, render the graded report
+ *
+ * The page polls /api/simulations/:id every 2s while a run is active so
+ * progress + recent events stay live without WebSockets.
+ */
+
+import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2, Play, SkipForward, X, CheckCircle2, XCircle } from 'lucide-react'
+
+export interface SimulationRunRow {
+  id:                    string
+  business_slug:         string
+  mode:                  'manual' | 'auto'
+  compress_days:         number
+  wallclock_budget_sec:  number
+  approver_policy:       'permissive' | 'skeptical' | 'random' | null
+  status:                string
+  current_event_idx:     number
+  total_events:          number
+  started_at:            string | null
+  ended_at:              string | null
+  result:                Record<string, unknown> | null
+  created_at:            string
+}
+
+interface PendingGate {
+  id:         string
+  sim_day:    number
+  sim_hour:   number
+  payload:    Record<string, unknown>
+}
+
+interface EventRow {
+  id:               string
+  sim_day:          number
+  sim_hour:         number
+  kind:             string
+  payload:          Record<string, unknown>
+  approval_state:   string | null
+  approved_by:      string | null
+  outcome:          Record<string, unknown> | null
+  created_at:       string
+}
+
+interface SimStateBody {
+  ok:           boolean
+  run?:         SimulationRunRow
+  events?:      EventRow[]
+  pending_gate?: PendingGate | null
+}
+
+const TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled'])
+
+export default function SimulationConsole({ slug, initialRun }: { slug: string; initialRun: SimulationRunRow | null }) {
+  const router = useRouter()
+  const [run, setRun]                 = useState<SimulationRunRow | null>(initialRun)
+  const [events, setEvents]           = useState<EventRow[]>([])
+  const [pendingGate, setPendingGate] = useState<PendingGate | null>(null)
+  const [pending, startTransition]    = useTransition()
+  const [error, setError]             = useState<string | null>(null)
+
+  // Poll for state while a run is active
+  const refresh = useCallback(async (runId: string) => {
+    try {
+      const res = await fetch(`/api/simulations/${runId}`, { cache: 'no-store' })
+      const body = await res.json() as SimStateBody
+      if (!body.ok || !body.run) return
+      setRun(body.run)
+      setEvents(body.events ?? [])
+      setPendingGate(body.pending_gate ?? null)
+    } catch { /* fail silent — next poll will retry */ }
+  }, [])
+
+  useEffect(() => {
+    if (!run) return
+    if (TERMINAL_STATUSES.has(run.status)) {
+      // One more refresh to ensure events list reflects final state
+      void refresh(run.id)
+      return
+    }
+    const intervalId = window.setInterval(() => { void refresh(run.id) }, 2_000)
+    void refresh(run.id)
+    return () => window.clearInterval(intervalId)
+  }, [run, refresh])
+
+  const start = (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch('/api/simulations', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_slug: slug, mode, ...opts }),
+      })
+      const body = await res.json() as { ok: boolean; run_id?: string; error?: string }
+      if (!body.ok || !body.run_id) {
+        setError(body.error ?? 'unknown error')
+        return
+      }
+      router.refresh()
+      void refresh(body.run_id)
+    })
+  }
+
+  const tick = () => {
+    if (!run) return
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch(`/api/simulations/${run.id}/tick`, { method: 'POST' })
+      const body = await res.json() as { ok: boolean; error?: string }
+      if (!body.ok) setError(body.error ?? 'tick failed')
+      void refresh(run.id)
+    })
+  }
+
+  const runToCompletion = () => {
+    if (!run) return
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch(`/api/simulations/${run.id}/run`, { method: 'POST' })
+      const body = await res.json() as { ok: boolean; final_status?: string; error?: string }
+      if (!body.ok) setError(body.error ?? 'run failed')
+      // If final_status === 'running', poll will trigger another run automatically
+      void refresh(run.id)
+      if (body.final_status === 'running') {
+        // Kick another /run call after a beat so we keep draining
+        setTimeout(runToCompletion, 1_000)
+      }
+    })
+  }
+
+  const decide = (eventId: string, decision: 'approve' | 'reject') => {
+    if (!run) return
+    setError(null)
+    startTransition(async () => {
+      const res = await fetch(`/api/simulations/${run.id}/decide`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ event_id: eventId, decision }),
+      })
+      const body = await res.json() as { ok: boolean; error?: string }
+      if (!body.ok) setError(body.error ?? 'decision failed')
+      void refresh(run.id)
+    })
+  }
+
+  const cancel = () => {
+    if (!run) return
+    startTransition(async () => {
+      await fetch(`/api/simulations/${run.id}/cancel`, { method: 'POST' })
+      router.refresh()
+    })
+  }
+
+  // ── Render: no run → start form ────────────────────────────────────────────
+  if (!run || TERMINAL_STATUSES.has(run.status)) {
+    return <StartForm onStart={start} pending={pending} error={error} lastRun={run} onReplay={() => { setRun(null) }} />
+  }
+
+  // ── Render: active run ─────────────────────────────────────────────────────
+  const pct = run.total_events > 0 ? Math.round(100 * run.current_event_idx / run.total_events) : 0
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="text-zinc-300">
+            {run.mode === 'manual' ? 'Manual replay' : `Auto-pilot (${run.approver_policy ?? '?'})`}
+            {' · '}
+            <span className="font-mono text-zinc-400">{run.status}</span>
+          </span>
+          <span className="font-mono text-xs text-zinc-500">{run.current_event_idx} / {run.total_events} · {pct}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+          <div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      {pendingGate && run.mode === 'manual' && (
+        <PendingGateCard gate={pendingGate} onApprove={() => decide(pendingGate.id, 'approve')} onReject={() => decide(pendingGate.id, 'reject')} pending={pending} />
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {run.mode === 'manual' && !pendingGate && (
+          <button onClick={tick} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SkipForward className="h-4 w-4" />} Next event
+          </button>
+        )}
+        {run.mode === 'auto' && (
+          <button onClick={runToCompletion} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run to completion
+          </button>
+        )}
+        <button onClick={cancel} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800/70 disabled:opacity-50">
+          <X className="h-4 w-4" /> Cancel
+        </button>
+      </div>
+
+      {error && <p className="text-sm text-rose-400">⚠︎ {error}</p>}
+
+      <EventFeed events={events} />
+    </section>
+  )
+}
+
+function PendingGateCard({ gate, onApprove, onReject, pending }: { gate: PendingGate; onApprove: () => void; onReject: () => void; pending: boolean }) {
+  const p = gate.payload as { gate_kind?: string; title?: string; justification?: string; irreversible?: boolean }
+  return (
+    <div className="rounded-xl border border-amber-700/50 bg-amber-500/10 p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="rounded-full bg-amber-500/30 px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-amber-100">
+          {p.gate_kind ?? 'approval'}
+        </span>
+        {p.irreversible && <span className="rounded-full bg-rose-500/30 px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-rose-100">irreversible</span>}
+        <span className="font-mono text-xs text-amber-200/60">day {gate.sim_day} · {gate.sim_hour.toFixed(1)}h</span>
+      </div>
+      <h3 className="mb-1 text-sm font-semibold text-amber-100">{p.title ?? 'Approval needed'}</h3>
+      {p.justification
+        ? <p className="mb-3 text-sm text-amber-100/80">{p.justification}</p>
+        : <p className="mb-3 text-sm italic text-amber-100/50">(no justification provided)</p>}
+      <div className="flex gap-2">
+        <button onClick={onApprove} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:opacity-50">
+          <CheckCircle2 className="h-4 w-4" /> Approve
+        </button>
+        <button onClick={onReject} disabled={pending} className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-50">
+          <XCircle className="h-4 w-4" /> Reject
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EventFeed({ events }: { events: EventRow[] }) {
+  if (events.length === 0) return null
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="mb-3 text-sm font-medium text-zinc-200">Recent activity</h3>
+      <ul className="space-y-2">
+        {events.slice(0, 20).map(ev => {
+          const p = ev.payload as { persona_name?: string; agent?: string; action_title?: string; gate_kind?: string; source?: string; severity?: string }
+          let line: string
+          switch (ev.kind) {
+            case 'inbound_ticket':  line = `📩 ticket from ${p.persona_name ?? 'someone'}`; break
+            case 'agent_action':    line = `🤖 ${p.agent ?? 'agent'} — ${p.action_title ?? 'action'}`; break
+            case 'approval_gate':   line = `🚦 gate [${p.gate_kind ?? '?'}] ${ev.approval_state ?? 'pending'}${ev.approved_by ? ` by ${ev.approved_by}` : ''}`; break
+            case 'kpi_snapshot':    line = `📊 EOD snapshot`; break
+            case 'failure':         line = `💥 ${p.source ?? '?'} failure (${p.severity ?? '?'})`; break
+            default:                line = ev.kind
+          }
+          return (
+            <li key={ev.id} className="flex items-center justify-between gap-2 text-sm text-zinc-300">
+              <span className="truncate">{line}</span>
+              <span className="font-mono text-xs text-zinc-500">day {ev.sim_day} · {ev.sim_hour.toFixed(1)}h</span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+function StartForm({ onStart, pending, error, lastRun, onReplay }: { onStart: (mode: 'manual' | 'auto', opts: { compress_days: number; wallclock_budget_sec: number; approver_policy?: string }) => void; pending: boolean; error: string | null; lastRun: SimulationRunRow | null; onReplay: () => void }) {
+  const [mode, setMode]                  = useState<'manual' | 'auto'>('manual')
+  const [compress, setCompress]          = useState(30)
+  const [budgetSec, setBudgetSec]        = useState(3_600)
+  const [policy, setPolicy]              = useState<'permissive' | 'skeptical' | 'random'>('permissive')
+
+  return (
+    <section className="space-y-4">
+      {lastRun && (
+        <FinalReport run={lastRun} />
+      )}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-zinc-200">Start a new run</h2>
+        <div className="mb-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            <span className="text-zinc-400">Mode</span>
+            <select value={mode} onChange={e => setMode(e.target.value as 'manual' | 'auto')} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100">
+              <option value="manual">Manual (you approve each gate)</option>
+              <option value="auto">Auto-pilot (heuristic decides)</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="text-zinc-400">Sim days</span>
+            <input type="number" value={compress} min={1} max={365} onChange={e => setCompress(Math.max(1, Math.min(365, Number(e.target.value))))} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100" />
+          </label>
+          <label className="text-sm">
+            <span className="text-zinc-400">Wallclock budget (seconds)</span>
+            <input type="number" value={budgetSec} min={60} max={86_400} step={60} onChange={e => setBudgetSec(Math.max(60, Math.min(86_400, Number(e.target.value))))} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100" />
+          </label>
+          {mode === 'auto' && (
+            <label className="text-sm">
+              <span className="text-zinc-400">Approver policy</span>
+              <select value={policy} onChange={e => setPolicy(e.target.value as 'permissive' | 'skeptical' | 'random')} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-zinc-100">
+                <option value="permissive">Permissive (approve unless irreversible)</option>
+                <option value="skeptical">Skeptical (approve only if justified)</option>
+                <option value="random">Random (70/30 approve/reject)</option>
+              </select>
+            </label>
+          )}
+        </div>
+        {error && <p className="mb-2 text-sm text-rose-400">⚠︎ {error}</p>}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onStart(mode, { compress_days: compress, wallclock_budget_sec: budgetSec, approver_policy: mode === 'auto' ? policy : undefined })}
+            disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start
+          </button>
+          {lastRun && (
+            <button onClick={onReplay} className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800/70">
+              New from blank
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FinalReport({ run }: { run: SimulationRunRow }) {
+  if (!run.result) return null
+  const r = run.result as {
+    events_processed?:    number
+    approvals?:           { approved?: number; rejected?: number; auto_approved?: number; auto_rejected?: number }
+    sim_revenue_cents?:   number
+    sim_spend_cents?:     number
+    sim_net_cents?:       number
+    failures?:            number
+    critical_failures?:   number
+    kpis_hit?:            Record<string, boolean | null>
+    takeaways?:           string[]
+  }
+  const a = r.approvals ?? {}
+  return (
+    <div className="rounded-xl border border-emerald-700/40 bg-emerald-500/5 p-4 text-zinc-200">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-emerald-200">Run finished — {run.status}</h2>
+        <span className="font-mono text-xs text-emerald-300/60">{r.events_processed ?? 0} events · {run.compress_days} sim-days</span>
+      </div>
+      {r.takeaways && r.takeaways.length > 0 && (
+        <ul className="mb-3 space-y-1 text-sm">
+          {r.takeaways.map((t, i) => <li key={i}>• {t}</li>)}
+        </ul>
+      )}
+      <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <div className="rounded-lg bg-zinc-900/40 p-2">
+          <div className="text-zinc-500">Approved</div>
+          <div className="font-mono text-zinc-100">{(a.approved ?? 0) + (a.auto_approved ?? 0)}</div>
+        </div>
+        <div className="rounded-lg bg-zinc-900/40 p-2">
+          <div className="text-zinc-500">Rejected</div>
+          <div className="font-mono text-zinc-100">{(a.rejected ?? 0) + (a.auto_rejected ?? 0)}</div>
+        </div>
+        <div className="rounded-lg bg-zinc-900/40 p-2">
+          <div className="text-zinc-500">Sim revenue</div>
+          <div className="font-mono text-zinc-100">${((r.sim_revenue_cents ?? 0) / 100).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg bg-zinc-900/40 p-2">
+          <div className="text-zinc-500">Sim net</div>
+          <div className={`font-mono ${(r.sim_net_cents ?? 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+            ${((r.sim_net_cents ?? 0) / 100).toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
