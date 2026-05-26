@@ -58,7 +58,12 @@ interface Chain<T> {
  *                        approval-card flow that pre-dates the chat-emitted
  *                        path; still used by some workflow paths)
  */
-export type ApprovalKind = 'chat-emitted' | 'operator-task'
+export type ApprovalKind =
+  | 'chat-emitted'
+  | 'operator-task'
+  | 'cron-alert'
+  | 'stalled-run'
+  | 'budget-incident'
 
 export interface FleetPendingItem {
   /** 'platform' OR 'business:<slug>' — what scope this approval lives in. */
@@ -207,6 +212,16 @@ export async function listFleetPending(
     }
   } catch (err) {
     console.warn('[lib/approvals/fleet] approvals-table fetch failed:', err instanceof Error ? err.message : err)
+  }
+
+  // System alerts (cron / stalled runs / budget incidents) — merged into
+  // the same feed so the operator has ONE inbox. Each loader is fail-soft.
+  try {
+    const { loadAllSystemAlerts } = await import('./system-alerts')
+    const sys = await loadAllSystemAlerts(db, userId)
+    pending.push(...sys)
+  } catch (err) {
+    console.warn('[lib/approvals/fleet] system-alerts load failed:', err instanceof Error ? err.message : err)
   }
 
   pending.sort((a, b) => b.created_at.localeCompare(a.created_at))
