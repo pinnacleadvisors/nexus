@@ -18,7 +18,14 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, AlertCircle, ChevronRight, Loader2, Inbox, RefreshCw, Check } from 'lucide-react'
 
-type ApprovalKind = 'chat-emitted' | 'operator-task'
+type ApprovalKind =
+  | 'chat-emitted'
+  | 'operator-task'
+  | 'cron-alert'
+  | 'stalled-run'
+  | 'budget-incident'
+
+const SYSTEM_ALERT_KINDS = new Set<ApprovalKind>(['cron-alert', 'stalled-run', 'budget-incident'])
 
 interface FleetPendingItem {
   scope:         string  // 'admin' OR 'business:<slug>'
@@ -36,12 +43,28 @@ interface FleetPendingItem {
 }
 
 const KIND_LABEL: Record<ApprovalKind, string> = {
-  'chat-emitted':  'chat',
-  'operator-task': 'task',
+  'chat-emitted':    'chat',
+  'operator-task':   'task',
+  'cron-alert':      'cron',
+  'stalled-run':     'stalled',
+  'budget-incident': 'budget',
 }
 const KIND_STYLE: Record<ApprovalKind, { bg: string; color: string; border: string }> = {
-  'chat-emitted':  { bg: 'rgba(34,211,238,0.12)',  color: '#67e8f9', border: '1px solid rgba(34,211,238,0.25)' },
-  'operator-task': { bg: 'rgba(168,85,247,0.12)',  color: '#c4b5fd', border: '1px solid rgba(168,85,247,0.25)' },
+  'chat-emitted':    { bg: 'rgba(34,211,238,0.12)',  color: '#67e8f9', border: '1px solid rgba(34,211,238,0.25)'  },
+  'operator-task':   { bg: 'rgba(168,85,247,0.12)',  color: '#c4b5fd', border: '1px solid rgba(168,85,247,0.25)'  },
+  // System alerts share an amber-to-rose palette so they're visually
+  // distinct from approval cards (which the operator must DECIDE on).
+  // Alerts are informational — they auto-clear when the source recovers.
+  'cron-alert':      { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', border: '1px solid rgba(245,158,11,0.25)'  },
+  'stalled-run':     { bg: 'rgba(249,115,22,0.12)',  color: '#fdba74', border: '1px solid rgba(249,115,22,0.25)'  },
+  'budget-incident': { bg: 'rgba(244,63,94,0.12)',   color: '#fda4af', border: '1px solid rgba(244,63,94,0.25)'   },
+}
+const KIND_TITLE: Record<ApprovalKind, string> = {
+  'chat-emitted':    'Approval emitted as a chat block — resolve by replying APPROVAL [id]: ... or click ✓',
+  'operator-task':   'Approval row in the approvals Postgres table — decided via the approval-card form',
+  'cron-alert':      'A cron job is failing. Check /cron-health for details. Auto-clears when the cron returns to green.',
+  'stalled-run':     'A run has been in "running" status for > 4 hours. Cancel from the relevant business page if it hung.',
+  'budget-incident': 'Cost-guard kill switch fired in the last 7 days. Inspect /api/health/deep for the spend trail.',
 }
 
 interface ApiOk  { ok: true;  pending: FleetPendingItem[] }
@@ -266,9 +289,7 @@ export default function FleetApprovalInbox() {
                       <span
                         className="px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider rounded shrink-0"
                         style={KIND_STYLE[p.kind]}
-                        title={p.kind === 'chat-emitted'
-                          ? 'Approval emitted as a chat block — resolve by replying APPROVAL [id]: ... or click ✓'
-                          : 'Approval row in the approvals Postgres table — decided via the approval-card form'}
+                        title={KIND_TITLE[p.kind]}
                       >
                         {KIND_LABEL[p.kind]}
                       </span>
@@ -277,7 +298,9 @@ export default function FleetApprovalInbox() {
                       </span>
                     </div>
                     <div className="text-[10px] mt-0.5 truncate" style={{ color: '#9090b0' }}>
-                      {p.approval.items.length} item{p.approval.items.length === 1 ? '' : 's'}
+                      {SYSTEM_ALERT_KINDS.has(p.kind)
+                        ? <>info-only · auto-clears</>
+                        : <>{p.approval.items.length} item{p.approval.items.length === 1 ? '' : 's'}</>}
                       {' · in '}
                       <span className="font-medium">{p.session_title}</span>
                     </div>
@@ -293,23 +316,25 @@ export default function FleetApprovalInbox() {
                 Link covers the rest of the row, but a click on the check
                 doesn't propagate. Sits in the gap right of the chevron.
               */}
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void resolveOne(p) }}
-                disabled={isResolving}
-                className="absolute right-2 top-2 inline-flex items-center justify-center rounded-md p-1 transition-colors disabled:opacity-50"
-                style={{
-                  color:      '#9090b0',
-                  background: 'rgba(255,255,255,0.04)',
-                  border:     '1px solid rgba(255,255,255,0.08)',
-                }}
-                title="Mark resolved — writes an APPROVAL [id]: reply into the source chat so this clears from the inbox. Use when you already shipped the fix out of band."
-                aria-label="Mark approval resolved"
-              >
-                {isResolving
-                  ? <Loader2 size={10} className="animate-spin" />
-                  : <Check size={10} />}
-              </button>
+              {!SYSTEM_ALERT_KINDS.has(p.kind) && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); void resolveOne(p) }}
+                  disabled={isResolving}
+                  className="absolute right-2 top-2 inline-flex items-center justify-center rounded-md p-1 transition-colors disabled:opacity-50"
+                  style={{
+                    color:      '#9090b0',
+                    background: 'rgba(255,255,255,0.04)',
+                    border:     '1px solid rgba(255,255,255,0.08)',
+                  }}
+                  title="Mark resolved — writes an APPROVAL [id]: reply into the source chat so this clears from the inbox. Use when you already shipped the fix out of band."
+                  aria-label="Mark approval resolved"
+                >
+                  {isResolving
+                    ? <Loader2 size={10} className="animate-spin" />
+                    : <Check size={10} />}
+                </button>
+              )}
             </div>
           )
         })}
