@@ -11,6 +11,8 @@ interface Props {
   mission:          string | null
   spent30dUsd:      number
   pendingApprovals: number
+  /** When true, this business is running under the RD-Agent simulation harness — cost-guard short-circuits real spend + UI surfaces a 🧪 sim badge. */
+  simulation?:      boolean
 }
 
 /**
@@ -21,7 +23,7 @@ interface Props {
  * the chat-first day-to-day workflow keeps its 1-click access.
  */
 export default function BusinessTile({
-  slug, name, niche, status, mission, spent30dUsd, pendingApprovals,
+  slug, name, niche, status, mission, spent30dUsd, pendingApprovals, simulation,
 }: Props) {
   const statusColor =
     status === 'active'   ? 'bg-emerald-500/10 text-emerald-400' :
@@ -39,8 +41,16 @@ export default function BusinessTile({
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className={`rounded-full px-2 py-0.5 ${statusColor}`}>{status}</span>
+          {simulation && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 font-mono uppercase tracking-wider text-[10px] text-violet-300"
+              title="Simulation — real spend is blocked, customer emails are reserved-domain stubs. Cost-guard short-circuits any money-moving verb."
+            >
+              🧪 sim
+            </span>
+          )}
           <span className="text-zinc-500">{niche}</span>
         </div>
 
