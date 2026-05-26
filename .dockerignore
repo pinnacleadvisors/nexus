@@ -1,0 +1,78 @@
+# .dockerignore — trims the build context Docker ships to the daemon.
+#
+# Before this file existed, every Coolify build uploaded the FULL repo tree
+# (~500 MB+ when .next/, node_modules/, .git/, and tests/playwright/ were
+# included) before the Dockerfile's COPY even ran. On Hostinger's bandwidth
+# that's 20-40s of upload that the Dockerfile then mostly discards.
+#
+# Keep this in sync with what services/lean-deploy/Dockerfile actually needs:
+# package*.json + the app source. Everything else is build-side noise.
+
+# ── Dependencies + build output (regenerated inside the image) ──────────
+node_modules
+*/node_modules
+**/node_modules
+.next
+.next/cache
+out
+build
+dist
+
+# ── Git history (not needed inside the runtime image; recovered from BuildKit cache for npm) ──
+.git
+.gitignore
+.gitattributes
+.githooks
+
+# ── Local-only env / test artifacts ────────────────────────────────────
+.env
+.env.*
+!.env.local.example
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+.npm
+.eslintcache
+
+# ── Tests + Playwright (not run in production image) ───────────────────
+tests
+playwright.config.ts
+playwright-report
+test-results
+
+# ── Documentation + planning (not needed at runtime) ───────────────────
+docs
+memory
+roadmap
+*.md
+!README.md
+task_plan*.md
+ROADMAP.md
+
+# ── IDE configs ────────────────────────────────────────────────────────
+.vscode
+.idea
+*.swp
+*.swo
+
+# ── Per-service trees that build separately (don't ship inside nexus-app) ──
+services
+apps/desktop
+
+# ── Docker meta (not needed inside the image) ──────────────────────────
+Dockerfile*
+docker-compose*.yaml
+docker-compose*.yml
+.dockerignore
+
+# ── Misc CI artifacts ──────────────────────────────────────────────────
+coverage
+.nyc_output
+.cache
+.parcel-cache
+
+# ── Claude / agent runtime state ───────────────────────────────────────
+.claude/worktrees
+.claude/skills/firecrawl_local/cache
+.claude/skills/molecularmemory_local/cache
