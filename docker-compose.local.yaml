@@ -1,0 +1,78 @@
+# docker-compose.local.yaml — one-command Nexus install for personal-OS
+# use (Phase 3 of task_plan-desktop-app.md, PR #384).
+#
+# Run via:
+#   ./scripts/local-install.sh
+#
+# Three services on a single host:
+#   • nexus       — the Next.js app, bundled from this repo
+#   • db          — Postgres 16, the canonical Supabase DB schema
+#   • ollama      — local LLM provider (Llama 3.3 / Qwen / Mixtral etc)
+#
+# Operator-managed files under ~/.nexus:
+#   • secrets.json        — per-platform API keys (Stripe, etc) when needed
+#   • uploads/            — local blob store (mirrors R2/S3 key layout)
+#   • disabled-crons.json — { "post-deploy-smoke": true } to skip crons
+#
+# Switch to remote Coolify by stopping this stack + setting the operator's
+# browser to https://nexus.coolifycloudtunnel.uk (the PWA install lets
+# both URLs coexist as separate "apps").
+
+services:
+  nexus:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /app
+    command: bash -c "npm ci && npm run build && npm start"
+    ports:
+      - "${NEXUS_PORT:-3000}:3000"
+    environment:
+      LOCAL_MODE:                      "1"
+      NEXUS_BASE_URL:                  "http://localhost:${NEXUS_PORT:-3000}"
+      LLM_PROVIDER:                    "${LLM_PROVIDER:-ollama}"
+      OLLAMA_BASE_URL:                 "http://ollama:11434"
+      # Postgres connection — points at the `db` service below
+      DATABASE_URL:                    "postgresql://nexus:nexus@db:5432/nexus"
+      NEXT_PUBLIC_SUPABASE_URL:        "${NEXT_PUBLIC_SUPABASE_URL:-}"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY:   "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
+      SUPABASE_SERVICE_ROLE_KEY:       "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      # Optional — set these in ~/.nexus/secrets.json or override via the
+      # shell environment that runs docker compose up.
+      ANTHROPIC_API_KEY:               "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:                  "${OPENAI_API_KEY:-}"
+      OPENROUTER_API_KEY:              "${OPENROUTER_API_KEY:-}"
+      RESEND_API_KEY:                  "${RESEND_API_KEY:-}"
+    volumes:
+      - .:/app
+      - nexus_node_modules:/app/node_modules
+      - "${HOME}/.nexus:/root/.nexus:rw"
+    depends_on:
+      - db
+      - ollama
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER:     nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB:       nexus
+    volumes:
+      - nexus_db_data:/var/lib/postgresql/data
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - nexus_ollama_data:/root/.ollama
+    # macOS users on Apple Silicon: optionally enable GPU passthrough by
+    # adding `deploy.resources.reservations.devices` per Ollama docs.
+
+volumes:
+  nexus_node_modules:   {}
+  nexus_db_data:        {}
+  nexus_ollama_data:    {}
