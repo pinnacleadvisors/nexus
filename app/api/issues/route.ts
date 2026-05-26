@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardRequest } from '@/lib/guard'
 import { createServerClient } from '@/lib/supabase'
 import { insertIssue } from '@/lib/issues/insert'
+import { dispatchPlatformDev } from '@/lib/platform-dev/dispatch'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 15
@@ -56,6 +57,7 @@ interface PostBody {
   title?:         unknown
   body?:          unknown
   dispatch?:      unknown
+  dev_team?:      unknown   // when true, routes to platform-dev-loop (autonomous draft-PR agent)
 }
 
 const MAX_TITLE = 200
@@ -74,7 +76,8 @@ export async function POST(req: NextRequest) {
   const slug   = typeof body.business_slug === 'string' ? body.business_slug.trim() : ''
   const title  = typeof body.title === 'string'         ? body.title.trim()         : ''
   const issueBody = typeof body.body === 'string'        ? body.body.trim()          : ''
-  const wantsDispatch = body.dispatch !== false  // default true
+  const wantsDevTeam  = body.dev_team === true           // route to platform-dev-loop (autonomous)
+  const wantsDispatch = !wantsDevTeam && body.dispatch !== false  // legacy engineering-lead path
 
   if (!slug || !/^[a-z0-9-]{1,60}$/.test(slug)) {
     return NextResponse.json({ ok: false, error: 'invalid_business_slug' })
@@ -108,16 +111,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'query_failed' })
   }
 
-  // Insert as triage so it shows up in the next triage sweep + flags the
-  // engineering-lead's classifier. Operator-reported issues have no
-  // assignee yet — engineering-lead routes to the right role.
+  // Insert as triage. Routing depends on `dev_team` flag:
+  //   - default (engineering-lead path): assignee_user = reporter; the
+  //     engineering-lead agent triages + reassigns to the right role
+  //   - dev_team=true: assignee_agent = 'platform-dev'; the issue is
+  //     queued for the autonomous platform-dev-loop agent which opens
+  //     a draft PR end-to-end
+  // The single-assignee constraint (migration 048) means we set ONE.
   const ins = await insertIssue(db, {
     business_slug:   slug,
     title,
     body:            issueBody || null,
     status_category: 'triage',
     status:          'Triage',
-    assignee_user:   g.userId,  // reporter; engineering-lead will reassign
+    ...(wantsDevTeam
+      ? { assignee_agent: 'platform-dev' }
+      : { assignee_user:  g.userId }),
   })
   if (ins.error) {
     return NextResponse.json({ ok: false, error: 'insert_failed', detail: ins.error.message })
@@ -127,11 +136,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'issues_table_missing' })
   }
 
-  // Optional immediate dispatch to engineering-lead. Fire-and-forget — we
-  // return the issue id whether or not the dispatch succeeded; the row is
-  // persisted either way and a cron / retry can pick it up later.
-  let dispatched = false
-  if (wantsDispatch) {
+  // Routing — three paths:
+  //   1. dev_team=true  → autonomous platform-dev-loop (opens draft PR)
+  //   2. dispatch=true  → engineering-lead triage (legacy default)
+  //   3. otherwise      → file silently for later
+  let dispatched: boolean = false
+  let routedTo: 'engineering-lead' | 'platform-dev-loop' | null = null
+  if (wantsDevTeam) {
+    routedTo = 'platform-dev-loop'
+    try {
+      const out = await dispatchPlatformDev({
+        issueId:      ins.id,
+        title,
+        description:  issueBody || null,
+        businessSlug: slug,
+        userId:       g.userId,
+        cookie:       req.headers.get('cookie') ?? undefined,
+      })
+      dispatched = out.ok
+      if (!out.ok) {
+        console.warn('[/api/issues] platform-dev-loop dispatch failed (non-fatal):', out.error)
+      }
+    } catch (err) {
+      console.warn('[/api/issues] platform-dev-loop dispatch threw:', err instanceof Error ? err.message : err)
+    }
+  } else if (wantsDispatch) {
+    routedTo = 'engineering-lead'
     try {
       // SSRF-safe: resolve the dispatch URL from env, NOT from req.url.
       // CodeQL js/request-forgery flagged the prior `new URL(req.url).origin`
@@ -164,5 +194,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, id: ins.id, dispatched })
+  return NextResponse.json({ ok: true, id: ins.id, dispatched, routed_to: routedTo })
 }

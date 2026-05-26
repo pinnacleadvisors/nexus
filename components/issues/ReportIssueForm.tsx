@@ -22,16 +22,19 @@ interface SubmitResp {
   ok:          boolean
   id?:         string
   dispatched?: boolean
+  routed_to?:  'engineering-lead' | 'platform-dev-loop'
   error?:      string
   detail?:     string
 }
+
+type Route = 'engineering-lead' | 'platform-dev'
 
 export default function ReportIssueForm({ businesses }: Props) {
   const router = useRouter()
   const [slug, setSlug]         = useState<string>(businesses[0]?.slug ?? '')
   const [title, setTitle]       = useState<string>('')
   const [body, setBody]         = useState<string>('')
-  const [dispatch, setDispatch] = useState<boolean>(true)
+  const [route, setRoute]       = useState<Route>('engineering-lead')
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [result, setResult]     = useState<SubmitResp | null>(null)
 
@@ -48,7 +51,8 @@ export default function ReportIssueForm({ businesses }: Props) {
           business_slug: slug,
           title:         title.trim(),
           body:          body.trim() || undefined,
-          dispatch,
+          dispatch:      route !== 'platform-dev',   // engineering-lead path only when route is the legacy default
+          dev_team:      route === 'platform-dev',   // platform-dev-loop path
         }),
       })
       const j = (await res.json().catch(() => ({}))) as SubmitResp
@@ -128,17 +132,33 @@ export default function ReportIssueForm({ businesses }: Props) {
       </label>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <label className="flex cursor-pointer items-center gap-2 text-zinc-400">
-          <input
-            type="checkbox"
-            checked={dispatch}
-            onChange={e => setDispatch(e.target.checked)}
-            disabled={submitting}
-            className="rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-600/40"
-          />
-          Dispatch engineering-lead immediately
-          <span className="text-zinc-600">— uncheck to file silently for later triage</span>
-        </label>
+        <fieldset className="flex flex-col gap-1.5 text-zinc-400">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500">Route to:</span>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="issue-route"
+              checked={route === 'engineering-lead'}
+              onChange={() => setRoute('engineering-lead')}
+              disabled={submitting}
+              className="border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-600/40"
+            />
+            <span className="text-zinc-300">engineering-lead</span>
+            <span className="text-zinc-600">— triages + reassigns to the right dept-role</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="issue-route"
+              checked={route === 'platform-dev'}
+              onChange={() => setRoute('platform-dev')}
+              disabled={submitting}
+              className="border-zinc-600 bg-zinc-900 text-violet-500 focus:ring-violet-600/40"
+            />
+            <span className="text-zinc-300">Nexus dev team</span>
+            <span className="text-zinc-600">— autonomous: implements, tests, opens DRAFT PR for your review</span>
+          </label>
+        </fieldset>
 
         <div className="flex items-center gap-3">
           {result && !result.ok && (
@@ -150,7 +170,7 @@ export default function ReportIssueForm({ businesses }: Props) {
           {result && result.ok && (
             <span className="inline-flex items-center gap-1 text-emerald-400">
               <Check className="h-3 w-3" />
-              Filed{result.dispatched ? ' + agent dispatched' : ''}
+              Filed{result.dispatched ? ` + ${result.routed_to ?? 'agent'} dispatched` : ''}
             </span>
           )}
           <button
