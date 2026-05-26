@@ -23,17 +23,27 @@ import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createServerClient } from '@/lib/supabase'
+import { loadOverrides } from '@/lib/skills/overrides'
 
 export const runtime = 'nodejs'
 
 interface SkillRow {
-  slug:        string
-  name:        string
-  description: string
-  status:      'draft' | 'verified'
-  hasContent:  boolean
-  sizeBytes:   number
-  updatedAt:   string | null
+  slug:           string
+  name:           string
+  description:    string
+  status:         'draft' | 'verified'
+  hasContent:     boolean
+  sizeBytes:      number
+  updatedAt:      string | null
+  /** Resolved model — override wins, falls back to frontmatter default, then null. */
+  model:          string | null
+  /** Frontmatter default (informational; null if SKILL.md omits the field). */
+  modelDefault:   string | null
+  /** True if a per-operator override is active. */
+  modelOverridden: boolean
+  /** Rationale recorded when the override was set via Recommend. */
+  modelRationale: string | null
 }
 
 /** Tiny YAML-ish frontmatter parser. Handles the subset the SKILL.md files
@@ -59,7 +69,10 @@ function parseFrontmatter(raw: string): Record<string, string> {
   return out
 }
 
-async function readSkills(): Promise<{ skills: SkillRow[]; warning?: string }> {
+async function readSkills(userId: string): Promise<{ skills: SkillRow[]; warning?: string }> {
+  // Per-operator overrides layer on top of frontmatter defaults.
+  const db        = createServerClient()
+  const overrides = db ? await loadOverrides(db, userId) : new Map()
   // Overlay resolution (Task MA1/MA3 of task_plan-model-agnostic-platform.md):
   // canonical location is `/skills/`; legacy is `.claude/skills/`. Read both,
   // dedupe by slug (canonical wins), so the move can happen incrementally
@@ -101,7 +114,9 @@ async function readSkills(): Promise<{ skills: SkillRow[]; warning?: string }> {
       // Hand-curated skills omit `status`. skill-trainer auto-generated ones
       // write `status: draft` until the operator promotes them. Treat absence
       // as verified — the existing three skills in the repo are hand-curated.
-      const status      = (fm.status === 'draft') ? 'draft' : 'verified'
+      const status        = (fm.status === 'draft') ? 'draft' : 'verified'
+      const modelDefault  = fm.model?.trim() || null
+      const override      = overrides.get(slug)
       bySlug.set(slug, {
         slug,
         name,
@@ -110,6 +125,10 @@ async function readSkills(): Promise<{ skills: SkillRow[]; warning?: string }> {
         hasContent: raw.length > 0,
         sizeBytes,
         updatedAt:  mtime ? mtime.toISOString() : null,
+        model:           override?.model ?? modelDefault,
+        modelDefault,
+        modelOverridden: Boolean(override),
+        modelRationale:  override?.rationale ?? null,
       })
     }
   }
@@ -131,7 +150,7 @@ export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const result = await readSkills()
+  const result = await readSkills(userId)
   return NextResponse.json(result, {
     headers: { 'Cache-Control': 'no-store' },
   })
