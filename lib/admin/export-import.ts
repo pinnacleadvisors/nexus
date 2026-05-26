@@ -37,6 +37,7 @@ export const EXPORT_TABLES: readonly string[] = [
   'simulation_benchmarks',
   'simulation_benchmark_runs',
   'simulation_voice_cache',
+  'skill_overrides',
 ] as const
 
 export interface ExportPayload {

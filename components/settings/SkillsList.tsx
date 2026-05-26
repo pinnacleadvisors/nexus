@@ -13,17 +13,21 @@
  * verified button, last-used timestamp (needs a skill_invocations table).
  */
 
-import { useEffect, useState } from 'react'
-import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useState, useTransition } from 'react'
+import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles, Wand2, X } from 'lucide-react'
 
 interface SkillRow {
-  slug:        string
-  name:        string
-  description: string
-  status:      'draft' | 'verified'
-  hasContent:  boolean
-  sizeBytes:   number
-  updatedAt:   string | null
+  slug:           string
+  name:           string
+  description:    string
+  status:         'draft' | 'verified'
+  hasContent:     boolean
+  sizeBytes:      number
+  updatedAt:      string | null
+  model:          string | null   // resolved (override OR frontmatter default)
+  modelDefault:   string | null
+  modelOverridden: boolean
+  modelRationale: string | null
 }
 
 interface SkillsResponse {
@@ -54,27 +58,75 @@ export default function SkillsList() {
   const [warning, setWarning] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState<string | null>(null)
+  const [busyRec, setBusyRec] = useState<Record<string, boolean>>({})
+  const [, startTx]           = useTransition()
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch('/api/skills')
-        if (!res.ok) throw new Error(`load failed: ${res.status}`)
-        const json = await res.json() as SkillsResponse
-        if (!cancelled) {
-          setSkills(json.skills)
-          setWarning(json.warning ?? null)
-        }
-      } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : 'load failed')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/skills')
+      if (!res.ok) throw new Error(`load failed: ${res.status}`)
+      const json = await res.json() as SkillsResponse
+      setSkills(json.skills)
+      setWarning(json.warning ?? null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'load failed')
+    } finally {
+      setLoading(false)
     }
-    void load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const recommend = useCallback((skill: SkillRow) => {
+    setErr(null)
+    setBusyRec(p => ({ ...p, [skill.slug]: true }))
+    startTx(async () => {
+      try {
+        const res  = await fetch('/api/models/recommend-skill', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            slug:        skill.slug,
+            name:        skill.name,
+            description: skill.description,
+            status:      skill.status,
+          }),
+        })
+        const body = await res.json() as { ok: boolean; recommendation?: { model: string; rationale: string }; error?: string }
+        if (!body.ok || !body.recommendation) {
+          setErr(body.error ?? 'recommendation failed')
+          return
+        }
+        // Persist as the new default for this skill (Recommend = pick).
+        const patch = await fetch(`/api/skills/${encodeURIComponent(skill.slug)}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            model:     body.recommendation.model,
+            rationale: body.recommendation.rationale,
+          }),
+        })
+        const patchBody = await patch.json() as { ok: boolean; error?: string }
+        if (!patchBody.ok) {
+          setErr(patchBody.error ?? 'save failed')
+          return
+        }
+        await load()
+      } finally {
+        setBusyRec(p => ({ ...p, [skill.slug]: false }))
+      }
+    })
+  }, [load])
+
+  const clearOverride = useCallback((skill: SkillRow) => {
+    setErr(null)
+    startTx(async () => {
+      const res  = await fetch(`/api/skills/${encodeURIComponent(skill.slug)}`, { method: 'DELETE' })
+      const body = await res.json() as { ok: boolean; error?: string }
+      if (!body.ok) setErr(body.error ?? 'clear failed')
+      await load()
+    })
+  }, [load])
 
   const verifiedCount = skills.filter(s => s.status === 'verified').length
   const draftCount    = skills.filter(s => s.status === 'draft').length
@@ -145,14 +197,27 @@ export default function SkillsList() {
 
       {skills.length > 0 && (
         <div className="grid grid-cols-1 gap-2.5">
-          {skills.map(s => <SkillCard key={s.slug} skill={s} />)}
+          {skills.map(s => (
+            <SkillCard
+              key={s.slug}
+              skill={s}
+              busyRec={Boolean(busyRec[s.slug])}
+              onRecommend={() => recommend(s)}
+              onClearOverride={() => clearOverride(s)}
+            />
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-function SkillCard({ skill }: { skill: SkillRow }) {
+function SkillCard({ skill, busyRec, onRecommend, onClearOverride }: {
+  skill:           SkillRow
+  busyRec:         boolean
+  onRecommend:     () => void
+  onClearOverride: () => void
+}) {
   const verified = skill.status === 'verified'
   return (
     <div className="p-3.5 flex flex-col gap-2"
@@ -208,12 +273,46 @@ function SkillCard({ skill }: { skill: SkillRow }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 text-[10px] font-mono pt-1 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)', color: '#55556a' }}>
+      <div className="flex items-center gap-2 text-[10px] font-mono pt-1 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)', color: '#55556a' }}>
         <span>{formatBytes(skill.sizeBytes)}</span>
         <span>·</span>
         <span>updated {formatRelative(skill.updatedAt)}</span>
+        <span>·</span>
+        <span title={skill.modelRationale ?? (skill.model ? 'platform default from SKILL.md frontmatter' : 'no model assigned yet')}>
+          model: <code style={{ color: skill.model ? '#a8a3ff' : '#55556a' }}>{skill.model ?? '(unset)'}</code>
+          {skill.modelOverridden && <span className="ml-1" style={{ color: '#fbbf24' }} title="Operator override active">●</span>}
+        </span>
         <span className="flex-1" />
-        <code style={{ color: '#9090b0' }}>.claude/skills/{skill.slug}/SKILL.md</code>
+        <button
+          type="button"
+          onClick={onRecommend}
+          disabled={busyRec}
+          title="Ask the recommender to pick the best model for this skill + persist as the operator override."
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition"
+          style={{
+            background: 'rgba(139,92,246,0.10)',
+            color:      '#c4b5fd',
+            border:     '1px solid rgba(139,92,246,0.25)',
+            opacity:    busyRec ? 0.5 : 1,
+          }}
+        >
+          {busyRec ? <Loader2 size={9} className="animate-spin" /> : <Wand2 size={9} />} Recommend
+        </button>
+        {skill.modelOverridden && (
+          <button
+            type="button"
+            onClick={onClearOverride}
+            title="Clear operator override; revert to the frontmatter default."
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              color:      '#9090b0',
+              border:     '1px solid rgba(255,255,255,0.10)',
+            }}
+          >
+            <X size={9} /> Reset
+          </button>
+        )}
       </div>
     </div>
   )
