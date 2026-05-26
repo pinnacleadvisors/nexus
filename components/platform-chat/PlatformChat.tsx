@@ -262,6 +262,29 @@ export default function PlatformChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
+  // Prefill the composer from `?prompt=...` once on mount. The `/businesses/new`
+  // "Start consultation in chat" link passes the consultation framing via the
+  // prompt query param so the operator lands here ready to send. Without this
+  // effect the param was silently dropped — operator landed on an empty
+  // composer and had to retype the framing themselves.
+  //
+  // We strip the param from the URL after reading so a refresh doesn't
+  // re-prefill (which would overwrite operator edits) and a Back navigation
+  // sees a clean URL.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const url      = new URL(window.location.href)
+      const prefill  = url.searchParams.get('prompt')
+      if (!prefill) return
+      setInput(prev => prev.length === 0 ? prefill : prev)
+      url.searchParams.delete('prompt')
+      window.history.replaceState({}, '', url.toString())
+    } catch {
+      // window.history can throw in rare sandboxed contexts — non-fatal.
+    }
+  }, [])
+
   // Phase 2E — keep the latest message above the iOS keyboard. When the
   // textarea is focused on mobile, Safari fires visualViewport resize events
   // as the soft keyboard slides up; without intervention, the last message
