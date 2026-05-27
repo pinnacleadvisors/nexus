@@ -19,7 +19,7 @@
 import { useEffect, useState } from 'react'
 import { Cpu, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
-type Provider = 'claude' | 'openrouter' | 'mimo' | 'ollama'
+type Provider = 'claude' | 'openrouter' | 'mimo' | 'ollama' | 'nim'
 
 interface ActiveResponse {
   ok:          boolean
@@ -40,6 +40,7 @@ interface ProviderOption {
 const OPTIONS: ProviderOption[] = [
   { id: 'claude',     label: 'Claude',     desc: 'Anthropic via the self-hosted gateway. Plan-billed via Claude Max.', ready: true },
   { id: 'openrouter', label: 'OpenRouter', desc: '300+ models via one router. Per-token billed. Needs OPENROUTER_API_KEY.', ready: true },
+  { id: 'nim',        label: 'NVIDIA NIM', desc: 'Free-tier hosted Llama/Mixtral/Gemma/Nemotron. Needs NVIDIA_NIM_API_KEY. Good for background tasks at $0 marginal.', ready: true },
   { id: 'mimo',       label: 'Mimo 2.5',   desc: 'Mimo Pro. Activate the adapter in lib/llm/providers/mimo.ts first.',  ready: false },
   { id: 'ollama',     label: 'Ollama',     desc: 'Self-hosted local model. Needs OLLAMA_BASE_URL set.',                  ready: false },
 ]

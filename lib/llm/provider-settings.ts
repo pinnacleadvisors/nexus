@@ -32,7 +32,7 @@
 import type { LlmProvider } from '@/lib/llm/provider'
 import { createServerClient } from '@/lib/supabase'
 
-const VALID_PROVIDERS: ReadonlySet<LlmProvider> = new Set<LlmProvider>(['claude', 'openrouter', 'mimo', 'ollama'])
+const VALID_PROVIDERS: ReadonlySet<LlmProvider> = new Set<LlmProvider>(['claude', 'openrouter', 'mimo', 'ollama', 'nim'])
 
 export interface ActiveProviderRecord {
   provider: LlmProvider
