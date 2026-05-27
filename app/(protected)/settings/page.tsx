@@ -27,6 +27,7 @@ import SettingsTabs, { type SettingsTabId } from '@/components/settings/Settings
 import AiProviderList from '@/components/settings/AiProviderList'
 import SkillsList from '@/components/settings/SkillsList'
 import FixtureModeSwitch from '@/components/settings/FixtureModeSwitch'
+import NotificationsPanel from '@/components/settings/NotificationsPanel'
 
 type ContentTabId = Exclude<SettingsTabId, 'businesses' | 'accounts' | 'agents'>
 
@@ -115,11 +116,17 @@ function SkillsTab() {
 
 function AlertsTab() {
   return (
-    <div>
-      <p className="text-xs mb-3" style={{ color: '#9090b0' }}>
-        Alert thresholds fire over Slack and email when daily cost, error rate, or other metrics cross the line.
-      </p>
-      <AlertsPanel />
+    <div className="space-y-4">
+      {/* R4 (UX consult): operator picks channel × category opt-ins. Slack
+          DM works today via Composio; web push lights up once VAPID keys
+          are in Doppler. */}
+      <NotificationsPanel />
+      <div>
+        <p className="text-xs mb-3" style={{ color: '#9090b0' }}>
+          Alert thresholds fire over Slack and email when daily cost, error rate, or other metrics cross the line.
+        </p>
+        <AlertsPanel />
+      </div>
     </div>
   )
 }
