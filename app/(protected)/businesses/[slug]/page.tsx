@@ -21,6 +21,7 @@ import BudgetIncidentCard, { type BudgetIncident } from '@/components/businesses
 import RunNowButton from '@/components/businesses/RunNowButton'
 import GraduateButton from '@/components/businesses/GraduateButton'
 import NextStepsCard from '@/components/businesses/NextStepsCard'
+import MobileActionBar from '@/components/businesses/MobileActionBar'
 import { ArrowLeft, Goal, ListTodo, ShieldCheck, MessageSquare, Network, Zap } from 'lucide-react'
 
 interface BusinessRow {
@@ -268,6 +269,14 @@ export default async function BusinessDetailPage({ params }: PageProps) {
           <BudgetIncidentCard incidents={budget.incidents} />
         </aside>
       </div>
+
+      {/* R12: sticky bottom action bar — md- only. Common-case actions
+          in reach without scrolling past the page chrome. */}
+      <MobileActionBar slug={business.slug} simulation={Boolean(business.simulation)} />
+
+      {/* Padding so the sticky bar doesn't overlap the last card. md+
+          ignores this since the bar is hidden there. */}
+      <div className="h-20 md:hidden" aria-hidden />
     </div>
   )
 }
