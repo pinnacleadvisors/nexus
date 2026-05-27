@@ -44,6 +44,20 @@ const DEFAULT_MODELS: Record<LlmProvider, string> = {
 
 function resolveProvider(opts?: GetLlmOptions): LlmProvider {
   if (opts?.provider) return opts.provider
+  // Dynamic setting from /settings UI (migration 083 + lib/llm/provider-
+  // settings.ts) takes precedence over the Doppler env var. The sync
+  // getter returns the cached value + fires a background DB refresh; first
+  // call on a cold process falls through to env until the cache warms.
+  // Wrapped in try/require so a missing settings module doesn't break the
+  // resolver — env stays as the final fallback.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getActiveProviderSync } = require('./provider-settings') as typeof import('./provider-settings')
+    const active = getActiveProviderSync()
+    if (active?.source === 'db') return active.provider
+  } catch {
+    // provider-settings module unavailable — fall through to env.
+  }
   const env = (process.env.LLM_PROVIDER ?? 'claude').toLowerCase()
   if (
     env === 'claude'     ||

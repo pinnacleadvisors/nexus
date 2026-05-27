@@ -18,6 +18,7 @@ import { Loader2, AlertCircle, CheckCircle2, Server, Zap, X } from 'lucide-react
 import { AI_PROVIDERS } from '@/lib/ai/providers'
 import { MODEL_CATALOG } from '@/lib/models/catalog'
 import AiProviderCard, { type AiProviderConnection } from './AiProviderCard'
+import ActiveProviderSwitch from './ActiveProviderSwitch'
 
 interface ConnectedAccount {
   id:           string
@@ -146,6 +147,7 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
 
   return (
     <div className="space-y-4">
+      <ActiveProviderSwitch />
       <ProviderChainBanner gateway={gateway} accounts={accounts} />
 
       {err && (
