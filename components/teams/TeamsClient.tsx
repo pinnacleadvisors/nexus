@@ -154,11 +154,38 @@ export default function TeamsClient({ businesses }: { businesses: BusinessRow[] 
 
 function EmptyBusinessesCard() {
   return (
-    <div className="px-4 py-6 text-center text-sm"
-         style={{ color: '#9090b0', background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px' }}>
-      <Users size={18} className="mx-auto mb-2" style={{ color: '#a8a3ff' }} />
-      <div>No businesses yet — add one from <span className="font-mono" style={{ color: '#a8a3ff' }}>/businesses</span> first.</div>
+    <div className="px-5 py-6 text-center"
+         style={{
+           background: 'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
+           border:     '1px solid rgba(108,99,255,0.22)',
+           borderRadius: '14px',
+         }}>
+      <div
+        className="h-10 w-10 mx-auto mb-3 rounded-lg flex items-center justify-center"
+        style={{
+          background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+          border:     '1px solid rgba(108,99,255,0.30)',
+        }}
+      >
+        <Users size={18} style={{ color: '#a8a3ff' }} />
+      </div>
+      <h3 className="text-sm font-semibold mb-1.5" style={{ color: '#e8e8f0' }}>
+        Spawn your first team
+      </h3>
+      <p className="text-xs leading-relaxed mb-4 max-w-md mx-auto" style={{ color: '#9090b0' }}>
+        Teams are department rosters bound to a business — engineering, content, sales-CS, ops, etc. Each spawn auto-wires the right ecosystem adapters (video / design / code) based on the business&apos;s niche. Create a business first; you can spawn teams the moment its row exists.
+      </p>
+      <a
+        href="/businesses/new"
+        className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition"
+        style={{
+          background: 'rgba(108,99,255,0.18)',
+          border:     '1px solid rgba(108,99,255,0.35)',
+          color:      '#c4b5fd',
+        }}
+      >
+        Create first business →
+      </a>
     </div>
   )
 }

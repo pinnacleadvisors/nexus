@@ -633,7 +633,10 @@ export default function BoardPage() {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4 p-6 overflow-x-auto flex-1">
+        {/* Mobile (<md): stack columns vertically — operator manages from
+            phone and horizontal scroll across 4 columns is bad UX.
+            Desktop (md+): preserve the classic horizontal kanban layout. */}
+        <div className="flex flex-col md:flex-row gap-4 p-4 sm:p-6 overflow-y-auto md:overflow-x-auto md:overflow-y-hidden flex-1">
           {COLUMN_ORDER.map(colId => (
             <KanbanColumn
               key={colId}
