@@ -26,6 +26,7 @@ import { getLlm } from '@/lib/llm/provider'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/providers'
 import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 import { createTask } from '@/lib/views/tasks'
+import { cacheWrap } from '@/lib/agents/cache'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 20
@@ -106,14 +107,30 @@ export async function POST(req: NextRequest): Promise<NextResponse<DescribeRespo
   let classified: ClassifyResult
   try {
     const catalog = compactCatalog()
-    const res = await generateText({
-      model:  getLlm(),
-      system: SYSTEM_PROMPT,
-      prompt: `Operator description:\n"""${description}"""\n\nSupported provider catalog (JSON):\n${JSON.stringify(catalog)}\n\nReply with the classification JSON only.`,
-      // Stay deterministic — no creative roleplay needed.
-      temperature: 0,
-    })
-    classified = parseClassifyJson(res.text)
+    // Smart cache: temperature:0 + stateless prompt + public-catalog input =
+    // deterministic. Same `description` always classifies to the same provider,
+    // so we cache for 24h. Cache key includes the catalog's length so a new
+    // provider being added to lib/oauth/providers.ts naturally invalidates
+    // every cached row (the description might now resolve differently).
+    // Fail-soft — cache failures bypass to the fresh call.
+    classified = await cacheWrap<ClassifyResult>(
+      'connected-accounts-describe',
+      { description: description.trim().toLowerCase(), catalogSize: catalog.length },
+      async () => {
+        const res = await generateText({
+          model:  getLlm(),
+          system: SYSTEM_PROMPT,
+          prompt: `Operator description:\n"""${description}"""\n\nSupported provider catalog (JSON):\n${JSON.stringify(catalog)}\n\nReply with the classification JSON only.`,
+          // Stay deterministic — no creative roleplay needed.
+          temperature: 0,
+        })
+        return parseClassifyJson(res.text)
+      },
+      // 24h TTL — the catalog rarely changes, the classifier is deterministic.
+      // Per-row invalidation lands when the agent's prompt or catalog changes
+      // (catalogSize bump → cache miss).
+      { ttlMinutes: 60 * 24 },
+    )
   } catch (e) {
     // Retry-storm safe — return 200 with ok:false so the UI shows an inline
     // error and doesn't kill the user's flow.

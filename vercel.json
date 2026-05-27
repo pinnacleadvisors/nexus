@@ -58,6 +58,10 @@
     {
       "path": "/api/cron/platform-dev-tick",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/agent-cache-evict",
+      "schedule": "30 6 * * *"
     }
   ],
   "experimentalServices": {
