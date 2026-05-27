@@ -141,20 +141,65 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       signal: AbortSignal.timeout(20_000),
     })
     const dispatchBody = await dispatchRes.json().catch(() => ({})) as {
-      ok?: boolean
+      ok?:        boolean
       sessionId?: string
-      error?: string
+      error?:     string
+      detail?:    string
+      hint?:      string
+    }
+
+    // Bubble the upstream error verbatim instead of swallowing into
+    // 'dispatch_failed'. The 2026-05-27 incident class: chat reported
+    // "dispatch_failed" but the real cause (cost-guard tripped / kill-switch
+    // active / gateway 502 / auth.json corrupt) was hidden one layer down.
+    // The dispatch route's structured `{error, detail, hint}` shape carries
+    // the actionable hint — surface it to the UI so the operator doesn't
+    // need to read server logs to find the actual failure.
+    if (!dispatchBody.ok) {
+      const hint = dispatchBody.hint
+        ?? (dispatchRes.status === 401 ? 'unauthorized — re-sign in and retry'
+           : dispatchRes.status === 429 ? 'rate-limited — slow down or check cost-guard'
+           : dispatchRes.status === 503 ? 'gateway unavailable — check /manage-platform → Health'
+           : `dispatch route returned HTTP ${dispatchRes.status}`)
+      console.warn('[/api/businesses/:slug/tick] dispatch returned not-ok:', JSON.stringify({
+        status: dispatchRes.status,
+        error:  dispatchBody.error,
+        detail: dispatchBody.detail,
+      }))
+      return NextResponse.json({
+        ok:         false,
+        sessionId:  dispatchBody.sessionId ?? null,
+        dispatched: false,
+        simulation: Boolean(biz.simulation),
+        error:      dispatchBody.error ?? `dispatch_returned_${dispatchRes.status}`,
+        detail:     dispatchBody.detail ?? undefined,
+        hint,
+        upstreamStatus: dispatchRes.status,
+      })
     }
 
     return NextResponse.json({
-      ok:         Boolean(dispatchBody.ok),
+      ok:         true,
       sessionId:  dispatchBody.sessionId ?? null,
-      dispatched: Boolean(dispatchBody.ok),
+      dispatched: true,
       simulation: Boolean(biz.simulation),
-      error:      dispatchBody.ok ? undefined : (dispatchBody.error ?? 'dispatch_failed'),
     })
   } catch (err) {
-    console.warn('[/api/businesses/:slug/tick] dispatch failed:', err instanceof Error ? err.message : err)
-    return NextResponse.json({ ok: false, error: 'dispatch_failed' })
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[/api/businesses/:slug/tick] dispatch failed:', msg)
+    // Specific hint for the most common 'caught exception' shapes the
+    // operator hits — network timeout vs JSON parse vs DNS fail. Better
+    // than a flat 'dispatch_failed' for diagnosis from the UI.
+    const hint = msg.includes('aborted') || msg.includes('timeout')
+      ? 'request timed out — claude gateway might be cold-starting; retry once'
+      : msg.includes('fetch failed')
+        ? 'network error reaching internal dispatch route — check NEXUS_BASE_URL'
+        : 'dispatch threw — see server logs for stack'
+    return NextResponse.json({
+      ok:     false,
+      error:  'dispatch_failed',
+      detail: msg.slice(0, 200),
+      hint,
+    })
   }
 }

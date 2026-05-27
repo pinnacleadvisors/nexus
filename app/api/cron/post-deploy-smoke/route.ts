@@ -138,7 +138,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 type AuthVerdict =
-  | { ok: true;  reason: 'cron_secret' | 'bot_token' }
+  | { ok: true;  reason: 'cron_secret' | 'bot_token' | 'ops_token' }
   | { ok: false; reason: 'cron_secret_unset_and_bot_token_invalid' | 'cron_secret_set_but_header_mismatch' | 'no_authorization_header' }
 
 /**
@@ -146,9 +146,20 @@ type AuthVerdict =
  * WHICH auth path failed without leaking the secret. 2026-05-24 — the
  * `qa-runner-401-rca` atom (mocs/autonomous-qa) documents the typical
  * failure modes this surfaces.
+ *
+ * Three accepted credentials, checked in order:
+ *   1. CRON_SECRET     — what cron-job.org / Vercel cron sends
+ *   2. BOT_API_TOKEN   — Playwright fixtures + manual dev triggers
+ *   3. NEXUS_OPS_TOKEN — what services/qa-runner/ actually sends (per
+ *      docker exec'd into the container, the runner's Doppler config has
+ *      NEXUS_OPS_TOKEN, not CRON_SECRET). The 2026-05-27 RCA confirmed
+ *      this — operator's curl with NEXUS_OPS_TOKEN failed because we only
+ *      checked the first two. Adding it here closes that 401 gap without
+ *      requiring a qa-runner Doppler-token swap.
  */
 function checkAuth(req: NextRequest): AuthVerdict {
   const cronSecret = process.env.CRON_SECRET
+  const opsToken   = process.env.NEXUS_OPS_TOKEN
   const header     = req.headers.get('authorization') ?? ''
 
   if (cronSecret && header === `Bearer ${cronSecret}`) {
@@ -159,6 +170,13 @@ function checkAuth(req: NextRequest): AuthVerdict {
   // secret to the runner box.
   if (authBotToken(req)) {
     return { ok: true, reason: 'bot_token' }
+  }
+  // qa-runner path — the runner ships with NEXUS_OPS_TOKEN in its Doppler
+  // config (consistent with /api/businesses/[slug]/provision and other
+  // operator-scope routes). Accepting it here means the runner's
+  // post-deploy smoke works without operator-side env juggling.
+  if (opsToken && header === `Bearer ${opsToken}`) {
+    return { ok: true, reason: 'ops_token' }
   }
 
   // Diagnostic: tell the operator which auth path failed. Never leaks the
