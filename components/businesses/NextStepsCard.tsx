@@ -43,13 +43,18 @@ export default function NextStepsCard({ slug, hasKpiTargets }: { slug: string; h
     let cancelled = false
     void (async () => {
       // Pull the 4 step signals in parallel. Each is fail-soft.
-      const [smokeRes, accountsRes, chatRes, preflightRes] = await Promise.allSettled([
+      //
+      // The chat signal uses /chat/sessions (which has a GET handler) rather
+      // than /chat?limit=1 (which is POST-only and 405s on GET) — the
+      // existence of at least one session is the right "has the operator
+      // engaged?" signal anyway.
+      const [smokeRes, accountsRes, sessionsRes, preflightRes] = await Promise.allSettled([
         fetch(`/api/businesses/${slug}/simulate/smoke?id=`, { cache: 'no-store' })   // GET with empty id → latest smoke
           .then(r => r.json()) as Promise<{ ok: boolean; latest?: { id: string; status: string } | null }>,
         fetch(`/api/connected-accounts?businessSlug=${slug}`, { cache: 'no-store' })
           .then(r => r.json()) as Promise<{ accounts: Array<{ id: string; platform: string; isFixture?: boolean }> }>,
-        fetch(`/api/businesses/${slug}/chat?limit=1`, { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : { messages: [] }) as Promise<{ messages: Array<{ id: string }> }>,
+        fetch(`/api/businesses/${slug}/chat/sessions`, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : { sessions: [] }) as Promise<{ sessions: Array<{ id: string }> }>,
         fetch(`/api/businesses/${slug}/graduate`, { cache: 'no-store' })
           .then(r => r.json()) as Promise<{ ok: boolean; ready?: boolean }>,
       ])
@@ -61,8 +66,8 @@ export default function NextStepsCard({ slug, hasKpiTargets }: { slug: string; h
         (accountsRes.value?.accounts ?? []).length > 0
       const accountsReal = accountsRes.status === 'fulfilled' &&
         (accountsRes.value?.accounts ?? []).some(a => !a.isFixture)
-      const chatAny = chatRes.status === 'fulfilled' &&
-        (chatRes.value?.messages ?? []).length > 0
+      const chatAny = sessionsRes.status === 'fulfilled' &&
+        (sessionsRes.value?.sessions ?? []).length > 0
       const graduateReady = preflightRes.status === 'fulfilled' && preflightRes.value?.ready === true
 
       const next: Step[] = [
@@ -98,7 +103,7 @@ export default function NextStepsCard({ slug, hasKpiTargets }: { slug: string; h
           href:  `/businesses/${slug}/chat`,
           cta:   chatAny ? 'Open chat →' : 'Start chatting →',
           done:  chatAny,
-          unknown: chatRes.status === 'rejected',
+          unknown: sessionsRes.status === 'rejected',
         },
         {
           id:    'smoke',
