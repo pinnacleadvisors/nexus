@@ -163,6 +163,80 @@ Repo structure: `AgentBench/`, `TauBench/` — Docker + uv task harnesses with t
 
 ---
 
+### Halo (context-labs/halo) &nbsp;🔬
+
+Self-improving harness for production agent deployments. Operator brain-dump 2026-05-27.
+
+| Pattern | Verdict | Status |
+|---|---|---|
+| Continuous evaluation loop in production | Useful — extends our `workflow-optimizer` failure-cluster pattern with online feedback rather than purely scheduled | 🔬 |
+| Online A/B of prompt + tool-call variants | Useful — adjacent to our LLM-voice A/B work but for agent behaviour | 🔬 |
+| Eval harness mounted into the live agent runtime | Useful — slots into the h4 layer of the Life-Harness taxonomy | 🔬 |
+| Direct context modification / fine-tuning | OUT OF SCOPE — we keep weights frozen per AGENTS.md "Interface-only adaptation" | ❌ |
+
+Next step: `task_plan-halo-absorption.md` planning doc. Repo: github.com/context-labs/halo.
+
+### Agents of Chaos (arXiv:2602.20021) &nbsp;🟡
+
+Stanford + Harvard + MIT — gave autonomous agents real tools (email, shell, Discord, memory) and watched them leak data + execute destructive commands + comply with attackers. Operator surfaced 2026-05-27. Most of the paper's recommendations Nexus already has, but the audit is worth running formally.
+
+| Pattern | Nexus state | Verdict |
+|---|---|---|
+| Restrict tool execution (no root/bash, human-in-loop for destructive) | ✅ Approval gates + `simulationGuard` + cost-guard kill-switch all enforce this | ✅ absorbed |
+| Strict data governance (no PII scraping, no internal config) | ✅ Composio brokers OAuth tokens; we hold only `composio_account_id`. memory-hq atoms forbid PII per AGENTS.md write rules | ✅ absorbed |
+| Verify agent communication (digital signatures, out-of-band confirmation) | 🟡 partial — HMAC bearer on gateway dispatch + Clerk session on chat. No multi-channel out-of-band yet | 🔬 |
+| Continuous monitoring + kill-switches (terminate on resource spike) | ✅ cost-guard kill-switch + `/api/health/deep` + Sentry alerts | ✅ absorbed |
+| Identity spoofing protection (agent collusion, conversational manipulation) | 🟡 partial — operator-gated loop pattern stops the loop from "convincing itself", but inter-agent message authentication isn't formally signed | 🔬 |
+
+Next step: run a `security-review` skill pass against the 30+ agent specs using this paper's threat model. Track gaps as a follow-up.
+
+### Perplexity Bumblebee &nbsp;🔬
+
+Security-scan agent toolkit from Perplexity. Operator brain-dump 2026-05-27.
+
+| Pattern | Verdict | Status |
+|---|---|---|
+| Dependency-CVE scanning into the agent's daily loop | Useful for `ops-compliance-checker` (already exists, no scan tool wired) | 🔬 |
+| Secret-exposure scan over the codebase | Useful — adjacent to our `check:codeql-patterns` clear-text-logging rule | 🔬 |
+| Threat-model-as-a-prompt | Useful — extends the `security-review` skill | 🔬 |
+
+Verdict so far: most useful as a tool the `ops-compliance-checker` or `security-review` skill calls, NOT a new agent. Track in `task_plan-security-scan-tooling.md`.
+
+### Plumoai &nbsp;🔬
+
+Operator brain-dump 2026-05-27 — research item only, no specific pattern identified yet. Likely an alternative LLM provider / agent runtime. Verify scope before deciding absorption.
+
+### NVIDIA NIM &nbsp;🔬
+
+Free API tier for developers running NVIDIA's hosted inference. Operator brain-dump 2026-05-27.
+
+| Pattern | Verdict | Status |
+|---|---|---|
+| Add as one of the `LLM_PROVIDER` enum values (alongside claude / openrouter / mimo / ollama) | Useful — falls through the existing provider abstraction at `lib/llm/provider.ts` | 🔬 |
+| Use free tier for low-stakes background tasks (failure-cluster scan, weekly digest) | Useful — drops marginal cost to zero for non-customer-facing dispatches | 🔬 |
+
+Next step: add `lib/llm/providers/nim.ts` adapter (mirrors `openrouter.ts` shape). One-PR job. Track as `task_plan-nim-adapter.md`.
+
+### Voxcpm &nbsp;🔬
+
+Expressive voice-cloning model. Operator brain-dump 2026-05-27. Drops into the content-team's `voice` adapter slot alongside ElevenLabs.
+
+Track as `task_plan-voxcpm-voice-adapter.md`.
+
+### Skyreels v2 &nbsp;🔬
+
+Operator brain-dump 2026-05-27. Likely a video model alternative to Higgsfield / Runway / Kling. Slots into the content-team's `video` adapter array. Verify scope + license before absorption.
+
+### Ruflo &nbsp;🔬
+
+Swarm-tasks tooling for Claude Code. Operator brain-dump 2026-05-27. Adjacent to the existing `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` swarm path. Verify whether it adds new capability beyond Anthropic's native team-spawn.
+
+### space-agent (agent0ai/space-agent) &nbsp;🔬
+
+Per-business UI customisation framework. Operator brain-dump 2026-05-27 — fork candidate for "operator paints custom dashboards". Track in `task_plan-custom-dashboard-widgets.md`.
+
+---
+
 ## Nexus-originated patterns (cross-referenced)
 
 These were NOT absorbed from elsewhere — they're our own. Documented here so the

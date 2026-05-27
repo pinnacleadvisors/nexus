@@ -243,14 +243,27 @@ decision + the per-category opt-in UX.
 
 ---
 
-## Open questions for the operator
+## Operator answers (2026-05-27)
 
-1. **Approve recommended top-3 (R1, R2, R5)?** I'll ship as 3 separate PRs.
-2. **Push notification provider for R4** — web push only / + Slack DM / + SMS?
-3. **Weekly digest destination for R6** — confirm `nguyendtrade@gmail.com`?
-4. **Bulk-action defaults for R7** — should "pause all" be available, or
-   strictly opt-in per-business?
-5. **Day-1 tour copy for R8** — operator-authored or template?
+1. **Top-3 approved + extended to all 12** — implement R1-R12 starting
+   from highest priority. **R1 shipped** as PR #411 (inbox time-buckets
+   + per-business filter + NEW pills). **R2 shipped** as PR #412 (bulk
+   approve + group-select + batch endpoint).
+2. **R4 push provider** — **web push + Slack DM in `#approvals` channel**.
+   No SMS for v1.
+3. **R6 weekly digest destination** — confirmed `nguyendtrade@gmail.com`.
+4. **R7 bulk-action defaults** — approved. "Pause all" + "Run smoke on
+   all" + "Refresh KPIs" all available.
+5. **R8 day-1 tour copy** — approved (template). Operator can amend.
+
+## Anti-recommendations decisions
+
+- AI council → SKILL (deferred, scoped in `task_plan-2026-05-27-brain-dump.md`).
+- Custom widgets / space-agent fork → scoped + deferred.
+- Voice control → deferred, recipe documented in brain-dump plan.
+- Linear absorption → deferred until other backlog is empty.
+- Dark-mode toggle → REJECTED. Dark-mode is the only theme. Locked via
+  `color-scheme: dark` in `app/globals.css` (2026-05-27).
 
 ---
 
