@@ -2,12 +2,14 @@
  * /approvals — unified inbox (Paperclip absorption Task 3e).
  *
  * Server component. Lists pending `approvals` rows across all businesses,
- * sorted by created_at desc. Each card shows the type (domain-specific 5-cat
- * gate matrix), business, payload summary, and approve/reject buttons.
+ * sorted by created_at desc. Each card shows the type (5-category gate
+ * matrix: niche_pick / domain_purchase / first_n_posts / paid_saas_signup
+ * / pricing_change), business, payload summary, and approve/reject buttons.
  *
- * Browser-test pending. The approve/reject actions in ApprovalCard are
- * NOT WIRED — they need a POST /api/approvals/[id]/decide route + form.
- * Tracked as a follow-up.
+ * Approve / Reject are wired via components/approvals/ApprovalCard.tsx →
+ * POST /api/approvals/[id]/decide. The route handles idempotency
+ * (terminal rows return 200 with existing decision) and is retry-storm
+ * safe (200 + {ok: false} on transient errors).
  */
 
 import { createServerClient } from '@/lib/supabase'

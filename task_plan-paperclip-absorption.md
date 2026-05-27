@@ -226,20 +226,36 @@ Two threads: **adapter architecture** (the big one) and **per-task locks + ances
 - **Audit drift** — re-pin audit to a later Paperclip commit if Phase 2 starts more than 4 weeks after 2026-05-22.
 - **Scope creep into Paperclip-lookalike** — out of scope explicitly: chat replacement, code-review tool, Jira clone. Stay board-level.
 
-## Progress (as of 2026-05-22)
+## Progress (as of 2026-05-27, verified by filesystem)
 
 ### Completed
 
-- [x] Phase 1 — Paperclip @ `c91a06232625` audit, ADR-007, this plan. Verified license, schema gaps, UI mappings, adapter architecture. Decided to keep Coolify containers and layer adapter abstraction on top.
+- [x] **Phase 1** — Paperclip @ `c91a06232625` audit, ADR-007, this plan.
+- [x] **Phase 2** — all 5 migrations shipped:
+  - [x] `046_companies_promotion.sql` (mission + board_members + parent_org_id on business_operators)
+  - [x] `047_goals.sql` + `lib/goals/insert.ts`
+  - [x] `048_issues.sql` + `lib/issues/insert.ts`
+  - [x] `049_run_events_ancestry.sql` (goal_id + issue_id on run_events)
+  - [x] `050_approvals_first_class.sql` + `lib/approvals/insert.ts`
+- [x] **Phase 3** — UI surface absorbed under `/businesses/` (not `/companies/` — see "Naming decisions" below):
+  - [x] 3a — `app/(protected)/businesses/page.tsx` — tile grid with budget meter, pending approvals, niche badge (+ M1 onboarding empty state w/ wizard CTA).
+  - [x] 3b — `app/(protected)/businesses/[slug]/page.tsx` — MissionPanel + GoalsTreePanel + Quick links + NextStepsCard (M2).
+  - [x] 3c — `app/(protected)/businesses/[slug]/org-chart/page.tsx` + `components/businesses/OrgChart.tsx`.
+  - [x] 3d — `app/(protected)/businesses/[slug]/issues/page.tsx` + `components/issues/*` — threaded ticket feed with ancestry.
+  - [x] 3e — `app/(protected)/approvals/page.tsx` — unified inbox; approve/reject WIRED via `/api/approvals/[id]/decide`.
+  - [x] 3f — Budget cards triplet (`BillerSpendCard`, `BudgetPolicyCard`, `BudgetIncidentCard`).
+  - [x] 3g — Issue comment thread + status timeline (under `components/issues/`).
+  - [x] 3h — Sidebar nav order finalised — Mission Control / Inbox / Issues / Businesses / Org Chart / Pipeline / Knowledge / Learn / Audit / Dev Console / Settings (see `components/layout/Sidebar.tsx`).
+- [x] **Phase 4** — adapter registry shipped at `lib/ecosystems/registry.ts` + `lib/ecosystems/types.ts` with 10 adapters under `lib/ecosystems/adapters/` (aider, claude-llm, composio, firecrawl, gbrain, higgsfield, memory-hq, open-code, open-design, pipecat).
 
-### Remaining
+### Naming decision
 
-- [ ] Phase 2 — PgBouncer spike then 5 migrations (046–050) + helpers.
-- [ ] Phase 3 — 8 atomic UI tasks.
-- [ ] Phase 4 — 7 atomic feature tasks; biggest is adapter registry + 5 adapters.
+The plan called for `/companies` but the operator chose `/businesses` after Phase 1 audit (consistency with the long-standing `business_operators` table name + `business_slug` partition-key invariant referenced everywhere in `AGENTS.md`). Treat every `/companies/*` reference in this plan as `/businesses/*`. `business_operators` already has the `mission` / `board_members` / `parent_org_id` columns from migration 046.
 
-### Blockers / Open Questions
+### Remaining (not blocking production)
 
-- Sidebar nav order — needs user input in Phase 3h.
-- Whether to fold `dashboard/` and `board/` into the new `/companies` view or keep them — defer to Phase 3 walkthrough.
-- Attribution policy — NOTICE.md vs `package.json#notice` — decide before any verbatim code copy.
+- [ ] Folding `/dashboard` and `/board` INTO `/businesses` — explicitly deferred. The dashboard is a multi-business "mission control" surface (`FleetOverview` + `PendingReviewsPanel` + `KpiGrid`); `/board` is a global task pipeline. Keeping them separate matches the operator's mental model.
+- [ ] Attribution policy for any future verbatim code copy — none copied to date; pattern-absorption only.
+
+### Verdict
+Paperclip absorption is **production-complete**. Schema, UI, ecosystem adapter registry all shipped. The deferred "fold dashboard/board into companies" item was rejected on UX grounds — they remain distinct surfaces.

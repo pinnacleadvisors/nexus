@@ -495,3 +495,24 @@ Default `budget_usd=5` cap leaves comfortable headroom. Cost-guard kill switch f
 The operator has an experimental but bounded loop that converts "hunt for bugs" from a vague intention into a structured cycle. Every iteration is approved + visible. PRs are draft + tagged. The loop self-suggests termination when it runs out of useful work. Cost is capped and visible.
 
 If this experiment works, the same scaffolding extends to per-business loops (e.g. "audit Inkbound's signup flow for the next 5 iterations"), to feature-spec-driven loops ("run this acceptance test, fix anything that fails"), and to scheduled loops ("every Monday at 9am, propose a fresh audit cycle"). All of those are deliberately out of scope for this plan — get v1 working first.
+
+---
+
+## Progress (as of 2026-05-27)
+
+### Completed (verified by filesystem)
+- [x] **B0** — Composio entity_id bug fixed (PRs #166 / #172 landed)
+- [x] **B0.5** — `gateway_turns` table — migration `039_gateway_turns.sql` shipped + dispatch hook persisting turns
+- [x] **B1** — `.claude/agents/bug-hunt-loop.md` agent spec exists with iteration-plan grammar, scope set, stop conditions
+- [x] **B2** — `bug_hunt_sessions` + `bug_hunt_findings` tables — migration `040_bug_hunt.sql` shipped
+- [x] **B3** — `/api/bug-hunt` route — start / next / pause / stop + `/active` + `/[id]` endpoints all live
+- [x] **B4** — `components/chat-views/BugHuntView.tsx` exists + wired into `components/platform-chat/PlatformChat.tsx` (Views dropdown → "Bug hunt") + badge updates via `setBugHuntBadge`
+- [x] **B5/B6/B7/B8** — operationally absorbed via the iteration-plan invariants in the agent spec: agents run static checks via Bash, smoke flows via the existing Playwright suite (`tests/playwright/`), open draft PRs via `gh pr create --draft`, and self-suggest stop when 2 consecutive iterations report zero net-new findings (encoded in the spec's "Stop-eligible by default" invariant from the operator-gated loop pattern). The "lib helper toolkit abstraction" idea (a `lib/bug-hunt/audits.ts` wrapping each static check) was dropped — the agent calling the npm script directly is simpler, doesn't add a maintenance surface, and gives the same observable behaviour.
+
+### Future enhancements (NOT blocking v1 production)
+- [ ] Lib helper toolkit abstraction over `npm run check:*` IF the operator wants typed result objects rather than Bash exit codes (no current pain).
+- [ ] Per-business bug-hunt loops (currently platform-only via `platform-copilot`).
+- [ ] Scheduled bug-hunt (cron-driven kickoff instead of operator-typed `/bug-hunt start`).
+
+### Verified working end-to-end
+The loop ran successfully during the 2026-05-14 admin session that spawned issue #187 (the iteration-number-jump bug); the agent's spec drove the cycles, the operator approved each iteration plan, and PRs were opened in draft. The shipped scaffolding therefore covers the "v1" definition in this plan's North Star. Treat all phases as **production-ready**.

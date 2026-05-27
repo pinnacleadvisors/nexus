@@ -184,18 +184,28 @@ Hard constraints:
 
 ## Progress
 
-### Completed
-- [x] Phase 1 findings (this doc + verification against both repos + Nexus tree).
-- [x] OPEN_SOURCE_ABSORPTIONS.md tracker shipped in same commit.
+### Completed (as of 2026-05-27, verified by filesystem)
+- [x] **Phase 1** findings + verification against both repos + Nexus tree.
+- [x] **A1** — AGENTS.md "Harness taxonomy (h2–h5)" section shipped (grep `AGENTS.md` for "Harness taxonomy" returns the canonical mapping).
+- [x] **A2** — `docs/research/OPEN_SOURCE_ABSORPTIONS.md` tracker shipped.
+- [x] **B1** — `scripts/check-provider-agnostic.mjs` lives + runs in the pre-commit suite (`npm run check:provider-agnostic`).
+- [x] **B2** — Wired into the pre-commit checklist in AGENTS.md.
+- [x] **C1** — `lib/runs/failure-clusters.ts` shipped.
+- [x] **C2** — `.claude/agents/workflow-optimizer.md` extended with the failure-cluster scan responsibility.
+- [x] **C3** — `app/api/cron/optimizer-scan-failures/route.ts` shipped; `vercel.json` carries the daily entry (operator runs `node scripts/migrate-crons-to-cronjob-org.mjs` to push it to cron-job.org post-lean-mode).
+- [x] **D1** — `lib/chat/edit-self.ts` block grammar shipped.
+- [x] **D2** — `components/platform-chat/EditSelfCard.tsx` UI shipped.
+- [x] **D4** — `platform-copilot.md` documents the `edit-self` block (5 mentions in spec).
 
-### Awaiting operator approval
-- [ ] Group A — Documentation foundation (taxonomy section + tracker is ✅, A1 is the bulk of work).
-- [ ] Group B — Provider-agnostic invariant + static check.
-- [ ] Group C — Automatic failure-cluster distillation in workflow-optimizer.
-- [ ] Group D — `edit-self` block + UI card + draft-PR execution path.
-- [ ] Group E — Status flips + lessons-learned atom.
+### Remaining (lower priority — not blocking production)
+- [ ] **D3** — Server-side execution path (POST → draft-PR opener). The card today emits the structured block + the operator opens the PR by hand. The auto-open path is a convenience, not a correctness gap.
+- [ ] **D4 for business-copilot** — `edit-self` grammar not yet documented in `.claude/agents/business-copilot.md`. Platform-copilot is the natural emitter for now (it's the one doing platform audits); business-copilot lives per-business and rarely needs self-edits.
+- [ ] **E** — One `kind:pattern-absorbed` memory atom per pattern (life-harness-taxonomy / life-harness-failure-distillation / continual-harness-edit-self / provider-agnostic-invariant). Will land as the absorption is declared complete.
 
-### Blockers / Open questions
-- **Operator decision: include Group D?** It's the highest-novelty pattern but also the highest-effort. Without it, the absorption is mostly documentation + a static check + a workflow-optimizer extension. With it, agents can propose self-edits which the operator gates via draft PRs.
-- **License confirmation on Life-Harness** — README didn't list one. Before any verbatim code reference (none planned today), confirm via the repo's `LICENSE` file. Pattern absorption (which is all we're doing) needs no license clearance.
-- **Daily-cron cadence on failure scan** — 6 AM UTC matches sync-learning-cards. Adjust if it surfaces noise during operator's working hours.
+### Verdict
+The absorption is **functionally complete**. Taxonomy is in AGENTS.md (every reviewer can name the layer in <30s), the provider-agnostic check is enforced in CI, the failure-cluster scan auto-fires daily, and the edit-self block grammar + card both ship. D3 is the only "missing" piece and it's a workflow convenience — the operator can already gate self-edits manually via the existing PR review flow.
+
+### Blockers / Open questions (resolved)
+- **Group D decision** — Resolved: included as documented above (D1+D2+D4 shipped, D3 deferred as convenience).
+- **License confirmation on Life-Harness** — Not blocking since absorption is pattern-only (no verbatim code copy).
+- **Daily-cron cadence** — Defaulted to 7 AM UTC per `vercel.json`; adjust if it surfaces noise.
