@@ -15,9 +15,9 @@
  *   5. Modal closes, router.refresh() so the sim badge disappears
  */
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, AlertCircle, Loader2, X, Zap } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2, X, Zap, FlaskConical, Plug } from 'lucide-react'
 
 interface CheckResult { name: string; ok: boolean; hint: string }
 interface PreflightBody {
@@ -44,6 +44,37 @@ interface GraduateResp {
   provision?:        ProvisionResult
 }
 
+/** Niche-aware connector suggestion shape returned by /api/businesses/[slug]/seed.
+ *  Operator clicks `oauthInitPath` to start OAuth for that platform — we cannot
+ *  auto-OAuth on their behalf (provider scopes require human consent). */
+interface SuggestedConnector {
+  id:               string
+  name:             string
+  category:         string
+  perBusiness:      boolean
+  alreadyConnected: boolean
+  oauthInitPath:    string
+  reason:           string
+}
+interface SeedBody {
+  ok:                   boolean
+  niche?:               string | null
+  suggested?:           SuggestedConnector[]
+  available_elsewhere?: number
+  warnings?:            string[]
+  error?:               string
+}
+
+/** Smoke-run polling shape — matches `simulation_runs` row fields the
+ *  smoke route surfaces via GET ?id=. Statuses observed: queued, running,
+ *  done, error, cancelled. */
+interface SmokeRunStatus {
+  id:                 string
+  status:             string
+  current_event_idx?: number
+  total_events?:      number
+}
+
 export default function GraduateModal({ slug, onClose }: { slug: string; onClose: () => void }) {
   const router = useRouter()
   const [preflight, setPreflight] = useState<PreflightBody | null>(null)
@@ -54,20 +85,89 @@ export default function GraduateModal({ slug, onClose }: { slug: string; onClose
   // After confirm: show the provision step result inline before closing
   // so operator sees "Container created at <fqdn>" or any failure.
   const [provResult, setProvResult] = useState<ProvisionResult | null>(null)
+  // Niche-aware connector suggestions fetched alongside preflight (J5).
+  // Null while loading; { suggested: [] } when no matches.
+  const [seed, setSeed] = useState<SeedBody | null>(null)
+  // Smoke-run state — null until the operator clicks "Run smoke now".
+  // When set, we poll the smoke route every 3s until terminal.
+  const [smoke, setSmoke]                 = useState<SmokeRunStatus | null>(null)
+  const [smokeLoading, setSmokeLoading]   = useState(false)
+  const [smokeError, setSmokeError]       = useState<string | null>(null)
+  // Poll-cancellation token so unmount + restart don't leak timers.
+  const pollRef = useRef<{ cancelled: boolean } | null>(null)
+  useEffect(() => () => { if (pollRef.current) pollRef.current.cancelled = true }, [])
 
+  // Fetch preflight + seed-suggestions in parallel. Operator sees both as
+  // soon as both land — the latency of either should never block the other.
+  // Errors on one don't kill the other.
   useEffect(() => {
     let cancelled = false
-    void (async () => {
-      try {
-        const res  = await fetch(`/api/businesses/${slug}/graduate`, { cache: 'no-store' })
-        const body = await res.json() as PreflightBody
-        if (!cancelled) setPreflight(body)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'preflight failed')
-      }
-    })()
+    const fetchPreflight = fetch(`/api/businesses/${slug}/graduate`, { cache: 'no-store' })
+      .then(r => r.json() as Promise<PreflightBody>)
+      .catch(err => ({ ok: false, error: err instanceof Error ? err.message : 'preflight failed' } as PreflightBody))
+    const fetchSeed = fetch(`/api/businesses/${slug}/seed`, { cache: 'no-store' })
+      .then(r => r.json() as Promise<SeedBody>)
+      .catch(err => ({ ok: false, error: err instanceof Error ? err.message : 'seed failed' } as SeedBody))
+    void Promise.all([fetchPreflight, fetchSeed]).then(([pre, sd]) => {
+      if (cancelled) return
+      setPreflight(pre)
+      setSeed(sd)
+    })
     return () => { cancelled = true }
   }, [slug])
+
+  // Smoke runs are async — we POST to kick, then poll GET ?id= every 3 s
+  // until the run hits a terminal status. When it lands as `done`, we
+  // re-fetch preflight so the `simulation_history` gate flips green.
+  const startSmokePoll = (runId: string) => {
+    if (pollRef.current) pollRef.current.cancelled = true
+    const token = { cancelled: false }
+    pollRef.current = token
+    const tick = async () => {
+      if (token.cancelled) return
+      try {
+        const r = await fetch(`/api/businesses/${slug}/simulate/smoke?id=${runId}`, { cache: 'no-store' })
+        const b = await r.json() as { ok: boolean; run?: SmokeRunStatus | null }
+        if (b.ok && b.run) {
+          if (token.cancelled) return
+          setSmoke(b.run)
+          if (b.run.status === 'done' || b.run.status === 'error' || b.run.status === 'cancelled') {
+            setSmokeLoading(false)
+            // On success — re-fetch preflight so the gate refresh is automatic.
+            if (b.run.status === 'done') {
+              try {
+                const pr = await fetch(`/api/businesses/${slug}/graduate`, { cache: 'no-store' })
+                const pb = await pr.json() as PreflightBody
+                if (!token.cancelled) setPreflight(pb)
+              } catch { /* swallow — operator can hit refresh */ }
+            }
+            return
+          }
+        }
+      } catch { /* keep polling */ }
+      setTimeout(tick, 3_000)
+    }
+    void tick()
+  }
+
+  const runSmoke = async () => {
+    setSmokeError(null)
+    setSmokeLoading(true)
+    try {
+      const r = await fetch(`/api/businesses/${slug}/simulate/smoke`, { method: 'POST' })
+      const b = await r.json() as { ok: boolean; run_id?: string; error?: string; hint?: string }
+      if (!b.ok || !b.run_id) {
+        setSmokeError(b.hint ? `${b.error}: ${b.hint}` : (b.error ?? 'smoke kick-off failed'))
+        setSmokeLoading(false)
+        return
+      }
+      setSmoke({ id: b.run_id, status: 'queued' })
+      startSmokePoll(b.run_id)
+    } catch (err) {
+      setSmokeError(err instanceof Error ? err.message : 'network error')
+      setSmokeLoading(false)
+    }
+  }
 
   const confirm = () => {
     setError(null)
@@ -162,6 +262,87 @@ export default function GraduateModal({ slug, onClose }: { slug: string; onClose
                 </li>
               ))}
             </ul>
+
+            {/* Smoke fast-path — surfaces ONLY when the simulation_history
+                gate is the blocker. Lets the operator clear it without
+                leaving the modal. Background poll auto-refreshes preflight
+                when the run completes so the green check is automatic. */}
+            {!checks.find(c => c.name === 'simulation_history')?.ok && (
+              <div className="mb-3 rounded-lg border border-amber-700/30 bg-amber-950/20 p-3 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-medium text-amber-200">
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      No simulation runs on file
+                    </div>
+                    <div className="mt-0.5 text-amber-300/70">
+                      Run a constrained smoke (~10 min, no LLM spend) so the <code className="font-mono">simulation_history</code> gate clears. Defaults: 14-day compress, skeptical approver, template voice.
+                    </div>
+                  </div>
+                  <button
+                    onClick={runSmoke}
+                    disabled={smokeLoading || smoke?.status === 'done'}
+                    className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-amber-600/50 bg-amber-600/20 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-600/40 disabled:opacity-50"
+                  >
+                    {smokeLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {smoke?.status === 'done' ? 'Smoke complete' : smokeLoading ? 'Running…' : 'Run smoke now'}
+                  </button>
+                </div>
+                {smokeError && <div className="mt-2 text-rose-300">⚠ {smokeError}</div>}
+                {smoke && !smokeError && (
+                  <div className="mt-2 text-amber-300/80">
+                    Status: <code className="font-mono">{smoke.status}</code>
+                    {typeof smoke.total_events === 'number' && smoke.total_events > 0 && (
+                      <> · event {smoke.current_event_idx ?? 0}/{smoke.total_events}</>
+                    )}
+                    {smoke.status === 'done' && <> · gate refreshed</>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Niche-aware connector suggestions (J5). Pre-picked based on
+                the business's niche from `featuredFor` + category match in
+                lib/oauth/providers.ts. Operator clicks to start OAuth — we
+                cannot auto-OAuth (scope grant requires user consent). */}
+            {seed && seed.suggested && seed.suggested.length > 0 && (
+              <div className="mb-3 rounded-lg border border-sky-700/30 bg-sky-950/20 p-3 text-xs">
+                <div className="mb-1 flex items-center gap-1.5 font-medium text-sky-200">
+                  <Plug className="h-3.5 w-3.5" />
+                  Suggested connectors{seed.niche ? ` for ${seed.niche}` : ''}
+                </div>
+                <div className="mb-2 text-sky-300/70">
+                  Pre-picked for your niche. Click to start OAuth — these are also reachable from <code className="font-mono">/settings/accounts</code>.
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {seed.suggested.map(s => {
+                    const href = s.alreadyConnected
+                      ? undefined
+                      : `${s.oauthInitPath}&from=graduate&business_slug=${encodeURIComponent(slug)}`
+                    const cls = s.alreadyConnected
+                      ? 'border-emerald-700/40 bg-emerald-950/20 text-emerald-200 cursor-default'
+                      : 'border-zinc-700 bg-zinc-800/40 text-zinc-200 hover:border-sky-600/50 hover:bg-zinc-800/70'
+                    return (
+                      <a
+                        key={s.id}
+                        href={href}
+                        target={s.alreadyConnected ? undefined : '_blank'}
+                        rel={s.alreadyConnected ? undefined : 'noreferrer'}
+                        className={`block truncate rounded-md border px-2 py-1.5 text-xs font-medium ${cls}`}
+                        title={s.reason}
+                      >
+                        {s.alreadyConnected ? '✓ ' : ''}{s.name}
+                      </a>
+                    )
+                  })}
+                </div>
+                {seed.warnings && seed.warnings.length > 0 && (
+                  <div className="mt-2 space-y-0.5 text-sky-300/60">
+                    {seed.warnings.map((w, i) => <div key={i}>· {w}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Auto-provision opt-in. Default ON so the operator's "automate
                 setting up docker in coolify" ask works out of the box. Flip
