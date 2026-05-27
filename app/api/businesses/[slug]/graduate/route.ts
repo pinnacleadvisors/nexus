@@ -215,6 +215,34 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       update: (r: unknown) => { eq: (c: string, v: string) => Promise<{ error: { message: string } | null }> }
     }).update({ simulation: false, simulation_graduated_at: new Date().toISOString() }).eq('slug', slug)
     if (upd.error) return NextResponse.json({ ok: false, error: upd.error.message })
+
+    // R4 follow-up: fire-and-forget operator notification on a successful
+    // simulation → real-money graduation. Use Promise.allSettled so any
+    // channel failure (Slack down, no web-push subscription, etc.) never
+    // blocks the response. We import lazily to keep the route's hot path
+    // small. Errors are swallowed — the audit row above is the durable
+    // record; the notification is best-effort UX.
+    void (async () => {
+      try {
+        const [{ listOperatorUserIds }, { notifyOperator }] = await Promise.all([
+          import('@/lib/notifications/operators'),
+          import('@/lib/notifications/dispatch'),
+        ])
+        const operatorIds = listOperatorUserIds()
+        if (operatorIds.length === 0) return
+        await Promise.all(operatorIds.map(userId =>
+          notifyOperator(userId, 'graduation', {
+            title:         `Graduated to real money: ${slug}`,
+            body:          force
+                             ? `Forced graduation (preflight overridden by operator)`
+                             : `Preflight green; simulation flag flipped off`,
+            link_href:     `/businesses/${encodeURIComponent(slug)}`,
+            severity:      'info',
+            business_slug: slug,
+          }).catch(() => undefined),
+        ))
+      } catch { /* swallow */ }
+    })()
   }
 
   audit(req, {
