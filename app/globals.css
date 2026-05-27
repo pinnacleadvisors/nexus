@@ -33,6 +33,17 @@
   box-sizing: border-box;
 }
 
+/* Operator UX decision (2026-05-27 brain-dump): the platform ships
+   dark-mode ONLY. No light-mode toggle, no auto-switch on OS preference.
+   `color-scheme: dark` tells the browser to render form controls,
+   scrollbars, and viewport background in dark variants even when the
+   user's OS is in light mode. Without this, a light-mode OS leaks
+   white scrollbar tracks + light form-field chrome into otherwise
+   dark pages. */
+:root {
+  color-scheme: dark;
+}
+
 html,
 body {
   background-color: #050508;
