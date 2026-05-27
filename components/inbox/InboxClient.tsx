@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ShieldCheck, ListTodo, Activity, Filter, CheckSquare, Loader2, Sparkles, BookOpen, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ShieldCheck, ListTodo, Activity, Filter, CheckSquare, Loader2, Sparkles, BookOpen, ChevronDown, ChevronUp, AlertTriangle, Briefcase, Eye } from 'lucide-react'
 import ApprovalCard from '@/components/approvals/ApprovalCard'
 import type { InboxItem, InboxKind } from './types'
 
@@ -46,10 +46,56 @@ interface Props {
   items: InboxItem[]
 }
 
+// R1 (UX consult): "since last visit" stamp. Stored per-operator in
+// localStorage. Items newer than this get a green "NEW" pill so the
+// operator can see at a glance what's happened since they last checked
+// the inbox. "Mark all seen" updates the stamp to now().
+const LAST_VISIT_KEY = 'nexus:inbox:last-visit'
+
+type TimeBucket = 'last-hour' | 'today' | 'this-week' | 'older'
+
+const BUCKET_LABEL: Record<TimeBucket, string> = {
+  'last-hour': 'Last hour',
+  'today':     'Today',
+  'this-week': 'This week',
+  'older':     'Older',
+}
+
+function bucketFor(iso: string, now: number): TimeBucket {
+  const ts = new Date(iso).getTime()
+  const ageMs = now - ts
+  if (ageMs < 3600_000)        return 'last-hour'   // < 1h
+  if (ageMs < 86400_000)       return 'today'       // < 24h
+  if (ageMs < 7 * 86400_000)   return 'this-week'   // < 7d
+  return 'older'
+}
+
 export default function InboxClient({ items: initialItems }: Props) {
   const [filter, setFilter] = useState<FilterKind>('all')
   // Local state so "mark done" + seed-backlog updates without a full reload.
   const [items, setItems] = useState<InboxItem[]>(initialItems)
+  // R1: per-business filter. 'all' = no filter; otherwise the business slug.
+  const [bizFilter, setBizFilter] = useState<string>('all')
+  // R1: "since last visit" marker for the NEW-pill highlighting. Captured
+  // on first render; the user clicks "Mark all seen" to bump it forward.
+  const lastVisitRef = useRef<number>(0)
+  const [lastVisitMs, setLastVisitMs] = useState<number>(0)
+
+  useEffect(() => {
+    // Read prior last-visit on mount. First-ever load: pretend it was just
+    // now so we don't drown the operator in 30 days of "NEW" pills.
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(LAST_VISIT_KEY) : null
+    const parsed = stored ? Number(stored) : Date.now()
+    lastVisitRef.current = parsed
+    setLastVisitMs(parsed)
+  }, [])
+
+  const markAllSeen = useCallback(() => {
+    const now = Date.now()
+    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_VISIT_KEY, String(now))
+    lastVisitRef.current = now
+    setLastVisitMs(now)
+  }, [])
 
   // Track which tasks have been done locally — optimistic toggle.
   const handleTaskDone = useCallback((taskId: string) => {
@@ -62,10 +108,38 @@ export default function InboxClient({ items: initialItems }: Props) {
     return c
   }, [items])
 
-  const filtered = useMemo(
-    () => (filter === 'all' ? items : items.filter(i => i.kind === filter)),
-    [items, filter],
-  )
+  // R1: unique business slugs across all items, for the per-biz dropdown.
+  // 'all' + 'admin' (null slug → operator-scope) + alphabetised business slugs.
+  const businessSlugs = useMemo(() => {
+    const set = new Set<string>()
+    for (const it of items) {
+      const slug = it.business_slug
+      if (slug) set.add(slug)
+    }
+    return Array.from(set).sort()
+  }, [items])
+
+  // R1: apply both filters (kind + business) + bucket the result.
+  const filteredAndBucketed = useMemo(() => {
+    const now = Date.now()
+    const fk = filter === 'all' ? items : items.filter(i => i.kind === filter)
+    const fb = bizFilter === 'all'
+      ? fk
+      : fk.filter(i => (i.business_slug ?? '') === bizFilter)
+    const buckets: Record<TimeBucket, InboxItem[]> = {
+      'last-hour': [], 'today': [], 'this-week': [], 'older': [],
+    }
+    for (const it of fb) buckets[bucketFor(it.created_at, now)].push(it)
+    return { items: fb, buckets, total: fb.length }
+  }, [items, filter, bizFilter])
+
+  // R1: count of items newer than lastVisitMs across the filtered set.
+  // Surfaces in the "Mark all seen" affordance so the operator knows
+  // how many NEW pills they're about to clear.
+  const newSinceLastVisit = useMemo(() => {
+    if (!lastVisitMs) return 0
+    return filteredAndBucketed.items.filter(it => new Date(it.created_at).getTime() > lastVisitMs).length
+  }, [filteredAndBucketed.items, lastVisitMs])
 
   // Banner — show when ZERO operator-source admin-scope tasks exist AND the
   // deferred-audit backlog hasn't been seeded yet. The seed flow inserts 20+
@@ -83,46 +157,109 @@ export default function InboxClient({ items: initialItems }: Props) {
         if (typeof window !== 'undefined') window.location.reload()
       }} />}
 
-      <nav className="mb-4 flex flex-wrap items-center gap-2" aria-label="Inbox filters">
-        {(Object.keys(FILTER_LABEL) as FilterKind[]).map(k => {
-          const count = counts[k]
-          const active = filter === k
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilter(k)}
-              className={
-                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ' +
-                (active
-                  ? 'border-zinc-600 bg-zinc-800/70 text-zinc-100'
-                  : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200')
-              }
-            >
-              {k === 'all' && <Filter className="h-3 w-3" />}
-              {FILTER_LABEL[k]}
-              <span className={active ? 'text-zinc-400' : 'text-zinc-600'}>{count}</span>
-            </button>
-          )
-        })}
-      </nav>
+      {/* R1: filter row + per-business dropdown + Mark all seen. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <nav className="flex flex-wrap items-center gap-2" aria-label="Inbox filters">
+          {(Object.keys(FILTER_LABEL) as FilterKind[]).map(k => {
+            const count = counts[k]
+            const active = filter === k
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setFilter(k)}
+                className={
+                  'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ' +
+                  (active
+                    ? 'border-zinc-600 bg-zinc-800/70 text-zinc-100'
+                    : 'border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200')
+                }
+              >
+                {k === 'all' && <Filter className="h-3 w-3" />}
+                {FILTER_LABEL[k]}
+                <span className={active ? 'text-zinc-400' : 'text-zinc-600'}>{count}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* R1: per-business filter. Hidden when there's only one business. */}
+          {businessSlugs.length > 1 && (
+            <label className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1 text-xs text-zinc-400">
+              <Briefcase className="h-3 w-3" />
+              <select
+                value={bizFilter}
+                onChange={e => setBizFilter(e.target.value)}
+                className="bg-transparent text-zinc-200 outline-none"
+                aria-label="Filter inbox by business"
+              >
+                <option value="all">All businesses</option>
+                {businessSlugs.map(slug => <option key={slug} value={slug}>{slug}</option>)}
+              </select>
+            </label>
+          )}
+          {/* R1: Mark-all-seen. Shows the count of newly-arrived items as
+              extra context so the operator knows what they're clearing. */}
+          <button
+            type="button"
+            onClick={markAllSeen}
+            disabled={newSinceLastVisit === 0}
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/40 px-3 py-1 text-xs text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            title={newSinceLastVisit === 0 ? 'Nothing new since your last check' : `Clear ${newSinceLastVisit} NEW pill${newSinceLastVisit === 1 ? '' : 's'}`}
+          >
+            <Eye className="h-3 w-3" />
+            Mark all seen
+            {newSinceLastVisit > 0 && (
+              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">{newSinceLastVisit}</span>
+            )}
+          </button>
+        </div>
+      </div>
 
-      {filtered.length === 0 ? (
+      {filteredAndBucketed.total === 0 ? (
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
           <p className="text-zinc-400">
-            {filter === 'all'
+            {filter === 'all' && bizFilter === 'all'
               ? 'Nothing in your inbox. All caught up.'
-              : `No ${FILTER_LABEL[filter].toLowerCase()} items right now.`}
+              : `No items match the current filters.`}
           </p>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {filtered.map(item => (
-            <li key={`${item.kind}-${item.id}`}>
-              <InboxRow item={item} onTaskDone={handleTaskDone} />
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-6">
+          {/* R1: time-bucketed groups. Operator's mental model is now
+              "what happened since last hour / today / this week" rather
+              than "scroll through 30 events of unknown freshness". */}
+          {(['last-hour', 'today', 'this-week', 'older'] as TimeBucket[]).map(b => {
+            const bucketItems = filteredAndBucketed.buckets[b]
+            if (bucketItems.length === 0) return null
+            return (
+              <section key={b}>
+                <h2 className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-500">
+                  {BUCKET_LABEL[b]}
+                  <span className="rounded-full bg-zinc-800/60 px-1.5 text-[10px] text-zinc-400">{bucketItems.length}</span>
+                </h2>
+                <ul className="space-y-3">
+                  {bucketItems.map(item => {
+                    const isNew = lastVisitMs > 0 && new Date(item.created_at).getTime() > lastVisitMs
+                    return (
+                      <li key={`${item.kind}-${item.id}`} className="relative">
+                        {isNew && (
+                          <span
+                            className="absolute -top-1.5 -right-1.5 z-10 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-emerald-300 ring-1 ring-emerald-500/40"
+                            title="Arrived since your last inbox check"
+                          >
+                            NEW
+                          </span>
+                        )}
+                        <InboxRow item={item} onTaskDone={handleTaskDone} />
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            )
+          })}
+        </div>
       )}
     </div>
   )
