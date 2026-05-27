@@ -15,7 +15,14 @@ function isLocalMode(): boolean {
   return v === '1' || v === 'true' || v === 'yes'
 }
 
+// SECURITY: `app/(protected)/layout.tsx` does NOT call `auth()` — every
+// page under the route group relies on this middleware matcher for its
+// auth gate. Every directory under `app/(protected)/` MUST appear here,
+// or its pages leak unauthenticated. Audited 2026-05-27 against the full
+// directory listing. The `check:topology` script + a Playwright spec
+// verify drift doesn't reintroduce gaps.
 const isProtectedRoute = createRouteMatcher([
+  // Original gated set
   '/dashboard(.*)',
   '/forge(.*)',
   '/board(.*)',
@@ -23,16 +30,31 @@ const isProtectedRoute = createRouteMatcher([
   '/build(.*)',
   '/graph(.*)',
   '/swarm(.*)',
-  // Defense-in-depth — these pages live under app/(protected)/ and rely on the
-  // route-group layout for auth, but we still middleware-gate them so a future
-  // page added to the group without explicit `auth()` in its layout never
-  // leaks. See docs/adr/003-protected-route-matcher.md for the rationale.
+  // First defense-in-depth wave (ADR 003) — these existed in the route
+  // group but relied on the layout for auth; added to the matcher when
+  // a leak was identified pre-prod.
   '/idea(.*)',
   '/idea-library(.*)',
   '/learn(.*)',
   '/settings(.*)',
   '/signals(.*)',
   '/manage-platform(.*)',
+  // Second defense-in-depth wave (2026-05-27 audit) — every route group
+  // member below this comment was previously unguarded. A curl to
+  // `/businesses` returned 200 with rendered data + business slugs.
+  // Closing the gap now AND adding /api/audit + cron-health.
+  '/agents(.*)',
+  '/approvals(.*)',
+  '/audit(.*)',
+  '/automation-library(.*)',
+  '/businesses(.*)',
+  '/cron-health(.*)',
+  '/inbox(.*)',
+  '/issues(.*)',
+  '/memory(.*)',
+  '/org(.*)',
+  '/simulate(.*)',
+  '/teams(.*)',
 ])
 
 // Owner-only allowlist: comma-separated Clerk user IDs (e.g. "user_abc,user_xyz").
