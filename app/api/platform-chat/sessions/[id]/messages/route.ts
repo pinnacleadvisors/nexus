@@ -45,7 +45,17 @@ export async function GET(
   const messages = await listMessages(id, 500)
   return NextResponse.json({
     ok: true,
-    session: { id: owned.id, title: owned.title ?? 'New chat', created_at: owned.created_at, last_message_at: owned.last_message_at },
+    session: {
+      id:                          owned.id,
+      title:                       owned.title ?? 'New chat',
+      created_at:                  owned.created_at,
+      last_message_at:             owned.last_message_at,
+      // R9 follow-up — surface the LLM-generated retrospective (migration 092)
+      // so the chat view can render it at the top of the message pane. Null
+      // when fresh / 092 not applied (lib/chat/sessions.ts fails soft).
+      retrospective_md:            owned.retrospective_md ?? null,
+      retrospective_generated_at:  owned.retrospective_generated_at ?? null,
+    },
     messages: messages.map(m => ({
       id:         m.id,
       role:       m.role,

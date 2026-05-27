@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, Sparkles, AlertTriangle, Terminal as TerminalIcon, Copy, Check, X as XIcon, Menu } from 'lucide-react'
 import { safeJson } from '@/lib/chat/safe-json-response'
 import ApprovalCard from './ApprovalCard'
+import RetrospectiveBanner from '@/components/chat/RetrospectiveBanner'
 import { type SessionSummary } from './SessionSidebar'
 import MobileAwareSessionSidebar from './MobileAwareSessionSidebar'
 import ToolCallCard from './ToolCallCard'
@@ -81,7 +82,7 @@ interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
+interface MessagesResp { ok: true; session: SessionSummary & { retrospective_md?: string | null; retrospective_generated_at?: string | null }; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -316,9 +317,20 @@ export default function PlatformChat() {
   }, [])
   useEffect(() => { void reloadSessions() }, [reloadSessions])
 
+  // R9 — LLM-generated retrospective banner at the top of the chat
+  // when the cron has summarised this session. Null on fresh sessions /
+  // missing migration; the banner component returns null in that case.
+  const [retrospective,   setRetrospective]   = useState<string | null>(null)
+  const [retrospectiveAt, setRetrospectiveAt] = useState<string | null>(null)
+
   // Load message history when the operator switches sessions.
   useEffect(() => {
-    if (!activeSessionId) { setMessages([]); return }
+    if (!activeSessionId) {
+      setMessages([])
+      setRetrospective(null)
+      setRetrospectiveAt(null)
+      return
+    }
     let cancelled = false
     ;(async () => {
       try {
@@ -337,6 +349,8 @@ export default function PlatformChat() {
           edit_group_completes: m.metadata?.edit_group_completes,
           edit_selfs:           m.metadata?.edit_selfs,
         })))
+        setRetrospective(j.session.retrospective_md ?? null)
+        setRetrospectiveAt(j.session.retrospective_generated_at ?? null)
         setError(null)
       } catch { /* swallow */ }
     })()
@@ -346,6 +360,8 @@ export default function PlatformChat() {
   async function handleNewChat() {
     setActiveSessionId(null)
     setMessages([])
+    setRetrospective(null)
+    setRetrospectiveAt(null)
     setError(null)
   }
 
@@ -892,6 +908,10 @@ export default function PlatformChat() {
 
         {/* Message list */}
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          {/* R9 — retrospective banner pinned at the top when the cron
+              has summarised this session. Null on fresh sessions / when
+              migration 092 isn't applied. */}
+          <RetrospectiveBanner retrospective={retrospective} generatedAt={retrospectiveAt} />
           {messages.length === 0 && <EmptyState />}
           {messages.map((m, i) => {
             // APPROVAL replies are wire-format only — never render as a
