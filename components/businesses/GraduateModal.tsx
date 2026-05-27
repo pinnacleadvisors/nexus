@@ -27,12 +27,33 @@ interface PreflightBody {
   error?:   string
 }
 
+interface ProvisionResult {
+  ok:      boolean
+  skipped: 'lean_mode' | 'coolify_unconfigured' | 'opted_out' | null
+  uuid?:   string
+  fqdn?:   string
+  error?:  string
+  detail?: string
+}
+
+interface GraduateResp {
+  ok:                boolean
+  graduated?:        boolean
+  already_graduated?: boolean
+  error?:            string
+  provision?:        ProvisionResult
+}
+
 export default function GraduateModal({ slug, onClose }: { slug: string; onClose: () => void }) {
   const router = useRouter()
   const [preflight, setPreflight] = useState<PreflightBody | null>(null)
   const [force, setForce]         = useState(false)
+  const [autoProvision, setAutoProvision] = useState(true)
   const [pending, startTx]        = useTransition()
   const [error, setError]         = useState<string | null>(null)
+  // After confirm: show the provision step result inline before closing
+  // so operator sees "Container created at <fqdn>" or any failure.
+  const [provResult, setProvResult] = useState<ProvisionResult | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -50,16 +71,36 @@ export default function GraduateModal({ slug, onClose }: { slug: string; onClose
 
   const confirm = () => {
     setError(null)
+    setProvResult(null)
     startTx(async () => {
       const url  = `/api/businesses/${slug}/graduate${force ? '?force=1' : ''}`
-      const res  = await fetch(url, { method: 'POST' })
-      const body = await res.json() as { ok: boolean; error?: string; graduated?: boolean }
+      const res  = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ auto_provision: autoProvision }),
+      })
+      const body = await res.json() as GraduateResp
       if (!body.ok) {
         setError(body.error ?? 'graduation failed')
         return
       }
-      router.refresh()
-      onClose()
+      // Surface the provision step result before closing — gives operator
+      // a moment to see the fqdn / error before the modal disappears.
+      if (body.provision) setProvResult(body.provision)
+      // Auto-close after a brief pause if provision succeeded OR was
+      // intentionally skipped. Operator dismisses manually on failure.
+      const shouldAutoClose = !body.provision
+        || body.provision.ok
+        || body.provision.skipped !== null
+      if (shouldAutoClose) {
+        setTimeout(() => {
+          router.refresh()
+          onClose()
+        }, body.provision?.ok ? 1500 : 100)
+      } else {
+        // Provision failed — keep modal open so operator reads the error.
+        router.refresh()
+      }
     })
   }
 
@@ -121,6 +162,45 @@ export default function GraduateModal({ slug, onClose }: { slug: string; onClose
                 </li>
               ))}
             </ul>
+
+            {/* Auto-provision opt-in. Default ON so the operator's "automate
+                setting up docker in coolify" ask works out of the box. Flip
+                off to graduate the row without spinning up infra (e.g. in
+                lean mode where the shared gateway is used). */}
+            <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg border border-violet-700/30 bg-violet-950/20 p-3 text-xs">
+              <input
+                type="checkbox"
+                checked={autoProvision}
+                onChange={e => setAutoProvision(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 accent-violet-500"
+              />
+              <span className="flex-1">
+                <span className="font-medium text-violet-200">Auto-provision Coolify container after flip</span>
+                <span className="mt-0.5 block text-violet-300/70">
+                  Creates a per-business Docker app on Coolify (~30–45 s on first deploy). Skipped automatically in lean mode or when Coolify isn&apos;t configured server-side. Uncheck if you want to provision manually via <code className="font-mono">/api/businesses/{slug}/provision</code> later.
+                </span>
+              </span>
+            </label>
+
+            {provResult && (
+              <div className="mb-3 rounded-lg border p-3 text-xs"
+                style={{
+                  background: provResult.ok ? 'rgba(34,197,94,0.10)' : provResult.skipped ? 'rgba(255,255,255,0.04)' : 'rgba(239,68,68,0.10)',
+                  borderColor: provResult.ok ? 'rgba(34,197,94,0.30)' : provResult.skipped ? 'rgba(255,255,255,0.10)' : 'rgba(239,68,68,0.30)',
+                  color: provResult.ok ? '#86efac' : provResult.skipped ? '#9090b0' : '#fca5a5',
+                }}>
+                {provResult.ok && provResult.fqdn && (
+                  <span>✓ Provisioned. Coolify app at <code className="font-mono">{provResult.fqdn}</code>. Container is created but NOT started — click Start in Coolify to activate.</span>
+                )}
+                {provResult.ok && !provResult.fqdn && <span>✓ Provisioned.</span>}
+                {provResult.skipped === 'lean_mode'             && <span>⊘ Auto-provision skipped: lean mode is active. Graduated business uses the shared gateway.</span>}
+                {provResult.skipped === 'coolify_unconfigured' && <span>⊘ Auto-provision skipped: Coolify isn&apos;t configured server-side. Set COOLIFY_KVM4_URL + COOLIFY_KVM4_API_TOKEN in Doppler.</span>}
+                {provResult.skipped === 'opted_out'             && <span>⊘ Auto-provision skipped per your checkbox. POST /api/businesses/{slug}/provision when ready.</span>}
+                {!provResult.ok && !provResult.skipped && (
+                  <span>⚠ Graduate succeeded but auto-provision failed: <code className="font-mono">{provResult.error}</code>{provResult.detail ? <> · <span className="text-zinc-400">{provResult.detail}</span></> : null}. Retry via <code className="font-mono">/api/businesses/{slug}/provision</code>.</span>
+                )}
+              </div>
+            )}
 
             {error && <p className="mb-3 text-sm text-rose-400">⚠︎ {error}</p>}
 
