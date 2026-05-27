@@ -18,6 +18,8 @@ import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
 import { isValidScope } from '@/lib/claw/business-client'
+import { getFixtureMode } from '@/lib/fixtures/store'
+import { activeFixtureAccounts } from '@/lib/fixtures/connected-accounts'
 
 export const runtime = 'nodejs'
 
@@ -58,14 +60,40 @@ export async function GET(req: NextRequest) {
   const { data, error } = await q.order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const realAccounts = (data ?? []).map(r => ({
+    id:           r.id,
+    platform:     r.platform,
+    businessSlug: r.business_slug,
+    status:       r.status,
+    createdAt:    r.created_at,
+    lastUsedAt:   r.last_used_at,
+    isFixture:    false,
+  }))
+
+  // Fixture-mode overlay — when the operator has the dev fixture
+  // harness enabled, synthetic rows appear alongside real ones for
+  // every platform in lib/fixtures/connected-accounts.ts. Real rows
+  // win when both exist for the same platform (so a real Stripe
+  // connection masks the fixture-stripe row without removing it).
+  let fixtureRows: typeof realAccounts = []
+  try {
+    if (await getFixtureMode(session.userId)) {
+      const realPlatforms = new Set(realAccounts.map(a => a.platform))
+      fixtureRows = activeFixtureAccounts()
+        .filter(f => !realPlatforms.has(f.platform))
+        .map(f => ({
+          id:           `fixture:${f.platform}`,
+          platform:     f.platform,
+          businessSlug: null,
+          status:       'active' as const,
+          createdAt:    new Date().toISOString(),
+          lastUsedAt:   null,
+          isFixture:    true,
+        }))
+    }
+  } catch { /* fail-soft — don't break the real-account list on fixture lookup error */ }
+
   return NextResponse.json({
-    accounts: (data ?? []).map(r => ({
-      id:           r.id,
-      platform:     r.platform,
-      businessSlug: r.business_slug,
-      status:       r.status,
-      createdAt:    r.created_at,
-      lastUsedAt:   r.last_used_at,
-    })),
+    accounts: [...realAccounts, ...fixtureRows],
   })
 }

@@ -2,7 +2,7 @@
 name: platform-dev-loop
 description: Autonomous Nexus-platform issue → draft PR agent. When the operator files an issue with "Send to Nexus dev team" checked on /issues, this agent is dispatched against the issue. It reads the issue title + body, opens a feature branch, implements the change, runs the pre-commit suite, and pushes a DRAFT PR for the operator's review. Never auto-merges. Mirrors the operator's own auto-mode workflow — same protocols (CLAUDE.md, AGENTS.md), same checks (check:all), same write-size discipline.
 model: opus
-topology_last_verified: 2026-05-26
+topology_last_verified: 2026-05-27
 ---
 
 # platform-dev-loop
@@ -107,6 +107,10 @@ NOT used:
 - **Write-size cap 300 lines / 10 KB per single Write/Edit/Bash heredoc.** The hook at `.claude/hooks/check-write-size.sh` enforces; respect it.
 - **Cost cap.** Each issue is one Claude-Code session. Don't spawn sub-agents unless the issue clearly decomposes into ≥3 independent atomic tasks (then use Claude Code Agent Teams via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`).
 - **Memory atom on exit.** When the issue uncovers a non-trivial pattern, write a `memory_atom` per AGENTS.md post-incident memory protocol. Trivial fixes skip.
+- **Dev fixture harness — keep it growing.** When the issue introduces a NEW OAuth provider, a NEW agent dispatch verb, or a NEW third-party SDK, add the corresponding fixture entries in the same PR. Specifically:
+  - New row in `lib/oauth/providers.ts` → add a row to `FIXTURE_CONNECTED_ACCOUNTS` in [`lib/fixtures/connected-accounts.ts`](../../lib/fixtures/connected-accounts.ts).
+  - New verb dispatched by an agent → add a fixture function under that platform's record in `FIXTURE_ACTIONS` ([`lib/fixtures/actions.ts`](../../lib/fixtures/actions.ts)).
+  - The fixture harness is fail-loud: missing fixtures throw `fixture_mode_no_fixture_for <platform>:<action>` when fixture mode is on, so any PR that ships a new verb without a fixture breaks the dev's local E2E run. Adding the fixture is part of the same change-set, not a follow-up. See [docs/runbooks/dev-fixture-harness.md](../../docs/runbooks/dev-fixture-harness.md).
 
 ## Operator-side controls
 

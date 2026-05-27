@@ -20,6 +20,8 @@ import { createServerClient } from '@/lib/supabase'
 import { getProvider } from '@/lib/oauth/providers'
 import { ADMIN_SCOPE } from '@/lib/claw/business-client'
 import { isLeanMode } from '@/lib/lean-mode'
+import { getFixtureModeSync } from '@/lib/fixtures/store'
+import { getFixtureAction } from '@/lib/fixtures/actions'
 
 export class ConnectedAccountMissingError extends Error {
   platform: string
@@ -124,6 +126,28 @@ export async function executeBusinessAction(input: ExecuteBusinessActionInput): 
     if (category && await isSimulationBusiness(input.businessSlug)) {
       throw new SimulationGuardError(input.action, input.businessSlug, category)
     }
+  }
+
+  // Dev fixture harness — when the operator has fixture mode enabled
+  // (per-user flag, migration 084), short-circuit Composio entirely and
+  // return canned responses keyed by (platform, action). Lets the
+  // operator exercise the full UI flow (chat, smoke, graduate, board
+  // updates) without connecting a single real OAuth account.
+  //
+  // The sync check is intentional — getFixtureModeSync reads from the
+  // 30s cache so most calls are zero-cost. First call after a flip
+  // falls through to real Composio for one request (acceptable trade
+  // for keeping the hot path sync). The /api/dev/fixtures/active PATCH
+  // endpoint warms the cache so explicit toggles land immediately.
+  if (getFixtureModeSync(input.userId)) {
+    const fixtureFn = getFixtureAction(input.platform, input.action)
+    if (fixtureFn) {
+      return fixtureFn(input.arguments)
+    }
+    // Fixture mode is ON but no fixture for this (platform, action).
+    // Falling through to real Composio defeats the purpose — surface
+    // a clear error so the operator knows to add a fixture entry.
+    throw new Error(`fixture_mode_no_fixture_for ${input.platform}:${input.action} — add an entry in lib/fixtures/actions.ts FIXTURE_ACTIONS`)
   }
 
   // LOCAL_MODE — operator runs Nexus as a personal-OS install. Composio

@@ -26,6 +26,7 @@ import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import SettingsTabs, { type SettingsTabId } from '@/components/settings/SettingsTabs'
 import AiProviderList from '@/components/settings/AiProviderList'
 import SkillsList from '@/components/settings/SkillsList'
+import FixtureModeSwitch from '@/components/settings/FixtureModeSwitch'
 
 type ContentTabId = Exclude<SettingsTabId, 'businesses' | 'accounts' | 'agents'>
 
@@ -126,6 +127,12 @@ function AlertsTab() {
 function AccessTab() {
   return (
     <div className="space-y-4">
+      {/* Dev fixture harness — top of the tab because it's the most
+          frequently-flipped per-session setting. Lets the operator
+          exercise the full create-business → graduate → chat flow
+          without real OAuth. */}
+      <FixtureModeSwitch />
+
       <div
         className="p-4 rounded-xl border"
         style={{ backgroundColor: '#0d0d14', borderColor: '#24243e' }}
