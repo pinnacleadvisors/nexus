@@ -88,20 +88,35 @@ export default async function BusinessesPage() {
             Click a tile for the overview, or use <b>Open chat</b> to jump straight to that business's copilot.
           </p>
         </div>
-        <Link
-          href="/settings/businesses"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800/70"
-        >
-          <SettingsIcon className="h-3.5 w-3.5" />
-          Manage
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/businesses/new"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-700/40 bg-violet-500/15 px-3 py-2 text-sm text-violet-200 transition hover:bg-violet-500/25"
+          >
+            + New business
+          </Link>
+          <Link
+            href="/settings/businesses"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800/70"
+          >
+            <SettingsIcon className="h-3.5 w-3.5" />
+            Manage
+          </Link>
+        </div>
       </header>
 
       {businesses.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
-          <p className="text-zinc-400">
-            No businesses yet. Head to <Link className="underline text-zinc-200" href="/settings/businesses">Settings → Businesses</Link> to seed your first one.
+        <div className="rounded-xl border border-violet-700/30 bg-violet-500/5 p-8 text-center">
+          <h2 className="text-base font-semibold text-zinc-100">No businesses yet — start with a simulated one</h2>
+          <p className="mt-2 text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
+            The wizard creates a <strong>simulation</strong> business — no real money, no real OAuth — so you can exercise the full chain (chat → board → smoke → graduate) before going live. Auto-enables the dev fixture harness so synthetic Stripe / Gmail / Slack / etc. connections appear immediately on /settings/accounts.
           </p>
+          <Link
+            href="/businesses/new"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-violet-700/50 bg-violet-500/20 px-4 py-2 text-sm text-violet-100 transition hover:bg-violet-500/30"
+          >
+            Create your first business →
+          </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
