@@ -14,11 +14,18 @@
  *     so hallucination is bounded to "wrong rationale", not "wrong model"
  *
  * Cost: ~$0.0008 per recommendation (sonnet 4.6, ~500 input tokens, ~150 output).
- * No server-side caching for v1 — the page only fires on explicit click and
- * "Recommend all" issues N parallel calls bounded by the agent count.
+ *
+ * v2 (2026-05-27): server-side smart caching via `lib/agents/cache.ts`. The
+ * judge's output is deterministic given the same (agent-spec, candidate-set,
+ * judge-model) tuple, so the same agent's recommendation is computed at
+ * most once per 24h. "Recommend all" with 20 unchanged agents now spawns
+ * 20 parallel cache HITs (free + near-instant) after the first warm-up.
+ * The fallback path (judge timed out / hallucinated a non-catalog model)
+ * still fires uncached — we only persist real judgements.
  */
 
 import { callClaude } from '@/lib/claw/llm'
+import { cacheLookup, cacheStore } from '@/lib/agents/cache'
 import { MODEL_CATALOG, getAvailableModels } from './catalog'
 import type {
   ModelDefinition,
@@ -166,8 +173,33 @@ export async function recommendModelForAgent(
     }
   }
 
+  // Smart-cache key: the inputs the LLM judge actually sees. We deliberately
+  // do NOT include userId (the judgement doesn't depend on which operator
+  // clicked Recommend) — that lets multi-operator deployments share cache
+  // rows. Candidate IDs are sorted so connecting providers in a different
+  // order doesn't shatter the cache. 24h TTL — the static catalog changes
+  // rarely and providers connecting/disconnecting flips a cache key.
+  const cacheArgs = {
+    judge:       JUDGE_MODEL,
+    agentSlug:   input.agent.slug,
+    description: input.agent.description.trim(),
+    tools:       [...input.agent.tools].sort(),
+    candidates:  candidates.map(c => c.id).sort(),
+  }
+  const cached = await cacheLookup<{ model: string; rationale: string; alternatives: Array<{ model: string; reason: string }> }>(
+    'model-recommender', cacheArgs,
+  )
+  if (cached) {
+    return {
+      agentSlug: input.agent.slug,
+      ...cached.output,
+      createdAt: cached.cached_at,
+    }
+  }
+
   const prompt = buildPrompt(input, candidates)
   let parsed: ReturnType<typeof parseJudgeOutput>
+  let isFallback = false
   try {
     const reply = await callClaude({
       userId,
@@ -185,10 +217,18 @@ export async function recommendModelForAgent(
     if (!candidates.some(c => c.id === parsed.model)) {
       console.warn(`[recommender] judge picked unknown model ${parsed.model} — falling back`)
       parsed = pickStaticFallback(input, candidates)
+      isFallback = true
     }
   } catch (e) {
     console.warn('[recommender] judge failed — using static fallback', e)
     parsed = pickStaticFallback(input, candidates)
+    isFallback = true
+  }
+
+  // Only cache real judgements. The fallback is a degenerate result the
+  // operator probably wants to retry on next click, not persist for 24h.
+  if (!isFallback) {
+    await cacheStore('model-recommender', cacheArgs, parsed, { ttlMinutes: 60 * 24 })
   }
 
   return {
