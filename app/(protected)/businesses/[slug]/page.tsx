@@ -18,6 +18,7 @@ import GoalsTreePanel from '@/components/businesses/GoalsTreePanel'
 import BillerSpendCard, { type BillerSpendRow } from '@/components/businesses/BillerSpendCard'
 import BudgetPolicyCard, { type BudgetPolicy } from '@/components/businesses/BudgetPolicyCard'
 import BudgetIncidentCard, { type BudgetIncident } from '@/components/businesses/BudgetIncidentCard'
+import BusinessCostWidget from '@/components/businesses/BusinessCostWidget'
 import RunNowButton from '@/components/businesses/RunNowButton'
 import GraduateButton from '@/components/businesses/GraduateButton'
 import NextStepsCard from '@/components/businesses/NextStepsCard'
@@ -263,6 +264,10 @@ export default async function BusinessDetailPage({ params }: PageProps) {
             </ul>
           </div>
 
+          {/* R3 (UX consult): daily spend meter + editable cap, above the
+              per-agent BillerSpendCard. Operator sees today vs cap at a
+              glance + can tighten the cap in-place. */}
+          <BusinessCostWidget slug={business.slug} />
           <BillerSpendCard rows={budget.agentSpend} totalSpent={budget.totalSpent24h} period="day" />
           <BudgetPolicyCard policies={budget.policies} />
           <BudgetIncidentCard incidents={budget.incidents} />
