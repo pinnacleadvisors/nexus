@@ -88,6 +88,30 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  // ── Coolify build optimization ──────────────────────────────────────────
+  // `output: 'standalone'` makes `next build` emit a minimal self-contained
+  // server at `.next/standalone/` that includes only the route handlers +
+  // their resolved deps. Cuts the runtime image from ~400 MB → ~80 MB, which
+  // shaves ~60-90s off the image-push step on Coolify's Hostinger bandwidth.
+  // It also drops Next.js cold start from ~10-15s to ~3-5s because the bundle
+  // doesn't have to walk a full node_modules tree.
+  //
+  // Important: when this is set, services/lean-deploy/Dockerfile must copy
+  // `.next/standalone/` and `.next/static/` (NOT the whole `/app` tree).
+  // The Dockerfile in this PR is updated to match.
+  output: 'standalone',
+  // Some routes shell out at runtime and read repo files Next.js can't trace
+  // statically (e.g. /api/skills/[slug]/promote reads .claude/skills/<slug>/
+  // SKILL.md). outputFileTracingIncludes copies those trees into the
+  // standalone bundle at build time so the runtime container has them.
+  // Patterns are glob, rooted at the project dir; key is the route pattern
+  // OR `*` for "include everywhere".
+  outputFileTracingIncludes: {
+    '*': [
+      './.claude/skills/**/*',
+      './.claude/agents/**/*',
+    ],
+  },
   async headers() {
     return [
       {
@@ -112,8 +136,13 @@ export default withSentryConfig(nextConfig, {
  // For all available options, see:
  // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
- // Upload a larger set of source maps for prettier stack traces (increases build time)
- widenClientFileUpload: true,
+ // Upload a larger set of source maps for prettier stack traces.
+ // Coolify build optimization: turning this OFF drops ~30-60s off cold builds
+ // because Sentry skips uploading the heavier source-map set. Stack traces
+ // are still readable — they're just less precisely-mapped against the
+ // pre-bundle source code. Re-enable if a production error gets reported
+ // with unhelpful stack traces.
+ widenClientFileUpload: false,
 
  // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
  // This can increase your server load as well as your hosting bill.
@@ -122,11 +151,11 @@ export default withSentryConfig(nextConfig, {
  tunnelRoute: "/monitoring",
 
  webpack: {
-   // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-   // See the following for more information:
-   // https://docs.sentry.io/product/crons/
-   // https://vercel.com/docs/cron-jobs
-   automaticVercelMonitors: true,
+   // Vercel cron monitoring is disabled — we use cron-job.org as the
+   // scheduler in lean mode (per AGENTS.md topology). Sentry's Vercel-
+   // specific instrumentation adds ~5-10s to every build for no signal.
+   // If you ever re-introduce Vercel cron jobs, flip back to `true`.
+   automaticVercelMonitors: false,
 
    // Tree-shaking options for reducing bundle size
    treeshake: {

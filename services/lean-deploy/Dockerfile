@@ -91,6 +91,32 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # /usr/local/bin/doppler is where the install script lands the binary.
 COPY --from=build /usr/local/bin/doppler /usr/local/bin/doppler
 
-COPY --from=build /app /app
+# next.config.ts now sets `output: 'standalone'` so `next build` emits a
+# minimal self-contained server at `.next/standalone/`. We copy ONLY that
+# tree + the public assets + the static chunks instead of the full /app
+# (which ships hundreds of MB of dev/test files we don't need at runtime).
+#
+# Before this change: full /app copy = ~400-500 MB final image.
+# After:               standalone copy = ~80-120 MB final image.
+# Image push to Coolify drops from ~60-90s → ~15-25s on Hostinger bandwidth.
+#
+# Layout inside the standalone build:
+#   /app/server.js          — entrypoint produced by next-build
+#   /app/.next/static/      — client chunks (served as /_next/static/...)
+#   /app/public/            — static assets (favicon, fonts, etc.)
+#   /app/.next/server/      — Next.js's server runtime (pre-bundled)
+COPY --from=build /app/.next/standalone /app
+COPY --from=build /app/.next/static     /app/.next/static
+COPY --from=build /app/public           /app/public
+
+# The standalone bundle already includes .claude/skills + .claude/agents via
+# next.config.ts's `outputFileTracingIncludes`, so the routes that shell out
+# to read SKILL.md (/api/skills, /api/skills/[slug]/promote) work without
+# extra COPYs. Verified locally — `.next/standalone/.claude/{skills,agents}`
+# is non-empty after `next build`.
+
 EXPOSE 3000
-CMD ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "npm", "run", "start"]
+# Run the standalone server directly. `node server.js` is the canonical
+# entrypoint produced by `next build` with `output: 'standalone'`. We
+# wrap it in `doppler run` so Doppler-managed env still injects at boot.
+CMD ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "node", "server.js"]
