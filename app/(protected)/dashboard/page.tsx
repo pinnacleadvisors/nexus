@@ -15,6 +15,7 @@ import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
 import BentoMissionControl from '@/components/dashboard/BentoMissionControl'
 import PlatformHealthWidget from '@/components/dashboard/PlatformHealthWidget'
 import CoachingCard from '@/components/dashboard/CoachingCard'
+import WelcomeTourModal from '@/components/dashboard/WelcomeTourModal'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -214,6 +215,10 @@ export default function DashboardPage() {
        * doesn't blank the hero. Follow-up PR retires legacy widgets after
        * operator confirms the new hero is sufficient. */}
       <BentoMissionControl />
+
+      {/* ── R8 welcome tour — shows only when operator has 0 businesses
+          + hasn't dismissed. Self-detects via /api/dashboard/fleet. */}
+      <WelcomeTourModal />
 
       {/* ── Platform health at-a-glance (L2) ─────────────────────────────
           Backed by GET /api/health/deep. First thing the operator should
