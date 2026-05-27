@@ -21,9 +21,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardRequest } from '@/lib/guard'
 import { createServerClient } from '@/lib/supabase'
 import { audit } from '@/lib/audit'
+import { isLeanMode } from '@/lib/lean-mode'
+import { isConfigured as isCoolifyConfigured } from '@/lib/coolify/client'
 
 export const runtime = 'nodejs'
-export const maxDuration = 15
+// Allow up to 60s for the graduate POST when auto_provision fires — the
+// downstream provision route creates a Coolify app (Docker pull, DNS
+// reservation) which can take 30-45s on first deploy.
+export const maxDuration = 60
 
 interface RouteCtx { params: Promise<{ slug: string }> }
 
@@ -143,6 +148,27 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
   return NextResponse.json({ ok: true, ...out })
 }
 
+/**
+ * Resolve the canonical internal base URL for server-to-server calls.
+ * Mirrors the helper in /api/businesses/[slug]/tick — Doppler-set env over
+ * a header-derived value (satisfies CodeQL js/request-forgery).
+ */
+function resolveInternalBaseUrl(): string {
+  const env = process.env.NEXUS_BASE_URL?.trim()
+  if (env) return env.replace(/\/$/, '')
+  const vercel = process.env.VERCEL_URL?.trim()
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+  return `http://localhost:${process.env.PORT?.trim() || '3000'}`
+}
+
+interface GraduateBody {
+  /** Default `true` when not in lean mode + Coolify is configured. Operator
+   *  can pass `false` from GraduateModal to flip simulation without spinning
+   *  up the Coolify container (e.g. operator wants to provision later via
+   *  a separate POST). */
+  auto_provision?: boolean
+}
+
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   const g = await guardRequest(req, {
     rateLimit: { limit: 5, window: '1 m', prefix: 'biz:grad:flip' },
@@ -156,6 +182,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const url   = new URL(req.url)
   const force = url.searchParams.get('force') === '1'
 
+  // Body is optional — Vercel cron / scripts may POST with no body.
+  let body: GraduateBody = {}
+  try { body = (await req.json()) as GraduateBody } catch { /* empty body ok */ }
+
+  // auto_provision defaults: true UNLESS the body explicitly says false,
+  // OR lean-mode is active (lean mode skips per-business containers — the
+  // graduated business runs against the shared gateway), OR Coolify isn't
+  // configured server-side (no infra to spin up).
+  const wantsAutoProvision = body.auto_provision !== false
+  const canAutoProvision   = !isLeanMode() && isCoolifyConfigured()
+  const willAutoProvision  = wantsAutoProvision && canAutoProvision
+
   const db = createServerClient()
   if (!db) return NextResponse.json({ ok: false, error: 'supabase_unconfigured' })
 
@@ -167,22 +205,88 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return NextResponse.json({ ok: false, error: 'preflight_failed', preflight })
   }
 
-  // Already graduated — idempotent return
-  if (preflight.business.simulation === false) {
-    return NextResponse.json({ ok: true, already_graduated: true })
-  }
+  // Already graduated — idempotent return. If auto_provision was requested,
+  // still fire the provision call below so the operator can use this
+  // endpoint to re-provision an already-graduated business.
+  const alreadyGraduated = preflight.business.simulation === false
 
-  const upd = await (db.from('business_operators' as never) as unknown as {
-    update: (r: unknown) => { eq: (c: string, v: string) => Promise<{ error: { message: string } | null }> }
-  }).update({ simulation: false, simulation_graduated_at: new Date().toISOString() }).eq('slug', slug)
-  if (upd.error) return NextResponse.json({ ok: false, error: upd.error.message })
+  if (!alreadyGraduated) {
+    const upd = await (db.from('business_operators' as never) as unknown as {
+      update: (r: unknown) => { eq: (c: string, v: string) => Promise<{ error: { message: string } | null }> }
+    }).update({ simulation: false, simulation_graduated_at: new Date().toISOString() }).eq('slug', slug)
+    if (upd.error) return NextResponse.json({ ok: false, error: upd.error.message })
+  }
 
   audit(req, {
     action:     'business.graduate',
     resource:   'business',
     resourceId: slug,
-    metadata:   { forced: force, checks: preflight.checks.map(c => ({ name: c.name, ok: c.ok })) },
+    metadata:   {
+      forced:          force,
+      checks:          preflight.checks.map(c => ({ name: c.name, ok: c.ok })),
+      auto_provision:  willAutoProvision,
+      already_graduated: alreadyGraduated,
+    },
   })
 
-  return NextResponse.json({ ok: true, graduated: true, forced: force })
+  // ── Auto-provision chain (operator's "automate setting up docker in
+  // ── coolify" ask from session 2026-05-27). After flipping simulation,
+  // ── fire the existing per-business provision route inline so the chain
+  // ── completes in one POST. Failures are surfaced as a `provision` field
+  // ── on the response — the graduate itself still succeeded. Operator can
+  // ── retry provision via the standalone endpoint without re-graduating.
+  let provisionResult: {
+    ok:      boolean
+    skipped: 'lean_mode' | 'coolify_unconfigured' | 'opted_out' | null
+    uuid?:   string
+    fqdn?:   string
+    error?:  string
+    detail?: string
+  } = { ok: false, skipped: null }
+
+  if (!wantsAutoProvision) {
+    provisionResult = { ok: false, skipped: 'opted_out' }
+  } else if (isLeanMode()) {
+    provisionResult = { ok: false, skipped: 'lean_mode' }
+  } else if (!isCoolifyConfigured()) {
+    provisionResult = { ok: false, skipped: 'coolify_unconfigured' }
+  } else {
+    try {
+      const provUrl = `${resolveInternalBaseUrl()}/api/businesses/${encodeURIComponent(slug)}/provision`
+      const provRes = await fetch(provUrl, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie:         req.headers.get('cookie') ?? '',
+        },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(50_000),
+      })
+      const provBody = await provRes.json().catch(() => ({})) as {
+        ok?: boolean; uuid?: string; fqdn?: string; error?: string; detail?: string
+      }
+      provisionResult = {
+        ok:      Boolean(provBody.ok),
+        skipped: null,
+        uuid:    provBody.uuid,
+        fqdn:    provBody.fqdn,
+        error:   provBody.ok ? undefined : (provBody.error ?? `provision_${provRes.status}`),
+        detail:  provBody.detail,
+      }
+    } catch (err) {
+      provisionResult = {
+        ok:      false,
+        skipped: null,
+        error:   err instanceof Error ? err.message : 'provision_threw',
+      }
+    }
+  }
+
+  return NextResponse.json({
+    ok:                true,
+    graduated:         !alreadyGraduated,
+    already_graduated: alreadyGraduated,
+    forced:            force,
+    provision:         provisionResult,
+  })
 }
