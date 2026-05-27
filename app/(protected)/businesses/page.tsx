@@ -14,6 +14,7 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase'
 import BusinessTile from '@/components/businesses/BusinessTile'
+import FleetActionsBar from '@/components/businesses/FleetActionsBar'
 import { Settings as SettingsIcon } from 'lucide-react'
 
 interface BusinessLite {
@@ -104,6 +105,10 @@ export default async function BusinessesPage() {
           </Link>
         </div>
       </header>
+
+      {/* R7: Fleet actions bar — bulk Pause / Resume / Smoke / Refresh-KPIs.
+          Hidden when there's <2 businesses (the component returns null). */}
+      <FleetActionsBar availableSlugs={businesses.map(b => b.slug)} />
 
       {businesses.length === 0 ? (
         <div className="rounded-xl border border-violet-700/30 bg-violet-500/5 p-8 text-center">
