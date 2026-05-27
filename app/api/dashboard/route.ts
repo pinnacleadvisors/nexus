@@ -207,38 +207,68 @@ export async function GET(req: NextRequest) {
     const prevTotalCost = prevTokenRaw.reduce((s, t) => s + Number(t.cost_usd ?? 0), 0)
     const prevTotalTokens = prevTokenRaw.reduce((s, t) => s + (t.input_tokens ?? 0) + (t.output_tokens ?? 0), 0)
 
+    // ── R10: freshness — newest source-row timestamp per KPI ─────────────
+    // Pure read-side aggregate. KpiGrid renders this as "Updated Nm ago"
+    // and turns the card amber when >24h stale (G9 of UX consult). Returns
+    // undefined when the source list is empty so the card just shows no
+    // subtitle (instead of "Updated 56 years ago" for new accounts).
+    const maxIso = (rows: Array<{ created_at?: string | null } | { last_active?: string | null }>): string | undefined => {
+      let max = 0
+      for (const r of rows) {
+        const v = (r as { created_at?: string | null }).created_at
+          ?? (r as { last_active?: string | null }).last_active
+        if (!v) continue
+        const t = new Date(v).getTime()
+        if (Number.isFinite(t) && t > max) max = t
+      }
+      return max > 0 ? new Date(max).toISOString() : undefined
+    }
+    const maxRevenueAt = maxIso(revenueRaw)
+    const maxTokenAt   = maxIso(tokenRaw)
+    const maxAgentAt   = maxIso(agents.map(a => ({ last_active: a.lastActive })))
+    const maxRunAt     = maxIso(runsRaw.map(r => ({ created_at: (r as { updated_at?: string }).updated_at ?? (r as { created_at?: string }).created_at })))
+    // Net profit's freshness = newer of revenue + cost since both feed the
+    // computation; either changing should refresh the card.
+    const netProfitAt = [maxRevenueAt, maxTokenAt].filter(Boolean).sort().pop() as string | undefined
+
     const kpis: KpiCard[] = [
       {
         label: 'Total Revenue',
         value: `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
         color: 'green',
+        updated_at: maxRevenueAt,
       },
       {
         label: 'Total Cost',
         value: `$${totalCost.toFixed(2)}`,
         delta: deltaPct(totalCost, prevTotalCost),
         color: 'red',
+        updated_at: maxTokenAt,
       },
       {
         label: 'Net Profit',
         value: `$${netProfit.toFixed(2)}`,
         color: netProfit >= 0 ? 'green' : 'red',
+        updated_at: netProfitAt,
       },
       {
         label: 'Active Agents',
         value: String(activeAgents),
         color: 'default',
+        updated_at: maxAgentAt,
       },
       {
         label: 'Tokens Used',
         value: formatTokens(totalTokens),
         delta: deltaPct(totalTokens, prevTotalTokens),
         color: 'default',
+        updated_at: maxTokenAt,
       },
       {
         label: 'Tasks Done',
         value: String(totalTasks),
         color: 'default',
+        updated_at: maxRunAt,
       },
     ]
 
