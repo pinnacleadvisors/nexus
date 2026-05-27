@@ -105,11 +105,23 @@ export async function dispatchCodexChatTurn(
   if (!result.ok) {
     // Hint copy varies by failure mode so the operator sees something
     // actionable rather than a bare "gateway 502". Order matters — check
-    // specific (404, transient 5xx after-retry) before falling through to
-    // generic.
+    // specific (404, trailing-characters auth corruption, transient 5xx after-
+    // retry) before falling through to generic.
     let fallbackHint: string
+    const errorText = (result.error ?? '').toLowerCase()
+    // The 2026-05-27 incident: Doppler CODEX_AUTH_JSON had two concatenated
+    // objects, and the codex CLI failed with exactly this message. Surface a
+    // direct fix instead of "OOM during CLI spawn". Pattern match is robust
+    // to whitespace + line/col numbers.
+    const isAuthJsonCorrupt =
+      errorText.includes('trailing characters') ||
+      errorText.includes('codex cli exited with code 1') ||
+      errorText.includes('codex_cli_failed') && errorText.includes('json')
+
     if (result.status === 404) {
       fallbackHint = 'codex-gateway is missing the agent spec — try Claude for now'
+    } else if (isAuthJsonCorrupt) {
+      fallbackHint = 'Codex auth.json is corrupt (JSON parse error). Fix: run `codex login` on a dev machine, then copy the contents of `~/.codex/auth.json` into Doppler as CODEX_AUTH_JSON (replace, do not append). Redeploy codex-gateway with CODEX_AUTH_JSON_FORCE=1.'
     } else if ([502, 503, 504].includes(result.status)) {
       fallbackHint = `Codex gateway returned ${result.status} on both attempts — likely OOM during CLI spawn or a tunnel issue. Check Coolify logs; switch to Claude to continue.`
     } else if (result.status === 0) {

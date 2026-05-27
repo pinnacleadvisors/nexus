@@ -123,6 +123,13 @@ const messageBodySchema = z.object({
 
 app.get('/health', async c => {
   let loggedIn = false
+  // authJsonValid surfaces the 2026-05-27 incident class: /root/.codex/auth.json
+  // is present (so loggedIn=true) but contains malformed JSON (e.g. two
+  // concatenated objects). Every dispatch then 502s with "trailing characters".
+  // Deep probe parses the file so the operator's UI shows the failure mode
+  // up-front rather than learning about it via the chat-route fallback hint.
+  let authJsonValid: boolean | null = null
+  let authJsonError: string | null = null
   try {
     const stat = await fs.stat('/root/.codex')
     loggedIn = stat.isDirectory()
@@ -142,6 +149,22 @@ app.get('/health', async c => {
   let cliProbe: Awaited<ReturnType<typeof probeCliWorks>> | null = null
   if (deep) {
     cliProbe = await probeCliWorks()
+    // Parse /root/.codex/auth.json to catch the corruption pattern that
+    // produces "trailing characters" CLI errors. Best-effort — if the
+    // file isn't present (e.g. CODEX_API_KEY mode) skip silently.
+    try {
+      const raw = await fs.readFile('/root/.codex/auth.json', 'utf8')
+      try {
+        JSON.parse(raw)
+        authJsonValid = true
+      } catch (err) {
+        authJsonValid = false
+        authJsonError = err instanceof Error ? err.message : 'invalid_json'
+      }
+    } catch {
+      // No auth.json — leave nulls so the caller can distinguish "valid",
+      // "invalid", and "not-checked" cleanly.
+    }
   }
 
   // dispatchReady = the actual signal a caller cares about. /health returns
@@ -158,7 +181,11 @@ app.get('/health', async c => {
   }
   if (cliProbe) {
     body.cliProbe       = cliProbe
-    body.dispatchReady  = loggedIn && cliProbe.ok
+    // dispatchReady now also requires auth.json parses cleanly when we checked.
+    // null (no auth.json — e.g. CODEX_API_KEY mode) does NOT block readiness.
+    body.dispatchReady  = loggedIn && cliProbe.ok && authJsonValid !== false
+    body.authJsonValid  = authJsonValid
+    if (authJsonError) body.authJsonError = authJsonError.slice(0, 200)
   }
   return c.json(body)
 })

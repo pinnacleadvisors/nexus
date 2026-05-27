@@ -58,7 +58,38 @@ fi
 #                                   `docker exec -it ... codex login`. Legacy
 #                                   approach — required terminal access.
 if [ -n "${CODEX_AUTH_JSON:-}" ]; then
-  if [ -f /root/.codex/auth.json ] && [ "${CODEX_AUTH_JSON_FORCE:-0}" != "1" ]; then
+  # ── CODEX_AUTH_JSON corruption guard ────────────────────────────────────
+  # Validate the env var IS valid JSON before writing. The 2026-05-27 incident
+  # had two concatenated objects (}{ in the middle) — the file wrote fine,
+  # but every codex CLI invocation failed with "trailing characters at line N
+  # column 2". The synchronous chat endpoint returns 502 to clients; Cloudflare
+  # often wraps it in its own error page, hiding the actual CLI error.
+  #
+  # Best-effort recovery: if the env var contains two concatenated objects
+  # (a single `}{` separator with whitespace optional), keep only the first
+  # complete object. The first one is almost always the freshest paste — the
+  # second is a remnant from a prior auth.json that wasn't cleared. Log loud
+  # so the operator can rotate the Doppler secret to match.
+  #
+  # If the env var fails to parse as JSON at all, refuse to overwrite the
+  # volume version — better to keep the old creds working than poison the
+  # gateway with garbage.
+  AUTH_VALID=1
+  if ! printf '%s' "$CODEX_AUTH_JSON" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{JSON.parse(s);process.exit(0)}catch{process.exit(1)}})' 2>/dev/null; then
+    AUTH_VALID=0
+    DOUBLE_OBJ=$(printf '%s' "$CODEX_AUTH_JSON" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const m=s.match(/\}\s*\{/);process.stdout.write(m?String(m.index):"")})' 2>/dev/null || true)
+    if [ -n "$DOUBLE_OBJ" ]; then
+      RECOVERED=$(printf '%s' "$CODEX_AUTH_JSON" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{let d=0,end=-1;for(let i=0;i<s.length;i++){if(s[i]==="{")d++;else if(s[i]==="}"){d--;if(d===0){end=i;break}}}if(end<0){process.exit(2)}const cand=s.slice(0,end+1);try{JSON.parse(cand);process.stdout.write(cand);process.exit(0)}catch{process.exit(3)}})' 2>/dev/null || true)
+      if [ -n "$RECOVERED" ]; then
+        echo "[codex-gw] WARNING: CODEX_AUTH_JSON contained TWO concatenated objects (}{ at byte $DOUBLE_OBJ). Auto-recovered the first one. Rotate the Doppler secret with the output of \`cat ~/.codex/auth.json\` from a fresh \`codex login\` to silence this warning."
+        CODEX_AUTH_JSON="$RECOVERED"
+        AUTH_VALID=1
+      fi
+    fi
+  fi
+  if [ "$AUTH_VALID" != "1" ]; then
+    echo "[codex-gw] WARNING: CODEX_AUTH_JSON is not valid JSON. NOT writing /root/.codex/auth.json. Run \`codex login\` on a dev machine and paste \`cat ~/.codex/auth.json\` into Doppler as CODEX_AUTH_JSON, then redeploy with CODEX_AUTH_JSON_FORCE=1."
+  elif [ -f /root/.codex/auth.json ] && [ "${CODEX_AUTH_JSON_FORCE:-0}" != "1" ]; then
     echo "[codex-gw] /root/.codex/auth.json already exists — keeping volume version (set CODEX_AUTH_JSON_FORCE=1 to overwrite)."
   else
     mkdir -p /root/.codex
@@ -69,6 +100,16 @@ if [ -n "${CODEX_AUTH_JSON:-}" ]; then
   # Force plan-billed: drop API-key vars so the spawned codex CLI doesn't
   # silently route to per-token billing once the OAuth token is in place.
   unset CODEX_API_KEY OPENAI_API_KEY
+
+  # ── /root/.codex/auth.json validation guard ─────────────────────────────
+  # Even when the env var was clean, the persistent volume's file might be
+  # corrupt from a prior boot. Validate it now so a /health probe AFTER boot
+  # surfaces the real cause instead of every chat-route call quietly 502ing.
+  if [ -f /root/.codex/auth.json ]; then
+    if ! node -e 'const fs=require("fs");try{JSON.parse(fs.readFileSync("/root/.codex/auth.json","utf8"));process.exit(0)}catch(e){console.error(e.message);process.exit(1)}' 2>&1; then
+      echo "[codex-gw] FATAL: /root/.codex/auth.json on the volume is malformed JSON. Every dispatch will return 502 until rotated. Delete the volume + redeploy with CODEX_AUTH_JSON_FORCE=1, OR set CODEX_AUTH_JSON_FORCE=1 + redeploy to overwrite from env."
+    fi
+  fi
 elif [ -n "${CODEX_API_KEY:-}" ]; then
   echo "[codex-gw] Using CODEX_API_KEY (pay-per-token API billing)."
 elif [ -d "/root/.codex" ] && [ -n "$(ls -A /root/.codex 2>/dev/null || true)" ]; then
