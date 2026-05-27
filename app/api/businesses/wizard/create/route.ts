@@ -67,6 +67,41 @@ const DEFAULT_APPROVAL_GATES = [
   'destructive_infra',
 ]
 
+/**
+ * Niche-aware default KPI targets (90-day horizon). Used when the operator
+ * leaves the KPI step blank in the wizard. Numbers are intentionally
+ * conservative — graduate-preflight only needs SOMETHING non-empty so the
+ * cost-guard's stagnation-pivot has a target to compare against. Operator
+ * edits any time from /businesses/<slug>.
+ *
+ * Niche taxonomy mirrors the regex guess in analyze-inspiration:
+ *   saas / info-products / e-commerce / service-agency / media-newsletter
+ *   / creator-economy / general (fallback)
+ */
+function defaultKpisForNiche(niche: string): Record<string, number> {
+  const n = niche.toLowerCase()
+  if (/^saas|developer|api|platform/.test(n)) {
+    return { mrr_90d: 1_000, signups_90d: 100, content_shipped_90d: 8 }
+  }
+  if (/^info-products|course|cohort|coaching/.test(n)) {
+    return { units_sold_90d: 30, revenue_cents_90d: 90_000, content_shipped_90d: 12 }
+  }
+  if (/^e-commerce|shop|store/.test(n)) {
+    return { orders_90d: 50, revenue_cents_90d: 150_000, returning_rate_pct_90d: 25 }
+  }
+  if (/^service-agency|consult|firm/.test(n)) {
+    return { clients_90d: 5, revenue_cents_90d: 500_000, retainer_count_90d: 2 }
+  }
+  if (/^media|newsletter|blog/.test(n)) {
+    return { subscribers_90d: 500, paid_subscribers_90d: 25, posts_shipped_90d: 24 }
+  }
+  if (/^creator|community|influencer/.test(n)) {
+    return { followers_90d: 1_000, paid_supporters_90d: 20, posts_shipped_90d: 30 }
+  }
+  // Fallback — generic-but-non-empty
+  return { signups_90d: 50, content_shipped_90d: 6 }
+}
+
 function isValidSlug(s: string): boolean { return /^[a-z0-9-]{1,60}$/.test(s) }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -119,9 +154,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? body.money_model as MoneyModelKind
     : 'unknown'
 
-  const kpiTargets = (body.kpi_targets && typeof body.kpi_targets === 'object' && body.kpi_targets !== null)
+  // Niche-aware default KPI targets — graduate preflight blocks on empty
+  // kpi_targets, and forcing the operator to think about exact numbers up
+  // front in the wizard kills momentum. Pre-fill conservative defaults
+  // matched to the niche the operator picked (or that the inspiration URL
+  // analysis suggested). Operator can edit any time from /businesses/<slug>.
+  // J2 from session 2026-05-27 (companion to the wizard ship in PR #396).
+  const operatorKpis = (body.kpi_targets && typeof body.kpi_targets === 'object' && body.kpi_targets !== null)
     ? body.kpi_targets as Record<string, unknown>
     : {}
+  const kpiTargets = Object.keys(operatorKpis).length > 0
+    ? operatorKpis
+    : defaultKpisForNiche(niche)
 
   const approvalGates = Array.isArray(body.approval_gates) && body.approval_gates.every(g => typeof g === 'string')
     ? (body.approval_gates as string[]).slice(0, 16)
