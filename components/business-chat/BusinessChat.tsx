@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, AlertTriangle, X as XIcon, Briefcase, Terminal as TerminalIcon, Copy, Check, Menu } from 'lucide-react'
 import { safeJson } from '@/lib/chat/safe-json-response'
 import ApprovalCard from '@/components/platform-chat/ApprovalCard'
+import RetrospectiveBanner from '@/components/chat/RetrospectiveBanner'
 import { type SessionSummary } from '@/components/platform-chat/SessionSidebar'
 import MobileAwareSessionSidebar from '@/components/platform-chat/MobileAwareSessionSidebar'
 import ToolCallCard from '@/components/platform-chat/ToolCallCard'
@@ -134,7 +135,7 @@ interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
+interface MessagesResp { ok: true; session: SessionSummary & { retrospective_md?: string | null; retrospective_generated_at?: string | null }; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000
@@ -210,6 +211,13 @@ export default function BusinessChat({ slug, name }: Props) {
   // Pending CLI tool-permission requests — same wiring as PlatformChat.
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([])
 
+  // R9 — LLM-generated retrospective rendered at the top of the chat
+  // when present. Populated on session-load from the messages API; reset
+  // to null on new chat / session switch. Stays null when the migration
+  // hasn't been applied or the session is fresh.
+  const [retrospective,    setRetrospective]    = useState<string | null>(null)
+  const [retrospectiveAt,  setRetrospectiveAt]  = useState<string | null>(null)
+
   // Per-plan resolution map for EditPlanCards — mirror of PlatformChat.
   const editPlanResolutions = computeEditPlanResolutions(messages)
   // Per-plan resolution map for EditSelfCards — same APPROVAL grammar,
@@ -249,7 +257,12 @@ export default function BusinessChat({ slug, name }: Props) {
 
   // Load history when the operator picks a session.
   useEffect(() => {
-    if (!activeSessionId) { setMessages([]); return }
+    if (!activeSessionId) {
+      setMessages([])
+      setRetrospective(null)
+      setRetrospectiveAt(null)
+      return
+    }
     let cancelled = false
     ;(async () => {
       try {
@@ -268,6 +281,11 @@ export default function BusinessChat({ slug, name }: Props) {
           edit_group_completes: m.metadata?.edit_group_completes,
           edit_selfs:           m.metadata?.edit_selfs,
         })))
+        // R9 — pull retrospective metadata from the session payload. Null
+        // when the column doesn't exist yet (migration 092) or when the
+        // session is too fresh for the cron to have summarised it.
+        setRetrospective(j.session.retrospective_md ?? null)
+        setRetrospectiveAt(j.session.retrospective_generated_at ?? null)
         setError(null)
       } catch { /* swallow */ }
     })()
@@ -277,6 +295,8 @@ export default function BusinessChat({ slug, name }: Props) {
   function handleNewChat() {
     setActiveSessionId(null)
     setMessages([])
+    setRetrospective(null)
+    setRetrospectiveAt(null)
     setError(null)
   }
 
@@ -744,6 +764,10 @@ export default function BusinessChat({ slug, name }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          {/* R9 — retrospective banner pinned at the top of the message
+              pane when the cron has summarised this session. Null on
+              fresh sessions / missing migration. */}
+          <RetrospectiveBanner retrospective={retrospective} generatedAt={retrospectiveAt} />
           {messages.length === 0 && <EmptyState name={name} />}
           {messages.map((m, i) => {
             if (m.role === 'user' && isApprovalReply(m.content)) return null

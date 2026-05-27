@@ -18,6 +18,14 @@ export interface ChatSessionRow {
   title:            string | null
   created_at:       string
   last_message_at:  string
+  /** R9 retrospective columns. Optional — populated by the daily
+   *  /api/cron/chat-retrospectives cron 7d after last activity. Read
+   *  on session reopen so the operator immediately sees "what we
+   *  decided last time" instead of scrolling 50 messages back.
+   *  Migration 092. Fail-soft: callers tolerate missing column when
+   *  the migration hasn't been applied yet. */
+  retrospective_md?:           string | null
+  retrospective_generated_at?: string | null
 }
 
 export interface ChatMessageRow {
@@ -95,11 +103,30 @@ export async function createSession(input: {
 export async function getSession(userId: string, sessionId: string): Promise<ChatSessionRow | null> {
   const t = table<ChatSessionRow>('chat_sessions')
   if (!t) return null
-  const res = await t.select('id, user_id, scope, agent_slug, title, created_at, last_message_at')
-    .eq('id', sessionId)
-    .eq('user_id', userId)
-    .limit(1)
-  return res.data?.[0] ?? null
+  // Attempt to include the R9 retrospective columns. If migration 092
+  // hasn't applied yet (e.g. local dev DB), Postgres errors with
+  // "column ... does not exist" — we fall back to the legacy column set
+  // so the chat view still renders. Once 092 has shipped everywhere,
+  // the second-pass fallback becomes dead code.
+  try {
+    const res = await t.select('id, user_id, scope, agent_slug, title, created_at, last_message_at, retrospective_md, retrospective_generated_at')
+      .eq('id', sessionId)
+      .eq('user_id', userId)
+      .limit(1)
+    if (res.error) {
+      if (/column .*retrospective_md.* does not exist/i.test(res.error.message)) {
+        const fallback = await t.select('id, user_id, scope, agent_slug, title, created_at, last_message_at')
+          .eq('id', sessionId)
+          .eq('user_id', userId)
+          .limit(1)
+        return fallback.data?.[0] ?? null
+      }
+      return null
+    }
+    return res.data?.[0] ?? null
+  } catch {
+    return null
+  }
 }
 
 export async function deleteSession(userId: string, sessionId: string): Promise<boolean> {

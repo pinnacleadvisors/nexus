@@ -85,5 +85,52 @@ export async function insertApproval(
   }
 
   if (!res.error && approvalsTableAvailable === null) approvalsTableAvailable = true
+
+  // R4 follow-up: fire-and-forget operator notification on a successful
+  // pending-approval insert. We never block the insert path on the
+  // dispatch — if Slack or web push fails the approval is still queued
+  // in the DB and the operator can find it via /approvals. Fan-out to
+  // every operator in ALLOWED_USER_IDS so multi-operator deployments
+  // (future) Just Work. Operators can opt-out per-category via the
+  // settings panel.
+  if (!res.error && res.data?.id && (row.status ?? 'pending') === 'pending') {
+    void dispatchApprovalNotification(row, res.data.id)
+  }
+
   return { id: res.data?.id ?? null, error: res.error }
+}
+
+/** Lazy-dispatch helper — kept out of insertApproval's hot path so the
+ *  dispatch's `await import('@/lib/notifications/...')` cost is paid only
+ *  when an approval actually lands. Errors are swallowed (logging only). */
+async function dispatchApprovalNotification(
+  row:        ApprovalInsert,
+  approvalId: string,
+): Promise<void> {
+  try {
+    const [{ listOperatorUserIds }, { notifyOperator }] = await Promise.all([
+      import('@/lib/notifications/operators'),
+      import('@/lib/notifications/dispatch'),
+    ])
+    const operatorIds = listOperatorUserIds()
+    if (operatorIds.length === 0) return
+    const title = `New approval: ${row.type.replace(/_/g, ' ')}`
+    const body  = row.business_slug
+      ? `${row.business_slug}: ${row.type.replace(/_/g, ' ')} pending`
+      : `${row.type.replace(/_/g, ' ')} pending`
+    // Fan-out in parallel; each notifyOperator call is itself fail-soft.
+    await Promise.all(operatorIds.map(userId =>
+      notifyOperator(userId, 'approval-pending', {
+        title,
+        body,
+        link_href:     `/approvals?focus=${approvalId}`,
+        severity:      'info',
+        business_slug: row.business_slug,
+      }).catch(() => undefined),
+    ))
+  } catch {
+    // Never let a notification failure propagate out of insertApproval —
+    // the approval landed in the DB successfully; the operator can find
+    // it via /approvals even if the ping never fired.
+  }
 }
