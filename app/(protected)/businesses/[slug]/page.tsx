@@ -20,6 +20,7 @@ import BudgetPolicyCard, { type BudgetPolicy } from '@/components/businesses/Bud
 import BudgetIncidentCard, { type BudgetIncident } from '@/components/businesses/BudgetIncidentCard'
 import RunNowButton from '@/components/businesses/RunNowButton'
 import GraduateButton from '@/components/businesses/GraduateButton'
+import NextStepsCard from '@/components/businesses/NextStepsCard'
 import { ArrowLeft, Goal, ListTodo, ShieldCheck, MessageSquare, Network, Zap } from 'lucide-react'
 
 interface BusinessRow {
@@ -31,6 +32,7 @@ interface BusinessRow {
   brand_voice:   string | null
   parent_org_id: string | null
   simulation:    boolean | null   // migration 070
+  kpi_targets:   Record<string, unknown> | null  // for NextStepsCard
 }
 
 interface GoalRow {
@@ -136,7 +138,7 @@ async function fetchData(slug: string): Promise<{
 
   const [bizRes, goalsRes, issueRes, approvalRes, budget] = await Promise.all([
     anyDb.from('business_operators')
-      .select('slug,name,niche,status,mission,brand_voice,parent_org_id,simulation')
+      .select('slug,name,niche,status,mission,brand_voice,parent_org_id,simulation,kpi_targets')
       .eq('slug', slug)
       .maybeSingle(),
     anyDb.from('goals')
@@ -215,6 +217,16 @@ export default async function BusinessDetailPage({ params }: PageProps) {
           </Link>
         </div>
       </header>
+
+      {/* Next-steps guidance — only for simulation businesses. Auto-hides
+          when every actionable row is green. Mounted ABOVE the main grid so
+          the operator can act on it without scrolling. */}
+      {business.simulation && (
+        <NextStepsCard
+          slug={business.slug}
+          hasKpiTargets={!!business.kpi_targets && Object.keys(business.kpi_targets).length > 0}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
