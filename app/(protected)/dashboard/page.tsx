@@ -14,6 +14,7 @@ import FleetOverview from '@/components/dashboard/FleetOverview'
 import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
 import BentoMissionControl from '@/components/dashboard/BentoMissionControl'
 import PlatformHealthWidget from '@/components/dashboard/PlatformHealthWidget'
+import CoachingCard from '@/components/dashboard/CoachingCard'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -219,6 +220,10 @@ export default function DashboardPage() {
           read — "is anything broken right now?" — before scrolling
           into KPIs or runs. Pull-only refresh so we don't add traffic. */}
       <PlatformHealthWidget />
+
+      {/* ── Coach (R5) — actionable suggestions from platform state.
+          Hides itself when there's nothing actionable. */}
+      <CoachingCard />
 
       {/* ── Fleet overview: per-business CEO glance (audit 2026-05-16 §7.1) */}
       <FleetOverview />
