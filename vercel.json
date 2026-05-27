@@ -52,6 +52,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/weekly-digest",
+      "schedule": "0 1 * * 0"
+    },
+    {
       "path": "/api/cron/simulation-benchmark",
       "schedule": "0 6 * * *"
     },
