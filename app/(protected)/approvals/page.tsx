@@ -13,7 +13,7 @@
  */
 
 import { createServerClient } from '@/lib/supabase'
-import ApprovalCard from '@/components/approvals/ApprovalCard'
+import ApprovalsBulkList from '@/components/approvals/ApprovalsBulkList'
 import { ShieldCheck } from 'lucide-react'
 
 interface ApprovalRow {
@@ -60,21 +60,7 @@ export default async function ApprovalsInboxPage() {
         </div>
       </header>
 
-      {approvals.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
-          <p className="text-zinc-400">
-            No pending approvals. Apply migration 050_approvals_first_class.sql to enable.
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {approvals.map(a => (
-            <li key={a.id}>
-              <ApprovalCard approval={a} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <ApprovalsBulkList approvals={approvals} />
     </div>
   )
 }
