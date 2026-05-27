@@ -13,6 +13,7 @@ import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import FleetOverview from '@/components/dashboard/FleetOverview'
 import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
 import BentoMissionControl from '@/components/dashboard/BentoMissionControl'
+import PlatformHealthWidget from '@/components/dashboard/PlatformHealthWidget'
 import { supabase } from '@/lib/supabase'
 import type { AgentRow, RevenueDataPoint, KpiCard, DateRange } from '@/lib/types'
 import { KPI_DATA, REVENUE_DATA, AGENT_ROWS } from '@/lib/mock-data'
@@ -212,6 +213,12 @@ export default function DashboardPage() {
        * doesn't blank the hero. Follow-up PR retires legacy widgets after
        * operator confirms the new hero is sufficient. */}
       <BentoMissionControl />
+
+      {/* ── Platform health at-a-glance (L2) ─────────────────────────────
+          Backed by GET /api/health/deep. First thing the operator should
+          read — "is anything broken right now?" — before scrolling
+          into KPIs or runs. Pull-only refresh so we don't add traffic. */}
+      <PlatformHealthWidget />
 
       {/* ── Fleet overview: per-business CEO glance (audit 2026-05-16 §7.1) */}
       <FleetOverview />
