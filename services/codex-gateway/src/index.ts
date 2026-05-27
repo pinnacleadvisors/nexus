@@ -394,7 +394,30 @@ app.get('/api/jobs/:jobId', async c => {
 
   const jobId = c.req.param('jobId')
   const job   = jobs.get(jobId)
-  if (!job) return c.json({ ok: false, error: 'not_found' }, 404)
+  if (!job) {
+    // Distinguish "never existed" (bad jobId / typo) from "swept after
+    // RETAIN_MS" (10 min default — jobStore.ts). Looks at format + current
+    // store size so the caller's UI can say "your job expired, retry" vs
+    // "unknown job — bug somewhere". 2026-05-27 operator question:
+    // operator hit /api/jobs/<old-id> and got bare not_found with no hint.
+    const looksLikeOurJobId = /^job_[0-9a-f]{8}-/.test(jobId)
+    const reason: string = looksLikeOurJobId
+      ? 'job_expired_or_gateway_restarted'
+      : 'unknown_job_id_format'
+    const hint: string = looksLikeOurJobId
+      ? `Completed jobs are GC'd after ${Math.round(10 * 60_000 / 1000)}s. Re-enqueue via POST /api/jobs to retry.`
+      : 'jobId must match the format returned by POST /api/jobs (job_<uuid>).'
+    return c.json({
+      ok:    false,
+      error: 'not_found',
+      reason,
+      hint,
+      // Tiny introspection — how many jobs are currently tracked. Helpful
+      // when debugging "is the gateway dropping jobs?" — if size is 0
+      // moments after enqueue, the worker isn't persisting.
+      jobsTracked: jobs.size(),
+    }, 404)
+  }
 
   return c.json({
     ok:         true,
