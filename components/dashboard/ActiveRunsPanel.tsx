@@ -38,6 +38,7 @@ function ideaTitle(idea: IdeaCard | undefined, fallbackId: string): string {
 }
 
 const PHASE_COLOR: Record<RunPhase, { bg: string; fg: string }> = {
+  // Build / iterate flavour (default Run pipeline)
   ideate:    { bg: '#1e2a3a', fg: '#7ab8ff' },
   spec:      { bg: '#1e2a3a', fg: '#7ab8ff' },
   decompose: { bg: '#2a1e3a', fg: '#c084fc' },
@@ -47,6 +48,12 @@ const PHASE_COLOR: Record<RunPhase, { bg: string; fg: string }> = {
   measure:   { bg: '#1a1a2e', fg: '#9090b0' },
   optimise:  { bg: '#1a1a2e', fg: '#9090b0' },
   done:      { bg: '#0d2e1a', fg: '#4ade80' },
+  // Sales-pipeline flavour (thai-sales v1, migration 085)
+  discover:  { bg: '#1e2a3a', fg: '#7ab8ff' },   // matches ideate — early funnel
+  outreach:  { bg: '#2a1e3a', fg: '#c084fc' },   // matches decompose — work in flight
+  booked:    { bg: '#2a1f0d', fg: '#f59e0b' },   // matches review — operator may want eyes
+  call:      { bg: '#2a1f0d', fg: '#f59e0b' },   // matches review — operator may want eyes
+  close:     { bg: '#0d2e1a', fg: '#4ade80' },   // matches done — terminal happy state
 }
 
 export default function ActiveRunsPanel() {

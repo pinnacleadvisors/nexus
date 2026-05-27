@@ -269,6 +269,22 @@ Slice 0 (schema)
 
 ---
 
-## Progress
+## Progress (as of 2026-05-27)
 
-_Updated as work lands. Format: `## Progress (as of YYYY-MM-DD)` per CLAUDE.md._
+### Completed
+- [x] **Slice 0** — schema + types foundation:
+  - `lib/types.ts` — `Prospect`, `ProspectAudit`, `SalesCall`, `SalesCallTranscriptTurn`, `Proposal`, `OutreachMessage` interfaces added. `RunPhase` union extended with the sales-pipeline values `discover | outreach | booked | call | close`. `ActiveRunsPanel`'s `PHASE_COLOR` map extended so the dashboard renders the new phases.
+  - `supabase/migrations/085_thai_sales_v1.sql` — `prospects` + `sales_calls` + `proposals` + `outreach_messages` tables with idempotent CREATE IF NOT EXISTS + RLS (service-role only). Migration number bumped from the plan's `019` to `085` to follow the most recent shipped slot.
+
+### Remaining
+- [ ] **Slice 1** — agents + ingest path: `lead-prospector` agent (Tavily + Lighthouse), `sdr-agent` (Resend), `/api/webhooks/calcom` + `/api/webhooks/resend` handlers, `/sales` operator dashboard.
+- [ ] **Slice 2** — avatar conversation path: `lib/avatar/heygen.ts` client, `/sales-call/[id]` Client Component with LiveKit, `/api/avatar/turn` server route, context-pack hydrator, cost-guard wrap.
+- [ ] **Slice 3** — proposal + close path: post-call proposal generator, Stripe checkout link draft, `proposal-review` Board card kind, approval gate wiring.
+- [ ] **Slice 4** — Playwright smoke + cost telemetry rows + operator runbook.
+
+### Blockers / Open Questions
+- **HeyGen Streaming Avatar pricing** — minutes-billed even on dropped sessions per plan §Risks. Need to confirm pricing tier + monthly budget before Slice 2 to right-size the per-call hard timeout.
+- **Cal.com vs Cal Native** — plan defaults to Cal.com webhook. Confirm before Slice 1.
+- **PageSpeed Insights API key** — `PAGESPEED_API_KEY` (free, Google) not yet in Doppler. Required before lead-prospector can audit websites.
+- **Resend webhook secret** — `RESEND_WEBHOOK_SECRET` not yet in Doppler. Required for delivery + open-tracking.
+- **Thailand PDPA compliance** — v1 is published-business-email-only with unsubscribe link. Document the policy in `memory/sales/compliance.md` before any outreach fires.
