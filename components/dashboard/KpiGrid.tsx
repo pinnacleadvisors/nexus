@@ -1,12 +1,40 @@
 import Link from 'next/link'
 import type { KpiCard } from '@/lib/types'
-import { TrendingUp, TrendingDown, Info, Sparkles } from 'lucide-react'
+import { TrendingUp, TrendingDown, Info, Sparkles, Clock } from 'lucide-react'
 
 const COLOR_MAP = {
   default: { value: '#e8e8f0', delta: '' },
   green: { value: '#22c55e', delta: '' },
   red: { value: '#ef4444', delta: '' },
   purple: { value: '#6c63ff', delta: '' },
+}
+
+// R10 — Performance signal freshness indicator. Format an ISO timestamp
+// into a "Nm ago" / "Nh ago" / "Nd ago" string. Returns null when missing
+// or unparseable so the card just omits the subtitle (instead of e.g.
+// "Updated 56 years ago" for new accounts).
+function formatRelative(iso?: string): string | null {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return null
+  const ageMs = Date.now() - t
+  if (ageMs < 0) return 'just now'
+  const sec = Math.floor(ageMs / 1000)
+  if (sec < 60) return 'just now'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  return `${day}d ago`
+}
+
+// >24h stale → amber border + amber clock icon.
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000
+function isStale(iso?: string): boolean {
+  if (!iso) return false
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) && (Date.now() - t) > STALE_THRESHOLD_MS
 }
 
 interface Props {
@@ -59,11 +87,19 @@ export default function KpiGrid({ cards }: Props) {
         {cards.map(card => {
           const colors = COLOR_MAP[card.color ?? 'default']
           const deltaPositive = (card.delta ?? 0) >= 0
+          const freshLabel = formatRelative(card.updated_at)
+          const stale = isStale(card.updated_at)
           return (
             <div
               key={card.label}
               className="rounded-xl p-4"
-              style={{ backgroundColor: '#12121e', border: '1px solid #24243e' }}
+              style={{
+                backgroundColor: '#12121e',
+                // Amber border when the underlying signal is >24h old —
+                // visually-loud cue so the operator doesn't read stale
+                // numbers as live numbers. R10 of UX consult.
+                border: stale ? '1px solid #f59e0b66' : '1px solid #24243e',
+              }}
             >
               <div className="flex items-center gap-1.5 mb-2">
                 <p className="text-xs font-medium" style={{ color: '#9090b0' }}>
@@ -97,6 +133,14 @@ export default function KpiGrid({ cards }: Props) {
                   </span>
                   <span className="text-xs" style={{ color: '#55556a' }}>
                     vs last month
+                  </span>
+                </div>
+              )}
+              {freshLabel && (
+                <div className="flex items-center gap-1 mt-2" title={`Source last updated ${card.updated_at ?? ''}`}>
+                  <Clock size={9} style={{ color: stale ? '#f59e0b' : '#55556a' }} />
+                  <span className="text-[10px]" style={{ color: stale ? '#f59e0b' : '#55556a' }}>
+                    {freshLabel}
                   </span>
                 </div>
               )}

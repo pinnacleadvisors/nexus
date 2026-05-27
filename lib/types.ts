@@ -45,6 +45,11 @@ export interface KpiCard {
   color?: 'default' | 'green' | 'red' | 'purple'
   /** Optional plain-language hint shown as a tooltip on the label. */
   description?: string
+  /** ISO timestamp of the most recent source row that contributed to this
+   *  KPI's value. KpiGrid renders an "Updated Nm ago" subtitle and turns
+   *  the card amber when the underlying data is >24h stale.
+   *  R10 of UX consultation 2026-05-27. */
+  updated_at?: string
 }
 
 export interface AgentRow {
