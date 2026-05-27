@@ -79,25 +79,62 @@ export default function FleetOverview() {
   }
 
   if (businesses.length === 0) {
+    // First-time operator UX: anchor on the wizard (the actual creation flow),
+    // not /settings/businesses (the CRUD page). Include the fixture-mode hint
+    // so the operator knows they can drive the full chain without real OAuth.
     return (
       <div
-        className="rounded-xl p-4 flex items-center gap-2.5 text-xs"
+        className="rounded-xl p-5"
         style={{
-          background:           'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+          background:           'linear-gradient(135deg, rgba(108,99,255,0.06), rgba(255,255,255,0.02))',
           backdropFilter:       'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          border:               '1px dashed rgba(255,255,255,0.10)',
-          color:                '#9090b0',
+          border:               '1px solid rgba(108,99,255,0.20)',
         }}
       >
-        <Briefcase size={13} style={{ color: '#a8a3ff' }} />
-        <span>
-          No businesses configured yet — head to{' '}
-          <Link className="underline" style={{ color: '#a8a3ff' }} href="/settings/businesses">
-            Settings → Businesses
-          </Link>
-          {' '}to seed your first.
-        </span>
+        <div className="flex items-start gap-3">
+          <div
+            className="h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, rgba(108,99,255,0.30), rgba(108,99,255,0.06))',
+              border:     '1px solid rgba(108,99,255,0.30)',
+            }}
+          >
+            <Briefcase size={16} style={{ color: '#a8a3ff' }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold" style={{ color: '#e8e8f0' }}>
+              No businesses yet — let&apos;s create your first one
+            </h3>
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: '#9090b0' }}>
+              The wizard walks you through niche → money model → KPIs → brand voice. Creates a <strong>simulated</strong> business first — no real money, no real OAuth — so you can practice the full chain. Auto-enables the dev fixture harness too: <code className="font-mono" style={{ color: '#a8a3ff' }}>/settings/accounts</code> gets synthetic platform connections you can use immediately, and <code className="font-mono" style={{ color: '#a8a3ff' }}>executeBusinessAction</code> returns canned responses so chat / smoke / graduate all work end-to-end without OAuthing into a single real account.
+            </p>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <Link
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                href="/businesses/new"
+                style={{
+                  background: 'rgba(108,99,255,0.18)',
+                  border:     '1px solid rgba(108,99,255,0.35)',
+                  color:      '#c4b5fd',
+                }}
+              >
+                Create first business →
+              </Link>
+              <Link
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                href="/settings/businesses"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border:     '1px solid rgba(255,255,255,0.10)',
+                  color:      '#9090b0',
+                }}
+              >
+                Manual seed (advanced)
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
