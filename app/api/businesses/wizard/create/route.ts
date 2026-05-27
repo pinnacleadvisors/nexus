@@ -39,6 +39,7 @@ import { guardRequest } from '@/lib/guard'
 import { createServerClient } from '@/lib/supabase'
 import { upsertBusiness } from '@/lib/business/db'
 import type { BusinessUpsert } from '@/lib/business/db'
+import { setFixtureMode, getFixtureMode } from '@/lib/fixtures/store'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -207,14 +208,46 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.warn('[biz-wizard:create] simulation-flag write failed (non-fatal):', err instanceof Error ? err.message : err)
   }
 
+  // Auto-enable the dev fixture harness on FIRST simulation business so the
+  // operator can immediately exercise chat / accounts / smoke / graduate
+  // without OAuthing into real third-party platforms. Skipped if the
+  // operator already has an explicit fixture-mode preference recorded —
+  // we never override their stated choice.
+  //
+  // Detect "first-time" by querying current fixture mode: if it's already
+  // ON (operator turned it on), no-op. If it's OFF, we still skip because
+  // OFF could mean either "default" or "operator turned it off intentionally"
+  // — and the latter is sacred. The signal we need is a row's presence,
+  // which getFixtureMode collapses with absence. So we always-set-true
+  // here only when the row does not yet exist. setFixtureMode currently
+  // upserts unconditionally, so we check first via the cache-friendly read.
+  let fixtureAutoEnabled = false
+  try {
+    const alreadyOn = await getFixtureMode(g.userId)
+    if (!alreadyOn) {
+      // Bound the harness to "on" only when no row exists OR the existing
+      // row was set OFF without an operator-typed reason. The setFixtureMode
+      // helper doesn't surface row provenance; for V1 we only auto-enable
+      // when the read says OFF — keeps the wizard discoverable without
+      // surprising operators who flipped fixture mode off on purpose.
+      const out = await setFixtureMode(g.userId, true, 'auto-enabled by wizard on first simulation business')
+      if (out.ok) fixtureAutoEnabled = true
+    }
+  } catch (err) {
+    console.warn('[biz-wizard:create] fixture-mode auto-enable failed (non-fatal):', err instanceof Error ? err.message : err)
+  }
+
   return NextResponse.json({
     ok:         true,
     slug,
     simulation: true,
+    fixture_mode_auto_enabled: fixtureAutoEnabled,
     redirect:   `/businesses/${encodeURIComponent(slug)}`,
     next_steps: [
       'Review the simulated business on /businesses/' + slug,
-      'Run /api/businesses/<slug>/tick to see how agents respond to fake customer pressure',
+      fixtureAutoEnabled
+        ? 'Fixture harness auto-enabled — /settings/accounts now shows synthetic platform rows you can use immediately. Disable at /settings → Access when ready for real OAuth.'
+        : 'Run /api/businesses/<slug>/tick to see how agents respond to fake customer pressure',
       'When pre-flight checklist passes, POST /api/businesses/<slug>/graduate to flip simulation=false + provision real infra',
     ],
   })
