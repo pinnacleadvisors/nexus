@@ -37,6 +37,10 @@ interface ConnectedAccount {
   status:       'active' | 'revoked' | 'error'
   createdAt:    string
   lastUsedAt:   string | null
+  /** True when this row is overlaid by the dev fixture harness rather
+   *  than a real Composio OAuth connection. UI surfaces a distinct
+   *  pill + tooltip so the operator can tell them apart at a glance. */
+  isFixture?:   boolean
 }
 
 /** Shape returned by POST /api/connected-accounts/describe. */
@@ -765,17 +769,24 @@ function OAuthTile({ provider, account, busy, onConnect, onDisconnect }: {
       <div className="min-w-0 flex-1 text-left">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-medium truncate" style={{ color: '#e8e8f0' }}>{provider.name}</span>
-          {connected && <StatusPill kind="connected" />}
+          {/* Fixture rows get a violet "FIXTURE" pill instead of green
+              "CONNECTED" so the operator can never confuse a synthetic
+              row with a real OAuth connection. Toggle off the harness
+              at /settings → Access to hide them. */}
+          {connected && (account?.isFixture
+            ? <StatusPill kind="fixture" />
+            : <StatusPill kind="connected" />
+          )}
         </div>
         <div className="text-[11px] mt-0.5 flex items-center gap-1.5 min-w-0" style={{ color: '#9090b0' }}>
           {account ? (
             <>
-              <span className="font-mono truncate" style={{ color: '#a8a3ff' }} title="Connection scope">
-                {account.businessSlug ?? 'shared'}
+              <span className="font-mono truncate" style={{ color: account.isFixture ? '#c4b5fd' : '#a8a3ff' }} title={account.isFixture ? 'Synthetic dev fixture — no real OAuth' : 'Connection scope'}>
+                {account.isFixture ? 'dev fixture' : (account.businessSlug ?? 'shared')}
               </span>
               <span style={{ color: '#55556a' }}>·</span>
-              <span className="truncate" title="Connected on">
-                {new Date(account.createdAt).toLocaleDateString()}
+              <span className="truncate" title={account.isFixture ? 'Activated by /settings → Access → Dev fixture harness' : 'Connected on'}>
+                {account.isFixture ? 'overlay row' : new Date(account.createdAt).toLocaleDateString()}
               </span>
             </>
           ) : (
@@ -783,7 +794,9 @@ function OAuthTile({ provider, account, busy, onConnect, onDisconnect }: {
           )}
         </div>
       </div>
-      {connected && (
+      {connected && !account?.isFixture && (
+        // Fixture rows are NOT disconnectable — they go away when the operator
+        // flips the harness off at /settings → Access.
         <button
           type="button"
           onClick={e => { e.stopPropagation(); onDisconnect() }}
@@ -872,7 +885,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-type PillKind = 'connected' | 'pending' | 'manual' | 'offline'
+type PillKind = 'connected' | 'pending' | 'manual' | 'offline' | 'fixture'
 
 function StatusPill({ kind }: { kind: PillKind }) {
   const map: Record<PillKind, { label: string; dot: string; glow: string; text: string; bg: string; border: string }> = {
@@ -883,6 +896,14 @@ function StatusPill({ kind }: { kind: PillKind }) {
       text:   '#4ade80',
       bg:     'rgba(34,197,94,0.10)',
       border: 'rgba(34,197,94,0.20)',
+    },
+    fixture: {
+      label:  'FIXTURE',
+      dot:    '#c4b5fd',
+      glow:   '0 0 8px rgba(196,181,253,0.55)',
+      text:   '#c4b5fd',
+      bg:     'rgba(168,85,247,0.12)',
+      border: 'rgba(168,85,247,0.35)',
     },
     pending: {
       label:  'PENDING',
