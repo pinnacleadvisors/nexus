@@ -363,6 +363,17 @@ export interface OAuthConnection {
 }
 
 // ── Runs (persistent idea → execution → optimisation state machine) ─────────
+//
+// Phase set has two flavours sharing the same column:
+//   1. Build / iterate flavour (the default for most Runs): ideate → spec →
+//      decompose → build → review → launch → measure → optimise → done.
+//   2. Sales-pipeline flavour (task_plan-thai-sales-agency.md): one Prospect
+//      maps to one Run; phases extend into discover → outreach → booked →
+//      call → close. The Run state machine accepts either set — the
+//      Postgres column is `text`, the type union here is the canonical
+//      source of allowed values. `RUN_PHASE_ORDER` keeps the build flavour
+//      for default forward transitions; sales-flavour transitions are
+//      gated by sdr-agent / avatar code in lib/sales/*.
 export type RunPhase =
   | 'ideate'
   | 'spec'
@@ -373,6 +384,12 @@ export type RunPhase =
   | 'measure'
   | 'optimise'
   | 'done'
+  // Sales-pipeline phases (thai-sales v1, migration 019).
+  | 'discover'
+  | 'outreach'
+  | 'booked'
+  | 'call'
+  | 'close'
 
 export type RunStatus = 'pending' | 'active' | 'blocked' | 'failed' | 'done'
 
@@ -569,4 +586,93 @@ export interface LearnStats {
   /** Most recent `flashcards.updated_at` — proxy for the last successful sync run.
    *  null when no cards exist yet. */
   lastSyncedAt: string | null
+}
+
+// ── Thai sales agency v1 (migration 019_thai_sales.sql) ──────────────────────
+//
+// One Prospect = one Run. The Run state machine carries the sales-pipeline
+// RunPhase values (discover → outreach → booked → call → close). The
+// Prospect / SalesCall / Proposal rows hang off the Run for the bits the
+// Run table doesn't model — business details, call transcript, proposal
+// markdown + Stripe link.
+//
+// See task_plan-thai-sales-agency.md for the full pipeline contract.
+
+/** Lighthouse audit result + signals the lead-prospector captures per business. */
+export interface ProspectAudit {
+  /** Google PageSpeed Insights Lighthouse performance score, 0-100. */
+  lighthouseScore?:    number
+  /** True when the business landing page has no booking widget detected. */
+  missingBookingWidget?: boolean
+  /** Last post / activity timestamp on the business's public social. */
+  lastPostAt?:         string | null
+  /** Lapsed-FB-ads / abandoned-funnel signals etc. — open shape per source. */
+  signals?:            Record<string, string | number | boolean>
+}
+
+export interface Prospect {
+  id:               string
+  /** FK to runs.id — one Prospect = one Run, see RunPhase. */
+  runId:            string
+  businessName:     string
+  website:          string | null
+  contactEmail:     string | null
+  audit:            ProspectAudit | null
+  /** ISO country code (e.g. "TH"). v1 hard-codes 'TH'. */
+  country:          string
+  /** Operator-defined segment (e.g. "expat-saas", "tour-operator"). */
+  segment:          string | null
+  /** Currency-agnostic USD-equivalent estimate of ACV for revenue forecast. */
+  valueEstimateUsd: number | null
+  /** Prospect status — independent of RunPhase, drives the /sales dashboard. */
+  status:           'new' | 'contacted' | 'replied' | 'booked' | 'won' | 'lost' | 'archived'
+  createdAt:        string
+  /** Clerk user_id of the operator who owns this prospect. */
+  ownerUserId:      string
+}
+
+export interface SalesCallTranscriptTurn {
+  speaker: 'prospect' | 'avatar'
+  text:    string
+  ts:      number   // ms since session start
+}
+
+export interface SalesCall {
+  id:               string
+  prospectId:       string
+  /** HeyGen Streaming Avatar session id — used to clean up on session end. */
+  heygenSessionId:  string | null
+  startedAt:        string
+  endedAt:          string | null
+  transcript:       SalesCallTranscriptTurn[] | null
+  outcome:          'qualified' | 'not_qualified' | 'reschedule' | 'no_show' | null
+}
+
+export interface Proposal {
+  id:                 string
+  salesCallId:        string
+  /** Markdown body — one-page proposal generated post-call. */
+  scopeMd:            string
+  priceUsd:           number
+  /** Stripe Checkout URL draft — never published until operator approves. */
+  stripeCheckoutUrl:  string | null
+  status:             'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'
+  approvedBy:         string | null
+  approvedAt:         string | null
+}
+
+/** Outreach message sent by the sdr-agent. Tracked separately so the
+ *  prospect-touching audit trail is clean independent of `RunEvent`. */
+export interface OutreachMessage {
+  id:        string
+  prospectId: string
+  channel:   'email' | 'linkedin' | 'twitter_dm'
+  subject:   string | null
+  body:      string
+  sentAt:    string
+  /** Resend / LinkedIn API message id for delivery-status lookup. */
+  externalId: string | null
+  /** Open / reply tracking populated by webhook handlers. */
+  openedAt:  string | null
+  repliedAt: string | null
 }
