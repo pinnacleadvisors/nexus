@@ -23,7 +23,7 @@
 import type { LanguageModel } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 
-export type LlmProvider = 'claude' | 'openrouter' | 'mimo' | 'ollama'
+export type LlmProvider = 'claude' | 'openrouter' | 'mimo' | 'ollama' | 'nim'
 
 export interface GetLlmOptions {
   /** Model name for the active provider. Falls back to a sensible default. */
@@ -40,6 +40,9 @@ const DEFAULT_MODELS: Record<LlmProvider, string> = {
   openrouter: process.env.OPENROUTER_DEFAULT_MODEL ?? 'anthropic/claude-sonnet-4-6',
   mimo:       'mimo-pro-2.5',
   ollama:     'llama3.3',
+  // NVIDIA NIM — free-tier OpenAI-compatible inference. Default is Llama
+  // 3.3 70B (best quality/cost on the free tier). Override via env.
+  nim:        process.env.NVIDIA_NIM_DEFAULT_MODEL ?? 'meta/llama-3.3-70b-instruct',
 }
 
 function resolveProvider(opts?: GetLlmOptions): LlmProvider {
@@ -63,7 +66,8 @@ function resolveProvider(opts?: GetLlmOptions): LlmProvider {
     env === 'claude'     ||
     env === 'openrouter' ||
     env === 'mimo'       ||
-    env === 'ollama'
+    env === 'ollama'     ||
+    env === 'nim'
   ) return env
   // Unknown values fall back to claude rather than throwing — keeps prod
   // safe if someone sets LLM_PROVIDER=foo. Logged at startup elsewhere.
@@ -97,6 +101,10 @@ export function getLlm(opts?: GetLlmOptions): LanguageModel {
     case 'ollama': {
       const { getOllamaModel } = require('./providers/ollama') as typeof import('./providers/ollama')
       return getOllamaModel(model)
+    }
+    case 'nim': {
+      const { getNimModel } = require('./providers/nim') as typeof import('./providers/nim')
+      return getNimModel(model)
     }
   }
 }

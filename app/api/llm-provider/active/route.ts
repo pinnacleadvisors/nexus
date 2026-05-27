@@ -22,7 +22,7 @@ import type { LlmProvider } from '@/lib/llm/provider'
 export const runtime = 'nodejs'
 export const maxDuration = 10
 
-const VALID_PROVIDERS: ReadonlySet<LlmProvider> = new Set(['claude', 'openrouter', 'mimo', 'ollama'])
+const VALID_PROVIDERS: ReadonlySet<LlmProvider> = new Set(['claude', 'openrouter', 'mimo', 'ollama', 'nim'])
 
 interface PatchBody { provider?: unknown; model?: unknown; reason?: unknown }
 
@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       ok:    false,
       error: 'invalid_provider',
-      hint:  'provider must be one of: claude, openrouter, mimo, ollama',
+      hint:  'provider must be one of: claude, openrouter, mimo, ollama, nim',
     })
   }
   const provider = rawProvider as LlmProvider
