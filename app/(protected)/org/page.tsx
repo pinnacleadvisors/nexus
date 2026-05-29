@@ -12,7 +12,7 @@
  *      task_plan-platform-expansion.md (Task C)
  */
 
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { redirect } from 'next/navigation'
 import { getRoleTree } from '@/lib/org/roles'
 import OrgChart from '@/components/org/OrgChart'
@@ -25,8 +25,8 @@ interface PageProps {
 }
 
 export default async function OrgChartPage({ searchParams }: PageProps) {
-  const session = await auth()
-  if (!session.userId) redirect('/')
+  const userId = await resolveUserIdSafe()
+  if (!userId) redirect('/')
 
   const params       = await searchParams
   const businessSlug = (params.business || '').trim() || null

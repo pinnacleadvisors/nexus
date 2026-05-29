@@ -8,7 +8,7 @@
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { createServerClient } from '@/lib/supabase'
 import SimulationConsole, { type SimulationRunRow } from '@/components/simulations/SimulationConsole'
 import { ArrowLeft, Zap } from 'lucide-react'
@@ -26,7 +26,7 @@ export default async function SimulatePage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const { userId } = await auth()
+  const userId = await resolveUserIdSafe()
   if (!userId) redirect('/')
 
   const db = createServerClient()

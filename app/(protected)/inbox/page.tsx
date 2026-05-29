@@ -21,7 +21,7 @@
  * filtering.
  */
 
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import InboxClient from '@/components/inbox/InboxClient'
@@ -238,10 +238,14 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
 }
 
 export default async function InboxPage() {
-  const session = await auth()
-  if (!session.userId) redirect('/sign-in?returnUrl=/inbox')
+  // resolveUserIdSafe() guards against auth() throwing when the Clerk
+  // middleware context is missing (proxy.ts:102/117) — otherwise this page
+  // 500s instead of bouncing to sign-in. redirect() is OUTSIDE the helper
+  // so NEXT_REDIRECT propagates.
+  const userId = await resolveUserIdSafe()
+  if (!userId) redirect('/sign-in?returnUrl=/inbox')
 
-  const items = await fetchAll(session.userId)
+  const items = await fetchAll(userId)
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8">

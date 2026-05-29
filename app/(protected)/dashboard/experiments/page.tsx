@@ -17,7 +17,7 @@
  */
 
 import Link from 'next/link'
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import { listBusinessesForUser } from '@/lib/business/db'
@@ -151,10 +151,13 @@ function fmtRel(iso: string | null): string {
 }
 
 export default async function ExperimentsIndexPage() {
-  const session = await auth()
-  if (!session.userId) redirect('/sign-in')
+  // resolveUserIdSafe() guards against auth() throwing when the Clerk
+  // middleware context is missing (proxy.ts:102/117); redirect OUTSIDE so
+  // NEXT_REDIRECT propagates instead of 500ing the page.
+  const userId = await resolveUserIdSafe()
+  if (!userId) redirect('/sign-in')
 
-  const summaries = await fetchSummaries(session.userId)
+  const summaries = await fetchSummaries(userId)
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8">

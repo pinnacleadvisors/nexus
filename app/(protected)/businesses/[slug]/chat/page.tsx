@@ -5,7 +5,7 @@
  * <BusinessChat>. Multi-session UI is deferred (Phase 5b).
  */
 
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import BusinessChat from '@/components/business-chat/BusinessChat'
@@ -37,7 +37,7 @@ async function loadBusiness(userId: string, slug: string): Promise<BusinessRow |
 
 export default async function BusinessChatPage(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params
-  const { userId } = await auth()
+  const userId = await resolveUserIdSafe()
   if (!userId) redirect('/sign-in')
 
   const biz = await loadBusiness(userId, slug)

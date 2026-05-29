@@ -14,7 +14,7 @@
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { createServerClient } from '@/lib/supabase'
 import BenchmarksAdmin, { type BenchmarkRowView } from '@/components/simulations/BenchmarksAdmin'
 import { ArrowLeft, Zap } from 'lucide-react'
@@ -25,7 +25,7 @@ interface SimBusiness {
 }
 
 export default async function BenchmarksPage() {
-  const { userId } = await auth()
+  const userId = await resolveUserIdSafe()
   if (!userId) redirect('/')
 
   const db = createServerClient()
