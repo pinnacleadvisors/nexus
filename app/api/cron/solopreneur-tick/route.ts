@@ -12,6 +12,9 @@
  * Per-business sequence:
  *   1. checkKillSwitch(slug) — cost-guard hard stop. If kill=true, write a
  *      `kill_switch_check` row to `experiment_metrics` and skip dispatch.
+ *      On the false→true edge (first tick this business is killed), fire
+ *      a 'kill-switch' operator notification (Slack / web push) — R4
+ *      follow-up 2. Persistent kills don't re-notify (transition guard).
  *      If signal=auto_pivot_eligible, attach the signal to the dispatch
  *      payload so the agent proposes a pivot via the niche_pick gate.
  *   2. Resolve gate_state — last 30d of `gate_event` rows for the slug.
@@ -166,6 +169,74 @@ async function writeMetric(kind: string, businessSlug: string, payload: Record<s
 }
 
 /**
+ * R4 follow-up 2 — was this business already in a killed state on the
+ * PREVIOUS tick? Reads the most recent prior `kill_switch_check` row.
+ * Returns true only when the latest prior row had `payload.kill === true`.
+ *
+ * Used to fire the operator notification ONLY on the false→true edge —
+ * the cron runs 4×/day and a killed business stays killed, so without
+ * this guard the operator would get the same "experiment killed" ping
+ * every 6 hours forever. Fail-soft: returns false on any error so a DB
+ * hiccup degrades to "notify" (better a duplicate ping than a silent kill).
+ */
+async function wasAlreadyKilled(businessSlug: string): Promise<boolean> {
+  const db = createServerClient()
+  if (!db) return false
+  try {
+    type AnyQuery = {
+      eq:    (c: string, v: string) => AnyQuery
+      order: (c: string, opts: { ascending: boolean }) => AnyQuery
+      limit: (n: number) => AnyQuery
+      then:  Promise<{ data: Array<{ payload: Record<string, unknown> | null }> | null; error: unknown }>['then']
+    }
+    const q = (db as unknown as {
+      from: (t: string) => { select: (c: string) => AnyQuery }
+    }).from('experiment_metrics').select('payload')
+      .eq('business_slug', businessSlug)
+      .eq('kind', 'kill_switch_check')
+      .order('ts', { ascending: false })
+      .limit(1)
+    const result = (await q) as { data: Array<{ payload: Record<string, unknown> | null }> | null; error: unknown }
+    const last = result.data?.[0]
+    return last?.payload?.kill === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * R4 follow-up 2 — notify the operator that an autonomous experiment hit
+ * its cost-guard kill switch. Fire-and-forget; fans out to every operator
+ * in ALLOWED_USER_IDS. Never throws — a notification failure must not
+ * block the tick. Imported lazily so the dispatch cost is paid only on a
+ * real kill, not every tick.
+ */
+async function notifyKillSwitch(businessSlug: string, reason: string | null): Promise<void> {
+  try {
+    const [{ listOperatorUserIds }, { notifyOperator }] = await Promise.all([
+      import('@/lib/notifications/operators'),
+      import('@/lib/notifications/dispatch'),
+    ])
+    const operatorIds = listOperatorUserIds()
+    if (operatorIds.length === 0) return
+    const reasonLabel = reason === 'budget_exhausted'
+      ? 'budget exhausted'
+      : reason === 'stagnation_pivot_exhausted'
+        ? 'stagnation — pivot exhausted'
+        : (reason ?? 'unknown')
+    await Promise.all(operatorIds.map(userId =>
+      notifyOperator(userId, 'kill-switch', {
+        title:         `Experiment killed: ${businessSlug}`,
+        body:          `Cost-guard tripped (${reasonLabel}). Autonomous dispatch is now halted for this business.`,
+        link_href:     `/businesses/${encodeURIComponent(businessSlug)}`,
+        severity:      'critical',
+        business_slug: businessSlug,
+      }).catch(() => undefined),
+    ))
+  } catch { /* swallow — the kill_switch_check row is the durable record */ }
+}
+
+/**
  * Read last 30d of gate_event rows for the slug and shape them into the
  * gate_state payload the agent expects (resolved gates, pending gates,
  * per-platform first_n_posts counters).
@@ -233,6 +304,10 @@ async function runForBusiness(
     }
   }
 
+  // R4 follow-up 2 — capture prior kill state BEFORE writing this tick's
+  // row, so we can detect the false→true transition and notify only once.
+  const alreadyKilled = killResult.kill ? await wasAlreadyKilled(slug) : false
+
   await writeMetric('kill_switch_check', slug, {
     invocation_id: invocationId,
     kill:          killResult.kill,
@@ -249,6 +324,11 @@ async function runForBusiness(
   })
 
   if (killResult.kill) {
+    // Notify the operator ONLY on the fresh trip (prior tick wasn't killed).
+    // dryRun ticks still notify — the kill decision is real even in dry-run.
+    if (!alreadyKilled) {
+      await notifyKillSwitch(slug, killResult.reason ?? null)
+    }
     await writeMetric('tick', slug, {
       invocation_id: invocationId,
       dryRun,
