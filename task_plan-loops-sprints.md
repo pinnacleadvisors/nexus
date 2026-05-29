@@ -183,6 +183,95 @@ today.
   business-operator agent as `delegated_agent_slug` IS a business-operator
   cycle. Eventually business-operator becomes a built-in Loop preset.
 
+## v2 — Harness synthesis (operator brain-dump 2026-05-28 absorption)
+
+> Layered ON TOP of v1. v1 (the Loop *engine* — Groups A–D above) ships
+> first, unchanged. v2 adds the ability for a Loop to *synthesize a
+> reusable sub-harness* for a goal that's never been achieved before.
+> **GREENLIT 2026-05-28 — build in the SAME session as v1.** Order:
+> v1 Groups A→D land first (the engine must exist before it can synthesize),
+> then v2 E1→E4. v1 success criteria remain the gate that v2 builds on.
+
+### The three-tier mental model (resolves the "is a Loop a sub-harness?" question)
+
+- **Master harness = Nexus** — the orchestration layer (gateways, adapter
+  registry, dispatch). Maps to Life-Harness `h2`/`h3` (see AGENTS.md
+  "Harness taxonomy"). This is the orchestrator the operator hands a goal to.
+- **Loop = the iteration *runtime*** (the verb) — bounded, operator-declared,
+  cost/iteration/time-capped, gated. Maps to `h4` (trajectory regulation).
+- **Sub-harness = the reusable *artifact*** (the noun) a Loop crystallizes
+  for a novel goal — a folder bundling skills + agent refs + tool/MCP
+  manifest + self-authored tests + a typed review-spec. Maps to `h5`
+  (procedural skill), but *composite* (many skills) vs skill-trainer's
+  single-skill output. Replayable directly once verified — no re-exploration.
+
+A Loop does NOT get renamed to "sub-harness". A Loop in `mode: synthesize`
+*produces* a sub-harness; replaying a promoted sub-harness may need no Loop.
+
+### What v2 reuses (do not rebuild)
+
+| Brain-dump concept | Existing Nexus surface to extend |
+|---|---|
+| Closed propose→test→grade→retry ("skill labs") | `.claude/agents/skill-trainer.md` — the inner mechanism. v2's Loop is the OUTER multi-strategy explorer that calls skill-trainer per candidate skill. |
+| "note failures akin to Hermes" + "tools/mcp in a folder" | skill-trainer's `SKILL.md` Error Remediation block + `supermemory` atom + `.claude/skills/<name>/`. |
+| "fast exhaustive explorer → smart verifier" | claude-gateway (smart) + codex-gateway (fast) routing; `codex-maintainer` adversarial grader + `design-critic` gate are the precedent. NO new gateway. |
+| "I review once smart model says production-ready" | draft→verified promote gate (`/api/skills/[slug]/promote` pattern), human flips on the Board. |
+
+### What v2 adds (the genuinely new 30%)
+
+```
+### Task E1 — Loop `mode` column + sub_harnesses schema
+- File:     supabase/migrations/0NN_sub_harnesses.sql  (use NEXT free number)
+- Change:   ALTER loops ADD COLUMN mode text DEFAULT 'iterate'
+            CHECK (mode IN ('iterate','synthesize')),
+            ADD COLUMN explorer_model text NULL,   -- cheap/fast, exhaustive
+            ADD COLUMN verifier_model text NULL,   -- expensive/smart, judges
+            ADD COLUMN review_modality text NULL.  -- vision|audio|code|text
+            NEW `sub_harnesses` table: id, loop_id FK, slug, goal_md,
+            manifest jsonb (skills[], agent_refs[], tools[], tests[],
+            review_spec), status (draft|verified|failed), created_at,
+            verified_at, verified_by.
+- Verify:   idempotent + RLS service-role.
+
+### Task E2 — sub-harness artifact folder + manifest writer
+- File:     .claude/sub-harnesses/<slug>/HARNESS.md (skeleton) + lib/harness/manifest.ts
+- Change:   the synthesize-mode Loop writes a HARNESS.md (frontmatter:
+            goal, skills, agent_refs, tools, tests, review_modality,
+            status) + the winning strategy's execution steps + an
+            Error Remediation log (mirrors skill-trainer's SKILL.md shape,
+            but composite). Borrows Pi.dev's 4-core-tool minimalism — keep
+            the bundle small + auditable.
+
+### Task E3 — two-tier synthesize loop in loop-runner
+- File:     .claude/agents/loop-runner.md (extend v1 spec)
+- Change:   when mode=synthesize: (1) memory_search + scan .claude/skills
+            for liftable prior art FIRST; (2) explorer_model proposes N
+            strategies, each producing passing test evidence in the
+            nexus-sandbox BEFORE any verifier spend (Pi.dev TDD-evidence
+            discipline); (3) verifier_model reviews the assembled harness
+            for functionality + quality, modality-aware (a vision deliverable
+            gets a vision-capable verifier); (4) on pass, write the
+            sub_harness as status:draft + Board card for human promote.
+- Invariants: inherits ALL Ralph-loop rules (cost-cap via checkKillSwitch,
+            draft-only, human final gate). explorer spend capped separately
+            from verifier spend so a runaway exploration can't burn the
+            smart-model budget.
+
+### Task E4 — replay path
+- File:     POST /api/sub-harnesses/[slug]/invoke
+- Change:   run a verified sub-harness directly (fast path, no exploration).
+            Refuses if status != verified (same gate as skill router).
+```
+
+### Pi.dev decision (build-vs-buy)
+
+**Build on Nexus's substrate; borrow Pi.dev ideas, do not adopt its runtime.**
+Pi.dev (`pi-harness`, Mario Zechner) is an open-source reshapeable
+coding-agent harness — its `pi-agent-core` overlaps with what
+claude-gateway/codex-gateway already do. Adopting it = a new gateway =
+violates the v1 hard constraint. Absorb only: (a) 4-core-tool minimalism,
+(b) skill-discovery-before-propose, (c) TDD-evidence-before-review.
+
 ## Progress
 
 _Updated as work lands. Format: `## Progress (as of YYYY-MM-DD)` per CLAUDE.md._
