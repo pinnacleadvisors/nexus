@@ -188,7 +188,9 @@ today.
 > Layered ON TOP of v1. v1 (the Loop *engine* — Groups A–D above) ships
 > first, unchanged. v2 adds the ability for a Loop to *synthesize a
 > reusable sub-harness* for a goal that's never been achieved before.
-> Gated on v1 landing + operator approval of this section.
+> **GREENLIT 2026-05-28 — build in the SAME session as v1.** Order:
+> v1 Groups A→D land first (the engine must exist before it can synthesize),
+> then v2 E1→E4. v1 success criteria remain the gate that v2 builds on.
 
 ### The three-tier mental model (resolves the "is a Loop a sub-harness?" question)
 
