@@ -17,9 +17,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Bot, Clock, Sparkles, Wrench, Plug, Cpu, CheckCheck, Activity, TriangleAlert,
-  Snowflake, RefreshCw, Play, type LucideIcon,
+  Snowflake, RefreshCw, Play, Radio, type LucideIcon,
 } from 'lucide-react'
 import { fetchAuditRows } from '@/app/(protected)/audit/actions'
+import { subscribeToSource } from '@/lib/audit/streams'
+import { usePollWithBackoff } from '@/lib/hooks/usePollWithBackoff'
 import { WINDOW_OPTIONS, type AuditRecord, type AuditSource, type CellTone, type FilterKind } from '@/lib/audit/types'
 import { ROW_LIMIT } from '@/lib/audit/sources'
 
@@ -74,7 +76,13 @@ export default function AuditStreamTable({ source, initialRows }: Props) {
   const [now, setNow]         = useState(() => Date.now())
   const [windowVal, setWindowVal] = useState('all')
   const [values, setValues]   = useState<Partial<Record<FilterKind, string>>>({})
+  const [pending, setPending] = useState(0)
   const didInitialLoad = useRef(false)
+  // Realtime callback is a stable closure; read live `frozen` via a ref so a
+  // freeze toggle never tears down + re-subscribes the channel.
+  const frozenRef = useRef(false)
+  frozenRef.current = frozen
+  const bufferRef = useRef<AuditRecord[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,12 +105,50 @@ export default function AuditStreamTable({ source, initialRows }: Props) {
     }
   }, [source])
 
-  // Initial load — skip when the server pre-seeded rows for a default tab.
+  const applyRow = useCallback((row: AuditRecord) => {
+    setRows(prev => dedupeRows([row, ...prev], source.idField, source.tsField))
+  }, [source])
+
+  // Resume flushes buffered deltas accumulated while frozen.
+  const toggleFreeze = useCallback(() => {
+    setFrozen(prev => {
+      const next = !prev
+      if (!next && bufferRef.current.length > 0) {
+        setRows(r => dedupeRows([...bufferRef.current, ...r], source.idField, source.tsField))
+        bufferRef.current = []
+        setPending(0)
+      }
+      return next
+    })
+  }, [source])
+
+  // Initial load for table sources — skip poll sources (usePollWithBackoff
+  // loads them) and skip when the server pre-seeded a default tab.
   useEffect(() => {
+    if (source.kind === 'poll-endpoint') return
     if (didInitialLoad.current) return
     didInitialLoad.current = true
     if (!initialRows || initialRows.length === 0) void load()
-  }, [initialRows, load])
+  }, [source, initialRows, load])
+
+  // Auto-poll poll-endpoint sources (crons, heartbeats) with backoff. Inert
+  // for table sources (enabled=false) and paused while frozen.
+  usePollWithBackoff(load, { intervalMs: 60_000, enabled: source.kind === 'poll-endpoint' && !frozen })
+
+  // Live Realtime deltas (realtime sources only). Buffers while frozen for a
+  // stable review surface; flushes on resume via toggleFreeze.
+  useEffect(() => {
+    if (!source.realtime) return
+    const handle = subscribeToSource(source, row => {
+      if (frozenRef.current) {
+        bufferRef.current = [row, ...bufferRef.current].slice(0, ROW_LIMIT)
+        setPending(bufferRef.current.length)
+      } else {
+        applyRow(row)
+      }
+    })
+    return () => handle?.unsubscribe()
+  }, [source, applyRow])
 
   // Relative-time clock. Pauses while frozen. Pure tick — no fetch.
   useEffect(() => {
@@ -110,10 +156,6 @@ export default function AuditStreamTable({ source, initialRows }: Props) {
     const t = setInterval(() => setNow(Date.now()), 10_000)
     return () => clearInterval(t)
   }, [frozen])
-
-  /* Group B wires the Supabase Realtime subscription here, prepending via
-     setRows(prev => dedupeRows([mapped, ...prev], idField, tsField)) and
-     buffering while `frozen`. */
 
   const visibleRows = useMemo(() => {
     const winMs = WINDOW_OPTIONS.find(w => w.value === windowVal)?.ms ?? null
@@ -143,18 +185,24 @@ export default function AuditStreamTable({ source, initialRows }: Props) {
         <Icon size={15} className="text-zinc-400 shrink-0" />
         <span className="text-sm font-semibold text-zinc-200">{source.label}</span>
         <span className="rounded-full bg-zinc-800/80 px-2 py-0.5 text-[11px] font-mono text-zinc-400">{visibleRows.length}</span>
+        {source.realtime && !frozen && (
+          <span title="Live — streaming via Supabase Realtime" className="flex items-center gap-1 text-[10px] text-emerald-400">
+            <Radio size={11} className="animate-pulse" />live
+          </span>
+        )}
         {loading && <RefreshCw size={12} className="animate-spin text-zinc-500" />}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {renderFilters(source, rows, windowVal, setWindowVal, values, setValues)}
           <button
-            onClick={() => setFrozen(f => !f)}
+            onClick={toggleFreeze}
             title={frozen ? 'Resume live updates' : 'Freeze (pause updates while reviewing)'}
             className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors"
             style={frozen
               ? { backgroundColor: '#1a2e1a', color: '#7dd3fc', borderColor: '#2563eb44' }
               : { backgroundColor: '#12121e', color: '#9090b0', borderColor: '#24243e' }}
           >
-            {frozen ? <Play size={11} /> : <Snowflake size={11} />}{frozen ? 'Frozen' : 'Freeze'}
+            {frozen ? <Play size={11} /> : <Snowflake size={11} />}
+            {frozen ? (pending > 0 ? `Frozen (${pending})` : 'Frozen') : 'Freeze'}
           </button>
           <button
             onClick={() => void load()}

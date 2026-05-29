@@ -31,6 +31,8 @@ const SKIP_PATTERNS: RegExp[] = [
   /\/api\/platform-chat\/poll/,      // Chat polling — fires every 2.5s during a run
   /\/api\/gateway-status/,           // GatewayStatusPill — every 30s, every protected page
   /\/api\/health\/cron/,             // Sidebar cron health probe — every 30s
+  /\/api\/health\/deep/,             // /audit Heartbeats pane — every 60s (usePollWithBackoff)
+  /\/api\/dev\/fixtures\/active/,    // <FixtureModeBadge> — every ~5s (pre-existing R11 poller, was un-skipped)
   /\/api\/vercel\/log-drain/,        // Self-amplifying webhook — bypassed in proxy.ts already
   /\/api\/connected-accounts(\?|$)/, // List endpoint, frequently re-fetched by AccountList
   // Dashboard pollers (each fires on a setInterval from the listed component).
