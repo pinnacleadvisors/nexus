@@ -1,7 +1,11 @@
 # Nexus — Roadmap Summary
 
-> Last updated: 2026-05-03. Source of truth: `ROADMAP.md` + `task_plan.md` + `task_plan-platform-improvements.md`.
+> Last updated: 2026-05-28. Source of truth: `ROADMAP.md` + `task_plan.md` + `task_plan-platform-improvements.md`.
 > Legend: ✅ Complete · 🔧 Partial · ⬜ Not started
+>
+> **Recent shipped work (2026-05-27/28)** is captured in the dedicated
+> [UX Consultation R-stream](#ux-consultation-2026-05-27--brain-dump-r-stream)
+> section near the bottom — the Phase/Pillar table above predates it.
 
 | Phase | Title | Status | Notes |
 |-------|-------|--------|-------|
@@ -83,3 +87,34 @@ Plan in `task_plan.md`. Three pillars, each independently valuable:
 | C6 | Adaptive routing with decay | ✅ | `lib/swarm/Router.ts` — 14-day exponential decay + `feedRouterFromMetricSamples` |
 | C7 | Graph-aware chat cache | ✅ | `/api/chat` graph-atom short-circuit with `<graph-cache>` marker |
 | C8 | Nightly graph rebuild | ✅ | `app/api/cron/rebuild-graph/route.ts` |
+
+## UX Consultation 2026-05-27 + brain-dump (R-stream)
+
+Operator-driven UX consultation (`docs/research/UX_CONSULTATION_2026-05-27.md`)
++ a brain-dump of approved follow-ups. Shipped over 2026-05-27/28 as a
+burst of small, independently-reviewable PRs (#411–#427). All ✅ unless noted.
+
+| ID | Title | Status | Key paths |
+|----|-------|--------|-----------|
+| R1 | `/inbox` activity stream — time-buckets + per-business filter + since-last-visit | ✅ | `app/(protected)/inbox/` |
+| R2 | `/approvals` bulk approve — checkbox + group select + batch endpoint | ✅ | `app/api/approvals/decide-batch/route.ts` |
+| R3 | Per-business daily cost cap + visualizer | ✅ | migration 089 + `lib/cost-guard.ts` |
+| R4 | Operator notifications — Slack DM + web push + settings UI | ✅ | `lib/notifications/{dispatch,slack,webpush,operators}.ts`, migration 091, `components/settings/NotificationsPanel.tsx` |
+| R4-wiring | notifyOperator wired into 3 triggers: approval-insert / graduation / kill-switch | ✅ | `lib/approvals/insert.ts`, `app/api/businesses/[slug]/graduate/route.ts`, `app/api/cron/solopreneur-tick/route.ts` (false→true transition guard) |
+| R5 | `/dashboard` coaching tab — actionable insights | ✅ | `components/dashboard/CoachingCard.tsx` + `app/api/dashboard/coaching/` |
+| R6 | Weekly digest — Sunday email + fleet totals + wins/risks + memory atom | ✅ | `lib/digest/build-weekly.ts` + `app/api/cron/weekly-digest/` (cron `0 1 * * 0`) |
+| R7 | Fleet actions — bulk Pause / Resume / Smoke / Refresh-KPIs | ✅ | `app/api/businesses/bulk/route.ts` + `components/businesses/FleetActionsBar.tsx` |
+| R8 | Day-1 welcome tour modal (0-business operators) | ✅ | `components/dashboard/WelcomeTourModal.tsx` |
+| R9 | Chat-session retrospectives — daily cron summary + banner on reopen | ✅ | migration 092 + `app/api/cron/chat-retrospectives/` + `components/chat/RetrospectiveBanner.tsx` |
+| R10 | KPI freshness indicator — "Updated Nm ago" + amber when >24h stale | ✅ | `components/dashboard/KpiGrid.tsx` + `app/api/dashboard/route.ts` |
+| R11 | Fixture-mode top-bar badge + scripted walkthrough | ✅ | fixture badge in topbar |
+| R12 | Mobile-first sticky operator action bar | ✅ | `/businesses/[slug]` sticky bottom bar |
+| Cache | Smart-caching layer — `agent_response_cache` + `cacheWrap` + eviction cron | ✅ | migration 090 + `lib/agents/cache.ts` + `app/api/cron/agent-cache-evict/` (cron `30 6 * * *`). Wired into `/api/connected-accounts/describe` (24h) + `lib/models/recommender.ts` (24h). |
+| NIM | NVIDIA NIM LLM provider adapter (free-tier hosted inference) | ✅ | `lib/llm/provider.ts` |
+| Dark | Dark-mode lock (no toggle) | ✅ | `app/globals.css` |
+
+**Still queued from brain-dump (scoped, not yet built):**
+- Bloomberg-terminal `/audit` redesign — `task_plan-bloomberg-audit.md` (3 PRs)
+- Loops/Sprints operator-configurable iteration primitive — `task_plan-loops-sprints.md` (5 PRs)
+- Plugins viewable+configurable in settings
+- Deferred: AI council skill, custom dashboard widgets / space-agent fork, voice control, Linear absorption
