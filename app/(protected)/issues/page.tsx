@@ -14,7 +14,7 @@ import { createServerClient } from '@/lib/supabase'
 import IssueRow from '@/components/issues/IssueRow'
 import ReportIssueForm from '@/components/issues/ReportIssueForm'
 import { ListTodo } from 'lucide-react'
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { redirect } from 'next/navigation'
 
 interface IssueRowData {
@@ -76,9 +76,11 @@ interface PageProps {
 }
 
 export default async function PlatformIssuesPage({ searchParams }: PageProps) {
-  // Owner-only — same gate as /audit and /settings.
-  const session = await auth()
-  if (!session.userId) redirect('/')
+  // Owner-only — same gate as /audit and /settings. resolveUserIdSafe()
+  // guards against auth() throwing when the Clerk middleware context is
+  // missing (proxy.ts:102/117); redirect OUTSIDE so NEXT_REDIRECT propagates.
+  const userId = await resolveUserIdSafe()
+  if (!userId) redirect('/')
 
   const params       = await searchParams
   const businessSlug = (params.business || '').trim() || undefined

@@ -21,7 +21,7 @@
  * filtering.
  */
 
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
 import InboxClient from '@/components/inbox/InboxClient'
@@ -238,20 +238,11 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
 }
 
 export default async function InboxPage() {
-  // auth() can THROW (not just return null) when Clerk's middleware context
-  // isn't established — half-configured keys, a transient Clerk outage, or
-  // the proxy.ts pass-through path (see proxy.ts:102). An unguarded call
-  // then 500s the whole page. Mirror the resilient pattern in
-  // app/(protected)/teams/page.tsx: capture userId in a try/catch, then
-  // redirect OUTSIDE the try (redirect() throws NEXT_REDIRECT, which must
-  // propagate — it can't be swallowed by the catch).
-  let userId: string | null = null
-  try {
-    const session = await auth()
-    userId = session.userId
-  } catch {
-    userId = null
-  }
+  // resolveUserIdSafe() guards against auth() throwing when the Clerk
+  // middleware context is missing (proxy.ts:102/117) — otherwise this page
+  // 500s instead of bouncing to sign-in. redirect() is OUTSIDE the helper
+  // so NEXT_REDIRECT propagates.
+  const userId = await resolveUserIdSafe()
   if (!userId) redirect('/sign-in?returnUrl=/inbox')
 
   const items = await fetchAll(userId)

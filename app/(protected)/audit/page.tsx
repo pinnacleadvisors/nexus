@@ -12,8 +12,8 @@
  * Part of task_plan-platform-expansion.md (Task E4).
  */
 
-import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { createServerClient } from '@/lib/supabase'
 import { ShieldCheck } from 'lucide-react'
 
@@ -87,18 +87,11 @@ function statusBadge(status: string | null): { color: string; label: string } {
 }
 
 export default async function AuditPage({ searchParams }: PageProps) {
-  // auth() can THROW (not just return null) when Clerk's middleware context
-  // isn't established — half-configured keys, a transient Clerk outage, or
-  // the proxy.ts pass-through path (see proxy.ts:102). An unguarded call
-  // then 500s the page. Capture userId in a try/catch, then redirect
-  // OUTSIDE the try (redirect() throws NEXT_REDIRECT, which must propagate).
-  let userId: string | null = null
-  try {
-    const session = await auth()
-    userId = session.userId
-  } catch {
-    userId = null
-  }
+  // resolveUserIdSafe() guards against auth() throwing when the Clerk
+  // middleware context is missing (proxy.ts:102/117) — otherwise this
+  // owner-only page 500s instead of bouncing to sign-in. redirect() is
+  // OUTSIDE the helper so NEXT_REDIRECT propagates.
+  const userId = await resolveUserIdSafe()
   if (!userId)            redirect('/')
   if (!isOwner(userId))   redirect('/dashboard')
 

@@ -8,7 +8,7 @@
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { auth } from '@clerk/nextjs/server'
+import { resolveUserIdSafe } from '@/lib/auth/resolve-user'
 import { createServerClient } from '@/lib/supabase'
 import ABComparisonView from '@/components/simulations/ABComparisonView'
 import { ArrowLeft, Zap } from 'lucide-react'
@@ -21,7 +21,7 @@ export default async function CompareGroupPage({
   const { slug, gid } = await params
   if (!/^[0-9a-f-]{36}$/i.test(gid)) notFound()
 
-  const { userId } = await auth()
+  const userId = await resolveUserIdSafe()
   if (!userId) redirect('/')
 
   const db = createServerClient()
