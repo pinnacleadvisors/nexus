@@ -13,9 +13,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Share2, Check } from 'lucide-react'
 import AuditStreamTable from './AuditStreamTable'
 import { AUDIT_SOURCES, DEFAULT_TAB_IDS, getSource } from '@/lib/audit/sources'
+import { encodeLayout, decodeLayout } from '@/lib/audit/layout'
 import type { AuditRecord } from '@/lib/audit/types'
 
 const TABS_KEY   = 'nexus:audit:tabs'
@@ -42,14 +43,22 @@ export default function AuditTerminal({ initialData }: Props) {
   const [tabs, setTabs]     = useState<string[]>(DEFAULT_TAB_IDS)
   const [active, setActive] = useState<string>(DEFAULT_TAB_IDS[0])
   const [hydrated, setHydrated] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  // Hydrate from localStorage after mount (SSR renders defaults to avoid a
-  // hydration mismatch; we swap to stored tabs on the client).
+  // Hydrate after mount (SSR renders defaults to avoid a hydration mismatch).
+  // A shared `?layout=` link wins over localStorage so a pasted/bookmarked
+  // view always reproduces; otherwise fall back to the operator's saved tabs.
   useEffect(() => {
-    const stored = readStoredTabs()
-    setTabs(stored)
-    const storedActive = window.localStorage.getItem(ACTIVE_KEY)
-    setActive(storedActive && stored.includes(storedActive) ? storedActive : stored[0])
+    const shared = decodeLayout(new URLSearchParams(window.location.search).get('layout'))
+    if (shared) {
+      setTabs(shared.tabs)
+      setActive(shared.active ?? shared.tabs[0])
+    } else {
+      const stored = readStoredTabs()
+      setTabs(stored)
+      const storedActive = window.localStorage.getItem(ACTIVE_KEY)
+      setActive(storedActive && stored.includes(storedActive) ? storedActive : stored[0])
+    }
     setHydrated(true)
   }, [])
 
@@ -75,6 +84,18 @@ export default function AuditTerminal({ initialData }: Props) {
       return next
     })
   }, [])
+
+  // Encode the current view into ?layout=… (making the URL a permalink) and
+  // copy it for sharing. The address bar reflects the view either way.
+  const shareView = useCallback(async () => {
+    if (tabs.length === 0) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('layout', encodeLayout({ tabs, active }))
+    window.history.replaceState(null, '', url.toString())
+    try { await navigator.clipboard.writeText(url.toString()) } catch { /* clipboard blocked — URL is still in the bar */ }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }, [tabs, active])
 
   const available = AUDIT_SOURCES.filter(s => !tabs.includes(s.id))
 
@@ -108,6 +129,14 @@ export default function AuditTerminal({ initialData }: Props) {
         {available.length > 0 && (
           <AddPane available={available} onAdd={addTab} />
         )}
+        <button
+          onClick={shareView}
+          title="Copy a shareable link to this layout"
+          className="ml-auto flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] transition-colors"
+          style={{ backgroundColor: '#12121e', borderColor: '#24243e', color: copied ? '#34d399' : '#9090b0' }}
+        >
+          {copied ? <Check size={13} /> : <Share2 size={13} />}{copied ? 'Copied!' : 'Share'}
+        </button>
       </div>
 
       {/* ── Tab selector (mobile) ───────────────────────────────────────── */}
@@ -124,6 +153,14 @@ export default function AuditTerminal({ initialData }: Props) {
           })}
         </select>
         {available.length > 0 && <AddPane available={available} onAdd={addTab} compact />}
+        <button
+          onClick={shareView}
+          title="Copy a shareable link to this layout"
+          className="flex items-center gap-1 rounded-md border px-2 py-2 text-[12px]"
+          style={{ backgroundColor: '#12121e', borderColor: '#24243e', color: copied ? '#34d399' : '#9090b0' }}
+        >
+          {copied ? <Check size={14} /> : <Share2 size={14} />}
+        </button>
       </div>
 
       {/* ── Panes (all mounted; inactive hidden to retain state) ────────── */}

@@ -149,10 +149,23 @@ At 375 px:
   `lib/sentry/sampler.ts` SKIP_PATTERNS. Verified: Supabase Realtime WS
   connects, Heartbeats pane polls 4 live providers, 0 console errors on /audit.
 
-### Remaining
-- [ ] **Group C — saved layouts** (`claude/bloomberg-layouts`):
-  `lib/audit/layout.ts` (base64 encode/decode) + `?layout=` hydrate/share in
-  `AuditTerminal`.
+### Completed (cont.)
+- [x] **Group C — saved/shareable layouts** (PR: `claude/bloomberg-layouts`,
+  stacked on B). `lib/audit/layout.ts` — base64url encode/decode of the pane
+  set + active tab, validated against the source registry on decode (garbage
+  param → null → graceful fallback). `AuditTerminal` reads `?layout=` on mount
+  (overrides localStorage so a shared link reproduces the exact view) and a
+  Share button writes the permalink to the URL + copies it to the clipboard.
+  Verified: add pane → Share → reload (localStorage cleared) reconstructs all
+  4 panes; garbage param falls back; 0 console errors.
+
+All three North-Star success criteria groups shipped as open PRs (#430, #431, +C).
+
+### Open follow-up (out of scope, flagged separately)
+- Intermittent React hydration mismatch on protected pages (app-shell, e.g.
+  the topbar "Max (free)" badge — `typeof window` branch in render). Pre-exists
+  this feature (seen on /dashboard too); page recovers via client regeneration.
+  0 errors once hydration settles. Flagged as a separate task.
 
 ### Key decisions (real schema ≠ the plan's Phase-1 assumptions)
 - **`run_events` / `gateway_turns` are NOT anon-readable** (run_events RLS is
