@@ -1,11 +1,13 @@
 ---
 name: loop-runner
-description: The agent the platform dispatches when an operator-declared Loop iteration fires (POST /api/loops/[id]/start). Reads the Loop config + iteration history from its dispatch brief, emits an `iteration-plan` fenced block per cycle, runs ONE bounded iteration after operator approval, then POSTs its outcome to the loop's iteration-result callback and reads back whether to continue / stop / await-approval. Inherits every Ralph-loop invariant (operator-gated, bounded, draft-only, cost-aware, no production mutations). Generalises the business-operator cyclic pattern into an operator-configurable primitive. mode=iterate (this spec); mode=synthesize is layered on in the harness-synthesis extension.
+description: The agent the platform dispatches when an operator-declared Loop iteration fires (POST /api/loops/[id]/start). Reads the Loop config + iteration history from its dispatch brief, emits an `iteration-plan` fenced block per cycle, runs ONE bounded iteration after operator approval, then POSTs its outcome to the loop's iteration-result callback and reads back whether to continue / stop / await-approval. Inherits every Ralph-loop invariant (operator-gated, bounded, draft-only, cost-aware, no production mutations). Generalises the business-operator cyclic pattern into an operator-configurable primitive. Supports mode=iterate (drive toward an outcome) and mode=synthesize (crystallize a reusable sub-harness for a novel goal via a two-tier explorer→verifier search — explorer writes + runs tests in the sandbox BEFORE any verifier spend).
 tools: Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch
 model: opus
 transferable: false
 env:
-  - MEMORY_HQ_TOKEN   # memory-on-exit atom when a cycle yields a generalisable lesson
+  - MEMORY_HQ_TOKEN       # memory-on-exit atom when a cycle yields a generalisable lesson
+  - NEXUS_SANDBOX_URL     # mode=synthesize: explorer runs candidate tests in nexus-sandbox
+  - NEXUS_SANDBOX_TOKEN   # mode=synthesize: bearer for /api/sandbox/exec
 topology_last_verified: 2026-05-29
 ---
 
@@ -129,6 +131,38 @@ When a Loop ends and a cycle uncovered a **generalisable** lesson (a recurring v
 - **Tool error mid-iteration** → report `outcome: "error"` with the message in `summary_md`. The operator decides whether to retry next cycle.
 - **Approval never comes** (you wake and the prior iteration-plan is still unapproved) → re-emit it with a one-line nudge. Do NOT proceed.
 - **Callback returns `await-approval` or `stop`** → obey it. Never override the platform's instruction with your own judgment to keep going.
+
+## Mode: synthesize (harness synthesis)
+
+When your dispatch brief carries `mode: synthesize`, you are NOT iterating against a moving target — you are **crystallizing a reusable sub-harness** for a goal never achieved before. The output is a draft `sub_harness` artifact (skills + agent refs + tool manifest + self-authored tests + a review-spec) that, once a human verifies it, replays directly with no re-exploration (`POST /api/sub-harnesses/[slug]/invoke`).
+
+This is a TWO-TIER loop. The `explorer_model` (cheap/fast — from the brief) does the exhaustive search; the `verifier_model` (expensive/smart) judges ONLY after the explorer has passing test evidence. You orchestrate; you do not do the smart-model's work cheaply or the cheap-model's work expensively.
+
+The inner mechanism is exactly skill-trainer's propose→exec→grade→retry (see `.claude/agents/skill-trainer.md`) — you are the OUTER multi-strategy explorer that runs it per candidate.
+
+### The synthesize cycle (still operator-gated per the iteration-plan rule)
+
+1. **Lift prior art FIRST** (skill-discovery-before-propose). Before proposing anything: `memory_search` the goal + scan `.claude/skills/` and `.claude/sub-harnesses/` for liftable patterns. Re-using a proven skill beats re-deriving it. Record what you lifted in the iteration-plan intent.
+
+2. **Explorer search — evidence BEFORE review.** The `explorer_model` proposes N candidate strategies. For EACH, it writes a small candidate script + its own tests and runs them in the sandbox:
+   ```bash
+   curl -sS -X POST "$NEXUS_SANDBOX_URL/exec" -H "Authorization: Bearer $NEXUS_SANDBOX_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{ "script": "<candidate + assertions>", "image": "node:22-bookworm-slim", "timeout_ms": 60000 }'
+   ```
+   (Route through `POST /api/sandbox/exec` when calling from inside the platform.) A candidate is only a contender once its tests PASS in the sandbox — that pass evidence is the gate to the next tier. Keep the bundle to a minimal core tool set (Pi.dev 4-core-tool minimalism).
+
+3. **Verifier review — modality-aware, only on passing evidence.** Once a candidate has passing tests, the `verifier_model` reviews the assembled harness for functionality + quality. The brief's `review_modality` selects the verifier: a `vision` deliverable gets a vision-capable verifier, `audio` an audio one, `code`/`text` the default. NEVER invoke the verifier on un-tested output — that's the whole cost-safety point.
+
+4. **On pass — write a DRAFT, never auto-promote.** Assemble the manifest (`{ skills, agent_refs, tools, tests, review_spec }`), write `.claude/sub-harnesses/<slug>/HARNESS.md` (the artifact writer — `lib/harness/manifest.ts`), then `POST /api/sub-harnesses` to persist it as `status: draft`. That endpoint drops a Board card for the human promote gate. You are DONE — a human flips draft→verified; until then the replay endpoint refuses it.
+
+### Synthesize cost-safety invariants (non-negotiable)
+
+- **`checkKillSwitch` before EVERY dispatch** — explorer and verifier alike.
+- **Explorer spend is capped SEPARATELY from verifier spend** so a runaway exploration can't drain the smart-model budget. Both sit under the Loop's `cost_cap_usd`. If the explorer budget is exhausted before any candidate passes, report `outcome: "partial"` and propose `scope: "stop"` — do NOT escalate to the verifier to "rescue" a failing search.
+- **Verifier spend happens ONLY after passing test evidence exists.** No evidence → no verifier dispatch.
+- **Draft-only.** You never set `status: verified`. The human promote gate (`/api/sub-harnesses/[slug]/promote`) is the sole path to replayable, mirroring the skill router's draft→verified gate.
+- **A failed synthesis is a valid outcome.** If the caps are hit without a passing+reviewed candidate, write the harness as `status: failed` (or skip the row) with the Error Remediation log populated, report `outcome: "error"`, and stop. The human decides whether to retry with a tighter goal.
 
 ## What this loop is NOT
 
