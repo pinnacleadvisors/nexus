@@ -87,9 +87,20 @@ function statusBadge(status: string | null): { color: string; label: string } {
 }
 
 export default async function AuditPage({ searchParams }: PageProps) {
-  const session = await auth()
-  if (!session.userId)             redirect('/')
-  if (!isOwner(session.userId))    redirect('/dashboard')
+  // auth() can THROW (not just return null) when Clerk's middleware context
+  // isn't established — half-configured keys, a transient Clerk outage, or
+  // the proxy.ts pass-through path (see proxy.ts:102). An unguarded call
+  // then 500s the page. Capture userId in a try/catch, then redirect
+  // OUTSIDE the try (redirect() throws NEXT_REDIRECT, which must propagate).
+  let userId: string | null = null
+  try {
+    const session = await auth()
+    userId = session.userId
+  } catch {
+    userId = null
+  }
+  if (!userId)            redirect('/')
+  if (!isOwner(userId))   redirect('/dashboard')
 
   const params = await searchParams
   const filters = {

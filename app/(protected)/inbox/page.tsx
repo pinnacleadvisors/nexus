@@ -238,10 +238,23 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
 }
 
 export default async function InboxPage() {
-  const session = await auth()
-  if (!session.userId) redirect('/sign-in?returnUrl=/inbox')
+  // auth() can THROW (not just return null) when Clerk's middleware context
+  // isn't established — half-configured keys, a transient Clerk outage, or
+  // the proxy.ts pass-through path (see proxy.ts:102). An unguarded call
+  // then 500s the whole page. Mirror the resilient pattern in
+  // app/(protected)/teams/page.tsx: capture userId in a try/catch, then
+  // redirect OUTSIDE the try (redirect() throws NEXT_REDIRECT, which must
+  // propagate — it can't be swallowed by the catch).
+  let userId: string | null = null
+  try {
+    const session = await auth()
+    userId = session.userId
+  } catch {
+    userId = null
+  }
+  if (!userId) redirect('/sign-in?returnUrl=/inbox')
 
-  const items = await fetchAll(session.userId)
+  const items = await fetchAll(userId)
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8">
