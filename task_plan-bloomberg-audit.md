@@ -137,13 +137,19 @@ At 375 px:
   `+ Add pane`, mobile `<select>` swap). Verified authenticated at 1280px +
   375px via minted bot session — 0 console errors, responsive swap confirmed.
 
+### Completed (cont.)
+- [x] **Group B — live Realtime streams** (PR: `claude/bloomberg-streams`,
+  stacked on A). Migration 093 adds `audit_log`/`approvals`/`tool_call_audit`
+  to `supabase_realtime` (idempotent; `run_events`/`gateway_turns` omitted —
+  not anon-readable). `lib/audit/streams.ts` (`subscribeToSource` via browser
+  anon `postgres_changes` + `matchesRead` scope guard). Wired the subscription
+  slot in `AuditStreamTable` (buffer-while-frozen + flush-on-resume + live
+  badge); heartbeats/crons auto-poll via `usePollWithBackoff` (60s); added
+  `/api/health/deep` (+ pre-existing `/api/dev/fixtures/active`) to
+  `lib/sentry/sampler.ts` SKIP_PATTERNS. Verified: Supabase Realtime WS
+  connects, Heartbeats pane polls 4 live providers, 0 console errors on /audit.
+
 ### Remaining
-- [ ] **Group B — live Realtime streams** (`claude/bloomberg-streams`):
-  migration to add `audit_log`, `tool_call_audit`, `approvals` to the
-  `supabase_realtime` publication; `lib/audit/streams.ts` (browser anon
-  `postgres_changes` subscribe + `fetchHealth`); wire the marked subscription
-  slot in `AuditStreamTable`; heartbeats via `usePollWithBackoff`; add
-  `/api/health/deep` to `lib/sentry/sampler.ts` SKIP_PATTERNS.
 - [ ] **Group C — saved layouts** (`claude/bloomberg-layouts`):
   `lib/audit/layout.ts` (base64 encode/decode) + `?layout=` hydrate/share in
   `AuditTerminal`.
