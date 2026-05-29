@@ -18,7 +18,7 @@ See `ROADMAP.md` for the full feature backlog and implementation status.
 These apply to **every** agent — managed sub-agents, Inngest crons, n8n workflows, ad-hoc dispatches. The detailed checklists later in this file explain the *why*; this section is the dense TL;DR for *what* every agent does on every task.
 
 **Before any LLM dispatch:**
-- Call `checkKillSwitch(businessSlug)` from `lib/cost-guard.ts`. If `kill: true`, log a `kill_switch_check` row to `experiment_metrics` and abort. If `signal: 'auto_pivot_eligible'`, route the proposal through the `niche_pick` gate.
+- Call `checkKillSwitch(businessSlug)` from `lib/cost-guard.ts`. If `kill: true`, log a `kill_switch_check` row to `experiment_metrics` and abort. If `signal: 'auto_pivot_eligible'`, route the proposal through the `niche_pick` gate. On the **false→true edge** (a business that wasn't killed last cycle), the autonomous tick also fires a `kill-switch` operator notification via `notifyOperator()` (Slack / web push) — see [`app/api/cron/solopreneur-tick/route.ts`](app/api/cron/solopreneur-tick/route.ts) `notifyKillSwitch()`. Persistent kills don't re-notify (transition guard reads the prior `kill_switch_check` row).
 - Resolve `business_slug` first (per-business connection in `connected_accounts`), then fall back to user-default (`business_slug = NULL`). `executeBusinessAction()` and the provision route's `fetchDecryptedApiKey` already do this — never partition by guessing.
 - Every dispatch carries `inputs.tools: string[]` with **≥ 2 plausible options**. Single-tool budget is an anti-pattern (`lib/n8n/validate.ts` warns; the n8n-strategist enforces).
 
