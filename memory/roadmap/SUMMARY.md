@@ -109,13 +109,13 @@ burst of small, independently-reviewable PRs (#411–#427). All ✅ unless noted
 | R10 | KPI freshness indicator — "Updated Nm ago" + amber when >24h stale | ✅ | `components/dashboard/KpiGrid.tsx` + `app/api/dashboard/route.ts` |
 | R11 | Fixture-mode top-bar badge + scripted walkthrough | ✅ | fixture badge in topbar |
 | R12 | Mobile-first sticky operator action bar | ✅ | `/businesses/[slug]` sticky bottom bar |
-| R13 | Bloomberg-terminal `/audit` — multi-pane dense activity terminal | 🟡 | Groups A (scaffold) + B (live streams) PRs open. A: `lib/audit/{types,format,sources}.ts` (9-source registry), owner-gated service-role Server Action, `components/audit/{AuditTerminal,AuditStreamTable}.tsx` (localStorage tabs, mobile `<select>`, per-pane filters + freeze). B: migration 093 adds `audit_log`/`approvals`/`tool_call_audit` to `supabase_realtime`; `lib/audit/streams.ts` (browser anon `postgres_changes`); heartbeats via `usePollWithBackoff`. Verified: Realtime WS connects, Heartbeats polls 4 providers, 0 console errors on /audit. Group C (saved layouts) follows. `task_plan-bloomberg-audit.md` |
+| R13 | Bloomberg-terminal `/audit` — multi-pane dense activity terminal | 🟡 | Groups A (scaffold) + B (live streams) PRs open. A: `lib/audit/{types,format,sources}.ts` (9-source registry), owner-gated service-role Server Action, `components/audit/{AuditTerminal,AuditStreamTable}.tsx` (localStorage tabs, mobile `<select>`, per-pane filters + freeze). B: migration 093 adds `audit_log`/`approvals`/`tool_call_audit` to `supabase_realtime`; `lib/audit/streams.ts` (browser anon `postgres_changes`); heartbeats via `usePollWithBackoff`. C: `lib/audit/layout.ts` (base64url encode/decode) + `?layout=` hydrate/share in `AuditTerminal` (Share button writes the permalink + copies it; shared link reconstructs the exact pane set, overriding localStorage). All 3 PRs open. Verified: Realtime WS connects, Heartbeats polls 4 providers, layout round-trips (4-pane share → reload reconstructs), 0 console errors on /audit. `task_plan-bloomberg-audit.md` |
 | Cache | Smart-caching layer — `agent_response_cache` + `cacheWrap` + eviction cron | ✅ | migration 090 + `lib/agents/cache.ts` + `app/api/cron/agent-cache-evict/` (cron `30 6 * * *`). Wired into `/api/connected-accounts/describe` (24h) + `lib/models/recommender.ts` (24h). |
 | NIM | NVIDIA NIM LLM provider adapter (free-tier hosted inference) | ✅ | `lib/llm/provider.ts` |
 | Dark | Dark-mode lock (no toggle) | ✅ | `app/globals.css` |
 
 **Still queued from brain-dump (scoped, not yet built):**
-- Bloomberg-terminal `/audit` redesign — `task_plan-bloomberg-audit.md` (3 PRs) — 🟡 in progress, see R13 above
+- Bloomberg-terminal `/audit` redesign — `task_plan-bloomberg-audit.md` — 🟡 all 3 PRs (A scaffold, B streams, C layouts) open, see R13 above
 - Loops/Sprints operator-configurable iteration primitive — `task_plan-loops-sprints.md` (5 PRs)
 - Plugins viewable+configurable in settings
 - Deferred: AI council skill, custom dashboard widgets / space-agent fork, voice control, Linear absorption
