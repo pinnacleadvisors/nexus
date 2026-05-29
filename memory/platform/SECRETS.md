@@ -150,6 +150,10 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
 | `NEXUS_SLACK_SIGNING_SECRET` | E7 | Single-tenant fallback Slack app signing secret used to verify inbound slash commands AND `/api/slack/decision` business-operator approval webhooks (Phase A). Per-user override at `kind='slack' name='signingSecret'`. |
 | `SLACK_USER_<id>` | E7 | Optional. Maps a Slack user ID to a Clerk user ID so multi-operator deployments can route slash commands. e.g. `SLACK_USER_U02ABCDEF=user_2YxZ...`. Without this, `/api/webhooks/slack` falls back to the first entry of `ALLOWED_USER_IDS`. |
+| `VAPID_PUBLIC_KEY` | R4 notifications | Optional. Web-push VAPID public key. When set with `VAPID_PRIVATE_KEY`, the `webpush` notification channel delivers browser push (`lib/notifications/webpush.ts`); the NotificationsPanel shows a "configure VAPID" warning until both are set. Subscriptions persist in `push_subscriptions` (migration 091) regardless. Generate with `npx web-push generate-vapid-keys`. |
+| `VAPID_PRIVATE_KEY` | R4 notifications | Optional. Web-push VAPID private key — pairs with `VAPID_PUBLIC_KEY`. Secret; never client-exposed. Until set, web-push delivery returns `skipped:'unconfigured'` (fail-soft). |
+| `VAPID_SUBJECT` | R4 notifications | Optional. `mailto:` or URL contact for the VAPID claim, e.g. `mailto:ops@nexus.example`. Defaults to a placeholder when unset. |
+| `NVIDIA_NIM_API_KEY` | NIM provider | Optional. Enables the NVIDIA NIM hosted-inference LLM adapter (free tier) when `LLM_PROVIDER=nim`. See `lib/llm/provider.ts`. |
 
 ## Publish Pipeline (A10 / A11)
 
