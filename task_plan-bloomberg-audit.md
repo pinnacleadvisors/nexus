@@ -126,15 +126,41 @@ At 375 px:
 - SSR perf: server-side initial fetch is 9 parallel queries × 100 rows.
   Cached for 1 s — affordable.
 
-## Progress
+## Progress (as of 2026-05-29)
 
-### Awaiting operator approval
-- [ ] Group A — page scaffold
-- [ ] Group B — 9 stream sources
-- [ ] Group C — saved layouts
+### Completed
+- [x] **Group A — page scaffold** (PR: `claude/bloomberg-scaffold`). Shipped a
+  config-driven terminal: `lib/audit/types.ts` + `format.ts` + `sources.ts`
+  (9-source registry), owner-gated service-role Server Action
+  `app/(protected)/audit/actions.ts`, generic `AuditStreamTable` (dense table,
+  per-pane filter pills, freeze, refresh), `AuditTerminal` (localStorage tabs,
+  `+ Add pane`, mobile `<select>` swap). Verified authenticated at 1280px +
+  375px via minted bot session — 0 console errors, responsive swap confirmed.
 
-### Blockers / Open questions
-- **Which 9 sources to ship in v1?** Recommend default to Agents + Crons +
-  Errors (most-watched). Operator can add Tools / MCPs / Gateway later.
-- **Persist layouts in DB or localStorage?** localStorage v1 (no migration).
-  DB v2 when operator wants cross-device sync.
+### Remaining
+- [ ] **Group B — live Realtime streams** (`claude/bloomberg-streams`):
+  migration to add `audit_log`, `tool_call_audit`, `approvals` to the
+  `supabase_realtime` publication; `lib/audit/streams.ts` (browser anon
+  `postgres_changes` subscribe + `fetchHealth`); wire the marked subscription
+  slot in `AuditStreamTable`; heartbeats via `usePollWithBackoff`; add
+  `/api/health/deep` to `lib/sentry/sampler.ts` SKIP_PATTERNS.
+- [ ] **Group C — saved layouts** (`claude/bloomberg-layouts`):
+  `lib/audit/layout.ts` (base64 encode/decode) + `?layout=` hydrate/share in
+  `AuditTerminal`.
+
+### Key decisions (real schema ≠ the plan's Phase-1 assumptions)
+- **`run_events` / `gateway_turns` are NOT anon-readable** (run_events RLS is
+  JWT-sub scoped; gateway_turns is service_role-only), so they cannot stream to
+  the browser anon client. `audit_log` (no RLS), `approvals` + `tool_call_audit`
+  (`using(true)`) ARE anon-readable → they carry live Realtime deltas. NO RLS
+  was loosened — initial/refresh/RLS-locked reads go through the owner-gated
+  service-role Server Action (on-demand RPC, not polling).
+- **`audit_events` doesn't exist** — the real table is `audit_log`, and its
+  resources are `agent`/`chat`/`business`/… (NOT `cron`/`skill`/`mcp`). Final
+  source→backing map lives in `lib/audit/sources.ts` header. Crons + Heartbeats
+  poll existing owner endpoints (`/api/cron-health/status`, `/api/health/deep`)
+  — no new routes. Gateway is refresh-only (RLS).
+- **One generic `AuditStreamTable` + a source registry**, not 9 per-source
+  components (plan's B2) — DRYer; a new pane is one registry entry.
+- **Streaming = Supabase Realtime** (success-criterion "SSE" reconciled to the
+  hard constraint). Layouts persist to localStorage v1 (DB sync deferred).

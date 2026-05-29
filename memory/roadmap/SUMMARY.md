@@ -109,12 +109,13 @@ burst of small, independently-reviewable PRs (#411–#427). All ✅ unless noted
 | R10 | KPI freshness indicator — "Updated Nm ago" + amber when >24h stale | ✅ | `components/dashboard/KpiGrid.tsx` + `app/api/dashboard/route.ts` |
 | R11 | Fixture-mode top-bar badge + scripted walkthrough | ✅ | fixture badge in topbar |
 | R12 | Mobile-first sticky operator action bar | ✅ | `/businesses/[slug]` sticky bottom bar |
+| R13 | Bloomberg-terminal `/audit` — multi-pane dense activity terminal | 🟡 | Group A (scaffold) PR open: `lib/audit/{types,format,sources}.ts` (9-source registry), `app/(protected)/audit/{page,actions}.tsx` (owner-gated service-role Server Action), `components/audit/{AuditTerminal,AuditStreamTable}.tsx` (localStorage tabs, mobile `<select>`, per-pane filters + freeze). Groups B (Realtime streams) + C (saved layouts) follow. `task_plan-bloomberg-audit.md` |
 | Cache | Smart-caching layer — `agent_response_cache` + `cacheWrap` + eviction cron | ✅ | migration 090 + `lib/agents/cache.ts` + `app/api/cron/agent-cache-evict/` (cron `30 6 * * *`). Wired into `/api/connected-accounts/describe` (24h) + `lib/models/recommender.ts` (24h). |
 | NIM | NVIDIA NIM LLM provider adapter (free-tier hosted inference) | ✅ | `lib/llm/provider.ts` |
 | Dark | Dark-mode lock (no toggle) | ✅ | `app/globals.css` |
 
 **Still queued from brain-dump (scoped, not yet built):**
-- Bloomberg-terminal `/audit` redesign — `task_plan-bloomberg-audit.md` (3 PRs)
+- Bloomberg-terminal `/audit` redesign — `task_plan-bloomberg-audit.md` (3 PRs) — 🟡 in progress, see R13 above
 - Loops/Sprints operator-configurable iteration primitive — `task_plan-loops-sprints.md` (5 PRs)
 - Plugins viewable+configurable in settings
 - Deferred: AI council skill, custom dashboard widgets / space-agent fork, voice control, Linear absorption
