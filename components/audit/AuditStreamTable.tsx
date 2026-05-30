@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
-  Bot, Clock, Sparkles, Wrench, Plug, Cpu, CheckCheck, Activity, TriangleAlert,
+  Bot, Clock, Sparkles, Wrench, Plug, Cpu, CheckCheck, Activity, TriangleAlert, Brain,
   Snowflake, RefreshCw, Play, Radio, type LucideIcon,
 } from 'lucide-react'
 import { fetchAuditRows } from '@/app/(protected)/audit/actions'
@@ -26,7 +26,7 @@ import { WINDOW_OPTIONS, type AuditRecord, type AuditSource, type CellTone, type
 import { ROW_LIMIT } from '@/lib/audit/sources'
 
 const ICONS: Record<string, LucideIcon> = {
-  Bot, Clock, Sparkles, Wrench, Plug, Cpu, CheckCheck, Activity, TriangleAlert,
+  Bot, Clock, Sparkles, Wrench, Plug, Cpu, CheckCheck, Activity, TriangleAlert, Brain,
 }
 
 const TONE_TEXT: Record<CellTone, string> = {

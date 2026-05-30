@@ -18,13 +18,13 @@ import { Loader2 } from 'lucide-react'
 import type { AgentDefinition } from '@/lib/types'
 import type { ModelRecommendation, AiProviderKey } from '@/lib/models/types'
 import { MODEL_CATALOG } from '@/lib/models/catalog'
+import {
+  detectConnectedProviders,
+  type GatewayStatusLike,
+  type ConnectedAccountLike,
+} from '@/lib/models/detect-providers'
 import AgentCard from './AgentCard'
 import { AgentdexHeader, AgentdexBanner } from './AgentListHeader'
-
-interface ConnectedAccount { platform: string; status: string }
-interface GatewayStatus { provider: 'gateway' | 'openclaw' | 'api' | 'none'; gatewayHealthy: boolean }
-
-const AI_PLATFORMS = ['anthropic','openai','google','xai','deepseek','meta','mistral','replicate'] as const
 
 export default function AgentList() {
   const [agents, setAgents]               = useState<AgentDefinition[]>([])
@@ -48,23 +48,11 @@ export default function AgentList() {
         const j = (await agentsRes.json()) as { agents: AgentDefinition[] }
         setAgents(j.agents)
       }
-      const connected = new Set<AiProviderKey>()
-      if (gwRes.ok) {
-        const gw = (await gwRes.json()) as GatewayStatus
-        if (gw.provider === 'gateway' && gw.gatewayHealthy) connected.add('anthropic')
-        if (gw.provider === 'api') connected.add('anthropic')
-        if (gw.provider === 'openclaw') connected.add('anthropic')
-      }
-      if (accRes.ok) {
-        const j = (await accRes.json()) as { accounts: ConnectedAccount[] }
-        for (const a of j.accounts ?? []) {
-          if (a.status !== 'active') continue
-          if ((AI_PLATFORMS as readonly string[]).includes(a.platform)) {
-            connected.add(a.platform as AiProviderKey)
-          }
-        }
-      }
-      setProviders(Array.from(connected))
+      const gw = gwRes.ok ? ((await gwRes.json()) as GatewayStatusLike) : null
+      const accounts = accRes.ok
+        ? (((await accRes.json()) as { accounts?: ConnectedAccountLike[] }).accounts ?? [])
+        : []
+      setProviders(detectConnectedProviders(gw, accounts))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'failed to load agents')
     } finally {

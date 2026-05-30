@@ -196,6 +196,34 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
       credentialsUrl: 'https://openrouter.ai/keys',
     },
   },
+  {
+    id:       'nim',
+    name:     'NVIDIA NIM',
+    tagline:  'Free-tier hosted Llama / Nemotron / DeepSeek. $0 marginal — ideal for background tasks.',
+    accent:   '#76b900',
+    icon:     'Cpu',
+    docsUrl:  'https://docs.api.nvidia.com/nim/',
+    modes:    ['api'],
+    api: {
+      envVar:         'NVIDIA_NIM_API_KEY',
+      instructions:   'OpenAI-compatible endpoint at integrate.api.nvidia.com. Already a live LLM_PROVIDER family (lib/llm/providers/nim.ts) — set the key to route the global AI-SDK default here.',
+      credentialsUrl: 'https://build.nvidia.com/',
+    },
+  },
+  {
+    id:       'ollama',
+    name:     'Ollama (local)',
+    tagline:  'Self-hosted open-weights models. No per-call cost — runs on your own machine.',
+    accent:   '#cfcfcf',
+    icon:     'Cpu',
+    docsUrl:  'https://github.com/ollama/ollama/blob/main/docs/api.md',
+    modes:    ['subscription'],
+    subscription: {
+      envVars:      ['OLLAMA_BASE_URL'],
+      instructions: 'Point OLLAMA_BASE_URL at a reachable Ollama server (e.g. http://localhost:11434 on the Mac Mini host). Live adapter at lib/llm/providers/ollama.ts. No per-token cost.',
+      setupUrl:     'https://github.com/ollama/ollama',
+    },
+  },
 ] as const
 
 export function getProvider(id: AiProviderKey): AiProvider | undefined {

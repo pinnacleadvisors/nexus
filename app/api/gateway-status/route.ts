@@ -27,8 +27,28 @@ import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { getSecrets } from '@/lib/user-secrets'
 import { isGatewayHealthy } from '@/lib/claw/health'
 import { assertUnderCostCap } from '@/lib/cost-guard'
+import type { AiProviderKey } from '@/lib/models/types'
 
 export const runtime = 'nodejs'
+
+/**
+ * Map each catalog provider key to the env var whose PRESENCE means that
+ * provider is reachable for the model picker. Only presence is checked — the
+ * value is never read, logged, or returned (per AGENTS.md secret discipline).
+ */
+const PROVIDER_ENV_VAR: Partial<Record<AiProviderKey, string>> = {
+  anthropic:  'ANTHROPIC_API_KEY',
+  openai:     'OPENAI_API_KEY',
+  google:     'GOOGLE_API_KEY',
+  xai:        'XAI_API_KEY',
+  deepseek:   'DEEPSEEK_API_KEY',
+  meta:       'META_LLAMA_API_KEY',
+  mistral:    'MISTRAL_API_KEY',
+  replicate:  'REPLICATE_API_TOKEN',
+  openrouter: 'OPENROUTER_API_KEY',
+  nim:        'NVIDIA_NIM_API_KEY',
+  ollama:     'OLLAMA_BASE_URL',
+}
 
 interface GatewayStatusResponse {
   provider:       'gateway' | 'openclaw' | 'api' | 'none'
@@ -41,6 +61,19 @@ interface GatewayStatusResponse {
   codexHealthy:    boolean
   /** OpenRouter API key configured — surfaced for the AI Providers list. */
   openrouterConfigured: boolean
+  /**
+   * Catalog provider keys reachable RIGHT NOW from env presence (direct API
+   * keys / local Ollama). Consumed by the Agentdex model picker so the
+   * dropdown reflects every configured provider, not just Claude. Presence
+   * only — no secret values.
+   */
+  envProviders:   AiProviderKey[]
+  /**
+   * Ordered model-resolution chain the platform honors, for operator
+   * visibility on the AI Providers tab: per-agent/skill model → gateways →
+   * api key → error. Only configured tiers appear.
+   */
+  chain:          string[]
   spentUsd:       number
   capUsd:         number
   scope:          'user' | 'business'
@@ -122,6 +155,20 @@ export async function GET() {
   //    on a settings-page load.
   const openrouterConfigured = Boolean(process.env.OPENROUTER_API_KEY)
 
+  // ── Env-present providers (presence only — never the value) ────────────
+  const envProviders = (Object.entries(PROVIDER_ENV_VAR) as [AiProviderKey, string][])
+    .filter(([, envVar]) => Boolean(process.env[envVar]))
+    .map(([key]) => key)
+
+  // ── Resolution chain (operator visibility) ─────────────────────────────
+  // Mirrors the order callers honor: per-agent/skill model first, then the
+  // configured gateways, then any direct API key, then a final error tier.
+  const chain: string[] = ['agent/skill model']
+  if (provider === 'gateway') chain.push('claude-gateway')
+  if (codex.configured)       chain.push('codex-gateway')
+  if (envProviders.length > 0 || provider === 'api' || provider === 'openclaw') chain.push('api-key')
+  chain.push('error')
+
   // ── Spend ──────────────────────────────────────────────────────────────
   const cap = await assertUnderCostCap(userId)
 
@@ -134,6 +181,8 @@ export async function GET() {
     codexConfigured: codex.configured,
     codexHealthy:    codex.healthy,
     openrouterConfigured,
+    envProviders,
+    chain,
     spentUsd: cap.spentUsd,
     capUsd:   cap.capUsd,
     scope:    cap.scope,

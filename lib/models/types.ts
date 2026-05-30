@@ -19,6 +19,8 @@ export type AiProviderKey =
   | 'mistral'
   | 'replicate'
   | 'openrouter'
+  | 'nim'
+  | 'ollama'
 
 /** What sort of work the model is most useful for. Drives recommender pruning. */
 export type ModelCapability =
