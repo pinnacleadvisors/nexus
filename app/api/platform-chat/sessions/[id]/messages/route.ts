@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
-import { getSession, listMessages } from '@/lib/chat/sessions'
+import { getSession, listMessages, getInflightTurn } from '@/lib/chat/sessions'
 
 export const runtime    = 'nodejs'
 export const maxDuration = 10
@@ -43,6 +43,11 @@ export async function GET(
   }
 
   const messages = await listMessages(id, 500)
+  // Durable chat (Phase C) — surface a still-running detached turn so the
+  // client re-attaches its poll on reopen. Null when no turn is in flight or
+  // it was already drained server-side (getInflightTurn fails soft on a stale
+  // schema, so reopen never breaks).
+  const inflight = await getInflightTurn(id)
   return NextResponse.json({
     ok: true,
     session: {
@@ -55,6 +60,10 @@ export async function GET(
       // when fresh / 092 not applied (lib/chat/sessions.ts fails soft).
       retrospective_md:            owned.retrospective_md ?? null,
       retrospective_generated_at:  owned.retrospective_generated_at ?? null,
+      // Durable chat (Phase C) — the live gateway jobId when a turn is still
+      // detached, so the UI can resume polling it after a tab/app close.
+      inflight_job_id:             inflight?.jobId ?? null,
+      inflight_started_at:         inflight?.startedAt ?? null,
     },
     messages: messages.map(m => ({
       id:         m.id,

@@ -64,6 +64,9 @@ export type ApprovalKind =
   | 'cron-alert'
   | 'stalled-run'
   | 'budget-incident'
+  // Durable chat (Phase D4) — a chat turn that crashed or never reached the
+  // gateway, surfaced as an info alert so a failure off the chat page isn't lost.
+  | 'chat-turn'
 
 export interface FleetPendingItem {
   /** 'platform' OR 'business:<slug>' — what scope this approval lives in. */

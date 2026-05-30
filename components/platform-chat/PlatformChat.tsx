@@ -69,6 +69,10 @@ interface Message {
   /** Continual Harness self-modification proposals (lib/chat/edit-self.ts).
    *  Rendered as EditSelfCard inline with the assistant bubble. */
   edit_selfs?: EditSelfPlan[]
+  /** Durable chat (Phase D) — a persisted turn-level error stamped onto a
+   *  user message when its dispatch failed. Survives reload (unlike the
+   *  component-local `error` state) and renders an inline error note. */
+  turn_error?: { code: string; message: string }
 }
 
 interface EnqueueOkAsync  { ok: true;  mode?: undefined;       jobId: string; sessionId: string; sessionTag: string; usage?: ContextUsageView }
@@ -82,7 +86,7 @@ interface PollFail   { ok: false; error: string; code: string }
 type PollResponse = PollOk | PollFail
 
 interface SessionsResp { ok: true; sessions: SessionSummary[] }
-interface MessagesResp { ok: true; session: SessionSummary & { retrospective_md?: string | null; retrospective_generated_at?: string | null }; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[] } }> }
+interface MessagesResp { ok: true; session: SessionSummary & { retrospective_md?: string | null; retrospective_generated_at?: string | null; inflight_job_id?: string | null; inflight_started_at?: string | null }; messages: Array<{ id: string; role: 'user'|'assistant'|'system'; content: string; metadata: { approval_requests?: ApprovalRequest[]; tool_calls?: ToolCall[]; durationMs?: number; crashed?: CrashedInfo; edit_plans?: EditPlan[]; edit_group_completes?: EditGroupComplete[]; edit_selfs?: EditSelfPlan[]; turn_error?: { code: string; message: string } } }> }
 
 const POLL_INTERVAL_MS = 2_500
 const POLL_TIMEOUT_MS  = 5 * 60_000   // 5-min cap. Opus + tool-call workflows rarely exceed this.
@@ -348,13 +352,51 @@ export default function PlatformChat() {
           edit_plans:           m.metadata?.edit_plans,
           edit_group_completes: m.metadata?.edit_group_completes,
           edit_selfs:           m.metadata?.edit_selfs,
+          // Phase D5 — a persisted dispatch error survives the reload here
+          // (the component-local `error` state is lost on navigation).
+          turn_error:           m.metadata?.turn_error,
         })))
         setRetrospective(j.session.retrospective_md ?? null)
         setRetrospectiveAt(j.session.retrospective_generated_at ?? null)
         setError(null)
+
+        // Durable chat (Phase C) — re-attach to a turn that was still running
+        // when the tab/app closed, so the reply lands without the operator
+        // resending. `!busy` skips this when send() just set activeSessionId
+        // for the turn it's already polling (no double-append). The server
+        // reconciler + claimInflightTurn guard the persist race either way, so
+        // a duplicate poll only costs an extra GET — never a duplicate row.
+        const liveJobId = j.session.inflight_job_id ?? null
+        if (liveJobId && !busy && !cancelled) {
+          cancelRef.current = false
+          setBusy(true)
+          const resumeSessionId = activeSessionId
+          pollUntilDone(liveJobId, resumeSessionId)
+            .then(result => {
+              if (cancelled || result.cancelled) return
+              setMessages(prev => [...prev, {
+                role:                 'assistant',
+                content:              result.text,
+                durationMs:           result.durationMs,
+                approval_requests:    result.approval_requests,
+                tool_calls:           result.tool_calls,
+                crashed:              result.crashed,
+                edit_plans:           result.edit_plans,
+                edit_group_completes: result.edit_group_completes,
+                edit_selfs:           result.edit_selfs,
+              }])
+              void reloadSessions()
+            })
+            .catch(() => { /* poll timeout / transient — operator can resend */ })
+            .finally(() => { if (!cancelled) { setBusy(false); setPartial('') } })
+        }
       } catch { /* swallow */ }
     })()
     return () => { cancelled = true }
+    // pollUntilDone / reloadSessions are stable-enough component fns; listing
+    // them would re-run this loader every render. Intentionally keyed on the
+    // session id only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId])
 
   async function handleNewChat() {
@@ -1206,6 +1248,18 @@ function MessageBubble({
           </div>
         )}
         {message.content && <RenderedMarkdown text={message.content} highlightClaimed={!!message.crashed} />}
+        {/* Phase D5 — a persisted dispatch error (the turn never reached the
+            gateway). Survives reload via metadata.turn_error; the transient
+            `error` banner below the list only covers the live session. */}
+        {message.turn_error && (
+          <div
+            className="mt-2 flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+            style={{ background: 'rgba(255,90,90,0.10)', border: '1px solid rgba(255,90,90,0.30)', color: '#ffb4b4' }}
+          >
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <span>This turn didn’t reach the agent: {message.turn_error.message}</span>
+          </div>
+        )}
         {/* Phase 3 — render any approval-request blocks the agent emitted as
             inline cards. Each card carries its own approval_id; on click we
             auto-send the canonical APPROVAL [<id>]: ... reply. */}

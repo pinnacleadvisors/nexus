@@ -211,6 +211,9 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
       } else if (source === 'budget-incident') {
         href = '/dashboard'
         meta = 'Cost-guard kill-switch fired in the last 7d. Inspect cash_spend rows.'
+      } else if (source === 'chat-turn') {
+        href = '/manage-platform'
+        meta = 'A chat turn crashed or never reached the gateway. Reopen the chat to retry.'
       }
       items.push({
         kind:          'system-alert',
