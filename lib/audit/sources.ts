@@ -132,6 +132,26 @@ const SOURCES: AuditSource[] = [
     ],
   },
   {
+    id: 'memory', label: 'Memory calls', icon: 'Brain', kind: 'realtime-table',
+    table: 'tool_call_audit', idField: 'id', tsField: 'ts',
+    realtime: true, realtimeEvent: 'INSERT',
+    read: { eq: { field: 'mcp_server', value: 'memory-hq' } },
+    description: 'memory-hq calls — every atom write / search / walk an agent makes against the knowledge graph (the "Akashic Record" flow).',
+    columns: [
+      { key: 'ts',            header: 'Time',     className: 'text-right', cell: (r, now) => cell(rel(r.ts, now), { mono: true, tone: 'muted' }) },
+      { key: 'tool_name',     header: 'Tool',     className: 'min-w-[10rem]', cell: r => cell(str(r, 'tool_name'), { mono: true }) },
+      { key: 'agent_slug',    header: 'Agent',    cell: r => cell(str(r, 'agent_slug'), { tone: 'muted' }) },
+      { key: 'business_slug', header: 'Business', cell: r => cell(str(r, 'business_slug'), { tone: 'muted' }) },
+      { key: 'result_status', header: 'Status',   cell: r => cell(str(r, 'result_status'), { badge: true, tone: statusTone(r.result_status) }) },
+      { key: 'latency_ms',    header: 'Latency',  className: 'text-right', cell: r => cell(ms(r.latency_ms), { mono: true, tone: 'muted' }) },
+    ],
+    filters: [
+      { kind: 'window', field: 'ts' },
+      { kind: 'agent', field: 'agent_slug' },
+      { kind: 'outcome', outcomeOf: r => statusTone(r.result_status) === 'ok' ? 'ok' : statusTone(r.result_status) === 'error' ? 'error' : statusTone(r.result_status) === 'warn' ? 'warn' : null },
+    ],
+  },
+  {
     id: 'gateway', label: 'Gateway turns', icon: 'Cpu', kind: 'action-table',
     table: 'gateway_turns', idField: 'id', tsField: 'created_at',
     realtime: false,

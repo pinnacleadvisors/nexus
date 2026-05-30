@@ -24,6 +24,7 @@ import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { canonicalScope, pathFor, type MemoryScope } from '@/lib/memory/scope'
 import type { Locator } from '@/lib/memory/locator'
 import { writePage, todayPath } from '@/lib/memory/github'
+import { recordToolCall } from '@/lib/audit/tool-call'
 
 export const runtime = 'nodejs'
 
@@ -168,11 +169,24 @@ export async function POST(req: NextRequest) {
   const oldToken = process.env.MEMORY_TOKEN
   process.env.MEMORY_REPO = process.env.MEMORY_HQ_REPO || 'pinnacleadvisors/memory-hq'
   process.env.MEMORY_TOKEN = process.env.MEMORY_HQ_TOKEN || ''
+  // Surface every write on /audit → Memory pane (filtered to mcp_server
+  // 'memory-hq'). Fail-soft: recordToolCall never throws, so auditing can
+  // never break the write it observes.
+  const startedAt = Date.now()
+  const auditBase = {
+    mcp_server:    'memory-hq',
+    tool_name:     `memory_${v.v.type}`,
+    agent_slug:    author,
+    business_slug: v.v.scope.business_slug ?? null,
+    args:          { type: v.v.type, title: v.v.payload.title, scopeId: canon.id },
+  }
   try {
     const result = await writePage(filePath, noteBody, `feat(memory): ${v.v.type} ${slug} from ${author}`)
     if (!result) {
+      void recordToolCall({ ...auditBase, result_status: 'error', result: 'github write failed', latency_ms: Date.now() - startedAt })
       return NextResponse.json({ error: 'github write failed (see server logs)' }, { status: 502 })
     }
+    void recordToolCall({ ...auditBase, result_status: 'ok', result: { slug, path: filePath }, latency_ms: Date.now() - startedAt })
     return NextResponse.json({
       ok: true,
       slug,
@@ -183,6 +197,7 @@ export async function POST(req: NextRequest) {
       trace_id,
     })
   } catch (e) {
+    void recordToolCall({ ...auditBase, result_status: 'error', result: (e as Error).message, latency_ms: Date.now() - startedAt })
     return NextResponse.json({ error: (e as Error).message }, { status: 502 })
   } finally {
     if (oldRepo === undefined) delete process.env.MEMORY_REPO
