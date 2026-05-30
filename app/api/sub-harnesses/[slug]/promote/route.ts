@@ -16,6 +16,7 @@ import { authenticateOps } from '@/lib/auth/ops-auth'
 import { audit } from '@/lib/audit'
 import { setSubHarnessStatus } from '@/lib/harness/store'
 import { isHarnessSlug } from '@/lib/harness/types'
+import { seedConceptForArtifact } from '@/lib/learning/distill-bridge'
 
 export const runtime = 'nodejs'
 
@@ -64,6 +65,17 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     const { patched, changed } = patchStatus(md, 'verified')
     if (changed && patched !== md) { await fs.writeFile(harnessPath, patched, 'utf8'); fileSynced = true }
   } catch { /* artifact file optional — DB row is the gate */ }
+
+  // Learning Scope C — best-effort: seed a "how this sub-harness works" concept
+  // card onto the operator's /learn deck. Never blocks the promote (fail-soft).
+  try {
+    await seedConceptForArtifact(a.userId, {
+      kind:   'sub-harness',
+      slug,
+      name:   slug,
+      intent: (res.harness.goal_md ?? '').slice(0, 600),
+    })
+  } catch { /* never block promote */ }
 
   audit(req, {
     action:     'sub-harness.promote',
