@@ -26,7 +26,7 @@ import { parseIterationPlans } from '@/lib/chat/iteration-plan'
 import { parseBugHuntFindings } from '@/lib/chat/bug-hunt-finding'
 import { parseEditPlanBlocks } from '@/lib/chat/edit-plan'
 import { parseEditSelfBlocks } from '@/lib/chat/edit-self'
-import { appendMessage } from '@/lib/chat/sessions'
+import { appendMessage, claimInflightTurn } from '@/lib/chat/sessions'
 import { createTask, findOpenTaskByTitle, updateTask, deleteTask } from '@/lib/views/tasks'
 import { createBackgroundTask } from '@/lib/background-tasks/dispatch'
 
@@ -174,6 +174,11 @@ export interface PersistCompletedTurnInput {
    *  Business-chat passes `business-chat-<slug>` so per-business spend
    *  attribution stays correct. */
   sessionTagFallback?:  string
+  /** Durable chat (migration 099): when true, atomically claim the in-flight
+   *  turn before persisting so the server reconciler and a late browser poll
+   *  never both append. Set by the poll route + the reconciler; absent for
+   *  other callers (SSE / codex-direct) which keep the old behaviour. */
+  claimInflight?:       boolean
 }
 
 export interface PersistCompletedTurnOutput extends ParsedTurnBlocks {
@@ -193,6 +198,17 @@ export async function persistCompletedTurn(
   input: PersistCompletedTurnInput,
 ): Promise<PersistCompletedTurnOutput> {
   const parsed = parseTurnBlocks(input.gatewayText)
+
+  // Durable-chat claim (migration 099): when the caller flags an in-flight turn,
+  // atomically claim it so the reconciler and a late browser poll never both
+  // persist. The loser returns the parsed blocks WITHOUT any side effects.
+  if (input.claimInflight) {
+    const won = await claimInflightTurn(input.sessionId, input.jobId)
+    if (!won) {
+      return { ...parsed, findings_inserted: 0, tool_calls: input.toolCalls, durationMs: input.durationMs }
+    }
+  }
+
   const taskScope = input.taskScope ?? 'admin'
 
   // Stage 1 — manual tasks. The session is already verified owned by the

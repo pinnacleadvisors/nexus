@@ -26,6 +26,11 @@ export interface ChatSessionRow {
    *  the migration hasn't been applied yet. */
   retrospective_md?:           string | null
   retrospective_generated_at?: string | null
+  /** Durable-turn tracking (migration 099). The detached gateway job whose
+   *  reply hasn't been persisted yet; drained=false means a turn is in flight. */
+  inflight_job_id?:     string | null
+  inflight_started_at?: string | null
+  inflight_drained?:    boolean
 }
 
 export interface ChatMessageRow {
@@ -150,6 +155,55 @@ export async function touchSession(sessionId: string): Promise<void> {
   const t = table<ChatSessionRow>('chat_sessions')
   if (!t) return
   await t.update({ last_message_at: new Date().toISOString() }).eq('id', sessionId)
+}
+
+// ── Durable-turn tracking (migration 099) ────────────────────────────────────
+
+/** Mark a session's turn as in-flight — a detached gateway job is running. */
+export async function setInflightTurn(sessionId: string, jobId: string): Promise<void> {
+  const t = table<ChatSessionRow>('chat_sessions')
+  if (!t) return
+  await t.update({
+    inflight_job_id:     jobId,
+    inflight_started_at: new Date().toISOString(),
+    inflight_drained:    false,
+  }).eq('id', sessionId)
+}
+
+/**
+ * Atomically claim a completed turn for persistence. Returns true if THIS
+ * caller won (and must persist), false if another writer already drained it
+ * (skip — avoid a double append). The `inflight_drained=false` predicate is
+ * the concurrency gate between the server reconciler and a late browser poll.
+ *
+ * Fail-OPEN: a missing DB / claim error returns true so a reply is never
+ * dropped — a rare double is recoverable; a drop is data loss.
+ */
+export async function claimInflightTurn(sessionId: string, jobId: string): Promise<boolean> {
+  const sb = createServerClient()
+  if (!sb) return true
+  try {
+    const res = await (sb.from('chat_sessions') as unknown as {
+      update: (v: Record<string, unknown>) => {
+        eq: (c: string, v: string) => {
+          eq: (c: string, v: string) => {
+            eq: (c: string, v: boolean) => {
+              select: (c: string) => Promise<{ data: Array<{ id: string }> | null; error: unknown }>
+            }
+          }
+        }
+      }
+    })
+      .update({ inflight_drained: true, inflight_job_id: null })
+      .eq('id', sessionId)
+      .eq('inflight_job_id', jobId)
+      .eq('inflight_drained', false)
+      .select('id')
+    if (res.error) return true
+    return (res.data?.length ?? 0) > 0
+  } catch {
+    return true
+  }
 }
 
 // ── Messages ─────────────────────────────────────────────────────────────────
