@@ -18,29 +18,13 @@ import { Loader2 } from 'lucide-react'
 import type { AgentDefinition } from '@/lib/types'
 import type { ModelRecommendation, AiProviderKey } from '@/lib/models/types'
 import { MODEL_CATALOG } from '@/lib/models/catalog'
+import {
+  detectConnectedProviders,
+  type GatewayStatusLike,
+  type ConnectedAccountLike,
+} from '@/lib/models/detect-providers'
 import AgentCard from './AgentCard'
 import { AgentdexHeader, AgentdexBanner } from './AgentListHeader'
-
-interface ConnectedAccount { platform: string; status: string }
-interface GatewayStatus {
-  provider: 'gateway' | 'openclaw' | 'api' | 'none'
-  gatewayHealthy: boolean
-  /** Codex gateway probe — GPT/o-series reachable when true. */
-  codexConfigured?: boolean
-  /** OpenRouter key present — routes to every major vendor by slug. */
-  openrouterConfigured?: boolean
-  /** Catalog provider keys reachable from container env (direct keys / Ollama). */
-  envProviders?: AiProviderKey[]
-}
-
-const AI_PLATFORMS = ['anthropic','openai','google','xai','deepseek','meta','mistral','replicate','openrouter','nim','ollama'] as const
-
-/**
- * Vendors OpenRouter can route to by slug AND that have catalog rows — so an
- * OpenRouter key surfaces their models in the picker (real reachability, not
- * just the 'openrouter' meta-key).
- */
-const OPENROUTER_ROUTABLE: AiProviderKey[] = ['anthropic','openai','google','xai','deepseek']
 
 export default function AgentList() {
   const [agents, setAgents]               = useState<AgentDefinition[]>([])
@@ -64,34 +48,11 @@ export default function AgentList() {
         const j = (await agentsRes.json()) as { agents: AgentDefinition[] }
         setAgents(j.agents)
       }
-      const connected = new Set<AiProviderKey>()
-      if (gwRes.ok) {
-        const gw = (await gwRes.json()) as GatewayStatus
-        // Claude — reachable via the gateway, the API key, or legacy openclaw.
-        if ((gw.provider === 'gateway' && gw.gatewayHealthy) || gw.provider === 'api' || gw.provider === 'openclaw') {
-          connected.add('anthropic')
-        }
-        // Codex gateway serves GPT / o-series.
-        if (gw.codexConfigured) connected.add('openai')
-        // OpenRouter routes to every major vendor by slug — surface the ones
-        // with catalog rows so the picker reflects real reachability.
-        if (gw.openrouterConfigured) {
-          connected.add('openrouter')
-          for (const p of OPENROUTER_ROUTABLE) connected.add(p)
-        }
-        // Direct API keys / local Ollama present in the container env.
-        for (const p of gw.envProviders ?? []) connected.add(p)
-      }
-      if (accRes.ok) {
-        const j = (await accRes.json()) as { accounts: ConnectedAccount[] }
-        for (const a of j.accounts ?? []) {
-          if (a.status !== 'active') continue
-          if ((AI_PLATFORMS as readonly string[]).includes(a.platform)) {
-            connected.add(a.platform as AiProviderKey)
-          }
-        }
-      }
-      setProviders(Array.from(connected))
+      const gw = gwRes.ok ? ((await gwRes.json()) as GatewayStatusLike) : null
+      const accounts = accRes.ok
+        ? (((await accRes.json()) as { accounts?: ConnectedAccountLike[] }).accounts ?? [])
+        : []
+      setProviders(detectConnectedProviders(gw, accounts))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'failed to load agents')
     } finally {
