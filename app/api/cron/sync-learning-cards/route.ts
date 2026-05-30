@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { syncCardsFromMolecular } from '@/lib/learning/atom-sync'
+import { syncConceptCards } from '@/lib/learning/concept-sync'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -38,7 +39,15 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const result = await syncCardsFromMolecular(userId)
-  return NextResponse.json({ ok: true, ...result })
+  // Seed the concept curriculum (platform-internals lessons) alongside atom
+  // cards. Fail-soft: a concept-sync error never breaks the atom reconcile.
+  let concept = { inserted: 0, updated: 0, skipped: 0 }
+  try {
+    concept = await syncConceptCards(userId)
+  } catch (e) {
+    console.warn('[sync-learning-cards] concept sync failed:', e instanceof Error ? e.message : e)
+  }
+  return NextResponse.json({ ok: true, ...result, concept })
 }
 
 export const GET = POST

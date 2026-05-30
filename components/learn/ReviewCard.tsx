@@ -4,6 +4,7 @@ import FlipCard from './FlipCard'
 import ClozeCard from './ClozeCard'
 import MultipleChoiceCard from './MultipleChoiceCard'
 import FeynmanCard from './FeynmanCard'
+import ConceptCard from './ConceptCard'
 import type { Flashcard, ReviewRating } from '@/lib/types'
 
 export interface ReviewSubmission {
@@ -29,5 +30,7 @@ export default function ReviewCard({ card, onComplete }: Props) {
       return <MultipleChoiceCard card={card} onComplete={(rating, durationMs, answer) => onComplete({ rating, durationMs, answer })} />
     case 'feynman':
       return <FeynmanCard card={card} onComplete={(rating, durationMs, answer, grade, feedback) => onComplete({ rating, durationMs, answer, grade, gradeFeedback: feedback })} />
+    case 'concept':
+      return <ConceptCard card={card} onComplete={(rating, durationMs, answer, grade, feedback) => onComplete({ rating, durationMs, answer, grade, gradeFeedback: feedback })} />
   }
 }
