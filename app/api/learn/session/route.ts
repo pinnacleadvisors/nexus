@@ -12,6 +12,7 @@ import { auth } from '@clerk/nextjs/server'
 import { createServerClient } from '@/lib/supabase'
 import type { Flashcard } from '@/lib/types'
 import { DEFAULT_SESSION_SIZE } from '@/lib/learning/types'
+import { interleaveCards } from '@/lib/learning/interleave'
 
 export const runtime = 'nodejs'
 
@@ -65,28 +66,6 @@ function rawToCard(r: RawCard): Flashcard {
   }
 }
 
-/** Round-robin interleave by `moc_slug` so a session always mixes topics. */
-function interleave(cards: RawCard[]): RawCard[] {
-  const buckets = new Map<string, RawCard[]>()
-  for (const c of cards) {
-    const k = c.moc_slug ?? '__none__'
-    if (!buckets.has(k)) buckets.set(k, [])
-    buckets.get(k)!.push(c)
-  }
-  const out: RawCard[] = []
-  let active = Array.from(buckets.values())
-  while (active.length > 0) {
-    const next: RawCard[][] = []
-    for (const b of active) {
-      const head = b.shift()
-      if (head) out.push(head)
-      if (b.length > 0) next.push(b)
-    }
-    active = next
-  }
-  return out
-}
-
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -120,7 +99,7 @@ export async function GET(req: NextRequest) {
     due = ((fallbackResp as unknown as { data: RawCard[] | null }).data ?? []) as RawCard[]
   }
 
-  const interleaved = interleave(due).slice(0, size)
+  const interleaved = interleaveCards(due).slice(0, size)
   return NextResponse.json({
     cards: interleaved.map(rawToCard),
     source: 'supabase',
