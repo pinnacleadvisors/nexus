@@ -55,6 +55,7 @@ import { advancePhase as advanceRunPhase, appendEvent as appendRunEvent, getRun 
 import { RUN_PHASE_ORDER, type RunPhase } from '@/lib/types'
 import { resolveClawConfig, isBusinessSlug, type BusinessClawConfig } from '@/lib/claw/business-client'
 import { dispatchToCodexGateway, shouldRouteToCodex, isCodexGatewayConfigured } from '@/lib/claw/codex-gateway'
+import { resolveEffectiveModel } from '@/lib/ai/dispatch'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { wake } from '@/lib/notify/wake'
 
@@ -261,6 +262,9 @@ async function dispatchToOpenClaw(opts: {
   message:   string
   env:       Record<string, string>
   config:    BusinessClawConfig | null
+  /** Resolved effective model → gateway `body.modelOverride` → spawn `--model`.
+   *  Undefined leaves the gateway on its OAuth-bound default. */
+  model?:    string
   /** Clerk user id — sent as X-Nexus-User-Id. The gateway's defence-in-depth
    *  `ALLOWED_USER_IDS` allowlist (services/claude-gateway/src/index.ts) 403s
    *  any request without a matching header when the gate is active. Other
@@ -278,10 +282,13 @@ async function dispatchToOpenClaw(opts: {
   const sessionId = `nexus-agent-${opts.agentSlug}-${Date.now()}`
   const url       = `${base}/api/sessions/${encodeURIComponent(sessionId)}/messages`
   const bodyStr   = JSON.stringify({
-    role:    'user',
-    content: opts.message,
-    agent:   opts.agentSlug,
-    env:     opts.env,
+    role:          'user',
+    content:       opts.message,
+    agent:         opts.agentSlug,
+    env:           opts.env,
+    // The gateway reads `modelOverride` → spawn `--model` (omitted when
+    // undefined, so the OAuth-bound default still applies).
+    modelOverride: opts.model,
   })
 
   const sig = await signPayload(bodyStr, hookToken)
@@ -514,7 +521,16 @@ export async function POST(req: NextRequest) {
   // single-tenant by design — see ADR 002). Falls through to OpenClaw on
   // any error or when codex is unconfigured so a routing typo doesn't
   // wedge the workflow.
-  const wantsCodex = shouldRouteToCodex(body.model)
+  // Resolve the effective model: an explicit per-turn `body.model` wins;
+  // otherwise the operator's stored per-agent model (agent_library.model) so a
+  // pick in /settings/agents finally reaches the gateway. Fail-soft — a DB
+  // hiccup resolves to body.model (or the gateway default), never blocks.
+  const effective = await resolveEffectiveModel({
+    agentSlug: body.agentSlug,
+    bodyModel: body.model,
+    userId,
+  })
+  const wantsCodex = shouldRouteToCodex(effective.model)
   if (wantsCodex && isCodexGatewayConfigured()) {
     const codexDispatch = await dispatchToCodexGateway({
       agentSlug: body.agentSlug,
@@ -529,7 +545,7 @@ export async function POST(req: NextRequest) {
       resourceId: body.agentSlug,
       metadata:   {
         capabilityId,
-        model:      body.model,
+        model:      effective.model,
         swarm,
         asset,
         created,
@@ -605,6 +621,8 @@ export async function POST(req: NextRequest) {
     env,
     config: clawConfig,
     userId,
+    // Forward the resolved per-agent model → gateway modelOverride → --model.
+    model: effective.model,
   })
 
   audit(req, {

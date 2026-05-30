@@ -10,5 +10,6 @@
 | [006](006-lean-mode-pivot.md) | Lean-mode pivot via feature flag — single-KVM Coolify, dormant multi-tenant code | Accepted | 2026-05-19 |
 | [007](007-paperclip-absorption.md) | Selective absorption of Paperclip patterns — schema, UI, adapter architecture; no runtime migration | Accepted | 2026-05-22 |
 | [008](008-platform-copilot-autonomous-ui-verify.md) | Platform-copilot autonomous UI verification (screenshot pair via codex-delegate) before PR + lift PR-open approval gate | Accepted | 2026-05-23 |
+| [010](010-graphify-obsidian-dual-store.md) | Decline Graphify+Obsidian dual-store — memory-hq + Supabase `mol_*` mirror already is it (one-way-consistent, safer than dual-write) | Accepted | 2026-05-30 |
 | — | Solopreneur autonomous experiment with strategic-irreversibles-only gating ([runbook](../runbooks/solopreneur-experiment.md)) | Accepted | 2026-05-09 |
 | — | Cloudflare DNS over Namecheap API for per-business DNS automation (no IP-allowlist friction) — see [`docs/runbooks/namecheap-to-cloudflare-dns.md`](../runbooks/namecheap-to-cloudflare-dns.md) | Accepted | 2026-05-09 |
