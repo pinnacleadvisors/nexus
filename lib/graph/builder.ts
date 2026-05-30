@@ -12,6 +12,7 @@ import louvain from 'graphology-communities-louvain'
 import { createServerClient } from '@/lib/supabase'
 import type { GraphData, GraphNode, GraphEdge, NodeType, EdgeRelation } from './types'
 import { buildMemoryGraph } from './memory-builder'
+import { buildEcosystemGraph } from './ecosystem-index'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -320,14 +321,55 @@ export async function buildGraph(forceRebuild = false): Promise<GraphData> {
   // atomic notes, platform docs). Fall back to Supabase / mock only when memory
   // is unreadable or empty.
   try {
-    const mem = await buildMemoryGraph()
-    if (mem && mem.nodes.length > 0) {
-      _cache   = mem
+    // Akashic structural index: merge the agent ecosystem (agents/tools/skills)
+    // with the memory knowledge graph so /graph shows the real platform
+    // structure, not just memory atoms. Both are fail-soft.
+    // Build each source independently so one failing doesn't kill the other
+    // (the memory graph has a latent duplicate-node bug; the ecosystem graph
+    // must still render).
+    let memNodes: GraphNode[] = []
+    let memEdges: GraphEdge[] = []
+    try {
+      const mem = await buildMemoryGraph()
+      memNodes = mem?.nodes ?? []
+      memEdges = mem?.edges ?? []
+    } catch (err) {
+      console.warn('[graph/builder] memory graph failed (continuing with ecosystem):', err instanceof Error ? err.message : err)
+    }
+    const eco = await buildEcosystemGraph()
+    // Dedup by node id — graphology rejects duplicate nodes once we re-cluster
+    // the combined set. Keep the first occurrence; drop edges whose endpoints
+    // didn't survive so layout/clustering never references a missing node.
+    const nodeById = new Map<string, GraphNode>()
+    for (const n of [...memNodes, ...eco.nodes]) {
+      if (!nodeById.has(n.id)) nodeById.set(n.id, n)
+    }
+    const nodes: GraphNode[] = Array.from(nodeById.values())
+    const edgeSeen = new Set<string>()
+    const edges: GraphEdge[] = []
+    for (const e of [...memEdges, ...eco.edges]) {
+      if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue
+      const key = `${e.source} ${e.target} ${e.relation}`
+      if (edgeSeen.has(key)) continue
+      edgeSeen.add(key)
+      edges.push(e)
+    }
+    if (nodes.length > 0) {
+      const degMap = new Map<string, number>()
+      for (const e of edges) {
+        degMap.set(e.source, (degMap.get(e.source) ?? 0) + 1)
+        degMap.set(e.target, (degMap.get(e.target) ?? 0) + 1)
+      }
+      for (const n of nodes) n.connections = degMap.get(n.id) ?? 0
+      runForceLayout(nodes, edges)
+      assignClusters(nodes, edges)
+      assignPageRank(nodes, edges)
+      _cache   = { nodes, edges, builtAt: new Date().toISOString(), nodeCount: nodes.length, edgeCount: edges.length }
       _cacheAt = Date.now()
       return _cache
     }
   } catch (err) {
-    console.error('[graph/builder] memory graph failed, falling back:', err)
+    console.error('[graph/builder] memory+ecosystem graph failed, falling back:', err)
   }
 
   const db = createServerClient()
