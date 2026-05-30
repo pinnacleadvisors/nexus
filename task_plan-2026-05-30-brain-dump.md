@@ -803,6 +803,21 @@ No accomplishments/level/health surface exists today (grep: zero `rank`/`tier`/`
 Implementing the foundation slice (see Waves above). Order: provider expansion (cards+catalog+dynamic dropdown+relabel) → effective-model resolver (PR1) → audit memory-observability (Akashic Thread B). Each driven to green on `tsc` + targeted Playwright + `npm run check:all`, committed per atomic task, shipped as draft PR(s).
 
 #### Progress
-- [ ] Provider expansion (Providers-Routing PR3/PR4/PR5/PR7)
-- [ ] Effective-model resolver + read-path wiring (PR1 + safe half of PR2)
-- [ ] Audit memory-observability (Akashic Thread B1/B2)
+- [x] **Provider expansion (Providers-Routing PR3/PR4/PR5/PR6a)** — SHIPPED + verified.
+  - `AiProviderKey` += `nim`/`ollama`; NVIDIA NIM + Ollama cards (`lib/ai/providers.ts`); catalog rows (`lib/models/catalog.ts`).
+  - `gateway-status` returns `envProviders[]` (presence-only) + `chain[]`.
+  - Dynamic dropdown: extracted `lib/models/detect-providers.ts` (pure, 16-assertion unit test); `AgentList` consumes codex/openrouter/env signals.
+  - **Verified E2E (authenticated Playwright):** NIM+Ollama cards render; Agentdex dropdown shows `GPT-5.5 / GPT-5 mini / o4` alongside Claude when the Codex gateway is configured (was Claude-only before). `tests/playwright/settings-providers-expansion.spec.ts`.
+- [x] **Audit memory-observability (Akashic Thread B)** — SHIPPED + verified.
+  - New 'Memory calls' AuditSource (Brain icon) — `tool_call_audit` lens on `mcp_server='memory-hq'`.
+  - `/api/memory/event` instrumented with fail-soft `recordToolCall` (the in-app write path the MCP server + agents + CLI all route through).
+  - **Verified E2E (authenticated Playwright):** Memory pane selectable on `/audit`. `tests/playwright/audit-memory-pane.spec.ts`.
+- [ ] **Effective-model resolver (Providers-Routing PR1/PR2)** — DEFERRED (needs live-gateway E2E; not shippable unverified). FINDINGS below.
+
+#### Findings — effective-model resolver (the "per-agent model wins" ask)
+Code-traced this session; it is a deeper change than the sub-plan assumed:
+- `agent_library.model` IS stored but read by NOTHING at dispatch (confirmed). The per-agent model is currently display + cost-weighting only.
+- `app/api/claude-session/dispatch/route.ts:517` uses `shouldRouteToCodex(body.model)` for codex routing, but the **Claude-gateway fall-through (`:602` `dispatchToOpenClaw`) passes NO `model` at all** — so "per-agent Claude model wins" requires threading a `model` arg through `dispatchToOpenClaw` → gateway-call → `spawn.ts --model`, not just a resolver.
+- Wiring it half-way (codex-routing only) yields a confusing asymmetry (a GPT model routes to codex, but Haiku does nothing) — worse than not shipping.
+- **Why deferred:** the only honest verification is a live gateway dispatch checking `gateway_turns.model`, which this session can't exercise (no running gateway to dispatch to). Belongs in a focused session with the operator's gateway up.
+- **Clean execution path:** (1) pure `resolveEffectiveModel({agentSlug,skillSlug,bodyModel})` in `lib/ai/dispatch.ts` (precedence bodyModel > `agent_library.model` > `skill_overrides` > active-provider default; family via `getModelById().provider` + `shouldRouteToCodex`); (2) thread the resolved model through `dispatchToOpenClaw` + gateway-call → `spawn.ts --model`; (3) load `agent_library.model` when `body.model` absent (reuse the `isPlatformBriefEnabled` agent_library query at `:320`); (4) verify with a real dispatch → assert `gateway_turns.model`. ACTIVE LLM PROVIDER switch already correctly scoped (its copy is the PR7 relabel).
