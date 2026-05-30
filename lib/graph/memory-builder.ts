@@ -395,6 +395,18 @@ export async function buildMemoryGraph(): Promise<GraphData | null> {
     }
   }
 
+  // Dedup nodes by id — two aliases can resolve to the same node id, and
+  // graphology's assignClusters (below) rejects duplicate nodes with
+  // "node already exist", which previously dropped the ENTIRE memory graph.
+  // Keep the first occurrence; in-place so `nodes` stays the same reference.
+  const seenNodeId = new Set<string>()
+  const dedupedNodes = nodes.filter(n => {
+    if (seenNodeId.has(n.id)) return false
+    seenNodeId.add(n.id)
+    return true
+  })
+  nodes.splice(0, nodes.length, ...dedupedNodes)
+
   // Degree count
   const degMap = new Map<string, number>()
   for (const e of edges) {
