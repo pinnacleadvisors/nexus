@@ -21,8 +21,12 @@
  * surface and matches the per-skill model-recommend affordance from PR #388.
  */
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
-import { Loader2, AlertCircle, CheckCircle2, FileText, Sparkles, Wand2, X, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
+import { Loader2, AlertCircle, CheckCircle2, FileText, Wand2, X, ShieldCheck } from 'lucide-react'
+import { MODEL_CATALOG } from '@/lib/models/catalog'
+import type { ModelDefinition } from '@/lib/models/types'
+import { useRecommendAll } from '@/lib/hooks/useRecommendAll'
+import { SkillsListHeader } from './SkillsListHeader'
 
 interface SkillRow {
   slug:           string
@@ -67,8 +71,19 @@ export default function SkillsList() {
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState<string | null>(null)
   const [busyRec, setBusyRec] = useState<Record<string, boolean>>({})
+  const [busySave, setBusySave] = useState<Record<string, boolean>>({})
   const [busyPromote, setBusyPromote] = useState<Record<string, boolean>>({})
+  const [providers, setProviders] = useState<string[]>([])
   const [, startTx]           = useTransition()
+
+  // Canonical enabled-provider set (subscription gateway, env keys,
+  // codex/openrouter, connected accounts — minus the operator's disabled
+  // toggle). Feeds the per-skill model dropdown so it widens the moment a
+  // provider is connected, instead of collapsing to Claude-only in lean-mode.
+  const availableModels = useMemo<ModelDefinition[]>(
+    () => MODEL_CATALOG.filter(m => providers.includes(m.provider)),
+    [providers],
+  )
 
   const load = useCallback(async () => {
     try {
@@ -86,43 +101,87 @@ export default function SkillsList() {
 
   useEffect(() => { void load() }, [load])
 
+  // Load the enabled-provider set once on mount.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/models/providers/available', { cache: 'no-store' })
+        if (!res.ok) return
+        const j = await res.json() as { providers?: string[] }
+        setProviders(j.providers ?? [])
+      } catch { /* leave empty — dropdown shows the current model only */ }
+    })()
+  }, [])
+
+  // Core recommend-one: pick + persist the best model for a single skill.
+  // Swallows its own errors (surfaces via setErr) so the Recommend-all sweep
+  // isn't aborted by one bad row. Does NOT reload — callers reload once.
+  const runRecommend = useCallback(async (skill: SkillRow): Promise<void> => {
+    setBusyRec(p => ({ ...p, [skill.slug]: true }))
+    try {
+      const res  = await fetch('/api/models/recommend-skill', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          slug:        skill.slug,
+          name:        skill.name,
+          description: skill.description,
+          status:      skill.status,
+        }),
+      })
+      const body = await res.json() as { ok: boolean; recommendation?: { model: string; rationale: string }; error?: string }
+      if (!body.ok || !body.recommendation) {
+        setErr(body.error ?? 'recommendation failed')
+        return
+      }
+      // Persist as the new override for this skill (Recommend = pick).
+      const patch = await fetch(`/api/skills/${encodeURIComponent(skill.slug)}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          model:     body.recommendation.model,
+          rationale: body.recommendation.rationale,
+        }),
+      })
+      const patchBody = await patch.json() as { ok: boolean; error?: string }
+      if (!patchBody.ok) setErr(patchBody.error ?? 'save failed')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'recommend failed')
+    } finally {
+      setBusyRec(p => ({ ...p, [skill.slug]: false }))
+    }
+  }, [])
+
   const recommend = useCallback((skill: SkillRow) => {
     setErr(null)
-    setBusyRec(p => ({ ...p, [skill.slug]: true }))
+    startTx(async () => { await runRecommend(skill); await load() })
+  }, [runRecommend, load])
+
+  // Recommend-all — 3-worker bounded sweep (shared with the Agentdex pattern),
+  // then a single reload.
+  const { runAll: recommendAllRun, busy: recommendAllBusy } = useRecommendAll(skills, runRecommend)
+  const onRecommendAll = useCallback(() => {
+    setErr(null)
+    startTx(async () => { await recommendAllRun(); await load() })
+  }, [recommendAllRun, load])
+
+  // Manual model pick from the dropdown — persists as the operator override.
+  const changeModel = useCallback((skill: SkillRow, modelId: string) => {
+    if (!modelId || modelId === skill.model) return
+    setErr(null)
+    setBusySave(p => ({ ...p, [skill.slug]: true }))
     startTx(async () => {
       try {
-        const res  = await fetch('/api/models/recommend-skill', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            slug:        skill.slug,
-            name:        skill.name,
-            description: skill.description,
-            status:      skill.status,
-          }),
-        })
-        const body = await res.json() as { ok: boolean; recommendation?: { model: string; rationale: string }; error?: string }
-        if (!body.ok || !body.recommendation) {
-          setErr(body.error ?? 'recommendation failed')
-          return
-        }
-        // Persist as the new default for this skill (Recommend = pick).
         const patch = await fetch(`/api/skills/${encodeURIComponent(skill.slug)}`, {
           method:  'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            model:     body.recommendation.model,
-            rationale: body.recommendation.rationale,
-          }),
+          body:    JSON.stringify({ model: modelId }),
         })
-        const patchBody = await patch.json() as { ok: boolean; error?: string }
-        if (!patchBody.ok) {
-          setErr(patchBody.error ?? 'save failed')
-          return
-        }
+        const body = await patch.json() as { ok: boolean; error?: string }
+        if (!body.ok) { setErr(body.error ?? 'save failed'); return }
         await load()
       } finally {
-        setBusyRec(p => ({ ...p, [skill.slug]: false }))
+        setBusySave(p => ({ ...p, [skill.slug]: false }))
       }
     })
   }, [load])
@@ -186,20 +245,15 @@ export default function SkillsList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 text-[11px] font-mono uppercase tracking-wider" style={{ color: '#9090b0' }}>
-        <span className="flex items-center gap-1.5">
-          <Sparkles size={12} style={{ color: '#a8a3ff' }} />
-          {skills.length} skill{skills.length === 1 ? '' : 's'}
-        </span>
-        <span style={{ color: '#55556a' }}>·</span>
-        <span style={{ color: '#4ade80' }}>{verifiedCount} verified</span>
-        {draftCount > 0 && (
-          <>
-            <span style={{ color: '#55556a' }}>·</span>
-            <span style={{ color: '#fbbf24' }}>{draftCount} draft</span>
-          </>
-        )}
-      </div>
+      <SkillsListHeader
+        skillCount={skills.length}
+        verifiedCount={verifiedCount}
+        draftCount={draftCount}
+        providerCount={providers.length}
+        modelCount={availableModels.length}
+        busy={recommendAllBusy}
+        onRecommendAll={onRecommendAll}
+      />
 
       {warning && (
         <div className="flex items-start gap-2.5 px-3.5 py-2.5 text-sm"
@@ -239,9 +293,12 @@ export default function SkillsList() {
             <SkillCard
               key={s.slug}
               skill={s}
+              availableModels={availableModels}
               busyRec={Boolean(busyRec[s.slug])}
+              busySave={Boolean(busySave[s.slug])}
               busyPromote={Boolean(busyPromote[s.slug])}
               onRecommend={() => recommend(s)}
+              onChangeModel={(m) => changeModel(s, m)}
               onClearOverride={() => clearOverride(s)}
               onPromote={() => promote(s)}
             />
@@ -252,11 +309,14 @@ export default function SkillsList() {
   )
 }
 
-function SkillCard({ skill, busyRec, busyPromote, onRecommend, onClearOverride, onPromote }: {
+function SkillCard({ skill, availableModels, busyRec, busySave, busyPromote, onRecommend, onChangeModel, onClearOverride, onPromote }: {
   skill:           SkillRow
+  availableModels: ModelDefinition[]
   busyRec:         boolean
+  busySave:        boolean
   busyPromote:     boolean
   onRecommend:     () => void
+  onChangeModel:   (modelId: string) => void
   onClearOverride: () => void
   onPromote:       () => void
 }) {
@@ -338,10 +398,27 @@ function SkillCard({ skill, busyRec, busyPromote, onRecommend, onClearOverride, 
         <span>·</span>
         <span>updated {formatRelative(skill.updatedAt)}</span>
         <span>·</span>
-        <span title={skill.modelRationale ?? (skill.model ? 'platform default from SKILL.md frontmatter' : 'no model assigned yet')}>
-          model: <code style={{ color: skill.model ? '#a8a3ff' : '#55556a' }}>{skill.model ?? '(unset)'}</code>
-          {skill.modelOverridden && <span className="ml-1" style={{ color: '#fbbf24' }} title="Operator override active">●</span>}
-        </span>
+        <span style={{ color: '#55556a' }}>model</span>
+        <select
+          value={skill.model ?? ''}
+          disabled={busySave}
+          onChange={e => onChangeModel(e.target.value)}
+          title={skill.modelRationale ?? (skill.modelOverridden ? 'Operator override active' : skill.model ? 'platform default from SKILL.md frontmatter' : 'no model assigned yet')}
+          className="text-[10px] px-1.5 py-0.5 rounded font-mono disabled:opacity-50"
+          style={{ background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(255,255,255,0.08)', color: skill.modelOverridden ? '#fbbf24' : '#a8a3ff', maxWidth: '170px' }}
+        >
+          {availableModels.length === 0 && (
+            <option value={skill.model ?? ''}>{skill.model ?? '(no providers connected)'}</option>
+          )}
+          {/* keep the current model selectable even if its provider isn't reachable right now */}
+          {skill.model && !availableModels.some(m => m.id === skill.model) && (
+            <option value={skill.model}>{skill.model}</option>
+          )}
+          {availableModels.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+        {busySave && <Loader2 size={9} className="animate-spin" style={{ color: '#9090b0' }} />}
         <span className="flex-1" />
         <button
           type="button"

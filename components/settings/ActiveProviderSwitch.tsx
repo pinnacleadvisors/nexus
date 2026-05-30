@@ -111,7 +111,7 @@ export default function ActiveProviderSwitch() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Cpu size={14} className="text-violet-300" />
-          <h3 className="text-[12px] font-medium uppercase tracking-wider text-violet-200">Active LLM provider</h3>
+          <h3 className="text-[12px] font-medium uppercase tracking-wider text-violet-200">Default LLM provider</h3>
           <span className="text-[10px] font-mono uppercase tracking-wider"
             style={{ color: active.source === 'db' ? '#a8a3ff' : active.source === 'env' ? '#fbbf24' : '#9090b0' }}
             title={active.source === 'db' ? 'Set from this UI (overrides Doppler)' :
@@ -127,7 +127,7 @@ export default function ActiveProviderSwitch() {
         )}
       </div>
       <p className="mt-1 text-[11px] text-zinc-400">
-        Chat fallback, qa-runner fix-attempts, skill-trainer, and other AI-SDK callers route through the picked provider. Flip takes effect within ~30 s (cache TTL). Claude Code gateway dispatches stay on the gateway regardless — this only switches the AI-SDK path.
+        Global default for <strong>context-free</strong> AI-SDK callers — chat fallback, qa-runner fix-attempts, skill-trainer. <strong>Per-agent and per-skill models take precedence</strong> (set those in Agents / Skills); this only decides where calls with no agent/skill context route. Flip takes effect within ~30 s (cache TTL). Claude Code gateway dispatches stay on the gateway regardless.
       </p>
       {err && (
         <div className="mt-2 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-[11px] text-red-200">
