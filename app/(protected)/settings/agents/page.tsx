@@ -16,6 +16,7 @@
 import { Sparkles } from 'lucide-react'
 import SettingsTabs from '@/components/settings/SettingsTabs'
 import AgentList from '@/components/settings/AgentList'
+import { DescribeIntentCard } from '@/components/settings/DescribeIntentCard'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,6 +55,15 @@ export default function AgentdexPage() {
         </div>
 
         <SettingsTabs activeTab="agents" />
+
+        <div className="mt-4 mb-4">
+          <DescribeIntentCard
+            title="Create an agent"
+            subtitle="Describe a role in plain English — we'll classify it and file it for the agent-generator."
+            placeholder="e.g. an agent that drafts weekly LinkedIn posts from our blog"
+            endpoint="/api/agents/describe"
+          />
+        </div>
 
         <AgentList />
       </div>

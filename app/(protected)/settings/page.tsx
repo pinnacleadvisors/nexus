@@ -26,6 +26,7 @@ import TodaySpendWidget from '@/components/dashboard/TodaySpendWidget'
 import SettingsTabs, { type SettingsTabId } from '@/components/settings/SettingsTabs'
 import AiProviderList from '@/components/settings/AiProviderList'
 import SkillsList from '@/components/settings/SkillsList'
+import { DescribeIntentCard } from '@/components/settings/DescribeIntentCard'
 import FixtureModeSwitch from '@/components/settings/FixtureModeSwitch'
 import NotificationsPanel from '@/components/settings/NotificationsPanel'
 
@@ -109,6 +110,12 @@ function SkillsTab() {
       <p className="text-xs leading-relaxed max-w-2xl" style={{ color: '#9090b0' }}>
         Skills are reusable capabilities Claude Code can invoke as <code className="font-mono" style={{ color: '#a8a3ff' }}>/&lt;slug&gt;</code>. Each lives at <code className="font-mono" style={{ color: '#a8a3ff' }}>.claude/skills/&lt;name&gt;/SKILL.md</code>. Hand-curated skills land as <strong>verified</strong>; <code className="font-mono" style={{ color: '#a8a3ff' }}>skill-trainer</code> auto-generated ones land as <strong>draft</strong> until promoted.
       </p>
+      <DescribeIntentCard
+        title="Create a skill"
+        subtitle="Describe a procedure in plain English — we'll classify it and file it for the skill-trainer (lands as a draft to promote)."
+        placeholder="e.g. a skill that computes monthly MRR from a Stripe export"
+        endpoint="/api/skills/describe"
+      />
       <SkillsList />
     </div>
   )
