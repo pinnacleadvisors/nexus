@@ -17,6 +17,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { authenticateOps } from '@/lib/auth/ops-auth'
 import { audit } from '@/lib/audit'
+import { seedConceptForArtifact, artifactMetaFromSkillMd } from '@/lib/learning/distill-bridge'
 
 export const runtime = 'nodejs'
 
@@ -103,6 +104,10 @@ export async function POST(
   } catch (err) {
     return NextResponse.json({ ok: false, error: `write failed: ${(err as Error).message}` }, { status: 500 })
   }
+
+  // Learning Scope C — best-effort: seed a "how this skill works" concept card
+  // onto the operator's /learn deck. Never blocks the promote (fail-soft).
+  try { await seedConceptForArtifact(a.userId, artifactMetaFromSkillMd(slug, patched)) } catch { /* never block promote */ }
 
   audit(req, {
     action:     'skills.promote',
