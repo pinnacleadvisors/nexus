@@ -454,7 +454,9 @@ export interface RunEvent {
 }
 
 // ── Learning System (Phase 23) ────────────────────────────────────────────────
-export type CardKind = 'flip' | 'cloze' | 'multiple-choice' | 'feynman'
+// 'concept' (Phase 24) — platform-internals lessons (how LLMs / harness layers /
+// skills work), graded via reference_context like 'feynman'. Migration 098.
+export type CardKind = 'flip' | 'cloze' | 'multiple-choice' | 'feynman' | 'concept'
 export type CardState = 'new' | 'learning' | 'review' | 'relearning' | 'archived'
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy'
 
