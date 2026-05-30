@@ -205,6 +205,62 @@ const ALTERNATIVE: ModelDefinition[] = [
   },
 ]
 
+// ── NVIDIA NIM (free-tier hosted) + Ollama (local) ──────────────────────────
+// Open-weights models reachable at $0 marginal cost: NIM via the free
+// integrate.api.nvidia.com endpoint (lib/llm/providers/nim.ts), Ollama via a
+// self-hosted server (lib/llm/providers/ollama.ts). Ideal for background /
+// high-volume tasks where plan-window budget matters more than peak quality.
+const LOCAL_OPEN: ModelDefinition[] = [
+  {
+    id:       'meta/llama-3.3-70b-instruct',
+    name:     'Llama 3.3 70B (NIM)',
+    provider: 'nim',
+    tagline:  'NVIDIA-hosted Llama 3.3 70B. Free tier, OpenAI-compatible — strong glue + code at $0 marginal.',
+    capabilities: ['code', 'fast', 'content', 'research', 'autonomy'],
+    contextWindow: 128_000,
+    inputCostPerMtok:  null,
+    outputCostPerMtok: null,
+    latencyTier: 'balanced',
+    benchmarks: [
+      { key: 'livebench', label: 'LiveBench (avg)', score: 55.1, unit: '%', asOf: '2026-04-30', source: 'livebench.ai' },
+    ],
+    availableVia: ['api'],
+    docsUrl: 'https://build.nvidia.com/meta/llama-3_3-70b-instruct',
+  },
+  {
+    id:       'deepseek-ai/deepseek-r1',
+    name:     'DeepSeek R1 (NIM)',
+    provider: 'nim',
+    tagline:  'NVIDIA-hosted reasoning model. Chain-of-thought math + logic at free-tier cost.',
+    capabilities: ['reasoning', 'code', 'research'],
+    contextWindow: 128_000,
+    inputCostPerMtok:  null,
+    outputCostPerMtok: null,
+    latencyTier: 'slow',
+    benchmarks: [
+      { key: 'aime', label: 'AIME 2025', score: 79.8, unit: '%', asOf: '2026-04-30', source: 'DeepSeek report' },
+    ],
+    availableVia: ['api'],
+    docsUrl: 'https://build.nvidia.com/deepseek-ai/deepseek-r1',
+  },
+  {
+    id:       'llama3.3',
+    name:     'Llama 3.3 (Ollama)',
+    provider: 'ollama',
+    tagline:  'Local Llama 3.3 via a self-hosted Ollama server. Fully offline, no per-call cost.',
+    capabilities: ['fast', 'code', 'content'],
+    contextWindow: 128_000,
+    inputCostPerMtok:  null,
+    outputCostPerMtok: null,
+    latencyTier: 'balanced',
+    benchmarks: [
+      { key: 'livebench', label: 'LiveBench (avg)', score: 54.0, unit: '%', asOf: '2026-04-30', source: 'livebench.ai' },
+    ],
+    availableVia: ['subscription'],
+    docsUrl: 'https://ollama.com/library/llama3.3',
+  },
+]
+
 // ── Image / Video / Voice (creative pipelines) ──────────────────────────────
 const CREATIVE: ModelDefinition[] = [
   {
@@ -257,7 +313,7 @@ const CREATIVE: ModelDefinition[] = [
   },
 ]
 
-const OTHER_MODELS: ModelDefinition[] = [...OPENAI, ...GOOGLE, ...ALTERNATIVE, ...CREATIVE]
+const OTHER_MODELS: ModelDefinition[] = [...OPENAI, ...GOOGLE, ...ALTERNATIVE, ...LOCAL_OPEN, ...CREATIVE]
 
 export const MODEL_CATALOG: readonly ModelDefinition[] = [...ANTHROPIC, ...OTHER_MODELS]
 
