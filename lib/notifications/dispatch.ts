@@ -31,6 +31,9 @@ export type NotificationCategory =
   // the operator was away; the server reconciler fires this so a closed
   // tab/phone still gets pinged.
   | 'chat-turn'
+  // Gamify Accomplishments — the operator crossed a new achievement tier
+  // (first $1k, third niche, …); the recompute cron fires this exactly once.
+  | 'milestone'
 
 export type NotificationChannel = 'slack' | 'webpush'
 
@@ -70,6 +73,7 @@ const DEFAULT_ENABLED: Record<NotificationCategory, NotificationChannel[]> = {
   'security-alert':    ['slack', 'webpush'],
   'weekly-digest':     ['slack'],
   'chat-turn':         ['slack', 'webpush'],
+  'milestone':         ['slack', 'webpush'],
 }
 
 /**
