@@ -21,6 +21,7 @@ import {
   ListTodo,
   Network,
   ShieldCheck,
+  Trophy,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -163,6 +164,7 @@ const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/board',           label: 'Pipeline',        icon: Workflow },
   { type: 'link', href: '/graph',           label: 'Knowledge',       icon: Share2 },
   { type: 'link', href: '/learn',           label: 'Learn',           icon: Brain },
+  { type: 'link', href: '/accomplishments', label: 'Wins',            icon: Trophy },
   { type: 'link', href: '/audit',           label: 'Audit',           icon: ShieldCheck },
   { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
