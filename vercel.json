@@ -4,6 +4,10 @@
   },
   "crons": [
     {
+      "path": "/api/cron/chat-turn-drain",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/cron/signal-review",
       "schedule": "0 8 * * *"
     },

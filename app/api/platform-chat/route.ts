@@ -48,7 +48,27 @@ import {
   updateSessionTitle,
   deriveTitleFromMessage,
   listMessages,
+  setInflightTurn,
 } from '@/lib/chat/sessions'
+
+/**
+ * Fire-and-forget kick of the chat-turn-drain reconciler so a detached turn is
+ * persisted within seconds of finishing rather than at the next cron tick. Hits
+ * NEXUS_BASE_URL (the deployment), gated by CRON_SECRET. Fail-soft — the cron
+ * is the safety net, so a missing env or a failed kick never breaks the turn.
+ */
+function fireReconcilerKick(): void {
+  try {
+    const base   = process.env.NEXUS_BASE_URL
+    const secret = process.env.CRON_SECRET
+    if (!base || !secret) return
+    void fetch(`${base.replace(/\/$/, '')}/api/cron/chat-turn-drain`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${secret}` },
+      signal:  AbortSignal.timeout(5_000),
+    }).catch(() => { /* cron tick is the safety net */ })
+  } catch { /* ignore */ }
+}
 import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 
 export const runtime    = 'nodejs'
@@ -362,6 +382,13 @@ export async function POST(req: NextRequest) {
       code:  'gateway_error',
     }, { status: enqueued.http && enqueued.http >= 400 && enqueued.http < 600 ? enqueued.http : 502 })
   }
+
+  // Durable chat (migration 099): record the in-flight job so a server-side
+  // reconciler can drain it to chat_messages even if the browser closes, then
+  // fire-and-forget a reconciler kick so the common case drains in seconds
+  // rather than waiting for the 2-min cron tick. Both fail-soft.
+  await setInflightTurn(sessionRow.id, enqueued.jobId)
+  fireReconcilerKick()
 
   audit(req, {
     action:   'platform_chat.enqueue',

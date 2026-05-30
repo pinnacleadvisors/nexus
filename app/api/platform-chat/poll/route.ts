@@ -140,6 +140,10 @@ export async function GET(req: NextRequest) {
         durationMs:  result.durationMs,
         crashed:     crash,
         usage:       result.usage,
+        // Durable chat (migration 099): claim the turn so a poll and the server
+        // reconciler never both append. Loser skips the append — the browser
+        // still renders `result.text` from the gateway response either way.
+        claimInflight: true,
       })
       displayText        = persisted.displayText
       approvalRequests   = persisted.approval_requests
