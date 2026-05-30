@@ -54,6 +54,10 @@ const SPECS = [
   { title: 'Nexus: hmem-consolidate (weekly L2)',  path: '/api/cron/hmem-consolidate?level=2', schedule: { minutes: [30], hours: [3],  mdays: [-1], months: [-1], wdays: [0]  } },
   { title: 'Nexus: hmem-consolidate (monthly L3)', path: '/api/cron/hmem-consolidate?level=3', schedule: { minutes: [0],  hours: [4],  mdays: [1],  months: [-1], wdays: [-1] } },
   { title: 'Nexus: hmem-extract-edges',            path: '/api/cron/hmem-extract-edges',       schedule: { minutes: [30], hours: [4],  mdays: [-1], months: [-1], wdays: [-1] } },
+  // Title MUST start with "Nexus: hmem" so listExistingH() manages it (dedup +
+  // update) — otherwise every --apply re-creates it as a duplicate. It writes
+  // structural edges into mol_edge (an H-Mem table), so the prefix is apt.
+  { title: 'Nexus: hmem-ecosystem-index',          path: '/api/cron/ecosystem-index',          schedule: { minutes: [45], hours: [4],  mdays: [-1], months: [-1], wdays: [-1] } },
   // v7: every 15 min — keeps cron-job.org's own auto-disable from being
   // the first signal of a red cron. The route Slack-pings only on
   // titles-changed or 4h-reminder so this isn't noisy. Title is intentionally
