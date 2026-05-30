@@ -72,7 +72,7 @@ export interface TaskItem {
  */
 export interface SystemAlertItem {
   id:          string
-  source:      'cron-alert' | 'stalled-run' | 'budget-incident'
+  source:      'cron-alert' | 'stalled-run' | 'budget-incident' | 'chat-turn'
   scope:       string         // 'admin' | 'business:<slug>'
   title:       string
   meta:        string | null

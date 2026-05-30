@@ -56,6 +56,16 @@ test('a chat turn persists even though the browser never polls', async ({ page }
   const sessionId = enq!.sessionId!
   expect(sessionId, 'got a sessionId').toBeTruthy()
 
+  // 1b. Phase C1 — while the turn is still running, the messages endpoint
+  //     exposes the live jobId so a reopened tab re-attaches its poll. Checked
+  //     immediately (the Haiku turn takes seconds; nothing has drained yet).
+  const liveJobId = await page.evaluate(async (sid) => {
+    const r = await fetch('/api/platform-chat/sessions/' + sid + '/messages', { cache: 'no-store' })
+    const j = (await r.json().catch(() => null)) as { session?: { inflight_job_id?: string | null } } | null
+    return j?.session?.inflight_job_id ?? null
+  }, sessionId)
+  expect(liveJobId, 'session exposes inflight_job_id while the turn runs (Phase C re-attach)').toBeTruthy()
+
   // 2. Drive the reconciler from Node (browser never touches /poll) until the
   //    assistant reply has been persisted server-side.
   let assistantReply: string | null = null
@@ -77,4 +87,13 @@ test('a chat turn persists even though the browser never polls', async ({ page }
 
   // 3. The reply was persisted with NO browser poll — durable chat works.
   expect(assistantReply, 'assistant reply persisted by the reconciler (no browser poll)').toBeTruthy()
+
+  // 4. Phase A3/C — once drained, the in-flight pointer is cleared so a reopen
+  //    no longer re-attaches (the turn is done + persisted, claim released).
+  const clearedJobId = await page.evaluate(async (sid) => {
+    const r = await fetch('/api/platform-chat/sessions/' + sid + '/messages', { cache: 'no-store' })
+    const j = (await r.json().catch(() => null)) as { session?: { inflight_job_id?: string | null } } | null
+    return j?.session?.inflight_job_id ?? null
+  }, sessionId)
+  expect(clearedJobId, 'inflight pointer cleared after drain').toBeNull()
 })

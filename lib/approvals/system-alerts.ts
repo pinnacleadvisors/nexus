@@ -26,6 +26,7 @@ import type { FleetPendingItem } from './fleet'
 
 const STALLED_RUN_HOURS  = 4
 const BUDGET_INCIDENT_DAYS = 7
+const CHAT_TURN_ALERT_DAYS = 7
 
 function synth(title: string, id: string): ApprovalRequest {
   return { title, approval_id: id, items: [] }
@@ -186,13 +187,68 @@ export async function loadBudgetIncidents(db: SupabaseClient, userId: string): P
   }
 }
 
+// ── 4. Chat-turn issues (durable chat Phase D4) ──────────────────────────────
+
+interface ChatSessionTitleRow { id: string; title: string | null }
+interface ChatTurnAlertRow {
+  id:         string
+  session_id: string
+  metadata:   { crashed?: { exit_code?: number | null }; turn_error?: { code: string; message: string } } | null
+  created_at: string
+}
+
+/**
+ * Recent chat turns that crashed or never reached the gateway. Surfaced so a
+ * failure that happened off the chat page (operator navigated away) isn't lost.
+ * `chat_messages` has no `user_id`, so we scope through the user's own sessions
+ * first, then read their recent messages and filter for the error markers.
+ */
+export async function loadChatTurnAlerts(db: SupabaseClient, userId: string): Promise<FleetPendingItem[]> {
+  const cutoff = new Date(Date.now() - CHAT_TURN_ALERT_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  try {
+    const sres = await (db.from('chat_sessions' as never) as unknown as {
+      select: (c: string) => { eq: (c: string, v: string) => { order: (c: string, o: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: ChatSessionTitleRow[] | null }> } } }
+    }).select('id, title').eq('user_id', userId).order('last_message_at', { ascending: false }).limit(80)
+    const sessions = sres.data ?? []
+    if (sessions.length === 0) return []
+    const titleById = new Map(sessions.map(s => [s.id, s.title]))
+    const ids = sessions.map(s => s.id)
+
+    const mres = await (db.from('chat_messages' as never) as unknown as {
+      select: (c: string) => { in: (c: string, v: string[]) => { gte: (c: string, v: string) => { order: (c: string, o: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: ChatTurnAlertRow[] | null }> } } } }
+    }).select('id, session_id, metadata, created_at').in('session_id', ids).gte('created_at', cutoff).order('created_at', { ascending: false }).limit(60)
+    const rows = (mres.data ?? []).filter(r => Boolean(r.metadata?.turn_error) || Boolean(r.metadata?.crashed))
+
+    return rows.map(r => {
+      const title  = titleById.get(r.session_id) ?? 'Chat'
+      const detail = r.metadata?.turn_error
+        ? r.metadata.turn_error.message
+        : `turn crashed (exit ${r.metadata?.crashed?.exit_code ?? '?'})`
+      return {
+        scope:         'admin',
+        scope_label:   'Platform',
+        kind:          'chat-turn' as const,
+        session_id:    r.session_id,
+        session_title: `${title}: ${detail}`,
+        message_id:    `chat-turn:${r.id}`,
+        created_at:    r.created_at,
+        approval:      synth(`Chat turn issue: ${title}`, `chat-turn:${r.id}`),
+      }
+    })
+  } catch (err) {
+    console.warn('[system-alerts] chat-turn alert query failed:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
 // ── Aggregator helper ───────────────────────────────────────────────────────
 
 export async function loadAllSystemAlerts(db: SupabaseClient, userId: string): Promise<FleetPendingItem[]> {
-  const [crons, stalled, budget] = await Promise.all([
+  const [crons, stalled, budget, chatTurns] = await Promise.all([
     loadCronAlerts(db),
     loadStalledRuns(db, userId),
     loadBudgetIncidents(db, userId),
+    loadChatTurnAlerts(db, userId),
   ])
-  return [...crons, ...stalled, ...budget]
+  return [...crons, ...stalled, ...budget, ...chatTurns]
 }

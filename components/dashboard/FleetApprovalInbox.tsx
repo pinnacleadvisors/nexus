@@ -24,8 +24,9 @@ type ApprovalKind =
   | 'cron-alert'
   | 'stalled-run'
   | 'budget-incident'
+  | 'chat-turn'
 
-const SYSTEM_ALERT_KINDS = new Set<ApprovalKind>(['cron-alert', 'stalled-run', 'budget-incident'])
+const SYSTEM_ALERT_KINDS = new Set<ApprovalKind>(['cron-alert', 'stalled-run', 'budget-incident', 'chat-turn'])
 
 interface FleetPendingItem {
   scope:         string  // 'admin' OR 'business:<slug>'
@@ -48,6 +49,7 @@ const KIND_LABEL: Record<ApprovalKind, string> = {
   'cron-alert':      'cron',
   'stalled-run':     'stalled',
   'budget-incident': 'budget',
+  'chat-turn':       'chat',
 }
 const KIND_STYLE: Record<ApprovalKind, { bg: string; color: string; border: string }> = {
   'chat-emitted':    { bg: 'rgba(34,211,238,0.12)',  color: '#67e8f9', border: '1px solid rgba(34,211,238,0.25)'  },
@@ -58,6 +60,7 @@ const KIND_STYLE: Record<ApprovalKind, { bg: string; color: string; border: stri
   'cron-alert':      { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', border: '1px solid rgba(245,158,11,0.25)'  },
   'stalled-run':     { bg: 'rgba(249,115,22,0.12)',  color: '#fdba74', border: '1px solid rgba(249,115,22,0.25)'  },
   'budget-incident': { bg: 'rgba(244,63,94,0.12)',   color: '#fda4af', border: '1px solid rgba(244,63,94,0.25)'   },
+  'chat-turn':       { bg: 'rgba(244,63,94,0.12)',   color: '#fda4af', border: '1px solid rgba(244,63,94,0.25)'   },
 }
 const KIND_TITLE: Record<ApprovalKind, string> = {
   'chat-emitted':    'Approval emitted as a chat block — resolve by replying APPROVAL [id]: ... or click ✓',
@@ -65,6 +68,7 @@ const KIND_TITLE: Record<ApprovalKind, string> = {
   'cron-alert':      'A cron job is failing. Check /cron-health for details. Auto-clears when the cron returns to green.',
   'stalled-run':     'A run has been in "running" status for > 4 hours. Cancel from the relevant business page if it hung.',
   'budget-incident': 'Cost-guard kill switch fired in the last 7 days. Inspect /api/health/deep for the spend trail.',
+  'chat-turn':       'A chat turn crashed or never reached the gateway in the last 7 days. Reopen the chat to retry.',
 }
 
 interface ApiOk  { ok: true;  pending: FleetPendingItem[] }

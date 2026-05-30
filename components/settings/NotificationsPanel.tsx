@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { Bell, MessageSquare, Smartphone, Check, X, Loader2, AlertTriangle } from 'lucide-react'
 
 type Channel = 'slack' | 'webpush'
-type Category = 'approval-pending' | 'kill-switch' | 'graduation' | 'security-alert' | 'weekly-digest'
+type Category = 'approval-pending' | 'kill-switch' | 'graduation' | 'security-alert' | 'weekly-digest' | 'chat-turn'
 
 interface SettingsResponse {
   ok:                  boolean
@@ -39,6 +39,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
   'graduation':       'Business graduated',
   'security-alert':   'Security alert',
   'weekly-digest':    'Weekly digest',
+  'chat-turn':        'Chat reply ready',
 }
 
 const CATEGORY_HINT: Record<Category, string> = {
@@ -47,10 +48,11 @@ const CATEGORY_HINT: Record<Category, string> = {
   'graduation':       'A simulation business flipped to real-money mode (simulation=false).',
   'security-alert':   'Security-relevant event from `audit_events` or the alerts panel.',
   'weekly-digest':    'Sunday 9 AM operator-local — what every business did this week (R6).',
+  'chat-turn':        'A detached chat turn finished (or crashed) while you were away — durable chat drained it server-side.',
 }
 
 const CATEGORIES_DEFAULT: Category[] = [
-  'approval-pending', 'kill-switch', 'graduation', 'security-alert', 'weekly-digest',
+  'approval-pending', 'kill-switch', 'graduation', 'security-alert', 'weekly-digest', 'chat-turn',
 ]
 const CHANNELS_DEFAULT: Channel[] = ['slack', 'webpush']
 
@@ -60,6 +62,7 @@ const DEFAULT_ENABLED: Record<Category, Channel[]> = {
   'graduation':        ['slack'],
   'security-alert':    ['slack', 'webpush'],
   'weekly-digest':     ['slack'],
+  'chat-turn':         ['slack', 'webpush'],
 }
 
 export default function NotificationsPanel() {

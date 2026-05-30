@@ -22,7 +22,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 10
 
 const CATEGORIES: NotificationCategory[] = [
-  'approval-pending', 'kill-switch', 'graduation', 'security-alert', 'weekly-digest',
+  'approval-pending', 'kill-switch', 'graduation', 'security-alert', 'weekly-digest', 'chat-turn',
 ]
 const CHANNELS: NotificationChannel[] = ['slack', 'webpush']
 

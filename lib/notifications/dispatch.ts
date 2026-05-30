@@ -27,6 +27,10 @@ export type NotificationCategory =
   | 'graduation'
   | 'security-alert'
   | 'weekly-digest'
+  // Durable chat (Phase D) — a detached chat turn finished (or crashed) while
+  // the operator was away; the server reconciler fires this so a closed
+  // tab/phone still gets pinged.
+  | 'chat-turn'
 
 export type NotificationChannel = 'slack' | 'webpush'
 
@@ -65,6 +69,7 @@ const DEFAULT_ENABLED: Record<NotificationCategory, NotificationChannel[]> = {
   'graduation':        ['slack'],
   'security-alert':    ['slack', 'webpush'],
   'weekly-digest':     ['slack'],
+  'chat-turn':         ['slack', 'webpush'],
 }
 
 /**

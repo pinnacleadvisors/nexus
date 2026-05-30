@@ -49,6 +49,7 @@ import {
   deriveTitleFromMessage,
   listMessages,
   setInflightTurn,
+  markTurnError,
 } from '@/lib/chat/sessions'
 
 /**
@@ -375,6 +376,13 @@ export async function POST(req: NextRequest) {
       resource: 'chat',
       userId:   session.userId,
       metadata: { stage: 'enqueue', http: enqueued.http, error: enqueued.error, durationMs: Date.now() - t0 },
+    })
+    // Phase D3 — stamp the failure onto the just-persisted user message so it
+    // survives a reload + surfaces in /inbox, instead of living only in the
+    // client's React state (lost on navigation). Fail-soft.
+    await markTurnError(sessionRow.id, {
+      code:    'gateway_error',
+      message: `gateway enqueue failed: ${enqueued.error ?? 'unknown'}`,
     })
     return NextResponse.json({
       ok:    false,

@@ -206,6 +206,33 @@ export async function claimInflightTurn(sessionId: string, jobId: string): Promi
   }
 }
 
+/**
+ * Read the live in-flight turn for a session — returns the running gateway
+ * jobId only when a turn is still detached (inflight_drained=false). Used by
+ * the messages route so the chat UI can re-attach its poll on reopen (Phase C).
+ *
+ * Fail-soft: returns null on any error / missing column (migration 099 not
+ * applied), so a stale schema never breaks history load — the UI simply
+ * doesn't re-attach.
+ */
+export async function getInflightTurn(
+  sessionId: string,
+): Promise<{ jobId: string; startedAt: string | null } | null> {
+  const t = table<ChatSessionRow>('chat_sessions')
+  if (!t) return null
+  try {
+    const res = await t.select('inflight_job_id, inflight_started_at, inflight_drained')
+      .eq('id', sessionId)
+      .limit(1)
+    if (res.error) return null
+    const row = res.data?.[0]
+    if (!row || row.inflight_drained !== false || !row.inflight_job_id) return null
+    return { jobId: row.inflight_job_id, startedAt: row.inflight_started_at ?? null }
+  } catch {
+    return null
+  }
+}
+
 // ── Messages ─────────────────────────────────────────────────────────────────
 
 export async function listMessages(sessionId: string, limit = 200): Promise<ChatMessageRow[]> {
@@ -235,6 +262,38 @@ export async function appendMessage(input: {
   if (res.error || !res.data) return null
   await touchSession(input.sessionId)
   return res.data
+}
+
+/**
+ * Persist a turn-level error onto the most recent USER message of a session
+ * (Phase D3). When the gateway enqueue fails, the operator's input is already
+ * persisted (route.ts persists it pre-dispatch) but the failure lived only in
+ * React state — lost on navigation. Stamping `metadata.turn_error` makes the
+ * error survive a reload + surfaces it in /inbox (loadChatTurnAlerts).
+ *
+ * Fail-soft: never throws — a failed error-stamp must not mask the original
+ * error the caller is already returning to the client.
+ */
+export async function markTurnError(
+  sessionId: string,
+  turnError: { code: string; message: string },
+): Promise<void> {
+  const t = table<ChatMessageRow>('chat_messages')
+  if (!t) return
+  try {
+    const sel = await t.select('id, metadata')
+      .eq('session_id', sessionId)
+      .eq('role', 'user')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const row = sel.data?.[0]
+    if (!row) return
+    await t.update({
+      metadata: { ...(row.metadata ?? {}), turn_error: turnError },
+    }).eq('id', row.id)
+  } catch {
+    /* fail-soft — the caller already surfaces the underlying error */
+  }
 }
 
 /** Derive a session title from the first user message — truncated to a clean prefix. */

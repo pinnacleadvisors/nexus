@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase'
 import { getGatewayJob } from '@/lib/claw/gateway-jobs'
 import { resolveClawConfig } from '@/lib/claw/business-client'
 import { persistCompletedTurn } from '@/lib/chat/persist-completed-turn'
+import { notifyOperator } from '@/lib/notifications/dispatch'
 
 /** Only scan turns started within the gateway's RETAIN_MS (~10min) — older jobs
  *  have been GC'd, so there's nothing left to drain. */
@@ -79,7 +80,7 @@ export async function reconcileInflightTurns(): Promise<ReconcileResult> {
         job.status === 'error'
           ? job.text || (job.jobError ? `⚠ Turn failed: ${job.jobError}` : '⚠ Turn failed.')
           : job.text ?? ''
-      await persistCompletedTurn({
+      const persisted = await persistCompletedTurn({
         userId:        row.user_id,
         sessionId:     row.id,
         jobId:         row.inflight_job_id,
@@ -90,6 +91,22 @@ export async function reconcileInflightTurns(): Promise<ReconcileResult> {
         claimInflight: true,
       })
       result.drained++
+
+      // Phase D2 — the reconciler only wins the claim when NO browser drained
+      // this turn first (a live poll would have beaten us), so a win means the
+      // operator was away. Ping them. `persisted.displayText` is the
+      // fenced-block-stripped reply; use a short preview as the body. notify is
+      // fail-soft + never throws, but guard anyway so it can't stall the sweep.
+      const crashed = job.status === 'error'
+      const preview = (persisted.displayText || text || '').replace(/\s+/g, ' ').trim().slice(0, 140)
+      await notifyOperator(row.user_id, 'chat-turn', {
+        title:     crashed ? 'Chat turn failed' : 'Chat reply ready',
+        body:      preview || (crashed
+                     ? 'A detached chat turn failed while you were away.'
+                     : 'Your chat turn finished while you were away.'),
+        link_href: '/manage-platform',
+        severity:  crashed ? 'critical' : 'info',
+      }).catch(() => { /* notify is best-effort — never block the sweep */ })
     } catch (e) {
       result.errored++
       console.warn('[reconcile-inflight] session', row.id, 'failed:', e instanceof Error ? e.message : e)
