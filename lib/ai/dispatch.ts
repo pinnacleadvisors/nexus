@@ -60,8 +60,9 @@ export interface EffectiveModel {
   model?:  string
   /** Runtime family of the resolved model. */
   family:  ModelFamily
-  /** Where the model came from — for audit / debug. */
-  source:  'body' | 'agent' | 'skill' | 'default'
+  /** Where the model came from — for audit / debug. `'auto'` = the opt-in
+   *  dispatch-time recommender picked it (agent_library.auto_route). */
+  source:  'body' | 'agent' | 'skill' | 'auto' | 'default'
 }
 
 /** Load `agent_library.model` by slug. Fail-soft → null. */
@@ -84,6 +85,32 @@ async function loadAgentModel(agentSlug: string): Promise<string | null> {
     return res.data.model ?? null
   } catch {
     return null
+  }
+}
+
+/** Load `agent_library.auto_route` (PR8). Separate from loadAgentModel so the
+ *  model read never breaks when the column is absent (pre-migration 103 the
+ *  select would error). Fail-soft → false (auto-route off ⇒ no behaviour
+ *  change for everyone). */
+async function loadAgentAutoRoute(agentSlug: string): Promise<boolean> {
+  if (!agentSlug) return false
+  try {
+    const db = createServerClient()
+    if (!db) return false
+    const res = await (db.from('agent_library') as unknown as {
+      select: (cols: string) => {
+        eq: (col: string, val: string) => {
+          maybeSingle: () => Promise<{ data: { auto_route?: boolean | null } | null; error: unknown }>
+        }
+      }
+    })
+      .select('auto_route')
+      .eq('slug', agentSlug)
+      .maybeSingle()
+    if (res.error || !res.data) return false
+    return Boolean(res.data.auto_route)
+  } catch {
+    return false
   }
 }
 
@@ -135,8 +162,22 @@ export async function resolveEffectiveModel(inputs: ResolveInputs): Promise<Effe
     loadSkillModel(inputs.userId, inputs.skillSlug),
   ])
   const model = pickModel({ agentModel, skillModel })
-  const source: EffectiveModel['source'] = !model
-    ? 'default'
-    : (agentModel && model === agentModel.trim() ? 'agent' : 'skill')
-  return { model, family: familyForModel(model), source }
+  if (model) {
+    const source: EffectiveModel['source'] = agentModel && model === agentModel.trim() ? 'agent' : 'skill'
+    return { model, family: familyForModel(model), source }
+  }
+
+  // No stored / per-turn model. If the agent opted into auto_route, ask the
+  // (24h-cached) recommender to pick one. Lazy import breaks the static cycle
+  // through recommender → callClaude → dispatch. Fail-soft: any miss → default.
+  if (inputs.agentSlug && (await loadAgentAutoRoute(inputs.agentSlug))) {
+    try {
+      const { autoRouteModel } = await import('./auto-route')
+      const picked = await autoRouteModel(inputs.agentSlug, inputs.userId)
+      if (picked) return { model: picked, family: familyForModel(picked), source: 'auto' }
+    } catch {
+      /* fall through to the default path */
+    }
+  }
+  return { model: undefined, family: 'unknown', source: 'default' }
 }
