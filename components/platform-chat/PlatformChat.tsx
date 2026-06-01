@@ -41,6 +41,7 @@ import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import { computeApprovalResolutions } from '@/lib/chat/approval-resolutions'
+import { fetchWithReauth } from '@/lib/chat/fetch-reauth'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
 import { ModeSelector, useChatMode } from './ModeSelector'
@@ -314,7 +315,7 @@ export default function PlatformChat() {
   const reloadSessions = useCallback(async () => {
     setSessionsLoading(true)
     try {
-      const res = await fetch('/api/platform-chat/sessions', { cache: 'no-store' })
+      const res = await fetchWithReauth('/api/platform-chat/sessions', { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
@@ -536,7 +537,7 @@ export default function PlatformChat() {
       // any Claude model routes through claude-gateway. Subsumes the
       // pre-2026-05-24 ChatProviderToggle pill.
       const provider = getModelById(chatModel).provider
-      const enqRes = await fetch('/api/platform-chat', {
+      const enqRes = await fetchWithReauth('/api/platform-chat', {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
         body:    JSON.stringify({
@@ -657,7 +658,7 @@ export default function PlatformChat() {
       if (cancelRef.current) {
         return { text: '', durationMs: Date.now() - start, cancelled: true }
       }
-      const res = await fetch(`/api/platform-chat/poll?${qs}`, { cache: 'no-store' })
+      const res = await fetchWithReauth(`/api/platform-chat/poll?${qs}`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
@@ -736,7 +737,7 @@ export default function PlatformChat() {
 
     let res: Response
     try {
-      res = await fetch(`/api/platform-chat/stream?${qs}`, {
+      res = await fetchWithReauth(`/api/platform-chat/stream?${qs}`, {
         cache:   'no-store',
         headers: { 'Accept': 'text/event-stream' },
         signal:  ac.signal,

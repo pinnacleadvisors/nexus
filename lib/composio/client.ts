@@ -138,6 +138,15 @@ export interface ExecuteActionInput {
   entityId?:          string
   /** Tool version — leave undefined for "latest". */
   version?:           string
+  /**
+   * Composio scopes connections per user. The v3 /tools/execute API REQUIRES a
+   * user_id when a connected_account_id is used — without it the call 400s with
+   * "User ID is required with connected account. Please provide a user Id"
+   * (the cause of Slack notifications + all OAuth actions silently failing).
+   * Pass the SAME id the connection was created under (the Clerk userId — see
+   * createConnectionLink, which sends `user_id: input.userId`).
+   */
+  userId?:            string
 }
 
 export async function executeAction(input: ExecuteActionInput): Promise<unknown> {
@@ -151,6 +160,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<unknown>
     body: JSON.stringify({
       connected_account_id: input.connectedAccountId,
       arguments:            input.arguments,
+      ...(input.userId   ? { user_id:   input.userId   } : {}),
       ...(input.entityId ? { entity_id: input.entityId } : {}),
       ...(input.version  ? { version:   input.version  } : {}),
     }),

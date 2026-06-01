@@ -51,6 +51,7 @@ import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
 import { computeApprovalResolutions, type ApprovalResolution } from '@/lib/chat/approval-resolutions'
+import { fetchWithReauth } from '@/lib/chat/fetch-reauth'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 interface Message {
@@ -246,7 +247,7 @@ export default function BusinessChat({ slug, name }: Props) {
   const reloadSessions = useCallback(async () => {
     setSessionsLoading(true)
     try {
-      const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/sessions`, { cache: 'no-store' })
+      const res = await fetchWithReauth(`/api/businesses/${encodeURIComponent(slug)}/chat/sessions`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
@@ -431,7 +432,7 @@ export default function BusinessChat({ slug, name }: Props) {
       // routes through claude-gateway. Subsumes the pre-2026-05-24
       // ChatProviderToggle pill.
       const provider = getModelById(chatModel).provider
-      const enqRes = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
+      const enqRes = await fetchWithReauth(`/api/businesses/${encodeURIComponent(slug)}/chat`, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
         body:    JSON.stringify({
@@ -531,7 +532,7 @@ export default function BusinessChat({ slug, name }: Props) {
       if (cancelRef.current) {
         return { text: '', durationMs: Date.now() - start, cancelled: true }
       }
-      const res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/poll?${qs}`, { cache: 'no-store' })
+      const res = await fetchWithReauth(`/api/businesses/${encodeURIComponent(slug)}/chat/poll?${qs}`, { cache: 'no-store' })
       if (res.status === 401) {
         const here = window.location.pathname + window.location.search
         window.location.href = `/sign-in?returnUrl=${encodeURIComponent(here)}`
@@ -600,7 +601,7 @@ export default function BusinessChat({ slug, name }: Props) {
 
     let res: Response
     try {
-      res = await fetch(`/api/businesses/${encodeURIComponent(slug)}/chat/stream?${qs}`, {
+      res = await fetchWithReauth(`/api/businesses/${encodeURIComponent(slug)}/chat/stream?${qs}`, {
         cache:   'no-store',
         headers: { 'Accept': 'text/event-stream' },
         signal:  ac.signal,

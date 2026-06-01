@@ -47,6 +47,11 @@ export async function fetchDopplerSecrets(names: string[]): Promise<Record<strin
         action,
         connectedAccountId,
         arguments: { project, config, name },
+        // Composio v3 requires user_id with a connected account. This is a
+        // shared admin connection (no per-request Clerk user), so the id it was
+        // created under is supplied via env — defaults to the operator.
+        userId: process.env.COMPOSIO_DOPPLER_USER_ID
+          ?? (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0],
       })) as { data?: { value?: string; computed?: string } } | { value?: string }
 
       const value =

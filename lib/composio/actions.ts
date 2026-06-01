@@ -170,6 +170,7 @@ export async function executeBusinessAction(input: ExecuteBusinessActionInput): 
     connectedAccountId: account.composio_account_id,
     arguments:          input.arguments,
     timeoutMs:          input.timeoutMs,
+    userId:             input.userId,   // Composio v3 requires user_id with a connected account
   })
 
   // Fire-and-forget last_used_at bump; never block the action result on this.
@@ -218,6 +219,7 @@ export async function executeAdminAction(input: ExecuteAdminActionInput): Promis
     connectedAccountId: account.composio_account_id,
     arguments:          input.arguments,
     timeoutMs:          input.timeoutMs,
+    userId:             input.userId,   // Composio v3 requires user_id with a connected account
   })
 
   const db = createServerClient()
