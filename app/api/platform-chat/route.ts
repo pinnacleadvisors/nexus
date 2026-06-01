@@ -36,6 +36,7 @@ import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClaudeCodeConfig } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
+import { resolveExecMode } from '@/lib/chat/exec-mode'
 import { dispatchCodexChatTurn } from '@/lib/chat/codex-direct-dispatch'
 import { buildPlatformSystemPrompt } from '@/lib/chat/system-prompt-platform'
 import { getActiveSession as getActiveBugHuntSession, listFindings } from '@/lib/bug-hunt/sessions'
@@ -357,6 +358,12 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // Subscription-billing control: route through the interactive pty path when
+  // the operator's execution_mode pref is subscription/node-pty (Max/Pro
+  // billing); 'api' uses the `-p` path. Unset → gateway default. See
+  // lib/chat/exec-mode.ts + services/claude-gateway/src/spawnPty.ts.
+  const execMode = await resolveExecMode(session.userId)
+
   const enqueued = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
@@ -368,6 +375,7 @@ export async function POST(req: NextRequest) {
     requestTimeoutMs: body.requestTimeoutMs,
     modelOverride: body.modelOverride,
     mode: body.mode,
+    execMode,
   })
 
   if (!enqueued.ok || !enqueued.jobId) {

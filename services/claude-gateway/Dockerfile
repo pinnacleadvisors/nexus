@@ -5,6 +5,15 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
+# node-pty (the @homebridge prebuilt fork) ships NAPI prebuilds for linux
+# x64/arm64, but prebuild-install falls back to compiling if the prebuilt
+# binary can't be fetched. python3 + make + g++ guarantee that fallback works
+# so the image build never breaks on a transient prebuild-host hiccup. These
+# tools live only in the (discarded) build stage — zero runtime image bloat.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 

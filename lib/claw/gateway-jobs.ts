@@ -54,6 +54,15 @@ export interface EnqueueJobOpts {
    * Phase 1 of task_plan-collaborative-chat.md. See lib/chat/modes.ts.
    */
   mode?: 'ask' | 'plan' | 'auto'
+  /**
+   * Per-turn execution mode (subscription-billing control). 'print' = the
+   * `claude -p` path (billed at API per-token rate). 'pty' = interactive
+   * pseudo-terminal (billed against the Max/Pro subscription). Resolved from
+   * the operator's `execution_mode` provider preference; 'node-pty' maps to
+   * 'pty'. Omitted → the gateway's CLAUDE_DEFAULT_EXEC_MODE. See
+   * services/claude-gateway/src/spawnPty.ts for the why.
+   */
+  execMode?: 'print' | 'pty'
 }
 
 export interface EnqueueJobResult {
@@ -131,6 +140,7 @@ export async function enqueueGatewayJob(opts: EnqueueJobOpts): Promise<EnqueueJo
     ...(opts.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
     ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
     ...(opts.mode ? { mode: opts.mode } : {}),
+    ...(opts.execMode ? { execMode: opts.execMode } : {}),
   })
 
   const headers: Record<string, string> = {
