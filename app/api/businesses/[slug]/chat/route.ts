@@ -31,7 +31,10 @@ import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 import { computeUsage } from '@/lib/chat/context-window'
 
 export const runtime    = 'nodejs'
-export const maxDuration = 30
+// 60s (was 30s) so the synchronous codex-direct chat-pill path has the same
+// ~45s budget as platform-chat. The async Claude path returns in <1s (enqueue);
+// only the sync codex path benefits from the headroom.
+export const maxDuration = 60
 
 interface Body {
   messages?:  Array<{ role?: string; content?: string }>

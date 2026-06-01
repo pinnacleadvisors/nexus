@@ -70,7 +70,11 @@ const BEARER         = process.env.CODEX_GATEWAY_BEARER_TOKEN ?? ''
 const OPERATOR_USER  = process.env.NEXUS_OPERATOR_USER_ID
   ?? (process.env.ALLOWED_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)[0]
   ?? ''
-const TIMEOUT_MS     = Number(process.env.CODEX_DELEGATE_TIMEOUT_MS ?? 5 * 60_000)
+// Total poll budget per delegate call. Must OUTLAST the codex-gateway's async
+// job wall-clock (CODEX_JOB_TIMEOUT_MS, default 480s) so we receive the job's
+// real result/error rather than giving up first and leaving the operator with
+// a poll-timeout while the job is still running. 600s > 480s by design.
+const TIMEOUT_MS     = Number(process.env.CODEX_DELEGATE_TIMEOUT_MS ?? 10 * 60_000)
 const POLL_MS        = Number(process.env.CODEX_DELEGATE_POLL_MS    ?? 3_000)
 
 // Audit sink — `/api/audit/tool-call` on the parent Nexus app. Wired by the
