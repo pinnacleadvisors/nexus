@@ -68,8 +68,10 @@ Hard constraints:
 - [x] T3 approval: computeApprovalResolutions (history-derived) + action-bar + PlatformChat + BusinessChat. Unit test (11, incl reload + re-emit). Playwright spec. Commit 2965751.
 - [x] T5 codex: CODEX_JOB_TIMEOUT_MS 480s (async) + delegate 600s + codex-direct 45s + business-chat maxDuration 60. Gateway tsc clean. Commit 9be8a6c.
 - [x] T4 models: Opus 4.8 added (default) in models.ts + catalog.ts; model-discovery.ts (Anthropic /v1/models merge, static fallback) + /api/models/available + ModelSelector fetch. Unit test (12).
+- [x] T6 verify: tsc + all 9 check:* gates pass. Real backend: `doppler run -- npm run dev` boots clean; /api/models/available → defaultId=claude-opus-4-8; live Playwright approval drive PASSED (31.2s, real auth + build, chat API mocked → zero destructive writes). Pushed → PR #458 (MERGEABLE).
 ### Remaining
-- [ ] T6 verify: npm run check:all; real-backend dev run (doppler) + Playwright drive of the approval flow; push + ONE PR (all 4 fixes).
+- [ ] Operator: deploy claude-gateway (node-pty dep) + flip execution_mode to subscription/node-pty (or CLAUDE_DEFAULT_EXEC_MODE=pty), then CONFIRM billing on the deployed gateway (can't validate OAuth billing locally). Redeploy codex-gateway + mcp-codex-delegate for the timeout defaults.
+- [ ] Follow-up: async-ify codex-direct chat-pill path (long turns still sync-route-bounded). Retry the memory-hq atom write (402 earlier — endpoint degraded).
 ### Notes / follow-ups
 - node-pty happy-path billing can only be fully validated on the deployed gateway (local has no OAuth login; onboarding blocks). Opt-in (default stays print) + never falls back to -p.
 - Long codex chat-pill turns still route-bounded — async-ify codex-direct is a follow-up.
