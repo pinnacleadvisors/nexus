@@ -268,7 +268,8 @@ Set on the Coolify service running the codex gateway on **KVM4** (KVM2 retired 2
 | `CODEX_API_KEY` | Optional pay-per-token API-billing fallback. Used only if `CODEX_AUTH_JSON` is unset and `/root/.codex` is empty. No rotation pain but costs more than the plan. |
 | `CODEX_MODEL` | Optional pin (e.g. `gpt-5.5`) — forwarded as `--model` to the spawned `codex exec`. |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 4). Lower than claude-gateway because ChatGPT Pro is one identity per request. |
-| `REQUEST_TIMEOUT_MS` | Per-request timeout for the spawned `codex` CLI (default 180 000). |
+| `REQUEST_TIMEOUT_MS` | Per-request timeout for the spawned `codex` CLI on the SYNC `/messages` + `/stream` paths (default 120 000). Caller-bounded. |
+| `CODEX_JOB_TIMEOUT_MS` | Per-job timeout for the ASYNC `/api/jobs` path (default **480000 = 8 min**). The async path is polled, not held open, so it can run as long as real `codex exec` work takes (2-5 min). Fixes the `delegate_to_codex` timeouts where the old 120s cap SIGTERM'd codex mid-task. Keep < `CODEX_DELEGATE_TIMEOUT_MS` (600s). |
 | `CODEX_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `codex-gw.<your-domain>` → this. |
 
 > **Doppler `sandbox` config.** The codex-gateway VPS (KVM4 post-2026-05-22; previously KVM2) uses a Doppler service token scoped to a `sandbox` config that **excludes** financial / secret-management secrets — see ADR 002 for the deny-list. For secret-gated work, codex must invoke the `doppler-broker` agent (ADR 001). Codex never holds raw values.
@@ -292,10 +293,14 @@ Set on the Coolify service running the gateway (not on Nexus / Vercel):
 | `NEXUS_BASE_URL` | Required when `MEMORY_HQ_TOKEN` is set. The memory-hq MCP routes writes through `POST <NEXUS_BASE_URL>/api/memory/event`. Same value as Vercel-side `NEXUS_BASE_URL`. |
 | `CODEX_GATEWAY_URL` | **New (Phase 2c)** — base URL of the codex-gateway (KVM4 post-2026-05-22; previously KVM2). When set together with `CODEX_GATEWAY_BEARER_TOKEN`, the entrypoint builds + registers `@nexus/mcp-codex-delegate` so the platform-copilot can call `delegate_to_codex` directly. Same value as Vercel-side `CODEX_GATEWAY_URL`. |
 | `CODEX_GATEWAY_BEARER_TOKEN` | **New (Phase 2c)** — bearer for the codex-delegate MCP's calls to the codex-gateway. Same value across all three sides (Vercel / Nexus app, claude-gateway container, codex-gateway container). |
-| `CODEX_DELEGATE_TIMEOUT_MS` | Optional — total poll budget per `delegate_to_codex` call (default 300000 = 5 min). |
+| `CODEX_DELEGATE_TIMEOUT_MS` | Optional — total poll budget per `delegate_to_codex` call (default **600000 = 10 min**, raised from 5 min so it outlasts the codex-gateway's 480s async-job timeout and returns the real result instead of a poll-timeout). |
 | `CODEX_DELEGATE_POLL_MS` | Optional — interval between poll ticks (default 3000 = 3s). |
+| `CLAUDE_DEFAULT_EXEC_MODE` | Optional `print` (default) / `pty`. `print` = `claude -p` (billed at API per-token rate). `pty` = interactive pseudo-terminal (billed against the Max/Pro **subscription** — see `services/claude-gateway/src/spawnPty.ts`). Per-request `body.execMode` (forwarded from the operator's `execution_mode` provider preference) overrides this. Set to `pty` to make ALL turns subscription-billed by default. Anthropic's 2026-06-15 billing change makes `-p` API-metered, so `pty` is the cost-saving path. |
+| `PTY_IDLE_MS` | Optional pty-mode tuning — ms of transcript silence (no new content, no pending tool) before a turn is considered complete (default 4000). |
+| `PTY_POLL_MS` | Optional pty-mode tuning — JSONL transcript poll interval (default 400). |
+| `PTY_FIRST_RESPONSE_MS` | Optional pty-mode tuning — max wait for the first assistant message before declaring the turn stuck (default 180000). A stuck pty usually means the gateway isn't OAuth-logged-in. |
 | `QUEUE_MAX_DEPTH` | Max in-flight + pending requests (default 8). The 20x Max plan is one identity, so we serialise. |
-| `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 180 000). |
+| `REQUEST_TIMEOUT_MS` | Per-request timeout passed to the spawned `claude` CLI (default 600 000). |
 | `CLAUDE_GATEWAY_PORT` | HTTP listen port (default 3000). Cloudflare Tunnel maps `claude-gw.<your-domain>` → this. |
 
 ## Memory HQ — central molecular memory (Phase A — Step 2)
