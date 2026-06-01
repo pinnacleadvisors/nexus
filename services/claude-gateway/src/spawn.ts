@@ -80,6 +80,81 @@ export interface RunResult {
 }
 
 /**
+ * Tools pre-allowed for every spawned agent — the workhorse tools + the
+ * trusted MCP servers. Shared by BOTH spawn paths (print `runClaude` and
+ * interactive `runClaudePty`) so tool-permission behaviour doesn't depend on
+ * the billing mode. Mirrors the permissions.allow block entrypoint.sh writes.
+ *
+ * Safe under the container threat model (ephemeral /repo clone, no financial
+ * secrets in this gateway's env per ADR 002). Anything NOT in this list is
+ * routed to the permission-broker MCP, which surfaces an Allow/Deny card in
+ * the chat UI.
+ */
+export const PRE_ALLOWED_TOOLS = [
+  // MCP — Composio admin-scope wrapper
+  'mcp__composio-admin__admin_list_connected_platforms',
+  'mcp__composio-admin__admin_list_actions',
+  'mcp__composio-admin__admin_execute_action',
+  // MCP — memory-hq
+  'mcp__memory-hq__memory_atom',
+  'mcp__memory-hq__memory_entity',
+  'mcp__memory-hq__memory_moc',
+  'mcp__memory-hq__memory_query',
+  'mcp__memory-hq__memory_search',
+  // MCP — codex-delegate (only registered when the codex-gateway env is set)
+  'mcp__codex-delegate__delegate_to_codex',
+  // MCP — permission-broker (PR #189; only registered when the broker MCP builds)
+  'mcp__permission-broker__permission_prompt',
+  // MCP — coolify (PR #191; only registered when COOLIFY_KVM4_* envs are set)
+  'mcp__coolify__coolify_list_apps',
+  'mcp__coolify__coolify_get_app',
+  'mcp__coolify__coolify_get_logs',
+  'mcp__coolify__coolify_list_env_keys',
+  'mcp__coolify__coolify_get_env_value',
+  'mcp__coolify__coolify_redeploy',
+  'mcp__coolify__coolify_restart',
+  'mcp__coolify__coolify_start',
+  'mcp__coolify__coolify_stop',
+  'mcp__coolify__coolify_set_env',
+  'mcp__coolify__coolify_delete_env',
+  // Workhorse tools — bounded by the container, gated at chat-level via
+  // approval-request blocks and the permission-broker for un-allowed cases
+  'Bash',
+  'Edit',
+  'Write',
+  'NotebookEdit',
+  'Read',
+  'Glob',
+  'Grep',
+  'LS',
+  'BashOutput',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+]
+
+/**
+ * Build the CLI permission args shared by both spawn paths: pre-allow the
+ * trusted tools, then point anything else at the permission-broker MCP
+ * (unless MCP_PERMISSION_BROKER=skip). The broker writes a pending row to
+ * chat_permission_requests and surfaces an Allow/Deny card in the chat.
+ *
+ * The interactive (pty) path relies on THIS instead of `--permission-mode
+ * bypassPermissions`: in interactive mode bypass triggers a one-time
+ * acceptance dialog (default "No, exit") that no operator is at the pty to
+ * answer, so the session would exit ~1s later with no output.
+ */
+export function buildPermissionCliArgs(): string[] {
+  const out: string[] = []
+  for (const t of PRE_ALLOWED_TOOLS) out.push('--allowedTools', t)
+  if ((process.env.MCP_PERMISSION_BROKER ?? '') !== 'skip') {
+    out.push('--permission-prompt-tool', 'mcp__permission-broker__permission_prompt')
+  }
+  return out
+}
+
+/**
  * Spawns `claude -p --output-format stream-json` and accumulates the final
  * assistant message. The CLI authenticates against the OAuth credentials in
  * /root/.claude (mounted from a persistent Coolify volume).
@@ -162,67 +237,10 @@ export async function runClaude(args: RunArgs): Promise<RunResult> {
     cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
   }
 
-  // Pre-allow the trusted MCP tools + workhorse tools as a belt-and-braces
-  // alongside the permissions.allow block in settings.json (which the
-  // entrypoint writes). The settings.json field IS the canonical Claude
-  // Code surface, but older CLI versions silently ignore unknown
-  // settings.json keys — passing the flag too means a stale CLI in the
-  // gateway image still works. The list mirrors the entrypoint's
-  // permissions.allow exactly. See entrypoint.sh for the threat-model
-  // rationale (broad Bash + Edit + Read are safe inside this container).
-  const PRE_ALLOWED_TOOLS = [
-    // MCP — Composio admin-scope wrapper
-    'mcp__composio-admin__admin_list_connected_platforms',
-    'mcp__composio-admin__admin_list_actions',
-    'mcp__composio-admin__admin_execute_action',
-    // MCP — memory-hq
-    'mcp__memory-hq__memory_atom',
-    'mcp__memory-hq__memory_entity',
-    'mcp__memory-hq__memory_moc',
-    'mcp__memory-hq__memory_query',
-    'mcp__memory-hq__memory_search',
-    // MCP — codex-delegate (only registered when the codex-gateway env is set)
-    'mcp__codex-delegate__delegate_to_codex',
-    // MCP — permission-broker (PR #189; only registered when the broker MCP builds)
-    'mcp__permission-broker__permission_prompt',
-    // MCP — coolify (PR #191; only registered when COOLIFY_KVM4_* envs are set)
-    'mcp__coolify__coolify_list_apps',
-    'mcp__coolify__coolify_get_app',
-    'mcp__coolify__coolify_get_logs',
-    'mcp__coolify__coolify_list_env_keys',
-    'mcp__coolify__coolify_get_env_value',
-    'mcp__coolify__coolify_redeploy',
-    'mcp__coolify__coolify_restart',
-    'mcp__coolify__coolify_start',
-    'mcp__coolify__coolify_stop',
-    'mcp__coolify__coolify_set_env',
-    'mcp__coolify__coolify_delete_env',
-    // Workhorse tools — bounded by the container, gated at chat-level via
-    // approval-request blocks and the permission-broker for un-allowed cases
-    'Bash',
-    'Edit',
-    'Write',
-    'NotebookEdit',
-    'Read',
-    'Glob',
-    'Grep',
-    'LS',
-    'BashOutput',
-    'NotebookRead',
-    'WebFetch',
-    'WebSearch',
-    'TodoWrite',
-  ]
-  for (const t of PRE_ALLOWED_TOOLS) cliArgs.push('--allowedTools', t)
-
-  // Permission-broker UX (PR #189). Any tool call that's NOT in the
-  // PRE_ALLOWED_TOOLS list above triggers this MCP tool instead of dying
-  // in prose. The broker writes a pending row to chat_permission_requests,
-  // polls for the operator's Allow/Deny click, and returns the decision.
-  // Set MCP_PERMISSION_BROKER=skip to revert to the pre-PR behaviour.
-  if ((process.env.MCP_PERMISSION_BROKER ?? '') !== 'skip') {
-    cliArgs.push('--permission-prompt-tool', 'mcp__permission-broker__permission_prompt')
-  }
+  // Pre-allow the trusted MCP tools + workhorse tools and route anything else
+  // to the permission-broker MCP. Shared with the interactive (pty) path via
+  // buildPermissionCliArgs() so both billing modes behave identically.
+  cliArgs.push(...buildPermissionCliArgs())
   if (systemPrompt) {
     cliArgs.push('--append-system-prompt', systemPrompt)
   }

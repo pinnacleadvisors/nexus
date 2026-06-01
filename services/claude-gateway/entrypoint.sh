@@ -360,6 +360,33 @@ JSON
   fi
 }
 
+# ── Interactive onboarding/trust seed (subscription / pty billing path) ──────
+# The pty path (spawnPty.ts) runs `claude` as a REAL interactive session to
+# bill the Max subscription instead of the API rate. Unlike `claude -p`,
+# interactive mode runs the first-run onboarding wizard (theme + login method)
+# and a per-folder trust dialog — both block the REPL forever when no human is
+# at the keyboard, so the turn produces no output and the chat shows a crash.
+# /root/.claude.json (where this state lives) is NOT on the mounted volume, so
+# it resets every boot and MUST be re-seeded here. The `-p` path never reads
+# this file, so this is a no-op for print-mode turns.
+echo "[gateway] Seeding interactive onboarding/trust for $REPO_PATH"
+node -e '
+const fs = require("fs");
+const p = "/root/.claude.json";
+let c = {};
+try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) {}
+c.hasCompletedOnboarding = true;
+if (!c.theme) c.theme = "dark";
+const repo = process.argv[1] || "/repo";
+c.projects = c.projects || {};
+c.projects[repo] = Object.assign({}, c.projects[repo], {
+  hasTrustDialogAccepted: true,
+  hasCompletedProjectOnboarding: true,
+  projectOnboardingSeenCount: 1,
+});
+fs.writeFileSync(p, JSON.stringify(c));
+' "$REPO_PATH" || echo "[gateway] WARN: onboarding seed failed — pty/subscription turns may hit the trust dialog"
+
 MCP_BLOCK="$(build_mcp_block)"
 if [ -n "$MCP_BLOCK" ]; then
   mkdir -p /root/.claude
