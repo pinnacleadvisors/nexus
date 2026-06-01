@@ -38,14 +38,19 @@ export interface ChatModel {
 }
 
 /**
- * The Phase 1 whitelist. Order matters — first entry is the default when
- * the operator has no localStorage preference for the current chat surface.
+ * The base whitelist. Order matters — first entry is the default when the
+ * operator has no localStorage preference for the current chat surface. This
+ * static list is the always-present baseline; /api/models/available merges any
+ * NEWER Claude models discovered from the Anthropic models API on top (see
+ * lib/chat/model-discovery.ts) so a fresh release shows up without a code edit.
  *
- * Keep Opus 4.7 first: matches the current claude-gateway default + most
- * operator turns benefit from the bigger model for platform-copilot work.
+ * Keep the newest Opus first: matches "use the biggest model for copilot work"
+ * + becomes the default. Bump this when a new flagship ships (the discovery
+ * merge surfaces it in the dropdown either way, but the DEFAULT is pinned here).
  */
 export const AVAILABLE_MODELS: readonly ChatModel[] = [
-  { id: 'claude-opus-4-7',   label: 'Opus 4.7',   hint: 'Anthropic Claude Opus 4.7 — the biggest Claude model. Best for hard reasoning + multi-step plans.', provider: 'claude' },
+  { id: 'claude-opus-4-8',   label: 'Opus 4.8',   hint: 'Anthropic Claude Opus 4.8 — the latest + biggest Claude model. Best for hard reasoning + multi-step plans.', provider: 'claude' },
+  { id: 'claude-opus-4-7',   label: 'Opus 4.7',   hint: 'Anthropic Claude Opus 4.7 — previous flagship. Still strong for hard reasoning + multi-step plans.', provider: 'claude' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', hint: 'Anthropic Claude Sonnet 4.6 — faster + cheaper. Good for routine investigations + small edits.',  provider: 'claude' },
   { id: 'claude-haiku-4-5',  label: 'Haiku 4.5',  hint: 'Anthropic Claude Haiku 4.5 — fastest + cheapest. Good for single-action follow-ups.',              provider: 'claude' },
   { id: 'codex-direct',      label: 'Codex 5.5',  hint: 'OpenAI Codex 5.5 via the codex-gateway. Faster code edits, no typed-block support.',                provider: 'codex'  },

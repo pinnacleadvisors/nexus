@@ -81,7 +81,12 @@ export async function dispatchCodexChatTurn(
     env:         opts.contextEnv ?? {},
     userId:      opts.userId,
     sessionTag:  opts.sessionTag,
-    timeoutMs:   30_000,                       // ~15s slack vs Vercel Pro's 45s POST cap
+    // 45s: real codex turns rarely finish in 30s. Both chat routes now allow
+    // maxDuration=60, so 45s leaves ~15s for persist + respond. This is the
+    // SYNC chat-pill path — it's still route-bounded, so genuinely long codex
+    // work (2-5 min) belongs on the async delegate_to_codex path (see
+    // services/mcp-codex-delegate + the 480s codex-gateway job timeout).
+    timeoutMs:   45_000,
   })
 
   let result = await dispatchOnce()

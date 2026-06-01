@@ -23,6 +23,7 @@ import { audit } from '@/lib/audit'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 import { resolveClawConfig, isBusinessSlug } from '@/lib/claw/business-client'
 import { enqueueGatewayJob } from '@/lib/claw/gateway-jobs'
+import { resolveExecMode } from '@/lib/chat/exec-mode'
 import { dispatchCodexChatTurn } from '@/lib/chat/codex-direct-dispatch'
 import { buildBusinessSystemPrompt } from '@/lib/chat/system-prompt-business'
 import { appendMessage, listSessions, createSession, deriveTitleFromMessage, listMessages } from '@/lib/chat/sessions'
@@ -30,7 +31,10 @@ import { buildEditPlanResumeHint } from '@/lib/chat/edit-plan-resume'
 import { computeUsage } from '@/lib/chat/context-window'
 
 export const runtime    = 'nodejs'
-export const maxDuration = 30
+// 60s (was 30s) so the synchronous codex-direct chat-pill path has the same
+// ~45s budget as platform-chat. The async Claude path returns in <1s (enqueue);
+// only the sync codex path benefits from the headroom.
+export const maxDuration = 60
 
 interface Body {
   messages?:  Array<{ role?: string; content?: string }>
@@ -211,6 +215,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     })
   }
 
+  // Subscription-billing control (see lib/chat/exec-mode.ts) — interactive pty
+  // path for subscription/node-pty prefs, `-p` for 'api'.
+  const execMode = await resolveExecMode(session.userId)
+
   const enq = await enqueueGatewayJob({
     gatewayUrl:  gateway.gatewayUrl,
     bearerToken: gateway.bearerToken,
@@ -222,6 +230,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ slug: 
     requestTimeoutMs: body.requestTimeoutMs,
     modelOverride: body.modelOverride,
     mode: body.mode,
+    execMode,
   })
   if (!enq.ok || !enq.jobId) {
     audit(req, { action: 'business_chat.enqueue', resource: 'chat', userId: session.userId, metadata: { businessSlug: slug, http: enq.http, error: enq.error, durationMs: Date.now() - t0 } })

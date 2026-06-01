@@ -50,6 +50,7 @@ import HealthView from '@/components/chat-views/HealthView'
 import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
+import { computeApprovalResolutions, type ApprovalResolution } from '@/lib/chat/approval-resolutions'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 
 interface Message {
@@ -223,8 +224,11 @@ export default function BusinessChat({ slug, name }: Props) {
   // Per-plan resolution map for EditSelfCards — same APPROVAL grammar,
   // one-shot (no continue).
   const editSelfResolutions = computeEditSelfResolutions(messages)
+  // Per-approval resolution, derived from history so approval cards stay
+  // resolved across reloads + re-emits (matches the PlatformChat fix).
+  const approvalResolutions = computeApprovalResolutions(messages)
   // Pick the current pending action so FloatingActionBar can surface it.
-  const pendingAction = pickPendingAction(messages, editPlanResolutions)
+  const pendingAction = pickPendingAction(messages, editPlanResolutions, approvalResolutions)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, busy, partial])
 
@@ -772,7 +776,7 @@ export default function BusinessChat({ slug, name }: Props) {
           {messages.map((m, i) => {
             if (m.role === 'user' && isApprovalReply(m.content)) return null
             return (
-              <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} onEditSelfReply={handleEditSelfReply} editSelfResolutions={editSelfResolutions} busy={busy} />
+              <MessageBubble key={i} message={m} onApprove={handleApproval} onEditPlanReply={handleEditPlanReply} editPlanResolutions={editPlanResolutions} onEditSelfReply={handleEditSelfReply} editSelfResolutions={editSelfResolutions} approvalResolutions={approvalResolutions} busy={busy} />
             )
           })}
           {busy && pendingPermissions.length > 0 && (
@@ -979,7 +983,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   )
 }
 
-function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; onEditPlanReply: (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void; editPlanResolutions: Map<string, EditPlanResolution>; onEditSelfReply: (planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) => void; editSelfResolutions: Map<string, EditSelfResolution>; busy: boolean }) {
+function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, approvalResolutions, busy }: { message: Message; onApprove: (request: ApprovalRequest, approvedItemIds: string[]) => void; onEditPlanReply: (planId: string, mode: 'approve' | 'continue' | 'deny', approvedGroupIds?: string[]) => void; editPlanResolutions: Map<string, EditPlanResolution>; onEditSelfReply: (planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) => void; editSelfResolutions: Map<string, EditSelfResolution>; approvalResolutions: Map<string, ApprovalResolution>; busy: boolean }) {
   const isUser = message.role === 'user'
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
@@ -1003,7 +1007,7 @@ function MessageBubble({ message, onApprove, onEditPlanReply, editPlanResolution
           <ApprovalCard
             key={req.approval_id}
             request={req}
-            resolution={message.approval_resolutions?.[req.approval_id] ?? null}
+            resolution={approvalResolutions.get(req.approval_id) ?? message.approval_resolutions?.[req.approval_id] ?? null}
             disabled={busy}
             onSubmit={ids => onApprove(req, ids)}
           />

@@ -21,6 +21,23 @@ import type { ModelDefinition } from './types'
 // ── Anthropic Claude ─────────────────────────────────────────────────────────
 const ANTHROPIC: ModelDefinition[] = [
   {
+    id:       'claude-opus-4-8',
+    name:     'Claude Opus 4.8',
+    provider: 'anthropic',
+    tagline:  'Latest frontier flagship. Default for the hardest reasoning + long-horizon autonomy. (Public leaderboard scores pending — benchmarks will be filled when published.)',
+    capabilities: ['reasoning', 'code', 'autonomy', 'content', 'research'],
+    contextWindow: 1_000_000,
+    // Same Opus tier pricing as 4.7 until Anthropic publishes 4.8 rates.
+    inputCostPerMtok:  15,
+    outputCostPerMtok: 75,
+    latencyTier: 'slow',
+    // Intentionally empty — do not fabricate scores for a just-released model.
+    // The model-discovery merge + a future model-curator agent backfill these.
+    benchmarks: [],
+    availableVia: ['subscription', 'api'],
+    docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models',
+  },
+  {
     id:       'claude-opus-4-7',
     name:     'Claude Opus 4.7',
     provider: 'anthropic',

@@ -30,9 +30,11 @@ export function useChatModel(storageKey: string): {
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(storageKey)
-      if (!raw) return
-      const match = AVAILABLE_MODELS.find(m => m.id === raw)
-      if (match) setValue(match.id)
+      // Accept any saved id — the dropdown only writes valid ids, and the list
+      // may now include models auto-discovered beyond AVAILABLE_MODELS. The
+      // gateway validates the actual --model id and errors clearly if bad.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe: localStorage can only be read post-mount; a lazy initializer would hydration-mismatch the rendered chip.
+      if (raw) setValue(raw)
     } catch { /* localStorage unavailable */ }
   }, [storageKey])
 
@@ -53,7 +55,19 @@ export function ModelSelector({
   onChange: (v: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const current = getModelById(value)
+  // Start from the static whitelist, then hydrate with /api/models/available
+  // which merges newer Claude models discovered from the Anthropic models API
+  // (so a fresh release appears without a code edit). Static stays the fallback.
+  const [models, setModels] = useState<readonly ChatModel[]>(AVAILABLE_MODELS)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/models/available', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((j: { models?: ChatModel[] } | null) => { if (!cancelled && j?.models?.length) setModels(j.models) })
+      .catch(() => { /* keep static fallback */ })
+    return () => { cancelled = true }
+  }, [])
+  const current = models.find(m => m.id === value) ?? getModelById(value)
 
   useEffect(() => {
     if (!open) return
@@ -98,7 +112,7 @@ export function ModelSelector({
             boxShadow:            '0 10px 32px rgba(0,0,0,0.4)',
           }}
         >
-          {AVAILABLE_MODELS.map(m => {
+          {models.map(m => {
             const active = m.id === current.id
             return (
               <button

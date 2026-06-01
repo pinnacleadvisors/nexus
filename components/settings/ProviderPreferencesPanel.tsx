@@ -5,9 +5,11 @@
  *
  * Renders inside an AiProviderCard, persists to /api/provider-prefs which
  * upserts a `name='preferences'` row on user_secrets with JSONB metadata
- * (migration 045). The values feed intelligent routing decisions — execution
- * mode 'node-pty' is metadata today (Task G2 in
- * task_plan-claude-headless-cost-recovery.md wires the actual execution).
+ * (migration 045). Execution mode is now WIRED end-to-end: subscription /
+ * node-pty route chat turns through the claude-gateway's interactive
+ * pseudo-terminal path (billed against your Max/Pro plan); 'api' uses
+ * `claude -p` (per-token API billing). See lib/chat/exec-mode.ts +
+ * services/claude-gateway/src/spawnPty.ts.
  *
  * Auto-detect of subscription tier is intentionally NOT implemented in this
  * PR — the upstream platforms don't expose plan tier via API/MCP, so the
@@ -124,9 +126,13 @@ export default function ProviderPreferencesPanel({
       />
 
       <p className="text-[10px] leading-relaxed" style={{ color: '#55556a' }}>
-        Manual toggle. Auto-detect lands once gateway_turns has token data.
-        Execution mode <code className="font-mono">node-pty</code> is metadata
-        today — wired by Task G2 of the cost-recovery plan.
+        Manual toggle. <code className="font-mono">subscription</code> /{' '}
+        <code className="font-mono">node-pty</code> run Claude in an interactive
+        pseudo-terminal so turns bill against your Max/Pro plan;{' '}
+        <code className="font-mono">api</code> uses <code className="font-mono">claude&nbsp;-p</code>{' '}
+        (per-token API billing). <code className="font-mono">-p</code> bills at API
+        rate even with a subscription — Anthropic&apos;s Jun-15-2026 change makes
+        that explicit, so pick subscription/node-pty to stay flat-billed.
       </p>
 
       {err && (

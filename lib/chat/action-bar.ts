@@ -23,6 +23,7 @@
 import type { ApprovalRequest } from './approval'
 import type { EditPlan } from './edit-plan'
 import type { EditPlanResolution } from '@/components/platform-chat/EditPlanCard'
+import type { ApprovalResolution } from './approval-resolutions'
 
 /** Minimum shape both PlatformChat.Message and BusinessChat.Message satisfy. */
 export interface ChatMessageLike {
@@ -50,6 +51,7 @@ export type ChatAction =
 export function pickPendingAction(
   messages: ChatMessageLike[],
   editPlanResolutions: Map<string, EditPlanResolution>,
+  approvalResolutions: Map<string, ApprovalResolution> = new Map(),
 ): ChatAction | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
@@ -82,9 +84,12 @@ export function pickPendingAction(
       return { kind: 'edit-plan-approve', plan }
     }
 
-    // 3. approval-request — regular inline card. Use message-local
-    //    resolution state (set by handleApproval) to detect unresolved.
+    // 3. approval-request — regular inline card. Prefer the history-DERIVED
+    //    resolution (survives reload + re-emit); fall back to the message-local
+    //    resolution set by handleApproval for the same-render-tick window before
+    //    the APPROVAL reply lands in `messages`.
     for (const req of m.approval_requests ?? []) {
+      if (approvalResolutions.get(req.approval_id)) continue
       if (m.approval_resolutions?.[req.approval_id]) continue
       return { kind: 'approval-request', request: req }
     }

@@ -6,7 +6,8 @@ import { z } from 'zod'
 
 import { verifyHmac } from './auth.js'
 import { WorkQueue, QueueFullError } from './queue.js'
-import { runClaude } from './spawn.js'
+import { runClaude, type RunArgs, type RunResult } from './spawn.js'
+import { runClaudePty } from './spawnPty.js'
 import { isSafeSlug } from './agentSpec.js'
 import { JobStore } from './jobStore.js'
 import { probeAllMcpTools, invalidateMcpToolCache } from './mcpProbe.js'
@@ -17,6 +18,18 @@ const REPO_PATH     = process.env.NEXUS_REPO_PATH ?? '/repo'
 const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
 const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 600_000)
 const DEBUG_HMAC    = process.env.DEBUG_HMAC === '1'
+// Gateway-wide default execution mode. 'print' = `claude -p` (API-rate billed
+// — see spawnPty.ts header). 'pty' = interactive pseudo-terminal (Max/Pro
+// subscription billed). Per-request body.execMode overrides this. Default stays
+// 'print' so behaviour is unchanged until the operator opts in.
+const DEFAULT_EXEC_MODE: 'print' | 'pty' = process.env.CLAUDE_DEFAULT_EXEC_MODE === 'pty' ? 'pty' : 'print'
+
+/** Choose the spawn path. Both runClaude (print) + runClaudePty (interactive)
+ *  share the RunArgs/RunResult contract so this is a clean swap. */
+function pickRunner(execMode: 'print' | 'pty' | undefined): (a: RunArgs) => Promise<RunResult> {
+  const mode = execMode ?? DEFAULT_EXEC_MODE
+  return mode === 'pty' ? runClaudePty : runClaude
+}
 
 // Defence-in-depth allowlist. When set, every signed POST must carry an
 // X-Nexus-User-Id header matching one of these Clerk user IDs. Bearer + HMAC
@@ -101,6 +114,14 @@ const messageBodySchema = z.object({
    * copilot.md, business-copilot.md) — the gateway is just a transport.
    */
   mode: z.enum(['ask', 'plan', 'auto']).optional(),
+  /**
+   * Per-turn execution mode (subscription-billing control).
+   *   'print' → `claude -p` (fast, but billed at API per-token rate)
+   *   'pty'   → interactive pseudo-terminal (billed against the Max/Pro
+   *             subscription — see spawnPty.ts). Forwarded from the operator's
+   *             `execution_mode` provider preference. Omitted → DEFAULT_EXEC_MODE.
+   */
+  execMode: z.enum(['print', 'pty']).optional(),
 })
 
 /** Clamp a per-turn timeout override to the env cap. Floor at 60s to avoid
@@ -253,9 +274,10 @@ app.post('/api/sessions/:sessionId/messages', async c => {
   // system prompt can branch (ask/plan/auto). The gateway doesn't
   // interpret the value beyond forwarding it.
   const modeEnv: Record<string, string> = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
+  const runSync = pickRunner(body.execMode)
   let result
   try {
-    result = await queue.enqueue(() => runClaude({
+    result = await queue.enqueue(() => runSync({
       agentSlug,
       message:   body.content,
       env:       { ...body.env, ...modeEnv },
@@ -347,9 +369,10 @@ app.post('/api/jobs', async c => {
   // Detached promise: we deliberately don't await. The job advances inside the
   // queue's existing FIFO drain loop and writes its result back into the store.
   const modeEnvAsync: Record<string, string> = body.mode ? { NEXUS_CHAT_MODE: body.mode } : {}
+  const runAsync = pickRunner(body.execMode)
   void queue.enqueue(async () => {
     jobs.markRunning(jobId)
-    const result = await runClaude({
+    const result = await runAsync({
       agentSlug,
       message:   body.content,
       env:       { ...body.env, ...modeEnvAsync },
@@ -477,7 +500,8 @@ app.post('/api/sessions/:sessionId/stream', async c => {
       send('open', { sessionId })
 
       try {
-        const result = await queue.enqueue(() => runClaude({
+        const runStream = pickRunner(body.execMode)
+        const result = await queue.enqueue(() => runStream({
           agentSlug,
           message:   body.content,
           env:       body.env,

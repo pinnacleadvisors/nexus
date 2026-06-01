@@ -65,6 +65,15 @@ const BEARER        = process.env.CODEX_GATEWAY_BEARER_TOKEN ?? process.env.CODE
 const REPO_PATH     = process.env.NEXUS_REPO_PATH ?? '/repo'
 const QUEUE_MAX     = Number(process.env.QUEUE_MAX_DEPTH ?? 8)
 const REQUEST_MAX_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 120_000)
+// Async-job wall-clock. The sync /messages + /stream paths are bounded by the
+// CALLER's HTTP timeout (≈120s), but /api/jobs is fire-and-forget + polled, so
+// it can run as long as real `codex exec` work takes (2-5 min for research /
+// debugging). 120s was killing the CLI at 2 min and surfacing to platform-
+// copilot as "codex CLI timeout after 120000ms" — the #1 cause of the reported
+// delegate_to_codex timeouts. Must stay < the MCP delegate's poll budget
+// (CODEX_DELEGATE_TIMEOUT_MS, default 600s) so the delegate gets the real
+// result/error instead of giving up first.
+const JOB_TIMEOUT_MS = Number(process.env.CODEX_JOB_TIMEOUT_MS ?? 480_000)
 const DEBUG_HMAC    = process.env.DEBUG_HMAC === '1'
 
 // Defence-in-depth allowlist. When set, every signed POST must carry an
@@ -363,7 +372,8 @@ app.post('/api/jobs', async c => {
       message:   body.content,
       env:       body.env,
       repoPath:  REPO_PATH,
-      timeoutMs: REQUEST_MAX_MS,
+      // Async path → the generous JOB_TIMEOUT_MS, not the sync REQUEST_MAX_MS.
+      timeoutMs: JOB_TIMEOUT_MS,
     })
     jobs.markDone(jobId, result)
     return result
