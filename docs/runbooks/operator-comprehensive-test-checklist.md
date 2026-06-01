@@ -19,7 +19,11 @@ doppler run -- node -e "console.log(process.env.NAME ? 'SET' : 'MISSING')"
 - [x] **Model dropdown** — Opus 4.8 default, outdated models filtered, scrollable (prior PRs #458/#460).
 
 ## B. Slack notifications — **the reported "Slack not working"**
-Slack goes through Composio (`platform='slack'`) and fails **silently** when unconfigured.
+**✅ CODE-FIXED + verified live (this branch):** the real cause was `executeAction()`
+omitting `user_id`, so Composio v3 400-ed every send ("User ID is required with
+connected account"). Fixed — `/api/notifications/test` now returns `{ok:true}` and a
+real Slack message lands. The items below are only needed for a FRESH setup; if
+Slack worked once, your connection + keys are already present.
 - [ ] **[KEY]** `COMPOSIO_API_KEY` set in Doppler (`prd`). *Why:* required for any Composio action. *Verify:* check command above.
 - [ ] **[KEY]** `COMPOSIO_AUTH_CONFIG_SLACK` set in Doppler. *Why:* the Slack toolkit auth-config id from the Composio dashboard. *How:* https://app.composio.dev → New Auth Config → Slack → copy the `auth_config_id` → `doppler secrets set COMPOSIO_AUTH_CONFIG_SLACK=<id>`.
 - [ ] **[UI]** Link Slack at **/settings/accounts → Slack → Connect** (creates the `connected_accounts` row the notifier resolves). *Verify:* the row turns "active".

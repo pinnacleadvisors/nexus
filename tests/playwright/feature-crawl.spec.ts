@@ -16,12 +16,17 @@
  * Requires BOT_SESSION_TICKET_URL. Skipped otherwise.
  */
 import { test, type Page } from '@playwright/test'
+import { writeFileSync } from 'node:fs'
 import { requireAuth } from './_helpers'
 
 // A live business slug for the dynamic routes. Override via CRAWL_BIZ_SLUG.
 const BIZ = process.env.CRAWL_BIZ_SLUG || 'kaizencraft'
 
-const ROUTES: string[] = [
+// CRAWL_ROUTES (comma-separated) overrides the full list — used to re-run a
+// focused subset (e.g. just the flagged routes) fast against a warm server.
+const ROUTES: string[] = process.env.CRAWL_ROUTES
+  ? process.env.CRAWL_ROUTES.split(',').map(s => s.trim()).filter(Boolean)
+  : [
   '/dashboard', '/dashboard/experiments', '/dashboard/org',
   '/manage-platform',
   '/businesses', '/businesses/new',
@@ -101,5 +106,13 @@ test('crawl all operator routes; report console/page/network errors', async ({ p
     for (const c of r.consoleErrors.slice(0, 3)) console.log(`   console:   ${c}`)
   }
   console.log('===================================')
+
+  // Write a reliable report file (the line-reporter's cursor-overwrites make
+  // captured stdout lossy). Read this instead of scraping the run log.
+  const reportPath = process.env.CRAWL_REPORT_FILE || '/tmp/crawl-report.json'
+  try {
+    writeFileSync(reportPath, JSON.stringify({ crawled: results.length, problems, results }, null, 2))
+    console.log(`[crawl] report → ${reportPath}`)
+  } catch { /* best-effort */ }
   // Intentionally does not fail the suite — this is a diagnostic crawl, not a gate.
 })
