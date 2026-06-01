@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ShieldCheck, ListTodo, Activity, Filter, CheckSquare, Loader2, Sparkles, BookOpen, ChevronDown, ChevronUp, AlertTriangle, Briefcase, Eye } from 'lucide-react'
 import ApprovalCard from '@/components/approvals/ApprovalCard'
 import type { InboxItem, InboxKind } from './types'
@@ -266,6 +267,7 @@ export default function InboxClient({ items: initialItems }: Props) {
 }
 
 function InboxRow({ item, onTaskDone }: { item: InboxItem; onTaskDone?: (id: string) => void }) {
+  const router = useRouter()
   // Approvals: keep the existing rich ApprovalCard (approve/reject inline).
   if (item.kind === 'approval') {
     return <ApprovalCard approval={item.data} />
@@ -307,9 +309,12 @@ function InboxRow({ item, onTaskDone }: { item: InboxItem; onTaskDone?: (id: str
   if (item.kind === 'issue') {
     const d = item.data
     return (
-      <Link
-        href={`/businesses/${d.business_slug}/issues`}
-        className="block rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/60"
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={() => router.push(`/businesses/${d.business_slug}/issues`)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/businesses/${d.business_slug}/issues`) } }}
+        className="block cursor-pointer rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/60"
       >
         <div className="flex items-start gap-3">
           <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${iconColor}`} />
@@ -331,7 +336,7 @@ function InboxRow({ item, onTaskDone }: { item: InboxItem; onTaskDone?: (id: str
             </div>
           </div>
         </div>
-      </Link>
+      </div>
     )
   }
 
