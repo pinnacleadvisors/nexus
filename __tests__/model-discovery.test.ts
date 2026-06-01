@@ -5,7 +5,7 @@
  *
  * Run with: `npx --yes tsx __tests__/model-discovery.test.ts`
  */
-import { mergeDiscoveredModels, normalizeClaudeId, labelForClaudeId } from '../lib/chat/model-discovery'
+import { mergeDiscoveredModels, normalizeClaudeId, labelForClaudeId, parseClaudeVersion } from '../lib/chat/model-discovery'
 import { AVAILABLE_MODELS } from '../lib/chat/models'
 
 let failures = 0
@@ -25,6 +25,27 @@ assert(labelForClaudeId('claude-sonnet-4-7') === 'Sonnet 4.7', 'label derived fo
   const merged = mergeDiscoveredModels(AVAILABLE_MODELS, [])
   assert(merged.length === AVAILABLE_MODELS.length, 'empty discovery → static list unchanged')
   assert(merged[0].id === AVAILABLE_MODELS[0].id, 'default (first entry) preserved')
+}
+
+// ── version parsing (the gate that rejects outdated/unusable ids) ────────────
+assert(parseClaudeVersion('claude-sonnet-4') === null, 'claude-sonnet-4 (no minor) does NOT parse → cannot be added')
+assert(parseClaudeVersion('claude-3-5-sonnet-20241022') === null, 'claude-3-5-sonnet (wrong shape) does NOT parse')
+{ const v = parseClaudeVersion('claude-opus-4-8-20260601'); assert(!!v && v.family === 'opus' && v.major === 4 && v.minor === 8, 'dated claude-opus-4-8-… parses to opus 4.8') }
+
+// ── merge: OUTDATED / unusable models are REJECTED (the claude-sonnet-4 crash) ─
+{
+  // These are exactly the kind of ids the Anthropic /v1/models API returned for
+  // a real key — including the one that crashed the turn ("claude-sonnet-4").
+  const merged = mergeDiscoveredModels(AVAILABLE_MODELS, [
+    'claude-sonnet-4',                 // the crash — no minor, unusable
+    'claude-sonnet-4-5-20250929',      // 4.5 < baseline 4.6 → outdated
+    'claude-opus-4-7',                 // older than baseline 4.8
+    'claude-3-5-sonnet-20241022',      // legacy family/shape
+    'claude-opus-4-1-20250805',        // way older
+  ])
+  assert(merged.length === AVAILABLE_MODELS.length, 'NONE of the outdated/legacy ids are added')
+  assert(!merged.some(m => m.id === 'claude-sonnet-4'), 'claude-sonnet-4 (the crashing model) is NOT in the dropdown')
+  assert(!merged.some(m => m.id.startsWith('claude-sonnet-4-5')), 'older sonnet-4-5 is NOT in the dropdown')
 }
 
 // ── merge: dedupes already-known + dated variants ────────────────────────────
