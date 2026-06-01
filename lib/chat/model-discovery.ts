@@ -26,9 +26,43 @@ export function normalizeClaudeId(id: string): string {
 
 /** 'claude-opus-4-8' → 'Opus 4.8'. Falls back to the raw id if unrecognised. */
 export function labelForClaudeId(id: string): string {
-  const m = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/.exec(normalizeClaudeId(id))
-  if (!m) return id
-  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}`
+  const v = parseClaudeVersion(id)
+  if (!v) return id
+  return `${v.family[0].toUpperCase()}${v.family.slice(1)} ${v.major}.${v.minor}`
+}
+
+export interface ClaudeVersion { family: 'opus' | 'sonnet' | 'haiku'; major: number; minor: number }
+
+// Requires a full family-major-minor (anchored after date-strip). This is what
+// rejects outdated/unusable ids the Anthropic /v1/models API returns for a key —
+// e.g. `claude-sonnet-4` (no minor) and `claude-3-5-sonnet` (wrong shape) both
+// fail to parse, so they can never reach the dropdown.
+const VERSION_RE = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)$/
+
+export function parseClaudeVersion(id: string): ClaudeVersion | null {
+  const m = VERSION_RE.exec(normalizeClaudeId(id))
+  if (!m) return null
+  return { family: m[1] as ClaudeVersion['family'], major: Number(m[2]), minor: Number(m[3]) }
+}
+
+/** Highest (major, minor) per family present in the curated static list. */
+function staticFamilyMax(staticModels: readonly ChatModel[]): Map<string, [number, number]> {
+  const max = new Map<string, [number, number]>()
+  for (const sm of staticModels) {
+    const v = parseClaudeVersion(sm.id)
+    if (!v) continue
+    const cur = max.get(v.family)
+    if (!cur || v.major > cur[0] || (v.major === cur[0] && v.minor > cur[1])) max.set(v.family, [v.major, v.minor])
+  }
+  return max
+}
+
+/** Strictly newer than the family's curated baseline. Unknown family → false
+ *  (a brand-new family is curated into the static list, never auto-trusted). */
+function isStrictlyNewer(v: ClaudeVersion, famMax: Map<string, [number, number]>): boolean {
+  const cur = famMax.get(v.family)
+  if (!cur) return false
+  return v.major > cur[0] || (v.major === cur[0] && v.minor > cur[1])
 }
 
 /**
@@ -38,15 +72,18 @@ export function labelForClaudeId(id: string): string {
  * block (before codex) with a derived label. Pure — unit-tested.
  */
 export function mergeDiscoveredModels(staticModels: readonly ChatModel[], discoveredIds: string[]): ChatModel[] {
-  const known = new Set(staticModels.map(m => normalizeClaudeId(m.id)))
+  const known  = new Set(staticModels.map(m => normalizeClaudeId(m.id)))
+  const famMax = staticFamilyMax(staticModels)
   const additions: ChatModel[] = []
   for (const raw of discoveredIds) {
+    const v = parseClaudeVersion(raw)
+    if (!v) continue                          // no parseable family-major-minor (rejects claude-sonnet-4, claude-3-5-*)
+    if (!isStrictlyNewer(v, famMax)) continue // ONLY surface models newer than the curated baseline — never outdated/unusable ones
     const id = normalizeClaudeId(raw)
-    if (!/^claude-(opus|sonnet|haiku)-\d/.test(id)) continue   // Anthropic family only
     if (known.has(id)) continue
     known.add(id)
     const label = labelForClaudeId(id)
-    additions.push({ id, label, hint: `Anthropic ${label} — auto-discovered from the Anthropic models API.`, provider: 'claude' })
+    additions.push({ id, label, hint: `Anthropic ${label} — newer than the bundled list; auto-discovered from the Anthropic models API.`, provider: 'claude' })
   }
   if (additions.length === 0) return [...staticModels]
 

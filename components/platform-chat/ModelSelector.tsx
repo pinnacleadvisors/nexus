@@ -102,13 +102,17 @@ export function ModelSelector({
       </button>
       {open && (
         <div
-          className="absolute bottom-full right-0 mb-1 rounded-lg overflow-hidden z-20"
+          className="absolute bottom-full right-0 mb-1 rounded-lg overflow-y-auto overflow-x-hidden z-20"
           style={{
             background:           'rgba(20,20,30,0.96)',
             border:               '1px solid rgba(255,255,255,0.10)',
             backdropFilter:       'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
             minWidth:             '260px',
+            // Cap height + scroll so a long model list (static + any discovered)
+            // is fully reachable instead of overflowing off-screen. ~7 rows.
+            maxHeight:            '320px',
+            overscrollBehavior:   'contain',
             boxShadow:            '0 10px 32px rgba(0,0,0,0.4)',
           }}
         >
