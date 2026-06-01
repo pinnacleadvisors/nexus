@@ -40,6 +40,7 @@ import HealthView from '@/components/chat-views/HealthView'
 import BackgroundTasksView from '@/components/chat-views/BackgroundTasksView'
 import NotesView from '@/components/chat-views/NotesView'
 import { buildApprovalReply, isApprovalReply, type ApprovalRequest } from '@/lib/chat/approval'
+import { computeApprovalResolutions } from '@/lib/chat/approval-resolutions'
 import type { ToolCall } from '@/lib/claw/gateway-jobs'
 import { TurnTimeoutSelector, useTurnTimeoutMs } from './TurnTimeoutSelector'
 import { ModeSelector, useChatMode } from './ModeSelector'
@@ -256,11 +257,16 @@ export default function PlatformChat() {
   const editPlanResolutions = computeEditPlanResolutions(messages)
   // Mirror for edit-self blocks — same APPROVAL grammar, different shape.
   const editSelfResolutions = computeEditSelfResolutions(messages)
+  // Mirror for approval-request blocks — derived from history so a card stays
+  // resolved across reloads + re-emits (the per-message approval_resolutions
+  // React state is ephemeral). Fixes the "Provision … (N items)" card that
+  // re-appeared after approval + completion.
+  const approvalResolutions = computeApprovalResolutions(messages)
 
   // The "current actionable thing" picked from messages + resolutions.
   // Feeds the FloatingActionBar above the input so the operator never
   // has to scroll up to an inline card to click Continue / Approve.
-  const pendingAction = pickPendingAction(messages, editPlanResolutions)
+  const pendingAction = pickPendingAction(messages, editPlanResolutions, approvalResolutions)
 
   // Auto-scroll to bottom whenever new content arrives.
   useEffect(() => {
@@ -968,6 +974,7 @@ export default function PlatformChat() {
                 editPlanResolutions={editPlanResolutions}
                 onEditSelfReply={handleEditSelfReply}
                 editSelfResolutions={editSelfResolutions}
+                approvalResolutions={approvalResolutions}
                 busy={busy}
               />
             )
@@ -1209,7 +1216,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 function MessageBubble({
-  message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, busy,
+  message, onApprove, onEditPlanReply, editPlanResolutions, onEditSelfReply, editSelfResolutions, approvalResolutions, busy,
 }: {
   message:             Message
   onApprove:           (request: ApprovalRequest, approvedItemIds: string[]) => void
@@ -1217,6 +1224,7 @@ function MessageBubble({
   editPlanResolutions: Map<string, EditPlanResolution>
   onEditSelfReply:     (planId: string, mode: 'approve' | 'deny', approvedItemIds?: string[]) => void
   editSelfResolutions: Map<string, EditSelfResolution>
+  approvalResolutions: Map<string, import('@/lib/chat/approval-resolutions').ApprovalResolution>
   busy:                boolean
 }) {
   const isUser = message.role === 'user'
@@ -1267,7 +1275,7 @@ function MessageBubble({
           <ApprovalCard
             key={req.approval_id}
             request={req}
-            resolution={message.approval_resolutions?.[req.approval_id] ?? null}
+            resolution={approvalResolutions.get(req.approval_id) ?? message.approval_resolutions?.[req.approval_id] ?? null}
             disabled={busy}
             onSubmit={ids => onApprove(req, ids)}
           />
