@@ -16,8 +16,16 @@
  *
  * Requires BOT_SESSION_TICKET_URL. Skipped otherwise.
  */
-import { test, expect } from '@playwright/test'
-import { requireAuth, redeemTicket } from './_helpers'
+import { test, expect, type Page } from '@playwright/test'
+import { requireAuth } from './_helpers'
+
+// Robust redemption — the shared redeemTicket() uses waitUntil:'networkidle'
+// which HANGS on the Clerk sign-in page (it holds an open polling connection).
+// domcontentloaded + waitForURL-off-/sign-in is the reliable pattern.
+async function redeemTicketRobust(page: Page, ticketUrl: string): Promise<void> {
+  await page.goto(ticketUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.waitForURL(u => !u.pathname.startsWith('/sign-in'), { timeout: 45_000 }).catch(() => { /* may already be signed in */ })
+}
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000abc'
 const APPROVAL_ID = 'create-business-kaizencraft-regression'
@@ -52,9 +60,11 @@ const MESSAGES = [
   { id: 'm4', role: 'assistant', content: 'All four items provisioned. KaizenCraft is live.', metadata: {} },
 ]
 
+test.setTimeout(240_000)   // absorb Turbopack first-compile of /manage-platform
+
 test.beforeEach(async ({ page }) => {
   const auth = requireAuth()
-  await redeemTicket(page, auth.ticketUrl)
+  await redeemTicketRobust(page, auth.ticketUrl)
 
   // Mock the session list + messages so we control the transcript exactly.
   await page.route('**/api/platform-chat/sessions', route =>
@@ -64,7 +74,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('an approved approval renders resolved (not "Approval required") after reload', async ({ page }) => {
-  await page.goto('/manage-platform', { waitUntil: 'domcontentloaded' })
+  await page.goto('/manage-platform', { waitUntil: 'domcontentloaded', timeout: 60_000 })
 
   // Open the mocked session from the sidebar.
   await page.getByText('Approval persistence regression').first().click({ timeout: 15_000 }).catch(() => { /* may auto-select */ })
