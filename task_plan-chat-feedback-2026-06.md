@@ -63,5 +63,14 @@ Hard constraints:
 ## Progress (as of 2026-06-01)
 ### Completed
 - [x] Phase 1 explore — all 4 root causes identified with file:line evidence.
+- [x] Research: confirmed `claude -p` bills at API rate (not subscription); Jun-15-2026 split; interactive/pty = the subscription path. Saved to memory (local file + memory-hq atom hit 402, local is durable). GitHub #43333, #37686.
+- [x] T2 node-pty: spawnPty.ts (interactive TTY + JSONL transcript read) + transcript.ts (pure) + index.ts wiring (3 call sites, execMode) + exec-mode.ts pref mapping + both chat routes + Settings note + Dockerfile/dep. Gateway tsc clean. Unit tests: pty-transcript (23) + exec-mode (5). Commit e0b1211.
+- [x] T3 approval: computeApprovalResolutions (history-derived) + action-bar + PlatformChat + BusinessChat. Unit test (11, incl reload + re-emit). Playwright spec. Commit 2965751.
+- [x] T5 codex: CODEX_JOB_TIMEOUT_MS 480s (async) + delegate 600s + codex-direct 45s + business-chat maxDuration 60. Gateway tsc clean. Commit 9be8a6c.
+- [x] T4 models: Opus 4.8 added (default) in models.ts + catalog.ts; model-discovery.ts (Anthropic /v1/models merge, static fallback) + /api/models/available + ModelSelector fetch. Unit test (12).
 ### Remaining
-- [ ] Confirm scope decisions, then Phase 2/3 per issue.
+- [ ] T6 verify: npm run check:all; real-backend dev run (doppler) + Playwright drive of the approval flow; push + ONE PR (all 4 fixes).
+### Notes / follow-ups
+- node-pty happy-path billing can only be fully validated on the deployed gateway (local has no OAuth login; onboarding blocks). Opt-in (default stays print) + never falls back to -p.
+- Long codex chat-pill turns still route-bounded — async-ify codex-direct is a follow-up.
+- memory-hq atom write returned 402 (endpoint cost-capped/degraded) — retry when healthy.
