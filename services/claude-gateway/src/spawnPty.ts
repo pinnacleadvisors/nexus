@@ -33,7 +33,7 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { readAgentSystemPrompt } from './agentSpec.js'
 import { loadAgentHooks, writeMergedSettings, cleanupMergedSettings } from './agentHooks.js'
-import type { RunArgs, RunResult } from './spawn.js'
+import { buildPermissionCliArgs, type RunArgs, type RunResult } from './spawn.js'
 import { emptyTranscriptState, applyTranscriptLine, turnComplete, transcriptPathFor } from './transcript.js'
 
 // ── pty loader (lazy + non-fatal) ───────────────────────────────────────────
@@ -92,13 +92,21 @@ export async function runClaudePty(args: RunArgs): Promise<RunResult> {
     }
   }
 
-  // Interactive invocation — NO `-p`. bypassPermissions because there is no
-  // operator at the pty to approve tool calls (the container is the bound).
-  const cliArgs: string[] = ['--session-id', sessionId, '--permission-mode', 'bypassPermissions']
+  // Interactive invocation — NO `-p`. We deliberately do NOT pass
+  // `--permission-mode bypassPermissions`: in interactive mode that triggers a
+  // one-time acceptance dialog (default "No, exit") with no operator at the pty
+  // to answer it, so the session exits ~1s later with no output. Instead we
+  // mirror the print path — pre-allow the workhorse + MCP tools and route the
+  // rest to the permission-broker MCP (buildPermissionCliArgs). Tool approvals
+  // then surface in the chat UI exactly as they do for `-p`.
+  const cliArgs: string[] = ['--session-id', sessionId, ...buildPermissionCliArgs()]
   if (args.model) cliArgs.push('--model', args.model)
   if (mcpConfigPath && mcpConfigPath !== 'skip') cliArgs.push('--mcp-config', mcpConfigPath, '--strict-mcp-config')
   if (systemPrompt) cliArgs.push('--append-system-prompt', systemPrompt)
-  cliArgs.push(args.message)   // positional prompt → auto-runs in interactive mode
+  // The prompt is NOT passed positionally — interactive mode opens an EMPTY
+  // REPL and ignores a positional prompt. It's typed in after the REPL renders
+  // (submitPromptWhenReady below) via bracketed paste so multi-line / special
+  // chars submit as one message without per-line submit or slash interception.
 
   const childEnv: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (typeof v === 'string') childEnv[k] = v
@@ -112,6 +120,11 @@ export async function runClaudePty(args: RunArgs): Promise<RunResult> {
   // (it forces non-interactive behaviour, breaking billing + the TUI).
   delete childEnv.CLAUDECODE
   delete childEnv.CLAUDE_CODE_ENTRYPOINT
+  // The gateway container runs as root; interactive `claude` hard-exits (~0.8s,
+  // no output) under root with elevated permissions unless it believes it's
+  // sandboxed. The container IS the sandbox (ephemeral /repo, ADR-002 secret
+  // scoping). Harmless when non-root.
+  childEnv.IS_SANDBOX = '1'
   childEnv.TERM = 'xterm-256color'
   if (args.jobId) childEnv.NEXUS_JOB_ID = args.jobId
 
@@ -141,8 +154,34 @@ export async function runClaudePty(args: RunArgs): Promise<RunResult> {
     void cleanupMergedSettings(tmpSettingsPath)
     return { ok: false, content: '', durationMs: Date.now() - started, error: `failed to spawn pty claude: ${(err as Error).message}` }
   }
-  term.onData(() => { /* drain TUI bytes; output comes from the JSONL */ })
+  // Keep a small rolling tail of the TUI so we can detect when the REPL has
+  // finished rendering. The actual response still comes from the JSONL.
+  let tuiTail = ''
+  term.onData((d: string) => { tuiTail = (tuiTail + d).slice(-4000) })
   term.onExit(() => { ptyExited = true })
+
+  // Interactive mode opens an empty REPL — type the prompt in once it's ready.
+  // Readiness = the REPL footer rendered. "? for shortcuts" / "esc to interrupt"
+  // are stable across recent CLI versions; a time cap is the fallback so a
+  // banner-text change can't wedge us (we submit anyway and let the no-response
+  // guard catch a genuinely stuck REPL). Bracketed paste (ESC[200~ … ESC[201~)
+  // submits a multi-line / special-char prompt as ONE message — no per-line
+  // submit, no leading-slash command interception — and a trailing CR sends it.
+  async function submitPromptWhenReady(): Promise<void> {
+    const READY_CAP = Number(process.env.PTY_READY_CAP_MS ?? 25_000)
+    const t0 = Date.now()
+    for (;;) {
+      await sleep(250)
+      if (ptyExited) return                       // died before we could submit; loop below reports it
+      if (/for shortcuts|to interrupt/i.test(tuiTail)) break
+      if (Date.now() - t0 > READY_CAP) break
+    }
+    await sleep(600)                              // let the input box settle after the footer paints
+    term.write('\x1b[200~' + args.message + '\x1b[201~')
+    await sleep(500)
+    term.write('\r')
+  }
+  await submitPromptWhenReady()
 
   let timedOut = false
   for (;;) {
@@ -172,7 +211,14 @@ export async function runClaudePty(args: RunArgs): Promise<RunResult> {
   return {
     ok:         state.text.length > 0 && !timedOut,
     content:    state.text,
-    error:      timedOut ? `claude pty turn timed out after ${timeoutMs}ms (partial output returned)` : undefined,
+    // Never return ok:false with an empty error — the async job path maps a
+    // missing error to the opaque literal "job_failed". A non-empty message
+    // here surfaces an actionable reason in the chat's CrashedTurnCard instead.
+    error:      timedOut
+      ? `claude pty turn timed out after ${timeoutMs}ms (partial output returned)`
+      : state.text.length === 0
+        ? 'claude pty produced no output — the interactive session exited before answering (check the gateway onboarding/trust seed + OAuth login)'
+        : undefined,
     durationMs,
     toolCalls:  state.toolCalls.size > 0 ? [...state.toolCalls.values()] : undefined,
     usage:      state.usage,

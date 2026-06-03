@@ -74,6 +74,31 @@ function formatBlocks(payload: NotificationPayload) {
 }
 
 /**
+ * Interpret a Composio SLACK_SEND_MESSAGE response.
+ *
+ * Composio returns HTTP 200 + a top-level `successful: true` whenever it
+ * REACHED Slack's API — even when Slack itself rejected the post with
+ * `data.ok: false` (token_revoked / not_in_channel / channel_not_found /
+ * invalid_auth). Treating "the call didn't throw" as success is the silent-
+ * failure bug behind "the test button says OK but no message arrives": the
+ * 2026-06-01 probe showed `{ successful: true, data: { ok: false, error:
+ * "token_revoked" } }`. So we inspect BOTH levels.
+ *
+ * Returns the error string when the message did NOT actually send, else null.
+ */
+function extractSlackError(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null
+  const r = result as { successful?: boolean; error?: unknown; data?: { ok?: boolean; error?: unknown } }
+  if (r.successful === false) {
+    return typeof r.error === 'string' && r.error ? r.error : 'composio_action_failed'
+  }
+  if (r.data && typeof r.data === 'object' && r.data.ok === false) {
+    return typeof r.data.error === 'string' && r.data.error ? r.data.error : 'slack_api_rejected'
+  }
+  return null
+}
+
+/**
  * Send a notification to the operator via Slack DM / channel.
  * Returns a ChannelResult with skipped reason when no destination exists.
  */
@@ -88,7 +113,7 @@ export async function sendSlackNotification(
   const channelRef = target?.channel_id ?? '#approvals'
 
   try {
-    await executeBusinessAction({
+    const result = await executeBusinessAction({
       userId,
       businessSlug: null, // operator-scope; uses user-default connected_account
       platform:     'slack',
@@ -100,6 +125,15 @@ export async function sendSlackNotification(
       },
       timeoutMs:    15_000,
     })
+    // Composio 200 ≠ Slack delivered — check the underlying Slack result too.
+    const slackErr = extractSlackError(result)
+    if (slackErr) {
+      // Auth-class failures mean the connection is dead (token revoked/expired,
+      // missing scope) — surface as `unconfigured` so the Alerts panel nudges a
+      // reconnect at /settings/accounts rather than reading as a transient blip.
+      const authClass = /revoked|invalid_auth|not_authed|account_inactive|token_expired|missing_scope|no_permission/i.test(slackErr)
+      return { channel: 'slack', ok: false, error: slackErr, ...(authClass ? { skipped: 'unconfigured' as const } : {}) }
+    }
     return { channel: 'slack', ok: true }
   } catch (err) {
     if (err instanceof ConnectedAccountMissingError) {

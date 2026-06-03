@@ -31,10 +31,13 @@ export async function fetchWithReauth(
 ): Promise<Response> {
   const retries = opts.retries ?? 2
   const delayMs = opts.delayMs ?? 1500
-  let res = await fetch(input, init)
+  // Per-attempt timeout so a hung request can't wedge the poll loop or amplify
+  // under retry. A fresh AbortSignal.timeout per attempt (the sequence is
+  // serial); a caller-provided signal always wins.
+  let res = await fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) })
   for (let attempt = 0; res.status === 401 && attempt < retries; attempt++) {
     await new Promise(r => setTimeout(r, delayMs))
-    res = await fetch(input, init)
+    res = await fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000) })
   }
   return res
 }
