@@ -177,3 +177,24 @@ When implementation begins, follow CLAUDE.md PDCA gates:
 ### Open before Step 3
 - **Per-source rate-limit defaults** for `/api/memory/event`. Proposed: 100 writes/min/source, 1000/day/source. Owner override via env.
 - **Locator credentials** — Doppler keys for R2/S3/YouTube need to be added before T2f resolver tests pass. Non-blocking for T2a–T2e.
+
+---
+
+## memory-os feature absorption (scoped 2026-06-04, ADR 012 lean pivot)
+
+Keep `memory-hq` as the source of truth (model/framework-agnostic, cross-project provenance — do
+NOT adopt [memory-os](https://github.com/ClaudioDrews/memory-os) wholesale; it's Hermes-coupled +
+single-maintainer). **Absorb the FEATURES memory-hq lacks**, smallest-valuable-first:
+
+| Feature (from memory-os) | What it adds | Where it lands | Priority |
+|---|---|---|---|
+| **Trust-scored facts** | per-atom `trust` (0–1) raised/lowered by corroboration/contradiction; rank search by it | new `mol_atoms.trust` column + `/api/memory/event` accepts `trust`; `memory_search` orders by trust×recency | high |
+| **Semantic dedup** | on write, if cosine-sim to an existing atom > 0.92, merge instead of insert | `/api/memory/event` write path (pgvector query before insert) | high |
+| **Weekly decay / archival** | low-trust, never-recalled atoms get archived (not deleted) on a schedule | a `cron/memory-decay` route + `archived` flag; cron-runner job | medium |
+| **4-level retrieval cascade** | hybrid → dense → lexical → SQLite fallback so a query never returns empty | `/api/memory/query` resolver chain (already part-way via FTS + pgvector) | medium |
+
+Out of scope (memory-os-specific, not worth it): the Qdrant+Redis+ARQ stack (memory-hq uses Supabase
+pgvector), the Fabric/Icarus plugin forks, the auto-wiki curator.
+
+Sequencing: trust column + dedup first (one migration + write-path change), then decay cron, then
+retrieval-cascade polish. Each is independently shippable.
