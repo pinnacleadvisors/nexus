@@ -1,0 +1,8 @@
+# Per-business env files hold the per-business gateway bearer token + the
+# box's DOPPLER_TOKEN. Host-local only — never commit.
+*.env
+
+# The generated compose file is reproducible from the *.env files via
+# `npm run business:local -- sync`, so it's not tracked either. (Keeping it
+# untracked avoids merge churn when businesses are added/removed.)
+docker-compose.yaml

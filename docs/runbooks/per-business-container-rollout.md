@@ -1,5 +1,7 @@
 # Runbook — Per-business container rollout
 
+> **⚠️ Superseded host (2026-06-04).** Per-business containers now run on the **Mac local-OS stack (OrbStack)**, not Coolify/KVM4 — see [`services/local-os/businesses/README.md`](../../services/local-os/businesses/README.md) and [`npm run business:local`](operator-commands.md). This Coolify rollout doc is retained for the legacy/fallback path only. The local path needs no GHA image build (built on-box for arm64), no public FQDN (internal docker DNS), and no `claude login` (Doppler `CLAUDE_CODE_OAUTH_TOKEN`).
+
 Migrating a business from the **shared Claude gateway** to its **own Coolify container**. Targets the architecture in `task_plan-execution-overhaul.md`.
 
 > **Pre-reqs:** Coolify access, GitHub Container Registry credentials, Doppler write, Composio admin. Doppler config `prd` or `dev` (whichever the user runs against).

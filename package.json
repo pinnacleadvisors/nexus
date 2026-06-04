@@ -39,7 +39,8 @@
     "populate-memory": "doppler run -- node scripts/populate-memory.mjs",
     "populate-memory:local": "node scripts/populate-memory.mjs",
     "deploy": "doppler run -- ./scripts/deploy.sh",
-    "deploy:local": "./scripts/deploy.sh"
+    "deploy:local": "./scripts/deploy.sh",
+    "business:local": "npx --yes tsx scripts/local-os-business.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",

@@ -16,6 +16,9 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Deploy the Next.js platform | `npm run deploy -- --nexus-app` |
 | Deploy everything Coolify | `npm run deploy -- --all` |
 | Run the deploy picker | `npm run deploy` |
+| Spin up a per-business container locally | `npm run business:local -- add <slug>` |
+| List / start / stop per-business containers | `npm run business:local -- list` · `up <slug>` · `down <slug>` |
+| Print a business's dispatch gateway secret | `npm run business:local -- secret <slug>` |
 | Migrate Vercel crons → cron-job.org | `doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
