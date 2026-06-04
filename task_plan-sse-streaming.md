@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot (chat = embed + replace).** The embedded chat UI handles its own streaming.
+> Bespoke chat engine demoted for an embedded Claude Code/opencode web UI; governance affordances re-homed. See [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history.
+
 # task_plan-sse-streaming.md
 
 Durable Layer-2 plan for the chat SSE-streaming initiative. The Layer-3 scratch (with the full architectural rationale + alternatives) lives at `~/.claude/plans/fancy-singing-snail.md` on this machine.

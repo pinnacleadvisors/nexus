@@ -12,5 +12,6 @@
 | [008](008-platform-copilot-autonomous-ui-verify.md) | Platform-copilot autonomous UI verification (screenshot pair via codex-delegate) before PR + lift PR-open approval gate | Accepted | 2026-05-23 |
 | [010](010-graphify-obsidian-dual-store.md) | Decline Graphify+Obsidian dual-store — memory-hq + Supabase `mol_*` mirror already is it (one-way-consistent, safer than dual-write) | Accepted | 2026-05-30 |
 | [011](011-mac-mini-local-os.md) | Mac-mini local OS as primary host (off Hostinger) — OrbStack + compose, Supabase stays cloud, KVM4 fallback until 2026-06-28 | Accepted | 2026-06-04 |
+| [012](012-lean-nexus-integration-cockpit.md) | Lean Nexus — integration cockpit over best-of-breed OSS (Paperclip/Hermes/opencode); build only the gap; MCP substrate (memory-hq+Composio) as shared agent backbone | Accepted | 2026-06-04 |
 | — | Solopreneur autonomous experiment with strategic-irreversibles-only gating ([runbook](../runbooks/solopreneur-experiment.md)) | Accepted | 2026-05-09 |
 | — | Cloudflare DNS over Namecheap API for per-business DNS automation (no IP-allowlist friction) — see [`docs/runbooks/namecheap-to-cloudflare-dns.md`](../runbooks/namecheap-to-cloudflare-dns.md) | Accepted | 2026-05-09 |

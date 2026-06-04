@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot (chat = embed + replace).** Multi-agent → Paperclip; chat surface → embedded UI.
+> Bespoke chat engine demoted for an embedded Claude Code/opencode web UI; governance affordances re-homed. See [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history.
+
 # task_plan — Collaborative chat (super-harness + mode/model/swarm/background views + mobile)
 
 > Long-horizon plan per [AGENTS.md §Long-Horizon Task Protocol](AGENTS.md#long-horizon-task-protocol). The operator's framing:

@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot (chat = embed + replace).** opencode is model-agnostic by design (75+ providers).
+> Bespoke chat engine demoted for an embedded Claude Code/opencode web UI; governance affordances re-homed. See [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history.
+
 # Model-agnostic chat — schema-first typed-block emission
 
 Today the streaming chat copilots (`platform-copilot`, `business-copilot`) are Claude-shaped end-to-end: system prompts in `.claude/agents/*.md` tell Claude to emit `<iteration-plan>...</iteration-plan>` XML-ish blocks, the dispatch routes hit `claude-gateway`, and per-block parsers in `lib/chat/{iteration-plan,approval,manual-task,edit-plan,bug-hunt-finding}.ts` regex out the structure. Provider lock-in is total.

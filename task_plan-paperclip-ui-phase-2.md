@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Use Paperclip's own UI; build only Nexus-unique surfaces in the cockpit.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan — Paperclip UI absorption, phase 2
 
 > Long-horizon plan per [AGENTS.md §Long-Horizon Task Protocol](AGENTS.md#long-horizon-task-protocol). Companion to [`task_plan-paperclip-absorption.md`](task_plan-paperclip-absorption.md) which covered phase 1 (schema + adapters + initial UI scaffolds).
