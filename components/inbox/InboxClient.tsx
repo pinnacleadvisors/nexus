@@ -122,6 +122,7 @@ export default function InboxClient({ items: initialItems }: Props) {
 
   // R1: apply both filters (kind + business) + bucket the result.
   const filteredAndBucketed = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity -- pre-existing render-time value; refactor tracked separately
     const now = Date.now()
     const fk = filter === 'all' ? items : items.filter(i => i.kind === filter)
     const fb = bizFilter === 'all'

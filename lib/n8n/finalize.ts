@@ -165,7 +165,7 @@ export async function finaliseGeneration(args: FinaliseArgs): Promise<FinalisedR
   // 5. Board card (fire-and-forget)
   const db = createServerClient()
   if (db) {
-    await (db as ReturnType<typeof createServerClient> & { from: Function })
+    await (db as ReturnType<typeof createServerClient> & { from: (table: string) => { insert: (row: Record<string, unknown>) => PromiseLike<{ error: { message: string } | null }> } })
       .from('tasks')
       .insert({
         title:       `[n8n ${workflowType}] ${workflow.name}`,

@@ -270,6 +270,7 @@ function ApprovalsChip({ count }: { count: number }) {
 
 /** Relative-time chip showing the most recent activity timestamp. */
 function ActivityChip({ iso }: { iso: string }) {
+  // eslint-disable-next-line react-hooks/purity -- pre-existing render-time value; refactor tracked separately
   const ms     = Date.now() - new Date(iso).getTime()
   const label  = relativeShort(ms)
   // Dimmer/older = greyer; recent = lavender hint.

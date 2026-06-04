@@ -86,7 +86,7 @@ export default async function BusinessesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Businesses</h1>
           <p className="mt-1 text-sm text-zinc-400">
             One tile per business. Spend is 30-day rolling from experiment_metrics. Pending counts link to /approvals.
-            Click a tile for the overview, or use <b>Open chat</b> to jump straight to that business's copilot.
+            Click a tile for the overview, or use <b>Open chat</b> to jump straight to that business&apos;s copilot.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

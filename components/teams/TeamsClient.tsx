@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Loader2, PlusCircle, Sparkles, Users, AlertCircle, X, Pause, Play, Archive, MoreHorizontal, Repeat } from 'lucide-react'
 import type { BusinessRow } from '@/lib/business/types'
 import { DEPARTMENT_ORDER, DEPARTMENTS, type DepartmentSlug } from '@/lib/teams/departments'
@@ -175,7 +176,7 @@ function EmptyBusinessesCard() {
       <p className="text-xs leading-relaxed mb-4 max-w-md mx-auto" style={{ color: '#9090b0' }}>
         Teams are department rosters bound to a business — engineering, content, sales-CS, ops, etc. Each spawn auto-wires the right ecosystem adapters (video / design / code) based on the business&apos;s niche. Create a business first; you can spawn teams the moment its row exists.
       </p>
-      <a
+      <Link
         href="/businesses/new"
         className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition"
         style={{
@@ -185,7 +186,7 @@ function EmptyBusinessesCard() {
         }}
       >
         Create first business →
-      </a>
+      </Link>
     </div>
   )
 }
@@ -230,7 +231,7 @@ function BusinessTeamsBlock({ business, teams, spawnOpen, onOpenSpawn, onCloseSp
 
       {teams.length === 0 && !spawnOpen && (
         <div className="text-xs px-3 py-2 rounded-lg" style={{ color: '#9090b0', background: 'rgba(255,255,255,0.02)' }}>
-          No departments spawned yet. Click "Add department" to start.
+          No departments spawned yet. Click &quot;Add department&quot; to start.
         </div>
       )}
 

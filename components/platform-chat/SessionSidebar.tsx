@@ -60,7 +60,7 @@ export default function SessionSidebar({ sessions, activeSessionId, loading, onS
         )}
         {!loading && sessions.length === 0 && (
           <div className="text-xs px-3 py-3" style={{ color: '#55556a' }}>
-            No past chats. Click "New chat" to start.
+            No past chats. Click &quot;New chat&quot; to start.
           </div>
         )}
         {sessions.map(s => (

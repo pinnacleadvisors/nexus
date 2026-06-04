@@ -99,7 +99,9 @@ export function ModeTabs({ canSub, canApi, mode, onChange, subActive, apiActive 
   return (
     <div className="flex gap-0.5 p-0.5"
       style={{ background: 'rgba(0,0,0,0.20)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px' }}>
+      {/* eslint-disable-next-line react-hooks/static-components -- Tab is a small render-local presentational helper closing over this component's props */}
       <Tab active={mode === 'subscription'} hasDot={subActive} onClick={() => onChange('subscription')} label="Subscription" />
+      {/* eslint-disable-next-line react-hooks/static-components -- Tab is a small render-local presentational helper closing over this component's props */}
       <Tab active={mode === 'api'}          hasDot={apiActive} onClick={() => onChange('api')}          label="API key" />
     </div>
   )

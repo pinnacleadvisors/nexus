@@ -49,6 +49,7 @@ export default function WorkforcePage() {
     setLoading(false)
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- mount data-load: fetch companies/agents/runs once on mount
   useEffect(() => { void load() }, [load])
 
   return (

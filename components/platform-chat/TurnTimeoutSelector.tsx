@@ -74,6 +74,7 @@ export function useTurnTimeoutMs(storageKey: string): {
     try {
       const raw = window.localStorage.getItem(storageKey)
       if (raw === null) return
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted turn-timeout from localStorage on mount
       if (raw === 'null') { setValue(null); return }
       const n = Number(raw)
       if (Number.isFinite(n) && n > 0) {

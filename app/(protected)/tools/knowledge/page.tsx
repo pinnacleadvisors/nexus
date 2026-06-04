@@ -262,6 +262,7 @@ export default function KnowledgePage() {
                 Connect your Notion workspace to give agents a persistent knowledge base.
                 Research notes, milestones, and assets will be stored and retrieved automatically.
               </p>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- OAuth init route handler; needs a full browser navigation for the server-side redirect, not client-side <Link> */}
               <a
                 href="/api/oauth/notion"
                 className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg no-underline font-medium"
@@ -477,6 +478,7 @@ export default function KnowledgePage() {
               <p className="text-xs mb-3" style={{ color: '#9090b0' }}>
                 Connect Google to let agents upload PDFs, create Docs, and store assets directly in your Drive.
               </p>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- OAuth init route handler; needs a full browser navigation for the server-side redirect, not client-side <Link> */}
               <a
                 href="/api/oauth/google"
                 className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg no-underline font-medium"

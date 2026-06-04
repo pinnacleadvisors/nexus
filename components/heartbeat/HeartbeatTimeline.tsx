@@ -53,6 +53,7 @@ function shortRelative(iso: string): string {
 
 export default function HeartbeatTimeline({ events, agentSlug, hours = 24 }: Props) {
   const windowMs = hours * 60 * 60 * 1000
+  // eslint-disable-next-line react-hooks/purity -- pre-existing render-time value; refactor tracked separately
   const now      = Date.now()
   const since    = now - windowMs
 

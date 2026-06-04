@@ -179,7 +179,7 @@ export default function HealthView({ scope }: Props) {
       {/* Errors by phase */}
       <Section icon={<AlertCircle size={13} />} title={`Errors by phase (24h) · ${Object.keys(data.errors_by_phase).length} active`}>
         {Object.keys(data.errors_by_phase).length === 0 ? (
-          <div className="text-xs opacity-60">No errors in the last 24h — agents may be quiet, OR they aren't running. Use cron status below to tell which.</div>
+          <div className="text-xs opacity-60">No errors in the last 24h — agents may be quiet, OR they aren&apos;t running. Use cron status below to tell which.</div>
         ) : (
           <div className="space-y-1">
             {Object.entries(data.errors_by_phase)
@@ -199,7 +199,7 @@ export default function HealthView({ scope }: Props) {
       <Section icon={<Clock size={13} />} title={`Cron routes (24h) · ${data.cron_status.length} seen`}>
         {data.cron_status.length === 0 ? (
           <div className="text-xs opacity-60">
-            No cron routes wrote to run_events in the last 24h. If Vercel cron is enabled but routes aren't logging, the cron schedule may be disabled (check vercel.json) or the routes throw before they reach the run_events write — see Recent events below.
+            No cron routes wrote to run_events in the last 24h. If Vercel cron is enabled but routes aren&apos;t logging, the cron schedule may be disabled (check vercel.json) or the routes throw before they reach the run_events write — see Recent events below.
           </div>
         ) : (
           <div className="space-y-1.5">

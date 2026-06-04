@@ -64,6 +64,7 @@ export function usePollWithBackoff(
       failuresRef.current = 0
       setFailures(0)
       setLastError(null)
+      // eslint-disable-next-line react-hooks/immutability -- self-referential reschedule; tick is a stable useCallback and recursion is intentional
       timerRef.current = setTimeout(tick, intervalMs)
     } catch (err) {
       failuresRef.current += 1

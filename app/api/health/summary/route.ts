@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   }
 
   let recentEvents:  Array<RunEventRow & { run?: RunRow }> = []
-  let errorsByPhase: Record<string, { count: number; latest: string; latestMessage: string | null }> = {}
+  const errorsByPhase: Record<string, { count: number; latest: string; latestMessage: string | null }> = {}
   let cronStatus:    Array<{ route: string; last_run?: string; last_error?: string; last_error_message?: string }> = []
   let costGuard:     MetricRow[] = []
 

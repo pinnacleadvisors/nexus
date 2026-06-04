@@ -59,7 +59,7 @@ export default function TodaySpendWidget() {
         <div className="flex items-center gap-2">
           <DollarSign size={14} style={{ color: '#6c63ff' }} />
           <span className="text-xs uppercase tracking-wide font-medium" style={{ color: '#9090b0' }}>
-            Today's AI spend
+            Today&apos;s AI spend
           </span>
         </div>
         {pct >= 80 && (

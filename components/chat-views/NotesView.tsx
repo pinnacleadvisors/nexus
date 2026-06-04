@@ -191,6 +191,7 @@ function StatusFooter({ status, onDiscard, onOverwrite }: { status: SaveStatus; 
   if (status.kind === 'idle')       { label = 'Idle' }
   else if (status.kind === 'dirty') { label = 'Unsaved changes' }
   else if (status.kind === 'saving'){ label = 'Saving…'; Icon = Loader2 }
+  // eslint-disable-next-line react-hooks/purity -- pre-existing render-time value; refactor tracked separately
   else if (status.kind === 'saved') { label = `Saved ${humaniseAgo(Date.now() - status.at)}`; Icon = CheckCircle2; color = '#86efac' }
   else                              { label = `Save failed — ${status.detail}`; Icon = AlertTriangle; color = '#fca5a5' }
 

@@ -27,7 +27,7 @@ function computeStreak(loggedDays: string[]): number {
   const set = new Set(loggedDays)
   const today = todayStr()
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-  let anchor = set.has(today) ? today : (set.has(yesterday) ? yesterday : null)
+  const anchor = set.has(today) ? today : (set.has(yesterday) ? yesterday : null)
   if (!anchor) return 0
   let streak = 0
   let cursor = new Date(anchor)

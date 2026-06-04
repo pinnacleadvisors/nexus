@@ -39,7 +39,7 @@ export default function BillerSpendCard({ rows, totalSpent, period }: Props) {
       {rows.length === 0 ? (
         <p className="text-xs italic text-zinc-500">
           No spend recorded for this {periodLabel}. The dispatcher must tag every
-          cash_spend row's payload with <code className="rounded bg-zinc-800/60 px-1">agent_slug</code> for
+          cash_spend row&apos;s payload with <code className="rounded bg-zinc-800/60 px-1">agent_slug</code> for
           partitioning.
         </p>
       ) : (

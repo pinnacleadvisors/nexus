@@ -75,6 +75,7 @@ export default function ForgeActionBar({
           body: JSON.stringify({ action: 'dispatch_phases', payload: { phases } }),
         })
 
+        // eslint-disable-next-line react-hooks/immutability -- intentional navigation via window.location on 401
         if (res.status === 401) { window.location.href = '/tools/claw'; return }
 
         if (res.ok) {
@@ -107,6 +108,7 @@ export default function ForgeActionBar({
           body: JSON.stringify({ action: 'agent', payload: { message, name: 'Nexus Forge', wakeMode: 'now' } }),
         })
 
+        // eslint-disable-next-line react-hooks/immutability -- intentional navigation via window.location on 401
         if (res.status === 401) { window.location.href = '/tools/claw'; return }
         setDispatchStatus(res.ok ? 'success' : 'error')
       }

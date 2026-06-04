@@ -58,6 +58,7 @@ export default function IdeaPage() {
     setHydrated(true)
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- mount data-load: hydrate idea library from storage/remote once
   useEffect(() => { void refreshLibrary() }, [])
 
   async function deleteIdea(id: string) {

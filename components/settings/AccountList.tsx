@@ -527,6 +527,7 @@ function ApiKeyCard({
   // freshly-saved account row → `account` becomes defined), collapse the
   // form back to its tidy state.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- collapse the rotate form when the connection state flips after a successful save
     setShowRotate(!connected)
   }, [connected])
 
@@ -1031,7 +1032,7 @@ function DescribeConnectionCard({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium" style={{ color: '#e8e8f0' }}>Describe a connection</div>
           <div className="text-[11px] mt-0.5" style={{ color: '#9090b0' }}>
-            Say what you want to hook up — we'll match it to a provider or file a manual to-do.
+            Say what you want to hook up — we&apos;ll match it to a provider or file a manual to-do.
           </div>
         </div>
       </div>

@@ -90,19 +90,23 @@ export function getLlm(opts?: GetLlmOptions): LanguageModel {
     case 'claude':
       return anthropic(model)
     case 'openrouter': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require to avoid eager bundling
       const { getOpenRouterModel } = require('./providers/openrouter') as typeof import('./providers/openrouter')
       return getOpenRouterModel(model)
     }
     case 'mimo': {
       // Lazy require so the build doesn't fail until activation
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require so the build doesn't fail until activation
       const { getMimoModel } = require('./providers/mimo') as typeof import('./providers/mimo')
       return getMimoModel(model)
     }
     case 'ollama': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require to avoid eager bundling
       const { getOllamaModel } = require('./providers/ollama') as typeof import('./providers/ollama')
       return getOllamaModel(model)
     }
     case 'nim': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require to avoid eager bundling
       const { getNimModel } = require('./providers/nim') as typeof import('./providers/nim')
       return getNimModel(model)
     }

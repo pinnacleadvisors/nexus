@@ -570,7 +570,7 @@ export default function SwarmPage() {
                 </pre>
               ) : (
                 <p className="text-xs py-4 text-center" style={{ color: '#24243e' }}>
-                  The swarm's synthesised deliverable will appear here on completion.
+                  The swarm&apos;s synthesised deliverable will appear here on completion.
                 </p>
               )}
             </div>

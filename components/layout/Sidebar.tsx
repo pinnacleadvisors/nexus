@@ -118,6 +118,7 @@ function useBusinessesForSidebar(): BusinessLink[] {
     // Restore the sessionStorage cache first so the sidebar shows known
     // businesses immediately on navigation, before the network round-trip.
     const cached = readCachedBusinesses()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prime the list from the sessionStorage cache on mount before the network fetch
     if (cached && cached.length > 0) setList(cached)
 
     ;(async () => {
@@ -250,6 +251,7 @@ export default function Sidebar() {
   // so they don't have to click the chevron after navigating in.
   useEffect(() => {
     if (pathname.startsWith('/businesses')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-expand the Businesses group when navigating to a /businesses route
       setOpenGroups(g => g.businesses ? g : { ...g, businesses: true })
     }
   }, [pathname])

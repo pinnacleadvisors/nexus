@@ -84,6 +84,7 @@ export default function SimulationConsole({ slug, initialRun }: { slug: string; 
     if (!run) return
     if (TERMINAL_STATUSES.has(run.status)) {
       // One more refresh to ensure events list reflects final state
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- final refresh once the run reaches a terminal status
       void refresh(run.id)
       return
     }
