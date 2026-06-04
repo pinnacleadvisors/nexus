@@ -51,6 +51,7 @@ export default function AuditTerminal({ initialData }: Props) {
   useEffect(() => {
     const shared = decodeLayout(new URLSearchParams(window.location.search).get('layout'))
     if (shared) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mount hydrate: apply shared ?layout= or stored tabs after SSR defaults
       setTabs(shared.tabs)
       setActive(shared.active ?? shared.tabs[0])
     } else {

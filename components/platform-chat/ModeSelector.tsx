@@ -38,6 +38,7 @@ export function useChatMode(storageKey: string): {
       const raw = window.localStorage.getItem(storageKey)
       if (!raw) return
       const match = AVAILABLE_MODES.find(m => m.id === raw)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted mode from localStorage on mount
       if (match) setValue(match.id)
     } catch { /* localStorage unavailable */ }
   }, [storageKey])

@@ -1152,7 +1152,7 @@ function EmptyState() {
       <h2 className="text-lg font-semibold" style={{ color: '#e8e8f0' }}>What can I help with on the Nexus platform?</h2>
       <p className="text-sm" style={{ color: '#9090b0' }}>
         I have read access to your shared-scope connected accounts and can correlate logs across them.
-        For execution-heavy debugging I can delegate to the codex gateway. I'll always propose a plan
+        For execution-heavy debugging I can delegate to the codex gateway. I&apos;ll always propose a plan
         and ask for approval before making changes.
       </p>
       <pre

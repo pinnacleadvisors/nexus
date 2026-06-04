@@ -44,6 +44,7 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
   useEffect(() => {
     const init: Record<string, boolean> = {}
     for (const it of request.items) init[it.id] = it.approved_by_default !== false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync derived checkbox state when a new approval lands in the same card
     setChecked(init)
   }, [request.approval_id])
 
@@ -68,6 +69,7 @@ export default function ApprovalCard({ request, resolution, onSubmit, disabled }
     if (!isMobile || resolved) return
     if (request.items.length <= 2) return
     if (seenApprovalIds.has(request.approval_id)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-open the bottom-sheet exactly once per approval_id when a new mobile approval lands
     setSheetOpen(true)
     setSeenApprovalIds(prev => new Set(prev).add(request.approval_id))
   }, [isMobile, resolved, request.approval_id, request.items.length, seenApprovalIds])

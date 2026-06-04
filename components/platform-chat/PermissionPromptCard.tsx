@@ -54,6 +54,7 @@ export default function PermissionPromptCard({ request, onAllow, onDeny, disable
 
   // Initialise edit textarea when the operator opens it.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the edit textarea with the tool input the first time the operator opens it
     if (showEdit && !editText) setEditText(JSON.stringify(request.tool_input, null, 2))
   }, [showEdit, editText, request.tool_input])
 

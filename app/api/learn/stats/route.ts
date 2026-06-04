@@ -150,7 +150,7 @@ export async function GET(_req: NextRequest) {
     .gte('created_at', since30.toISOString())
   // The join may not be configured; fall back to two-step query.
   let retentionByMoc: LearnStats['retentionByMoc'] = []
-  let mocStats = (reviews30Resp.data ?? []) as Array<{ rating: string; flashcards: { moc_slug: string | null } | null }>
+  const mocStats = (reviews30Resp.data ?? []) as Array<{ rating: string; flashcards: { moc_slug: string | null } | null }>
   if (mocStats.length === 0 && reviews.length > 0) {
     // Two-step fallback: fetch moc_slug per card.
     const cardIds = Array.from(new Set(reviews.slice(-500).map(_ => _))).map(_ => _) as never[]

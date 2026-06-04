@@ -219,7 +219,7 @@ export default function CronHealthClient() {
       {jobs.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm rounded-2xl"
              style={{ color: '#9090b0', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          No "Nexus:" cron entries found on cron-job.org. Run <span className="font-mono" style={{ color: '#a8a3ff' }}>scripts/migrate-crons-to-cronjob-org.mjs --apply</span> or <span className="font-mono" style={{ color: '#a8a3ff' }}>scripts/sync-crons-hmem.mjs --apply</span> to register them.
+          No &quot;Nexus:&quot; cron entries found on cron-job.org. Run <span className="font-mono" style={{ color: '#a8a3ff' }}>scripts/migrate-crons-to-cronjob-org.mjs --apply</span> or <span className="font-mono" style={{ color: '#a8a3ff' }}>scripts/sync-crons-hmem.mjs --apply</span> to register them.
         </div>
       ) : (
         <ul className="space-y-2">
@@ -263,8 +263,14 @@ function CronRow({ job, enabling, onEnable, onUpdateUrl, onUpdateSchedule }: {
   const [editingSched, setEditingSched] = useState(false)
   const [draftCron, setDraftCron]       = useState(job.schedule_cron)
   const cronErr = useMemo(() => editingSched ? validateCronString(draftCron) : null, [editingSched, draftCron])
-  useEffect(() => { if (!editing)      setDraftUrl(job.url)            }, [job.url, editing])
-  useEffect(() => { if (!editingSched) setDraftCron(job.schedule_cron) }, [job.schedule_cron, editingSched])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the draft URL to the prop when the job changes and we're not editing
+    if (!editing)      setDraftUrl(job.url)
+  }, [job.url, editing])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the draft cron to the prop when the job changes and we're not editing
+    if (!editingSched) setDraftCron(job.schedule_cron)
+  }, [job.schedule_cron, editingSched])
   const healthMeta = {
     red:     { color: '#f87171', label: 'RED',     bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.22)' },
     yellow:  { color: '#fbbf24', label: 'YELLOW',  bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.22)' },

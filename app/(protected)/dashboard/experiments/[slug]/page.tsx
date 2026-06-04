@@ -131,6 +131,7 @@ export default async function ExperimentDashboardPage(
 ) {
   const { slug } = await props.params
 
+  // eslint-disable-next-line react-hooks/purity -- async Server Component, not re-rendered client-side
   const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString()
   const [business, metrics, killSwitch, ledger] = await Promise.all([
     fetchBusiness(slug),

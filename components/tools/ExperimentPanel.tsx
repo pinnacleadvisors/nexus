@@ -21,6 +21,7 @@ export default function ExperimentPanel({ runId }: Props) {
 
   useEffect(() => {
     const url = runId ? `/api/experiments?runId=${encodeURIComponent(runId)}` : '/api/experiments'
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- set loading state before refetching experiments when runId changes
     setLoading(true)
     fetch(url)
       .then(r => {

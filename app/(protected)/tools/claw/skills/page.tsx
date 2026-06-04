@@ -227,7 +227,7 @@ export default function ClawSkillsPage() {
       >
         <Shield size={15} style={{ color: '#6c63ff', flexShrink: 0, marginTop: 1 }} />
         <p className="text-xs leading-relaxed" style={{ color: '#9090b0' }}>
-          Review each skill's permission scope before enabling. High-risk skills (email, external writes)
+          Review each skill&apos;s permission scope before enabling. High-risk skills (email, external writes)
           should be audited carefully — agents will use these autonomously. Disabled skills are tracked
           in your browser and can be re-enabled at any time.
         </p>

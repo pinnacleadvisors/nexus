@@ -55,6 +55,7 @@ function dueLabel(iso: string | null): string | null {
 
 export default function LessonNode({ lesson, offset }: Props) {
   const due = dueLabel(lesson.nextDueAt)
+  // eslint-disable-next-line react-hooks/purity -- pre-existing render-time value; refactor tracked separately
   const overdue = lesson.nextDueAt ? new Date(lesson.nextDueAt).getTime() <= Date.now() : false
   return (
     <div

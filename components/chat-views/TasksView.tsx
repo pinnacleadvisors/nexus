@@ -134,7 +134,7 @@ export default function TasksView({ scope, onCountChange }: Props) {
 
       {open.length === 0 && completed.length === 0 && !loading && !err && (
         <div className="text-[11px] text-center py-6" style={{ color: '#55556a' }}>
-          No tasks yet. Add one above, or ask the copilot what manual work it's blocked on.
+          No tasks yet. Add one above, or ask the copilot what manual work it&apos;s blocked on.
         </div>
       )}
 

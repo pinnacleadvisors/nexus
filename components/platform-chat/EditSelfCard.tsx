@@ -63,6 +63,7 @@ export default function EditSelfCard({ plan, resolution, onApprove, onDeny, disa
   useEffect(() => {
     const init: Record<string, boolean> = {}
     for (const it of plan.items) init[it.id] = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset derived checkbox state when a new plan_id lands in the same card
     setChecked(init)
   }, [plan.plan_id])
 

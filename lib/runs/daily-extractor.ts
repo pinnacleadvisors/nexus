@@ -130,7 +130,7 @@ async function safeSelect<T>(
   ascending: boolean,
 ): Promise<T[]> {
   try {
-    let q = (db as { from: (t: string) => unknown }).from(table) as unknown as {
+    const q = (db as { from: (t: string) => unknown }).from(table) as unknown as {
       select: (c: string) => unknown
     }
     let chain = q.select(cols) as unknown as Record<string, (...a: unknown[]) => unknown> & { order: (c: string, o: { ascending: boolean }) => Promise<{ data: T[] | null; error: unknown }> }

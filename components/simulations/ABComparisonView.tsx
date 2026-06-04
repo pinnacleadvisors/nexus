@@ -66,6 +66,7 @@ export default function ABComparisonView({ groupId, slug }: { groupId: string; s
   }, [groupId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount data-load + 2s polling refresh of the A/B group
     void refresh()
     const intervalId = window.setInterval(() => { void refresh() }, 2_000)
     return () => window.clearInterval(intervalId)

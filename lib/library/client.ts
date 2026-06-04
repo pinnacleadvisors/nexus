@@ -38,6 +38,7 @@ function getDb() {
   const key  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
   // Dynamic import to avoid bundling supabase on every page
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require to avoid eager bundling
   const { createClient } = require('@supabase/supabase-js') as typeof import('@supabase/supabase-js')
   return createClient(url, key)
 }
@@ -303,6 +304,7 @@ export async function deleteEntry(
 export function estimateTokensSaved(
   counts: Record<LibraryType, number>,
 ): number {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy require to keep sync signature
   const { TOKENS_PER_HIT } = require('./types') as typeof import('./types')
   return (Object.keys(counts) as LibraryType[]).reduce(
     (sum, type) => sum + counts[type] * TOKENS_PER_HIT[type],

@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, AlertCircle, Send, Check } from 'lucide-react'
 
@@ -75,7 +76,7 @@ export default function ReportIssueForm({ businesses }: Props) {
     return (
       <div className="mb-6 rounded-xl border border-amber-700/30 bg-amber-500/5 p-4 text-sm text-amber-200">
         Create a business first (
-        <a href="/businesses/new" className="underline">/businesses/new</a>
+        <Link href="/businesses/new" className="underline">/businesses/new</Link>
         ) before reporting issues — issues are always scoped to a business.
       </div>
     )

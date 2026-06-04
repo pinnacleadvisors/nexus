@@ -50,6 +50,7 @@ export default function ChatProviderToggle({
   // (hydration mismatch) fires whenever the persisted value isn't 'claude'
   // because SSR HTML differs from client HTML on first paint.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted provider after mount to avoid SSR hydration mismatch
     setProvider(readChatProvider(storageKey))
     setMounted(true)
   }, [storageKey])
