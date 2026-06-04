@@ -122,7 +122,9 @@ async function specExists(slug: string): Promise<boolean> {
   // locally that this function never composes an unsafe path.
   if (!slugIsSafe(slug)) return false
   try {
-    await fs.access(path.join(AGENTS_DIR, `${slug}.md`))
+    // path.basename strips any directory component — a CodeQL-recognized
+    // sanitizer barrier on top of slugIsSafe (which CodeQL can't see through).
+    await fs.access(path.join(AGENTS_DIR, `${path.basename(slug)}.md`))
     return true
   } catch {
     return false
@@ -200,7 +202,7 @@ async function ensureAgentSpec(args: SpecTemplateArgs): Promise<{ created: boole
   // Re-check slug shape locally — CodeQL js/path-injection wants to see the
   // guard adjacent to the path.join() call, not "trust me, the caller did it".
   if (!slugIsSafe(args.slug)) throw new Error(`ensureAgentSpec: unsafe slug "${args.slug}"`)
-  const file = path.join(AGENTS_DIR, `${args.slug}.md`)
+  const file = path.join(AGENTS_DIR, `${path.basename(args.slug)}.md`)
   if (await specExists(args.slug)) return { created: false, path: file }
 
   await fs.mkdir(AGENTS_DIR, { recursive: true })
@@ -435,7 +437,7 @@ export async function POST(req: NextRequest) {
 
   // 1. Ensure agent spec
   let created = false
-  let specPath = path.join(AGENTS_DIR, `${body.agentSlug}.md`)
+  let specPath = path.join(AGENTS_DIR, `${path.basename(body.agentSlug)}.md`)
   if (autoCreate) {
     const res = await ensureAgentSpec({
       slug:         body.agentSlug,
