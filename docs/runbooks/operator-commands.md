@@ -69,27 +69,34 @@ components/chat-views/ViewsPanel.tsx:23:24 - error TS2307: Cannot find module 'v
 
 ---
 
-## 1. Deploy (Coolify only — lean mode)
+## 1. Deploy (Mac mini local-OS — primary, since ADR 011)
 
-The deploy script triggers fresh Coolify deploys via the Coolify API. Vercel is disabled in lean mode ([PR #238](https://github.com/pinnacleadvisors/nexus/pull/238)); re-enable by uncommenting `# [vercel-disabled]` blocks in [`scripts/deploy.sh`](../../scripts/deploy.sh).
+`npm run deploy` rebuilds + restarts the relevant container(s) in the **Mac local-OS stack**
+(`docker compose -f services/local-os/docker-compose.yaml up -d --build <service>`). KVM4 (Coolify) is
+**fallback only** until Hostinger expires 2026-06-28 — pass `--kvm4`. Vercel is disabled in lean mode.
 
 ```bash
-npm run deploy                                # interactive picker
-npm run deploy -- --all                       # every Coolify service whose UUID env var is set
-npm run deploy -- --nexus-app                 # the Next.js platform on KVM4
-npm run deploy -- --nexus-sandbox             # rootless-Podman exec sandbox on KVM4
-npm run deploy -- --claude                    # claude-gateway (KVM4)
-npm run deploy -- --codex                     # codex-gateway (KVM4 — KVM2 retired 2026-05-22)
-npm run deploy -- --qa                        # qa-runner (KVM4)
-npm run deploy -- --firecrawl                 # firecrawl (KVM4)
+npm run deploy                                # interactive picker (Mac)
+npm run deploy -- --all                       # rebuild+restart the whole Mac stack
+npm run deploy -- --nexus-app                 # the Next.js platform (Mac)
+npm run deploy -- --nexus-sandbox             # rootless-Podman exec sandbox (Mac)
+npm run deploy -- --claude                    # claude-gateway (Mac)
+npm run deploy -- --codex                     # codex-gateway (Mac)
+npm run deploy -- --cron                      # cron-runner (Mac)
+npm run deploy -- --cloudflared               # tunnel connector (Mac; only after token/image change)
 npm run deploy -- --skip-typecheck --nexus-app  # bypass `tsc --noEmit` for rapid iteration
+# Fallback host (until 2026-06-28):
+npm run deploy -- --kvm4 --nexus-app          # legacy Coolify deploy
+npm run deploy -- --kvm4 --qa                 # qa-runner (KVM4-only)
+npm run deploy -- --kvm4 --firecrawl          # firecrawl (KVM4-only)
 ```
 
-**Required env (in Doppler `prd`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, plus one `COOLIFY_KVM4_*_UUID` per service deployed. See [scripts/deploy.sh](../../scripts/deploy.sh) header for the full list.
+**Required (Mac path)**: `services/local-os/.env` with the `DOPPLER_TOKEN` service token + OrbStack running. See [`services/local-os/README.md`](../../services/local-os/README.md).
+**Required (`--kvm4`)**: `COOLIFY_KVM4_URL`, `COOLIFY_KVM4_API_TOKEN`, plus one `COOLIFY_KVM4_*_UUID` per service.
 
-**Success looks like**: each section prints `✓ <service> deploy queued (HTTP 201)` and the closing `── done ──` block. Watch the build via Coolify dashboard → resource → Logs.
+**Success looks like**: `docker compose up -d --build` finishes and the closing `── done ──` block lists each service `Up … (healthy)`. Watch logs: `docker compose -f services/local-os/docker-compose.yaml logs -f <service>`.
 
-**On failure**: deploy.sh prints HTTP code + body. 401/403 = bad token, 404 = wrong UUID, 5xx = Coolify instance issue.
+**On failure**: a build error prints inline; `docker not found` → start OrbStack; `.env missing` → mint the prd service token (README). For `--kvm4`: 401/403 = bad token, 404 = wrong UUID.
 
 ---
 
