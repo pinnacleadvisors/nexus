@@ -3,6 +3,27 @@
 Single source of truth for which OSS projects Nexus has absorbed patterns from,
 what was absorbed, where it lives in this repo, and what's pending.
 
+> ## ⚡ STRATEGY UPDATE 2026-06-04 — Lean-Nexus pivot ([ADR 012](../adr/012-lean-nexus-integration-cockpit.md))
+> **Default changed from ABSORB → RUN.** OSS-first: *use* the tool; absorb/personalise or
+> fork+plugin **only when it genuinely lacks what we need.** New decision column below: **RUN**
+> (deploy the tool as-is) · **ABSORB** (copy patterns into Nexus) · **FORK** (customise) · **REJECT**.
+>
+> **Corrections to earlier entries in this file (were wrong):**
+> - **Hermes** is NOT a "theoretical paper" — it's [NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent), a very-active OSS agent (v0.8.0, ~3,500 commits, model-agnostic, multi-channel). Decision: **RUN** (in `workforce-lab`).
+> - **OpenClaw** is NOT proprietary — [openclaw/openclaw](https://github.com/openclaw/openclaw) is real OSS (local-first gateway, 20+ channels). Decision: **RUN/optional**.
+>
+> **Newly tracked (2026-06-04):**
+> | Project | Repo | Decision | Use |
+> |---|---|---|---|
+> | **Paperclip** | [paperclipai/paperclip](https://github.com/paperclipai/paperclip) ~67K⭐ | **RUN** (was ABSORB) | Workforce orchestration (org chart/budgets/governance/heartbeats). Demotes `paperclip-absorption`, `departments-and-ecosystems`, team plans. Fork+plugin for Nexus-specifics only. |
+> | **Hermes Agent** | [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | **RUN** | Worker runtime in `workforce-lab`. |
+> | **opencode** | [sst/opencode](https://github.com/sst/opencode) | **RUN/ABSORB** | Model-agnostic chat engine (`opencode serve`, 75+ providers); candidate to back the Nexus chat. |
+> | **claudecodeui** | [siteboon/claudecodeui](https://github.com/siteboon/claudecodeui) | **RUN** | Embeddable Claude Code/opencode web chat (mobile+web). Candidate to replace bespoke Nexus chat engine. |
+> | **memory-os** | [ClaudioDrews/memory-os](https://github.com/ClaudioDrews/memory-os) | **ABSORB (features) / RUN (in lab w/ Hermes)** | Hermes-coupled, single-maintainer — do NOT replace memory-hq. Absorb: trust-scored facts, semantic dedup (cosine>0.92), weekly decay, 4-level retrieval cascade. |
+>
+> Companion plans: [`task_plan-lean-nexus-pivot.md`](../../task_plan-lean-nexus-pivot.md), `task_plan-workforce-lab.md` (pending).
+
+
 > **Why this doc exists.** Patterns from Hermes / EvoSkill / Voyager / Paperclip
 > are scattered across memory-hq atoms, ADRs, agent specs, and skill folders.
 > Until now there was no single answer to "what have we taken from where, and

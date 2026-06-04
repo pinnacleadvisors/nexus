@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Use opencode / Claude Code directly as the engineering runtime.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan-dev-team-open-code.md
 
 Goal: An "Engineering Department" managed-agent roster, anchored on Open Code (the open-source analogue to Claude Code / Codex), that any Nexus business with a code-bearing product (`niche=saas | info-product | ad-agency-with-internal-tools`) can spin up. End-to-end pipeline: brief → architecture → implementation → review → tests → deploy → on-call.

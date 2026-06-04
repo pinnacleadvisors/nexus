@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Team orchestration → Paperclip + an agent runtime.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan-design-team-open-design.md
 
 > **Architectural overlay:** this is one instance of the [departments + ecosystems abstraction](task_plan-departments-and-ecosystems.md). The Design **department** roster below is ecosystem-agnostic; open-design.ai is just the default `design` adapter. Swapping to Vercel v0 / Lovable / Galileo / Figma AI is a one-config-row change. Read the departments plan first for the adapter contract.

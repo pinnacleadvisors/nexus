@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Paperclip's org-chart + budgets + governance + heartbeats already provide pluggable departments.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan-departments-and-ecosystems.md
 
 Goal: Turn every "team" plan in the repo into an instance of a single abstraction — a **department** bound to a **ecosystem set**. Both axes are pluggable: any business can spin up "the same department" against a different ecosystem (Higgsfield → Veo, Open-Code → Codex, memory-hq → GBrain) by swapping one config value. Establish the starter department template, the ecosystem adapter contract, and a future plan for custom org-chart arrangements.

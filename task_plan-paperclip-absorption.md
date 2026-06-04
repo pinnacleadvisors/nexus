@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Run Paperclip (github.com/paperclipai/paperclip) directly instead of reimplementing its schema/companies/approvals.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan — Paperclip absorption
 
 > Long-horizon plan per [AGENTS.md §Long-Horizon Task Protocol](AGENTS.md#long-horizon-task-protocol). Pre-read [ADR-007](docs/adr/007-paperclip-absorption.md) and [`docs/research/paperclip-audit-2026-05.md`](docs/research/paperclip-audit-2026-05.md) before starting Phase 2.

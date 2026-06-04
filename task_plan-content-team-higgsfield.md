@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot.** Team orchestration → Paperclip + an agent runtime + Composio adapters.
+> Demoted: see [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history; do not resume without re-promotion.
+
 # task_plan-content-team-higgsfield.md
 
 > **Architectural overlay:** this is one instance of the [departments + ecosystems abstraction](task_plan-departments-and-ecosystems.md). The Content **department** roster below is ecosystem-agnostic; Higgsfield is just the default `video` adapter. Swapping to Runway / Veo / Kling / Pika is a one-config-row change to `teams.ecosystem_bindings`. Read the departments plan first for the adapter contract, the registry, and the v1 scope it ships into.
