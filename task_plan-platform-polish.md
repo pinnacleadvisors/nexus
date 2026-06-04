@@ -31,12 +31,15 @@ Operator logs into a local `next dev` (port 3005, Doppler `dev`) in a normal Chr
 - Change: add `net::ERR_ABORTED` (aborted in-flight fetches) to the failed-request ignore set so dev double-mounts don't read as findings.
 - Verify: crawl no longer reports `/dashboard` failed request.
 
-### Task 3 (follow-up, not this PR) — `/code` graceful "not configured" state  [Parallel: yes]
-- File: `app/(protected)/code/page.tsx`
-- Change: when the claudecodeui base URL is unreachable / unset, render a "Nexus Code not yet connected" panel instead of a broken iframe. (Deferred — needs the operator to confirm desired copy / whether to probe reachability client-side.)
+### Task 3 — `/code` graceful "not connected" state  [Parallel: yes]  ✅
+- Files: `components/code/CodeEmbed.tsx` (new, client), `app/(protected)/code/page.tsx`
+- Change: extracted a client `CodeEmbed` that probes the embed URL (no-cors fetch — resolves opaque when up, rejects on DNS/connection failure, 6s timeout). Shows a spinner while checking, the iframe when up, and a "Nexus Code isn't connected yet" panel with Retry + Open-in-new-tab when down. Replaces the unconditional iframe that rendered blank.
+- Verify: `code-page.spec.ts` (authed) — graceful panel + preserved rail; never a blank void. GREEN (2 passed).
 
-### Task 4 (follow-up) — deeper authed interaction crawl
-- Drive chat send, board drag, approvals resolve, business open — collect findings beyond first-paint. Open as its own session.
+### Task 4 — deeper authed interaction crawl  [Parallel: yes]  ✅
+- File: `tests/playwright/authed-interactions.spec.ts` (new)
+- Drove chat compose (type → Send enables, NOT sent — no paid dispatch), board filter pills, approvals render, and business-detail open. **Non-destructive** (no send / resolve / committed drag / fleet action per AGENTS.md "no production mutations from the loop").
+- Result: **no new bugs** — all four surfaces render + react cleanly, zero console errors, no error boundary. The interactive layer is solid.
 
 ## Progress (2026-06-04)
 ### Completed
@@ -45,6 +48,8 @@ Operator logs into a local `next dev` (port 3005, Doppler `dev`) in a normal Chr
 - [x] Task 1 — degenerate-edge guard + `graph-no-nan` spec.
 - [x] Task 2 — ERR_ABORTED filtered from crawl noise.
 
+- [x] Task 3 — `/code` graceful "not connected" state (CodeEmbed reachability probe + panel).
+- [x] Task 4 — deeper interaction crawl (chat/board/approvals/business — no new bugs).
+
 ### Remaining
-- [ ] Task 3 — `/code` graceful state (needs operator input on copy).
-- [ ] Task 4 — deeper interaction crawl (separate session).
+- [ ] Task 5 — suppress drei `<Line>` on-mount NaN warning (perf/UX call; deferred).
