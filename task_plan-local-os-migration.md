@@ -213,7 +213,10 @@ Goal: public hostnames resolve to the Mac. KVM4 still running as live fallback d
 
 ### Remaining (operator-gated / future)
 - [ ] **OPERATOR** — `sudo pmset -a sleep 0 disksleep 0 womp 1 autorestart 1` (Mac still sleeps after 1 min).
-- [ ] Phase 5 — decommission KVM4, cancel Hostinger, ADR 007, infra-change memory atom, Topology update.
+- [ ] Phase 5 — KVM4 stays as fallback; **Hostinger plan EXPIRES 2026-06-28** (natural decommission
+      deadline). Before then: confirm soak clean, write ADR 007 + infra-change memory atom, update
+      the AGENTS.md Topology paragraph (KVM4 → Mac mini). After 06-28 the fallback is gone — so the
+      DNS-repoint rollback only works UNTIL 2026-06-28.
 - [ ] (optional) internal gateway-URL routing to drop the tunnel hairpin.
 - [ ] (optional) point N8N_BASE_URL off the raw Hostinger URL before KVM4 dies (n8n stays on KVM4).
 
