@@ -5,3 +5,4 @@
 doppler.cache.json
 cloudflared/*.json
 cloudflared/cert.pem
+*.log

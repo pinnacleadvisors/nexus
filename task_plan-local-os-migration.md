@@ -189,12 +189,23 @@ Goal: public hostnames resolve to the Mac. KVM4 still running as live fallback d
   - [defer] firecrawl: ALREADY BROKEN pre-migration — `FIRECRAWL_API_URL=firecrawl.coolifycloudtunnel.uk`
     has no DNS record. Not a regression. `firecrawl_local` skill is the working fallback.
 
-### Remaining (operator-gated / future)
-- [ ] n8n data copy: `docker cp`/volume-export KVM4 `n8n_data` → local, then flip n8n DNS +
-  update `N8N_BASE_URL`. Needs KVM4 access.
-- [ ] Phase 4 — auto-start on boot/power (`pmset -a autorestart 1` + launchd), 48–72h soak,
-  optional internal gateway-URL routing, confirm subscription (not API) billing via a real dispatch.
+- [x] Phase 4 PARTIAL — reliability hardening:
+  - [x] n8n decision: LEFT ON KVM4 permanently (no substantial workflows, operator 2026-06-04).
+    Removed from local-os compose. n8n DNS stays KVM4.
+  - [x] OrbStack `app.start_at_login=true`.
+  - [x] launchd LaunchAgent `com.nexus.local-os` + `startup.sh` — waits for Docker, ensures
+    `coolify` net, `compose up -d`. Boot path tested via `launchctl kickstart`: all 5 services
+    came up healthy, public path stayed 200. Reference plist committed to services/local-os/.
+  - [ ] **OPERATOR sudo needed** — power settings (Mac currently sleeps after 1 min!):
+        `sudo pmset -a sleep 0 disksleep 0 autorestart 1 womp 1 && sudo pmset -a displaysleep 0`
+  - [ ] **OPERATOR decision** — auto-login (so an unattended power-failure reboot self-heals to a
+        logged-in session that runs OrbStack + the LaunchAgent). Security tradeoff: physical access
+        = auto-logged-in. System Settings → Users & Groups → Automatically log in as <user>.
+  - [ ] 48–72h soak with KVM4 still alive; confirm subscription (not API) billing via a real dispatch.
+
+### Remaining (future)
 - [ ] Phase 5 — decommission KVM4, cancel Hostinger, ADR 007, infra-change memory atom, Topology update.
+- [ ] (optional) internal gateway-URL routing to drop the tunnel hairpin.
 
 ### Resolved (operator, 2026-06-04)
 - Doppler: run the Mac against the existing **`prd`** config (project `nexus`). Repo dir currently
