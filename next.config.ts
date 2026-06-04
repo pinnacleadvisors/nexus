@@ -68,7 +68,8 @@ const CSP = [
     .filter(Boolean)
     .join(' '),
   // Frames: Clerk hosted pages + Cloudflare Turnstile CAPTCHA (Clerk bot protection)
-  "frame-src 'self' https://accounts.clerk.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+  // + the embedded OSS tools on our own tunnel (claudecodeui at /code — ADR 013).
+  "frame-src 'self' https://accounts.clerk.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.coolifycloudtunnel.uk",
   // Workers: none
   "worker-src 'self' blob:",
   // Form actions: self only

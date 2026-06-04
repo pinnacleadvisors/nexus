@@ -12,7 +12,10 @@
 > `/workforce` page + `/api/workforce/*` proxy reach the local Paperclip orchestration server through it
 > (Clerk-authed; Paperclip stays loopback-only). `CODE_EMBED_URL` (optional; default
 > `https://code.coolifycloudtunnel.uk`) — the Nexus `/code` page links/iframes claudecodeui (the OSS chat
-> engine; ADR 013) through it. Gateway URL vars below resolve to the Mac now (KVM4 fallback until 2026-06-28). See
+> engine; ADR 013) through it. `NEXUS_DISCORD_WEBHOOK_URL` (optional) — Discord alert channel
+> (`notifyOperator` fans out to slack/webpush/discord); test via `POST /api/health/discord-test`.
+> `NEXUS_OPS_TOKEN` — bearer for the Claude Code Stop-hook → `POST /api/chat/ingest-turn` (re-homes
+> typed-block parsing, ADR 013 P2). Gateway URL vars below resolve to the Mac now (KVM4 fallback until 2026-06-28). See
 > [AGENTS.md#topology](../../AGENTS.md#topology) · [`services/local-os/README.md`](../../services/local-os/README.md).
 >
 > **Comprehensive inventory + per-environment placement strategy is at the bottom of this file** ([jump](#doppler-inventory--environment-strategy)). The sections below remain organised by topic; the inventory aggregates them with security classification.
