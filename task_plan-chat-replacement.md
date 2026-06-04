@@ -68,9 +68,15 @@ Hard constraints:
 ## Progress (2026-06-04)
 ### Completed
 - [x] ADR 013 + this plan; full keep/replace inventory; seam identified (governance is DB-backed + standalone).
+- [x] Phase 1 (Nexus side): `/code` page (links + best-effort iframe of `CODE_EMBED_URL`) + preserved
+  governance rail (Inbox/Approvals/Tasks) + nav + proxy.ts protection + `CODE_EMBED_URL` env.
+- [x] Verified claudecodeui source (siteboon/claudecodeui, active; npm `@cloudcli-ai/cloudcli`); cloned read-only.
+  Found: it has its OWN auth + is WS-heavy → embed via tunnel+own-login, NOT the same-origin proxy.
+- [x] `docs/runbooks/claudecodeui-setup.md` — operator standup (install + run :3010 + tunnel + register).
 ### Remaining
-- [ ] Phase 1 — stand up claudecodeui + embed at `/code` (next increment).
-- [ ] Phases 2–4.
+- [ ] Phase 1 (operator): run claudecodeui (`npm install && npm run start`, SERVER_PORT=3010) + add the
+  `code.coolifycloudtunnel.uk` tunnel ingress/DNS + register. Then `/code` is live.
+- [ ] Phases 2–4 (Stop-hook ingest → governance views; re-home copilot context; retire PlatformChat).
 ### Open questions
 - claudecodeui vs opencode-web as the engine (claudecodeui drives Claude Code + opencode/Codex; leaning claudecodeui).
 - Whether business-scoping needs per-business Claude Code workspaces or one workspace + context switching.
