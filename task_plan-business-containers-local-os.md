@@ -33,11 +33,15 @@ Hard constraints:
 - [x] Task 6 — docs: AGENTS.md Topology, operator-commands TL;DR, both Coolify runbooks banner. (memory-hq atom: pending post-cutover.)
 - guards: tsc + retry-storm/sentry/lockfile/topology/agent-spec/provider-agnostic/cron-route/codeql/operator-commands/agents-md-import all PASS. (lint step has a pre-existing minimatch tooling crash, unrelated.)
 
-### Remaining (GATED — operator approval, irreversible/prod)
-- [ ] Task 7a — write business:inkbound gatewayUrl=http://nexus-business-inkbound:3000 + new bearer to prod user_secrets (`secret inkbound` prints them). Routes dispatch to the local container. Reversible via BUSINESS_GATEWAY_BYPASS_SLUGS.
-- [ ] Task 7b — set Doppler BUSINESS_RUNTIME=local (prd) so scale-down cron no-ops.
-- [ ] Task 7c — after bake-in, delete the dead Coolify nexus-business-inkbound app (uuid k1thj2tszj9vnff6qbv6yhv0, already exited).
-- [ ] Task 7d — write the post-infra-change memory-hq atom (after cutover verified).
+### Cutover (operator-approved "full cutover now" 2026-06-04)
+- [x] Task 7a — wrote business:inkbound gatewayUrl=http://nexus-business-inkbound:3000 + bearer to prod user_secrets via setSecret(); read-back through getBusinessClawConfig() VERIFIED (bearer matches). Dispatch now routes to the local container. Reversible via BUSINESS_GATEWAY_BYPASS_SLUGS.
+- [x] Task 7b — Doppler BUSINESS_RUNTIME=local set (prd). Activates on next nexus-app restart/deploy; until then the scale-down cron harmlessly hits the already-exited Coolify entry.
+- [x] Task 7d — post-infra-change memory-hq atom written (atoms/55bedf46-nexus/per-business-containers-…-2026-06-04.md, linked mocs/platform-topology).
+
+### Remaining (deferred / operator)
+- [ ] Task 7c — after bake-in, delete the dead Coolify nexus-business-inkbound app (uuid k1thj2tszj9vnff6qbv6yhv0, already exited). Operator chose to leave it as fallback for now.
+- [ ] Restart/deploy nexus-app at a convenient time so BUSINESS_RUNTIME=local takes effect.
+- [ ] Optional confidence check: run a low-stakes inkbound maintain dispatch; confirm logs resolve to business:inkbound → http://nexus-business-inkbound:3000.
 
 ### Blockers / Open Questions
 - inkbound was `exited` on Coolify (not serving), so nothing live is disrupted; the local container is a strict improvement once the secret points at it.
