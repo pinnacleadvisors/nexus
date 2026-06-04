@@ -76,7 +76,8 @@ Hard constraints:
 - [x] P2 (ingest) SHIPPED + VERIFIED: `POST /api/chat/ingest-turn` (bearer-authed, reuses
   parseTurnBlocks+persistCompletedTurn) + `.claude/hooks/on-stop-turn.sh`. Live test: a `manual-task`
   block round-tripped → `manual_tasks:[{...}]` persisted, auth 401 without bearer, no compile errors.
-- [x] P3 (copilot context) scaffolded: `docs/runbooks/copilot-context.md` (CLAUDE.md + Stop-hook wiring).
+- [x] P3 (copilot context) COMPLETE: docs/copilot/CLAUDE.md authored from the real platform-copilot.md spec
+  (system prompt + approval-request/manual-task/edit-plan grammar + 5 operator-only gates + scoping). Verified: prod build + Playwright smoke (0 errors across 10 surfaces).
 - [x] CSP fix: `frame-src` now allows `*.coolifycloudtunnel.uk` so the `/code` iframe loads.
 ### Remaining
 - [ ] Phase 1 (operator): run claudecodeui (SERVER_PORT=3010) + `code.*` tunnel ingress/DNS + register.
