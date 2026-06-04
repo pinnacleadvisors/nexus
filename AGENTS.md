@@ -72,6 +72,23 @@ These apply to **every** agent — managed sub-agents, Inngest crons, n8n workfl
 - Don't run destructive ops (`rm -rf`, `git push --force`, `drop`, `--no-verify`) without explicit user confirmation. The cost of pausing is low; the cost of an unwanted action is high.
 - Don't modify `business-operator.md` or `codex-operator.md` — clone/extend pattern. (Specific to the solopreneur experiment but worth flagging here.)
 
+## Branch hygiene — preventing orphaned commits & stale branches
+
+This is a multi-agent repo where branches stack and PRs merge out of order. The two recurring failure modes are **orphaned commits** (you push to a branch *after* its PR merged — the commits land in no PR and vanish on the next `main` sync) and **stale branches** (a branch far behind `main` becomes a conflict trap). The 2026-06-04 incident: the `check:operator-commands` guard was pushed to `chore/deploy-script-mac-primary` after PR #474 had already merged, stranding the whole guard until a later audit caught it. (Full recovery playbook + the older stranded-commit cases live in [CLAUDE.md → Branch Sync Protocol](CLAUDE.md#branch-sync-protocol--keep-main-as-the-moving-target); this section is the agnostic invariant every agent — Claude, Codex, opencode — must honour.)
+
+**Three layers of defence — all must be active:**
+
+1. **Repo setting** — `deleteBranchOnMerge: true` (enabled 2026-06-04). A second push to a merged branch then fails because the remote branch is gone. Verify: `gh repo view pinnacleadvisors/nexus --json deleteBranchOnMerge`.
+2. **Local pre-push hook** — `.githooks/pre-push` blocks pushes to a branch whose PR is `MERGED`. It is **per-clone and per-worktree** and must be wired in every checkout (this is what was missing in the incident clone): `git config core.hooksPath .githooks`. Verify: `git config core.hooksPath` → `.githooks`.
+3. **Mechanical guard** — `npm run check:branch-hygiene` detects, for the current branch: (a) **stranded commits** — PR `MERGED` but commits not in `origin/main` (fails, prints the cherry-pick recovery command), and (b) **stale** — ≥ 50 commits behind `origin/main` (warns). Fail-soft when `gh`/network is unavailable.
+
+**The invariant (non-negotiable):**
+
+- **One PR per branch. PR merged = branch dead.** New work = a new branch off latest `origin/main`. Never push another commit to a branch whose PR has merged.
+- **Before pushing or opening a PR**, run `npm run check:branch-hygiene`. If it reports stranded commits, recover them onto a fresh branch (the command is in the output) — do not push to the dead branch.
+- **As the last action of any session that opened a PR**, run `npm run check:branch-hygiene` (and the multi-PR check in the pre-commit checklist if > 1 PR). Stranded commits caught at end-of-session cost one cherry-pick; caught a week later they cost an archaeology session.
+- **Recovery for a stranded/stacked branch** is `reset --hard origin/main` + `cherry-pick <your-unique-SHA>` (see CLAUDE.md) — NOT `rebase` (squash-merge SHAs collide with themselves).
+
 ## Stack Rules
 
 ### Next.js 16 (App Router)

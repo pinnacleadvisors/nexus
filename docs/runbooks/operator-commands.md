@@ -284,7 +284,15 @@ git config core.hooksPath .githooks    # one-time, per clone (and per worktree)
 bash scripts/install-git-hooks.sh      # alternative — copies into .git/hooks/
 ```
 
-The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`docs/runbooks/git-multi-agent-collaboration.md`](git-multi-agent-collaboration.md)).
+The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`docs/runbooks/git-multi-agent-collaboration.md`](git-multi-agent-collaboration.md)). **Wire `core.hooksPath` in every clone and worktree** — it's per-checkout. A clone without it is how the 2026-06-04 orphaned-commit incident happened (a guard got pushed to an already-merged branch and stranded).
+
+### `check:branch-hygiene` — catch orphaned / stale branches
+
+```bash
+npm run check:branch-hygiene    # run before pushing / opening a PR, and at end-of-session
+```
+
+Detects two ways work gets silently lost: **stranded commits** (your branch's PR already MERGED but you have commits not in `origin/main` — fails and prints the exact `cherry-pick` recovery command) and **stale branch** (≥ 50 commits behind `origin/main` — warns; rebase before opening the PR). Fail-soft when `gh`/network is unavailable. Belt-and-suspenders with the pre-push hook: the hook blocks the bad push, this guard catches an already-stranded branch so you can recover it. Protocol: [AGENTS.md → Branch hygiene](../../AGENTS.md).
 
 ---
 
