@@ -1,0 +1,27 @@
+# cloudflared ingress for the `nexus-mac` tunnel (Mac mini local OS).
+# Locally-managed config (config_src=local). The tunnel UUID + credentials live
+# in credentials.json (gitignored). Hostnames resolve to services by their
+# `coolify`-network alias, exactly as the KVM4 cloudflared did.
+#
+# DNS flip = repoint each hostname's CNAME from the KVM4 tunnel
+# (61285ea4… nexus-fleet) to this tunnel (b741e21c… nexus-mac). KVM4 stays up
+# as instant rollback. `coolify.*` and `qa-runner.*` intentionally NOT served
+# here — coolify dashboard stays on KVM4; qa-runner is on-demand (Phase 3).
+tunnel: b741e21c-1f8c-4843-b52e-600ba76b8460
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+
+ingress:
+  - hostname: nexus.coolifycloudtunnel.uk
+    service: http://nexus-app:3000
+  # Throwaway hostname for pre-flip end-to-end verification.
+  - hostname: mac-test.coolifycloudtunnel.uk
+    service: http://nexus-app:3000
+  - hostname: claude-gw.coolifycloudtunnel.uk
+    service: http://claude-gateway:3000
+  - hostname: codex-gw.coolifycloudtunnel.uk
+    service: http://codex-gateway:3000
+  # n8n comes up in Phase 3; ingress defined now, DNS flipped then.
+  - hostname: n8n.coolifycloudtunnel.uk
+    service: http://n8n:5678
+  - service: http_status:404

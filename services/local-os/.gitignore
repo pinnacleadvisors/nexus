@@ -1,0 +1,8 @@
+# Never commit the local Doppler service token or any resolved env.
+.env
+.env.*
+!.env.example
+doppler.cache.json
+cloudflared/*.json
+cloudflared/cert.pem
+*.log

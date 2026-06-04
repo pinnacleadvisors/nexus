@@ -1,0 +1,24 @@
+{
+  "_comment": "Local cron control surface for the Mac-mini host. Edit this file to enable/disable/reschedule, then: docker compose -f services/local-os/docker-compose.yaml restart cron-runner. `enabled` was seeded 2026-06-04 to MATCH the cron-job.org active set at cutover (9 enabled). The 10 disabled entries were declared in vercel.json but were NOT actually scheduled on cron-job.org — flip `enabled` to true to activate. `target` defaults to the internal app URL (set per-job to override, e.g. an external service).",
+  "jobs": [
+    { "path": "/api/cron/chat-turn-drain",          "schedule": "*/2 * * * *",        "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/signal-review",             "schedule": "0 8 * * *",          "enabled": true },
+    { "path": "/api/cron/rebuild-graph-hq",          "schedule": "0 */6 * * *",        "enabled": true },
+    { "path": "/api/cron/sync-memory?reconcile=1",   "schedule": "0 4 * * *",          "enabled": true },
+    { "path": "/api/cron/post-deploy-smoke",         "schedule": "*/30 * * * *",       "enabled": false, "note": "was disabled on cron-job.org" },
+    { "path": "/api/cron/sync-learning-cards",       "schedule": "0 5 * * *",          "enabled": true },
+    { "path": "/api/cron/sweep-orphan-cards",        "schedule": "30 4 * * *",         "enabled": true },
+    { "path": "/api/cron/audit-prune",               "schedule": "0 6 * * *",          "enabled": true },
+    { "path": "/api/cron/scale-down-businesses",     "schedule": "*/30 * * * *",       "enabled": true },
+    { "path": "/api/cron/simulation-tick",           "schedule": "0 8 * * *",          "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/solopreneur-tick",          "schedule": "0 9,12,15,21 * * *", "enabled": true },
+    { "path": "/api/cron/codex-maintainer-tick",     "schedule": "*/30 * * * *",       "enabled": true },
+    { "path": "/api/cron/optimizer-scan-failures",   "schedule": "0 7 * * *",          "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/accomplishments-recompute", "schedule": "0 10 * * *",         "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/weekly-digest",             "schedule": "0 1 * * 0",          "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/chat-retrospectives",       "schedule": "0 3 * * *",          "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/simulation-benchmark",      "schedule": "0 6 * * *",          "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" },
+    { "path": "/api/cron/platform-dev-tick",         "schedule": "*/30 * * * *",       "enabled": false, "note": "dispatches autonomous dev work — was NOT on cron-job.org" },
+    { "path": "/api/cron/agent-cache-evict",         "schedule": "30 6 * * *",         "enabled": false, "note": "was in vercel.json but NOT on cron-job.org" }
+  ]
+}
