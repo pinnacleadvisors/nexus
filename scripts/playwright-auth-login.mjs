@@ -43,7 +43,17 @@ async function main() {
   console.log('  → Log in normally (email + password + Turnstile). I never see your credentials.');
   console.log('  → Capture fires automatically once Clerk sets the session cookie.\n');
 
-  const browser = await chromium.launch({ headless: false });
+  // Prefer the operator's real system Chrome (no bundled-browser download needed;
+  // also matches "opens a Chrome tab"). Fall back to Playwright's bundled Chromium
+  // if a channel launch isn't available. Override with PW_CHANNEL=msedge etc.
+  const channel = process.env.PW_CHANNEL ?? 'chrome';
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: false, channel });
+  } catch (err) {
+    console.warn(`  (system "${channel}" unavailable — ${String(err).split('\n')[0]}; trying bundled Chromium)`);
+    browser = await chromium.launch({ headless: false });
+  }
   const context = await browser.newContext({ baseURL: BASE_URL });
   const page = await context.newPage();
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' }).catch(() => {});

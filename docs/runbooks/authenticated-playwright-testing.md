@@ -37,6 +37,30 @@ tests/playwright/.auth/operator.json     # gitignored — a live session, never 
 Re-run this whenever specs start bouncing to `/sign-in` (the session expired per
 your Clerk config).
 
+### 2b. If your login uses Google OAuth (or any provider that blocks automation)
+
+Clerk's Google OAuth refuses a browser that Playwright *launches* ("This browser or
+app may not be secure"). The fix is to log in in a normal Chrome and let Claude
+**attach afterwards** over the DevTools protocol — nothing drives the browser during
+login, so Google can't tell:
+
+```bash
+# 1. Launch a normal Chrome with a debugging port (separate profile; your everyday Chrome untouched):
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 --user-data-dir=/tmp/nexus-cdp-profile \
+  --no-first-run --no-default-browser-check --new-window http://localhost:3005/sign-in &
+
+# 2. Log in in that window (Google OAuth works — Playwright is NOT attached).
+
+# 3. Capture the session by attaching over CDP (only reads the session; never drives login):
+CDP_URL=http://127.0.0.1:9222 node scripts/playwright-attach-capture.mjs
+```
+
+`scripts/playwright-attach-capture.mjs` connects to the already-open Chrome, waits for
+Clerk's `__session` cookie, and writes the same `tests/playwright/.auth/operator.json`.
+The `authed` Playwright project uses `channel: 'chrome'` (your installed Chrome), so no
+bundled-browser download is needed.
+
 ## 3. Run authenticated tests
 
 The `authed` Playwright project is auto-registered once the state file exists:

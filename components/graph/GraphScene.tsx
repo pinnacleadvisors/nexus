@@ -124,6 +124,12 @@ function NodeMesh({
 
 // ── Edge line ─────────────────────────────────────────────────────────────────
 
+// A Vector3 is safe to feed into line geometry only when every component is
+// finite — a single NaN makes computeBoundingSphere() return NaN.
+function isFinitePos(v: THREE.Vector3): boolean {
+  return Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
+}
+
 function EdgeLine({
   edge,
   sourcePos,
@@ -261,6 +267,11 @@ function Scene({
         const sp = posMap.get(edge.source)
         const tp = posMap.get(edge.target)
         if (!sp || !tp) return null
+        // Skip degenerate edges: non-finite coords, or a zero-length line (two
+        // nodes at identical positions). A zero-length drei <Line> makes
+        // Line2.computeBoundingSphere() return NaN, which floods the console
+        // every frame. Such a line is invisible anyway, so dropping it is safe.
+        if (!isFinitePos(sp) || !isFinitePos(tp) || sp.distanceToSquared(tp) === 0) return null
         const dim = isDimmed(edge.source) || isDimmed(edge.target)
         return (
           <EdgeLine
