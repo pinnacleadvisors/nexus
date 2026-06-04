@@ -159,10 +159,21 @@ Goal: public hostnames resolve to the Mac. KVM4 still running as live fallback d
 ## Progress (as of 2026-06-04)
 ### Completed
 - [x] Phase 0 — explored topology, captured 4 operator decisions, wrote this plan + branch.
+- [x] Phase 1 COMPLETE (Tasks 1–6):
+  - OrbStack installed, Docker 29.4.0 daemon live; `coolify` network created.
+  - prd Doppler service token `local-os-mac-mini` minted → gitignored `.env` (138 secrets, verified).
+  - app + claude-gateway + codex-gateway built & running under OrbStack, all healthy.
+  - **Mac → cloud Supabase REST = 200 REACHABLE** (direct, no hops — the core goal).
+  - Gateways `loggedIn:true` on fresh volumes via prd `CLAUDE_CODE_OAUTH_TOKEN` (likely already
+    subscription-billed in pty-mode — CONFIRM with a real dispatch before Phase 5).
+  - Fix applied: nexus-app needed `HOSTNAME=0.0.0.0` (Next standalone bound to container-ID IP
+    only; localhost healthcheck + host port-forward missed it). Masked on Coolify by network-alias routing.
 
 ### Remaining
-- [ ] Phase 1 (Tasks 1–6) — local runtime + smoke test. **Next, pending operator go-ahead.**
-- [ ] Phases 2–5.
+- [ ] Phase 2 — cloudflared on Mac + tunnel cutover. Decide: also override the LOCAL app's
+  `CLAUDE_CODE_GATEWAY_URL` → `http://claude-gateway:3000` so it uses local gateways (no tunnel hop)?
+  Currently it routes to remote KVM4 (prd value `https://claude-gw.coolifycloudtunnel.uk`).
+- [ ] Phases 3–5.
 
 ### Resolved (operator, 2026-06-04)
 - Doppler: run the Mac against the existing **`prd`** config (project `nexus`). Repo dir currently

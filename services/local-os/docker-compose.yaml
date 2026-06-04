@@ -34,6 +34,12 @@ services:
   nexus-app:
     ports:
       - "127.0.0.1:3000:3000"
+    environment:
+      # Next.js standalone binds to $HOSTNAME, which Docker sets to the container
+      # ID -> it listens ONLY on the eth0 IP, so localhost healthchecks + the
+      # host port-forward miss it. Bind to all interfaces locally. (On Coolify
+      # this was masked because cloudflared reached it via the network alias.)
+      HOSTNAME: "0.0.0.0"
 
   claude-gateway:
     ports:
