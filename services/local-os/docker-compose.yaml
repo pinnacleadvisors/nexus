@@ -1,0 +1,44 @@
+# Local "personal OS" Compose — runs the Nexus stack on the operator's Mac mini
+# under OrbStack, replacing the Hostinger/Coolify host. See
+# task_plan-local-os-migration.md for the full migration plan.
+#
+# This file `include:`s the unmodified per-service Compose templates and adds
+# ONLY the two things they need to run locally instead of inside Coolify:
+#   1. localhost port publishing (Coolify did this via its reverse proxy).
+#   2. nothing else — networks/volumes/build all inherit from the originals.
+#
+# The per-service files declare an EXTERNAL network named `coolify`; we create a
+# local docker network of that same name (`docker network create coolify`) so
+# the includes resolve unmodified. A `cloudflared` service is added in Phase 2.
+#
+# Secrets: each container self-fetches from Doppler via its own DOPPLER_TOKEN
+# (the only var here). Provide it via services/local-os/.env (gitignored) — a
+# Doppler SERVICE TOKEN scoped to nexus/prd. Mirrors the Coolify env pane.
+#
+# Usage (Phase 1 — app + gateways only):
+#   docker network create coolify   # once
+#   docker compose -f services/local-os/docker-compose.yaml up -d --build
+#
+# Phase 1 scope: nexus-app, claude-gateway, codex-gateway.
+# Phases 3+ add: n8n, nexus-sandbox, qa-runner, firecrawl.
+
+include:
+  - ../lean-deploy/docker-compose.yaml
+  - ../claude-gateway/docker-compose.yaml
+  - ../codex-gateway/docker-compose.yaml
+
+services:
+  # Publish each service on loopback so we can smoke-test before the tunnel
+  # exists. The tunnel (Phase 2) talks to them over the `coolify` network by
+  # alias, so these published ports are for local verification only.
+  nexus-app:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  claude-gateway:
+    ports:
+      - "127.0.0.1:3001:3000"
+
+  codex-gateway:
+    ports:
+      - "127.0.0.1:3002:3000"
