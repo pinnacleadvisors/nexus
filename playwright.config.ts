@@ -100,7 +100,9 @@ export default defineConfig({
     ...(HAS_AUTH
       ? [{
           name: 'authed',
-          use:  { ...devices['Desktop Chrome'], storageState: AUTH_STATE },
+          // channel: 'chrome' uses the operator's installed Chrome — no bundled
+          // chromium download needed (matches the login-capture path).
+          use:  { ...devices['Desktop Chrome'], channel: 'chrome', storageState: AUTH_STATE },
         }]
       : []),
   ],

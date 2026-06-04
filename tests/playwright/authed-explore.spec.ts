@@ -57,7 +57,11 @@ test.describe('authenticated exploration', () => {
         consoleErrors.push(text)
       })
       page.on('requestfailed', (req: Request) => {
-        failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? 'failed'}`)
+        const err = req.failure()?.errorText ?? 'failed'
+        // net::ERR_ABORTED is React StrictMode's dev-only double-mount cancelling
+        // an in-flight fetch (the component's AbortController) — not a defect.
+        if (err.includes('ERR_ABORTED')) return
+        failedRequests.push(`${req.method()} ${req.url()} — ${err}`)
       })
       const serverErrors: string[] = []
       page.on('response', (res) => {
