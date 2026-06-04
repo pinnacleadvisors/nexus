@@ -25,6 +25,7 @@ const isProtectedRoute = createRouteMatcher([
   // Original gated set
   '/dashboard(.*)',
   '/workforce(.*)',
+  '/code(.*)',
   '/forge(.*)',
   '/board(.*)',
   '/tools(.*)',
