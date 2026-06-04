@@ -26,6 +26,11 @@ include:
   - ../lean-deploy/docker-compose.yaml
   - ../claude-gateway/docker-compose.yaml
   - ../codex-gateway/docker-compose.yaml
+  - ../nexus-sandbox/docker-compose.yaml
+  # n8n is included for completeness but its DATA lives in the KVM4 volume.
+  # Bring it up empty to validate, but do NOT flip n8n DNS until the KVM4
+  # SQLite volume is copied over (operator-assisted — needs KVM4 access).
+  - ../n8n/docker-compose.yaml
 
 services:
   # Publish each service on loopback so we can smoke-test before the tunnel

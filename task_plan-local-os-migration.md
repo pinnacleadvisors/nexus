@@ -169,11 +169,32 @@ Goal: public hostnames resolve to the Mac. KVM4 still running as live fallback d
   - Fix applied: nexus-app needed `HOSTNAME=0.0.0.0` (Next standalone bound to container-ID IP
     only; localhost healthcheck + host port-forward missed it). Masked on Coolify by network-alias routing.
 
-### Remaining
-- [ ] Phase 2 — cloudflared on Mac + tunnel cutover. Decide: also override the LOCAL app's
-  `CLAUDE_CODE_GATEWAY_URL` → `http://claude-gateway:3000` so it uses local gateways (no tunnel hop)?
-  Currently it routes to remote KVM4 (prd value `https://claude-gw.coolifycloudtunnel.uk`).
-- [ ] Phases 3–5.
+- [x] Phase 2 COMPLETE — Cloudflare Tunnel cutover:
+  - Created dedicated `nexus-mac` tunnel (`b741e21c…`), separate from live KVM4 `nexus-fleet`
+    (`61285ea4…`) which stays up as instant fallback. cloudflared runs in the local-os compose.
+  - Proved path on throwaway `mac-test` subdomain, then flipped `nexus` + `claude-gw` + `codex-gw`
+    CNAMEs to the Mac tunnel. Rollback snapshot in gitignored `cloudflared/.rollback.json`.
+  - Verified LIVE through the Mac: `nexus/` 307→`/sign-in` 200 (Clerk renders), gateway `/health`
+    200, Stripe webhook 400 (alive), cron route + CRON_SECRET 200.
+  - Decision taken: kept prd Doppler as source of truth; Mac app reaches gateways via the public
+    URL (minor tunnel hairpin) — internal-alias optimization deferred to Phase 4.
+- [x] Phase 3 PARTIAL — remaining services:
+  - [x] nexus-sandbox: built + running on OrbStack; **privileged nested-Podman verified** (real
+    `/exec` ran alpine). Mac app reaches it via internal alias `http://nexus-sandbox:8080` — no DNS.
+  - [~] n8n: included in compose but NOT started/flipped. BLOCKED — workflow+credential data lives
+    in the KVM4 `n8n_data` SQLite volume; the n8n REST API never returns decrypted credential
+    secrets, so a full migration needs KVM4 filesystem access (operator-assisted). Also prd
+    `N8N_BASE_URL` points at the direct Hostinger URL `n8n.srv1610898.hstgr.cloud` — update when migrated.
+  - [defer] qa-runner: heavy/on-demand; DNS stays KVM4. Bring up under an on-demand profile later.
+  - [defer] firecrawl: ALREADY BROKEN pre-migration — `FIRECRAWL_API_URL=firecrawl.coolifycloudtunnel.uk`
+    has no DNS record. Not a regression. `firecrawl_local` skill is the working fallback.
+
+### Remaining (operator-gated / future)
+- [ ] n8n data copy: `docker cp`/volume-export KVM4 `n8n_data` → local, then flip n8n DNS +
+  update `N8N_BASE_URL`. Needs KVM4 access.
+- [ ] Phase 4 — auto-start on boot/power (`pmset -a autorestart 1` + launchd), 48–72h soak,
+  optional internal gateway-URL routing, confirm subscription (not API) billing via a real dispatch.
+- [ ] Phase 5 — decommission KVM4, cancel Hostinger, ADR 007, infra-change memory atom, Topology update.
 
 ### Resolved (operator, 2026-06-04)
 - Doppler: run the Mac against the existing **`prd`** config (project `nexus`). Repo dir currently
