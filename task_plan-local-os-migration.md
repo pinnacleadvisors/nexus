@@ -203,9 +203,19 @@ Goal: public hostnames resolve to the Mac. KVM4 still running as live fallback d
         = auto-logged-in. System Settings → Users & Groups → Automatically log in as <user>.
   - [ ] 48–72h soak with KVM4 still alive; confirm subscription (not API) billing via a real dispatch.
 
-### Remaining (future)
+- [x] Crons moved to the Mac (operator ask, 2026-06-04):
+  - `cron-runner` service (supercronic) fires `/api/cron/*` on the INTERNAL app URL.
+  - Control surface `cron/crons.json` (agent-editable: enable/disable/reschedule → restart).
+  - Seeded to the cron-job.org active set (9 enabled; 10 declared-but-disabled). Verified a real
+    fire (chat-turn-drain HTTP 200) before scoping back to the 9.
+  - Deleted all 10 cron-job.org jobs (cron-job.org account now empty — no double-fire, no 3rd-party dep).
+  - services/local-os/README.md documents stack + cron management.
+
+### Remaining (operator-gated / future)
+- [ ] **OPERATOR** — `sudo pmset -a sleep 0 disksleep 0 womp 1 autorestart 1` (Mac still sleeps after 1 min).
 - [ ] Phase 5 — decommission KVM4, cancel Hostinger, ADR 007, infra-change memory atom, Topology update.
 - [ ] (optional) internal gateway-URL routing to drop the tunnel hairpin.
+- [ ] (optional) point N8N_BASE_URL off the raw Hostinger URL before KVM4 dies (n8n stays on KVM4).
 
 ### Resolved (operator, 2026-06-04)
 - Doppler: run the Mac against the existing **`prd`** config (project `nexus`). Repo dir currently

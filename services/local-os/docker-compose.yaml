@@ -53,6 +53,31 @@ services:
     ports:
       - "127.0.0.1:3002:3000"
 
+  # Local cron scheduler — supercronic firing /api/cron/* on the internal app
+  # URL, replacing cron-job.org. Crontab is generated from vercel.json at start
+  # (edit vercel.json, then `compose restart cron-runner`). Monitor with
+  # `docker compose -f services/local-os/docker-compose.yaml logs -f cron-runner`.
+  cron-runner:
+    build:
+      context: ./cron
+      dockerfile: Dockerfile
+    pull_policy: build
+    restart: unless-stopped
+    environment:
+      DOPPLER_TOKEN: "${DOPPLER_TOKEN}"
+      CRON_TARGET: "http://nexus-app:3000"
+      CRONS_JSON: "/app/cron/crons.json"
+    volumes:
+      # Live-editable control surface: edit cron/crons.json then
+      # `compose restart cron-runner`. No rebuild needed.
+      - ./cron:/app/cron:ro
+    networks:
+      coolify:
+        aliases:
+          - cron-runner
+    depends_on:
+      - nexus-app
+
   # Cloudflare Tunnel connector for the `nexus-mac` tunnel. Replaces the KVM4
   # cloudflared. Resolves services by their `coolify`-network alias. Public
   # hostnames are flipped to this tunnel via DNS (see cloudflared/config.yml).
