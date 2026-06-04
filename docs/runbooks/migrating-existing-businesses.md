@@ -1,5 +1,7 @@
 # Migrating existing businesses to per-business containers
 
+> **⚠️ New host (2026-06-04).** Per-business containers now run on the **Mac local-OS stack** under OrbStack — `npm run business:local -- add <slug>` builds the arm64 image on-box, generates the per-business env, and brings it up on the shared `coolify` network at internal DNS `http://nexus-business-<slug>:3000`. No GHA build, no public FQDN, no `claude login`. See [`services/local-os/businesses/README.md`](../../services/local-os/businesses/README.md). The Coolify/GHA steps below are the legacy/fallback path.
+
 For businesses that exist in `business_operators` from before the per-business container architecture (Phase 5+ of the execution overhaul). Both seed businesses — `inkbound` (freelancer contract bundles) and `ledger-lane` (tax organizers for accountants) — fall in this bucket.
 
 The full step-by-step is in [`pilot-rollout-walkthrough.md`](pilot-rollout-walkthrough.md). This doc just tightens it for the existing-business case.

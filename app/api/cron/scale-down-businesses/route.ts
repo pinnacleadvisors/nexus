@@ -108,6 +108,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(report, { status: 200 })
   }
 
+  // Local-OS runtime short-circuit (ADR 011). When per-business containers run
+  // on the always-on Mac under OrbStack, idle scale-down is both unnecessary
+  // (idle containers cost ~nothing on a box that's already running) and
+  // impossible from here (the app container has no docker socket). The
+  // `restart: unless-stopped` policy keeps them up; lifecycle is host-side via
+  // `npm run business:local`. See services/local-os/businesses/README.md.
+  if ((process.env.BUSINESS_RUNTIME ?? '').toLowerCase() === 'local') {
+    report.reason = 'local-runtime (Mac always-on; idle scale-down not applicable)'
+    return NextResponse.json(report, { status: 200 })
+  }
+
   if (!isCoolifyConfigured()) {
     report.ok     = false
     report.reason = 'Coolify not configured'

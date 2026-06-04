@@ -6,16 +6,26 @@
 #   BUSINESS_SLUG       — used in container labels + log lines
 #   MCP_PACKAGES        — space-separated list of npm packages to install
 #                          globally (resolved from lib/businesses/mcp-manifest.ts
-#                          by the provisioner before the Coolify build).
+#                          by the provisioner / scripts/local-os-business.ts).
 #
-# Runtime env vars are still injected by Coolify from Doppler — this image
-# only bakes in WHICH MCP packages are available, not the secrets they need.
+# Runtime secrets are fetched from Doppler at boot — like the base gateway,
+# this image wraps its ENTRYPOINT with `doppler run --`, so the ONLY env var an
+# orchestrator must supply is DOPPLER_TOKEN (+ the per-business overrides
+# NEXUS_BUSINESS_SLUG / CLAUDE_GATEWAY_BEARER, which are business-specific and
+# therefore not global Doppler secrets). This image only bakes in WHICH MCP
+# packages are available, not the secrets they need.
 #
-# Build (locally):
+# Two deploy targets, same image:
+#   - Mac local-OS (OrbStack): run via services/local-os/businesses/ compose,
+#     env_file supplies DOPPLER_TOKEN + the per-business overrides. PRIMARY.
+#   - Coolify (KVM4, fallback): env injected by Coolify from Doppler. LEGACY.
+#
+# Build (locally, Apple-Silicon arm64):
 #   docker build \
-#     --build-arg BUSINESS_SLUG=acme-ads \
-#     --build-arg MCP_PACKAGES="@nexus/mcp-memory-hq @nexus/mcp-canva" \
-#     -f Dockerfile.business -t nexus-business:acme-ads services/claude-gateway/
+#     --build-arg BUSINESS_SLUG=inkbound \
+#     --build-arg MCP_PACKAGES="" \
+#     -f services/claude-gateway/Dockerfile.business \
+#     -t nexus-business:inkbound services/claude-gateway/
 
 ARG BUSINESS_SLUG=unset
 ARG MCP_PACKAGES=""
@@ -42,16 +52,30 @@ ARG MCP_PACKAGES
 LABEL nexus.business.slug="${BUSINESS_SLUG}"
 LABEL nexus.image.kind="per-business-claude-gateway"
 
+# Runtime essentials. git: entrypoint clones the Nexus repo for agent specs.
+# curl + gnupg: bootstrap the Doppler CLI. jq + python3-minimal: the repo's
+# .claude/hooks/* scripts (check-write-size.sh uses jq, skill-router.sh uses
+# python3). Mirrors the base gateway's runtime layer so the shared entrypoint.sh
+# behaves identically here.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates bash \
+ && apt-get install -y --no-install-recommends git ca-certificates bash curl gnupg jq python3-minimal \
  && rm -rf /var/lib/apt/lists/*
+
+# Doppler CLI — secrets pulled at container startup, so the only env var an
+# orchestrator must set is DOPPLER_TOKEN. Everything else (COMPOSIO_API_KEY,
+# MEMORY_HQ_TOKEN, FIRECRAWL_API_KEY, TAVILY_API_KEY, N8N_*, CLAUDE_CODE_OAUTH_TOKEN,
+# …) flows from Doppler at boot via `doppler run --` (see ENTRYPOINT below).
+RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 
 # Claude CLI — pinned to latest stable major.
 RUN npm install --location=global @anthropic-ai/claude-code@latest
 
 # Per-business MCP packages. If MCP_PACKAGES is empty, this is a no-op so
 # the image still builds cleanly. The script silently skips packages that
-# fail to install (lets a typo in the manifest not block the whole build).
+# fail to install (lets a typo / unpublished placeholder in the manifest not
+# block the whole build). Foundational MCPs (composio/rube, memory-hq) are
+# resolved at runtime by entrypoint.sh from the cloned /repo + npx, so an
+# empty MCP_PACKAGES is the correct default for pilots (mcp_override=none).
 RUN sh -eu -c 'if [ -n "${MCP_PACKAGES}" ]; then \
       for pkg in ${MCP_PACKAGES}; do \
         echo "[mcp-install] $$pkg"; \
@@ -70,10 +94,16 @@ COPY --from=build /app/dist ./dist
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
+# /root/.claude holds the OAuth credentials from `claude login` (legacy path).
+# With CLAUDE_CODE_OAUTH_TOKEN in Doppler the gateway authenticates
+# non-interactively, but the volume is kept so the legacy login path still works.
 VOLUME ["/root/.claude"]
 ENV NEXUS_REPO_PATH=/repo
 ENV CLAUDE_GATEWAY_PORT=3000
 ENV NEXUS_BUSINESS_SLUG="${BUSINESS_SLUG}"
 EXPOSE 3000
 
-ENTRYPOINT ["./entrypoint.sh"]
+# Wrap the entrypoint with `doppler run` so secrets are fetched fresh at boot.
+# --fallback caches the last successful pull so the container still starts if
+# Doppler is briefly unreachable. Identical pattern to the base gateway image.
+ENTRYPOINT ["doppler", "run", "--fallback=/tmp/doppler.cache.json", "--", "./entrypoint.sh"]
