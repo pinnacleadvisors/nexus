@@ -24,6 +24,7 @@ function isLocalMode(): boolean {
 const isProtectedRoute = createRouteMatcher([
   // Original gated set
   '/dashboard(.*)',
+  '/workforce(.*)',
   '/forge(.*)',
   '/board(.*)',
   '/tools(.*)',

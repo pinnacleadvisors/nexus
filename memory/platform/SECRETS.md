@@ -8,7 +8,9 @@
 > container self-fetches the rest via `doppler run --`. Relevant prd vars: `CLOUDFLARE_NEXUS_COOLIFY_MIGRATION`
 > (Cloudflare API token — manages the `nexus-mac` tunnel + DNS), `CRON_SECRET` (now used by the local
 > `cron-runner`, not cron-job.org). `CRONJOB_ORG_API_KEY` is **rollback-only** (cron-job.org account drained
-> 2026-06-04). Gateway URL vars below resolve to the Mac now (KVM4 fallback until 2026-06-28). See
+> 2026-06-04). `PAPERCLIP_API_BASE` (optional; default `http://host.docker.internal:3100`) — the Nexus
+> `/workforce` page + `/api/workforce/*` proxy reach the local Paperclip orchestration server through it
+> (Clerk-authed; Paperclip stays loopback-only). Gateway URL vars below resolve to the Mac now (KVM4 fallback until 2026-06-28). See
 > [AGENTS.md#topology](../../AGENTS.md#topology) · [`services/local-os/README.md`](../../services/local-os/README.md).
 >
 > **Comprehensive inventory + per-environment placement strategy is at the bottom of this file** ([jump](#doppler-inventory--environment-strategy)). The sections below remain organised by topic; the inventory aggregates them with security classification.

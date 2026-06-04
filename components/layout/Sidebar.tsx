@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Trophy,
   HeartPulse,
+  Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -168,6 +169,7 @@ const BASE_NAV: NavItem[] = [
   { type: 'link', href: '/accomplishments', label: 'Wins',            icon: Trophy },
   { type: 'link', href: '/health',          label: 'Health',          icon: HeartPulse },
   { type: 'link', href: '/audit',           label: 'Audit',           icon: ShieldCheck },
+  { type: 'link', href: '/workforce',       label: 'Workforce',       icon: Users },
   { type: 'link', href: '/manage-platform', label: 'Dev Console',     icon: Terminal },
   { type: 'link', href: '/settings',        label: 'Settings',        icon: Settings },
 ]
