@@ -48,3 +48,19 @@ services:
   codex-gateway:
     ports:
       - "127.0.0.1:3002:3000"
+
+  # Cloudflare Tunnel connector for the `nexus-mac` tunnel. Replaces the KVM4
+  # cloudflared. Resolves services by their `coolify`-network alias. Public
+  # hostnames are flipped to this tunnel via DNS (see cloudflared/config.yml).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    networks:
+      coolify:
+        aliases:
+          - cloudflared
+    depends_on:
+      - nexus-app
