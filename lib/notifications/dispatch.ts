@@ -35,7 +35,7 @@ export type NotificationCategory =
   // (first $1k, third niche, …); the recompute cron fires this exactly once.
   | 'milestone'
 
-export type NotificationChannel = 'slack' | 'webpush'
+export type NotificationChannel = 'slack' | 'webpush' | 'discord'
 
 export interface NotificationPayload {
   title:        string
@@ -67,13 +67,13 @@ export interface DispatchResult {
 /** Default opt-in per category. New operators get these on first read
  *  if the row doesn't exist yet. Configurable later via PATCH. */
 const DEFAULT_ENABLED: Record<NotificationCategory, NotificationChannel[]> = {
-  'approval-pending':  ['slack', 'webpush'],
-  'kill-switch':       ['slack', 'webpush'],
-  'graduation':        ['slack'],
-  'security-alert':    ['slack', 'webpush'],
-  'weekly-digest':     ['slack'],
+  'approval-pending':  ['slack', 'webpush', 'discord'],
+  'kill-switch':       ['slack', 'webpush', 'discord'],
+  'graduation':        ['slack', 'discord'],
+  'security-alert':    ['slack', 'webpush', 'discord'],
+  'weekly-digest':     ['slack', 'discord'],
   'chat-turn':         ['slack', 'webpush'],
-  'milestone':         ['slack', 'webpush'],
+  'milestone':         ['slack', 'webpush', 'discord'],
 }
 
 /**
@@ -133,6 +133,10 @@ export async function notifyOperator(
       if (channel === 'webpush') {
         const { sendWebPushNotification } = await import('./webpush')
         return await sendWebPushNotification(userId, payload)
+      }
+      if (channel === 'discord') {
+        const { sendDiscordNotification } = await import('./discord')
+        return await sendDiscordNotification(userId, payload)
       }
       return { channel, ok: false, error: 'unknown_channel' }
     } catch (err) {
