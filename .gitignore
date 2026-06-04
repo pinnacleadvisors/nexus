@@ -22,6 +22,7 @@ services/*/dist/
 test-results/
 playwright-report/
 /playwright/.cache/
+tests/playwright/.auth/    # captured authenticated storageState — never commit a live session
 
 # next.js
 /.next/

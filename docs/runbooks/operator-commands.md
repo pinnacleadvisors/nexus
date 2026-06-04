@@ -249,6 +249,15 @@ npx playwright test viewport-meta.spec.ts                # single spec — meta 
 
 **When to run `real-device-mobile`** — the existing `iphone` / `android` projects use Playwright's `devices[...]` which sets viewport directly, bypassing the page's own `<meta name="viewport">` tag. The 2026-05-24 mobile-squashed bug (PR #301) only manifested on real phones because the meta tag was missing — Playwright tests passed because the device config injected the viewport directly. Run `real-device-mobile` for any change that touches `app/layout.tsx`, Tailwind responsive classes, or SSR meta-tag emission.
 
+### Authenticated testing — log in once, test as the signed-in operator
+
+```bash
+npm run test:e2e:login       # opens a headed Chrome tab — you log in; the session is captured (no creds handled)
+npm run test:e2e:authed      # run the `authed` project (signed-in) against the captured session
+```
+
+The login capture saves a gitignored `storageState` to `tests/playwright/.auth/operator.json`; the `authed` Playwright project auto-registers once it exists. Use this for protected-flow testing on localhost (the qa-runner's Clerk ticket is domain-whitelisted and fails on `http://localhost`). Full flow + the reusable test-and-improve prompt: [`docs/runbooks/authenticated-playwright-testing.md`](authenticated-playwright-testing.md). **Never commit `tests/playwright/.auth/`.**
+
 ---
 
 ## 7. Doppler / secrets
@@ -284,7 +293,15 @@ git config core.hooksPath .githooks    # one-time, per clone (and per worktree)
 bash scripts/install-git-hooks.sh      # alternative — copies into .git/hooks/
 ```
 
-The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`docs/runbooks/git-multi-agent-collaboration.md`](git-multi-agent-collaboration.md)).
+The pre-push hook blocks pushes to branches whose PR is already MERGED (see [`docs/runbooks/git-multi-agent-collaboration.md`](git-multi-agent-collaboration.md)). **Wire `core.hooksPath` in every clone and worktree** — it's per-checkout. A clone without it is how the 2026-06-04 orphaned-commit incident happened (a guard got pushed to an already-merged branch and stranded).
+
+### `check:branch-hygiene` — catch orphaned / stale branches
+
+```bash
+npm run check:branch-hygiene    # run before pushing / opening a PR, and at end-of-session
+```
+
+Detects two ways work gets silently lost: **stranded commits** (your branch's PR already MERGED but you have commits not in `origin/main` — fails and prints the exact `cherry-pick` recovery command) and **stale branch** (≥ 50 commits behind `origin/main` — warns; rebase before opening the PR). Fail-soft when `gh`/network is unavailable. Belt-and-suspenders with the pre-push hook: the hook blocks the bad push, this guard catches an already-stranded branch so you can recover it. Protocol: [AGENTS.md → Branch hygiene](../../AGENTS.md).
 
 ---
 

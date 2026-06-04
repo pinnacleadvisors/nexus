@@ -40,9 +40,18 @@
  * via BASE_URL=https://branch-preview.example.
  */
 
+import { existsSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
+
+// Authenticated-session reuse. `scripts/playwright-auth-login.mjs` captures a
+// real operator login into this gitignored storageState file; the `authed`
+// project below loads it so specs run as a signed-in user. The project is only
+// registered when the file exists, so `npx playwright test` (no capture) never
+// errors on a missing state file.
+const AUTH_STATE = process.env.STORAGE_STATE ?? 'tests/playwright/.auth/operator.json'
+const HAS_AUTH = existsSync(AUTH_STATE)
 
 export default defineConfig({
   testDir:    './tests/playwright',
@@ -85,6 +94,15 @@ export default defineConfig({
         viewport:  { width: 390, height: 844 },
       },
     },
+    // Authenticated desktop surface — only registered once a session has been
+    // captured (scripts/playwright-auth-login.mjs). Run with --project=authed
+    // to exercise protected flows as a signed-in operator.
+    ...(HAS_AUTH
+      ? [{
+          name: 'authed',
+          use:  { ...devices['Desktop Chrome'], storageState: AUTH_STATE },
+        }]
+      : []),
   ],
   outputDir: 'test-results',
 })
