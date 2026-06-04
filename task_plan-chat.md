@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot (chat = embed + replace).** Replaced by embedded Claude Code/opencode web chat.
+> Bespoke chat engine demoted for an embedded Claude Code/opencode web UI; governance affordances re-homed. See [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history.
+
 # task_plan-chat.md — chat surfaces for platform-copilot + per-business agents
 
 Canonical plan for the in-Nexus chat surfaces. Consolidates the phasing that has lived in PR descriptions and code comments since PR #145. New phases land here first; PRs reference the phase number.

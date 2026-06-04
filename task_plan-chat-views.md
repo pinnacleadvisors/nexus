@@ -1,3 +1,6 @@
+> ⛔ **SUPERSEDED 2026-06-04 — [ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md) lean-Nexus pivot (chat = embed + replace).** Superseded by claudecodeui's own views.
+> Bespoke chat engine demoted for an embedded Claude Code/opencode web UI; governance affordances re-homed. See [task_plan-lean-nexus-pivot.md](task_plan-lean-nexus-pivot.md). Kept for history.
+
 # task_plan-chat-views.md — Chat Views dropdown extensions
 
 Roadmap for the four follow-up panels behind the Views dropdown shipped in #174 (Tasks / Approvals / Calendar). Plus a small set of polish items left as "baked-in suggestions" — most are already done, two are gaps to close.
