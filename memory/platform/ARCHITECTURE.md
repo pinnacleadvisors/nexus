@@ -1,5 +1,12 @@
 # Nexus — Architecture
 
+> **Hosting (as of 2026-06-04):** primary host is the operator's **Mac mini** (OrbStack + plain
+> docker-compose at [`services/local-os/`](../../services/local-os/README.md)) — runs `nexus-app`,
+> both gateways, `nexus-sandbox`, `cloudflared`, and the local `cron-runner`. **KVM4 (Hostinger) is
+> fallback only until it expires 2026-06-28** (still hosts `n8n` + `qa-runner`). Supabase stays cloud.
+> Canonical topology + rollback: [AGENTS.md#topology](../../AGENTS.md#topology) · rationale: [ADR 011](../../docs/adr/011-mac-mini-local-os.md).
+> Mentions of "KVM4 / the Coolify host" elsewhere in this file mean the fallback box now.
+
 ## File Structure
 
 ```

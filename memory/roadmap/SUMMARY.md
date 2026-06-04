@@ -1,6 +1,10 @@
 # Nexus — Roadmap Summary
 
-> Last updated: 2026-05-28. Source of truth: `ROADMAP.md` + `task_plan.md` + `task_plan-platform-improvements.md`.
+> Last updated: 2026-06-04. Source of truth: `ROADMAP.md` + `task_plan.md` + `task_plan-platform-improvements.md`.
+>
+> **Infra (2026-06-04):** platform primary host moved Hostinger KVM4 → **Mac mini** (OrbStack + compose,
+> crons local via supercronic, cron-job.org retired). KVM4 fallback until 2026-06-28. See
+> [ADR 011](../../docs/adr/011-mac-mini-local-os.md) · [`task_plan-local-os-migration.md`](../../task_plan-local-os-migration.md) · [AGENTS.md#topology](../../AGENTS.md#topology).
 > Legend: ✅ Complete · 🔧 Partial · ⬜ Not started
 >
 > **Recent shipped work (2026-05-27/28)** is captured in the dedicated
