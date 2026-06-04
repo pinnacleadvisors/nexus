@@ -249,6 +249,15 @@ npx playwright test viewport-meta.spec.ts                # single spec — meta 
 
 **When to run `real-device-mobile`** — the existing `iphone` / `android` projects use Playwright's `devices[...]` which sets viewport directly, bypassing the page's own `<meta name="viewport">` tag. The 2026-05-24 mobile-squashed bug (PR #301) only manifested on real phones because the meta tag was missing — Playwright tests passed because the device config injected the viewport directly. Run `real-device-mobile` for any change that touches `app/layout.tsx`, Tailwind responsive classes, or SSR meta-tag emission.
 
+### Authenticated testing — log in once, test as the signed-in operator
+
+```bash
+npm run test:e2e:login       # opens a headed Chrome tab — you log in; the session is captured (no creds handled)
+npm run test:e2e:authed      # run the `authed` project (signed-in) against the captured session
+```
+
+The login capture saves a gitignored `storageState` to `tests/playwright/.auth/operator.json`; the `authed` Playwright project auto-registers once it exists. Use this for protected-flow testing on localhost (the qa-runner's Clerk ticket is domain-whitelisted and fails on `http://localhost`). Full flow + the reusable test-and-improve prompt: [`docs/runbooks/authenticated-playwright-testing.md`](authenticated-playwright-testing.md). **Never commit `tests/playwright/.auth/`.**
+
 ---
 
 ## 7. Doppler / secrets

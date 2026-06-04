@@ -10,6 +10,8 @@
     "check:retry-storm": "node scripts/check-retry-storm.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
+    "test:e2e:login": "node scripts/playwright-auth-login.mjs",
+    "test:e2e:authed": "playwright test --project=authed",
     "check:sentry-config": "node scripts/check-sentry-config.mjs",
     "check:lockfile": "node scripts/check-lockfile.mjs",
     "check:topology": "node scripts/check-topology.mjs",
