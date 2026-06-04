@@ -103,6 +103,11 @@ export default defineConfig({
           // channel: 'chrome' uses the operator's installed Chrome — no bundled
           // chromium download needed (matches the login-capture path).
           use:  { ...devices['Desktop Chrome'], channel: 'chrome', storageState: AUTH_STATE },
+          // Only the authed-intended specs run here. The rest of the suite assumes
+          // an UNauthenticated session (sign-in flow, redirect guards, mobile
+          // layout) and would fail under a logged-in storageState. New authed
+          // specs: add the filename here.
+          testMatch: /(authed-explore|authed-interactions|code-page|graph-scene)\.spec\.ts$/,
         }]
       : []),
   ],

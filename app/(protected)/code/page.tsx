@@ -1,4 +1,5 @@
 import { Code2, ExternalLink, Inbox, CheckSquare, ShieldCheck } from 'lucide-react'
+import CodeEmbed from '@/components/code/CodeEmbed'
 
 // Phase 1 of the chat-engine replacement (ADR 013): surface claudecodeui (host
 // Claude Code, substrate-registered) as the agent chat, and keep the Nexus
@@ -33,11 +34,11 @@ export default function CodePage() {
           <RailLink href="/board" icon={<CheckSquare className="w-4 h-4" />} title="Tasks / Pipeline" sub="Manual + background tasks" />
         </div>
 
-        {/* Best-effort embed. Works once claudecodeui is running behind the tunnel; cross-subdomain
-            iframing depends on its frame-ancestors + cookie policy — use "Open claudecodeui" if blank. */}
-        <div className="rounded-xl border overflow-hidden" style={{ ...CARD, height: '72vh' }}>
-          <iframe src={EMBED} title="claudecodeui" className="w-full h-full" style={{ border: 0 }} />
-        </div>
+        {/* Reachability-aware embed: shows claudecodeui when it's up, a graceful
+            "not connected" panel (with retry) when it isn't. Cross-subdomain
+            iframing also depends on its frame-ancestors + cookie policy — use
+            "Open claudecodeui" if it loads blank. */}
+        <CodeEmbed url={EMBED} />
       </div>
     </div>
   )
