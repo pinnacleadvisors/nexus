@@ -393,6 +393,7 @@ The "team" abstraction in this codebase is two-axis: a **department** (a named b
 
 | Surface | Location |
 |---|---|
+| **Tool selection matrix** (which tool for which task) | [docs/research/THIRD_PARTY_TOOL_MATRIX.md](docs/research/THIRD_PARTY_TOOL_MATRIX.md) — comparison table per category (harnesses, LLM, memory, code, design, content-media, search, workflow) + the 15-kind coverage map + Paperclip/SSoT synergy. The orchestrator's "what are my options" reference. |
 | Architecture overlay | [task_plan-departments-and-ecosystems.md](task_plan-departments-and-ecosystems.md) |
 | Adapter contract | [lib/ecosystems/types.ts](lib/ecosystems/types.ts) — every adapter implements `EcosystemAdapter` |
 | Adapter registry | [lib/ecosystems/registry.ts](lib/ecosystems/registry.ts) — `getEcosystem(kind, name)` |

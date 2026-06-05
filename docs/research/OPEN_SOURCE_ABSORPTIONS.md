@@ -3,6 +3,13 @@
 Single source of truth for which OSS projects Nexus has absorbed patterns from,
 what was absorbed, where it lives in this repo, and what's pending.
 
+> **Companion doc — [`THIRD_PARTY_TOOL_MATRIX.md`](THIRD_PARTY_TOOL_MATRIX.md).** This file is the
+> **absorption ledger** ("what patterns we took from where"). The matrix is the **selection matrix**
+> ("which tool an orchestrator should pick for a given task"), with a comparison table per category
+> (agent harnesses, LLM providers, memory, code, design, content-media, search, workflow) + the
+> ecosystem-adapter coverage map + the Paperclip/single-source-of-truth synergy analysis. New OSS
+> evaluations land here first (RUN/ABSORB/FORK/REJECT); a tool gets a matrix row once it's selectable.
+
 > ## ⚡ STRATEGY UPDATE 2026-06-04 — Lean-Nexus pivot ([ADR 012](../adr/012-lean-nexus-integration-cockpit.md))
 > **Default changed from ABSORB → RUN.** OSS-first: *use* the tool; absorb/personalise or
 > fork+plugin **only when it genuinely lacks what we need.** New decision column below: **RUN**
