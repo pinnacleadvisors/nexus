@@ -196,9 +196,14 @@ exist **only as prose** in the design-lead spec — `getEcosystem('design','v0')
 
 ## 6. Content-media generation (video / image / voice / music / avatar / speech)
 
-⚠️ **Big caveat:** only **2 of these have real `EcosystemAdapter` implementations** (Higgsfield, Pipecat).
-The Phase-18 media stack exists as **env-var names only** in `SECRETS.md` — documented secret slots, not
-registry-callable. "Default-bound" = seeded into a team's `ecosystem_bindings` by `default-bindings.ts`.
+> ✅ **Updated by PR #489 — the table below predates it.** The media stack now HAS registered adapters:
+> `video:kling` + `video:runway` (wrapping `lib/video/*`), `image:muapi`, `voice:elevenlabs`, `music:suno`,
+> `avatar:heygen`, `speech:whisper`. All are env-gated (callable once their key is set). See the §9 coverage
+> map for the current truth; the per-row "🚫 no adapter / env-var only" cells below are historical.
+
+⚠️ *(historical, pre-PR#489)* Only **2 of these had real `EcosystemAdapter` implementations** (Higgsfield,
+Pipecat); the rest existed as **env-var names only** in `SECRETS.md`. "Default-bound" = seeded into a team's
+`ecosystem_bindings` by `default-bindings.ts`.
 
 | Capability | Tool | Adapter? | Where | Default-bound? | Best-for |
 |---|---|---|---|---|---|
@@ -279,35 +284,36 @@ agent-editable cron control surface on the always-on Mac host).
 The master "what can the registry route today" map. Source of truth: the `EcosystemKind` union
 ([`types.ts:17`](../../lib/ecosystems/types.ts)) × `ALL_ADAPTERS` ([`registry.ts:33`](../../lib/ecosystems/registry.ts)).
 
-> ⚠️ The contract comment on `EcosystemKind` claims "each kind has at least one concrete adapter (or a stub)".
-> **This is stale/aspirational** — only **9 of 15** kinds have any adapter. The 6 below with no adapter return
-> `null` from `getEcosystem()` and force the caller to file a manual-task.
+> ✅ **All 15 kinds now have ≥1 registered adapter** (closed by PR #489). The `check:ecosystem-bindings`
+> guard fails CI if any kind loses coverage or any default binding stops resolving. Adapters are env-gated:
+> "in registry" = routable; `available()` = configured-and-callable.
 
-| `EcosystemKind` | Bound adapter(s) | In registry? | File | `available()` gate | Gap? |
+| `EcosystemKind` | Bound adapter(s) | In registry? | File | `available()` gate | Notes |
 |---|---|---|---|---|---|
-| `llm` | Claude (`llm:claude`) | ✅ | `claude-llm.ts` | 🚀 always `true` | None — only kind with a no-config default |
-| `code` | Aider, Open Code | ✅ | `aider.ts`, `open-code.ts` | ⚠️ env-gated | Two providers; neither bootable without a deployed service |
+| `llm` | Claude (`llm:claude`) | ✅ | `claude-llm.ts` | 🚀 always `true` | Only kind with a no-config default |
+| `code` | Aider, Open Code | ✅ | `aider.ts`, `open-code.ts` | ⚠️ env-gated | Two providers |
 | `design` | open-design | ✅ | `open-design.ts` | ⚠️ `OPEN_DESIGN_BASE_URL` | Single provider |
-| `video` | Higgsfield | ✅ | `higgsfield.ts` | ⚠️ env-gated | Single provider; no Runway/Kling despite Phase-18 keys |
-| `image` | **none** | 🚫 | — | — | 🔬 **GAP** — `MUAPI_AI_KEY` exists, no adapter (highest-value) |
-| `voice` | **none** | 🚫 | — | — | 🔬 **GAP** — `ELEVENLABS_API_KEY` exists, no TTS adapter |
-| `music` | **none** | 🚫 | — | — | 🔬 **GAP** — `SUNO`/`UDIO` keys exist, no adapter |
-| `avatar` | **none** | 🚫 | — | — | 🔬 **GAP** — `HEYGEN`/`DID` keys exist, no adapter |
-| `speech` | **none** | 🚫 | — | — | 🔬 **GAP** — no STT adapter (lowest priority, no key) |
-| `memory` | memory-hq, GBrain | ✅ | `memory-hq.ts`, `gbrain.ts` | memory-hq 🚀 always `true`; gbrain ⚠️ env | None — best-covered after llm |
-| `search` | Tavily, SearXNG | ✅ | `tavily.ts`, `searxng.ts` | ⚠️ env-gated | None — paid + self-host both present |
-| `browser` | **none** | 🚫 | — | — | 🔬 **GAP** — no headless/computer-use adapter |
-| `workflow` | Composio | ✅ | `composio.ts` | ⚠️ Composio creds | Single provider; no n8n adapter despite n8n in topology |
-| `voice-agent` | Pipecat | ✅ | `pipecat.ts` | ⚠️ `PIPECAT_BASE_URL` | Single provider |
-| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | Single provider; scrape-shaped, no true PDF/OCR adapter |
+| `video` | Higgsfield, **Kling**, **Runway** | ✅ | `higgsfield.ts`, `kling.ts`, `runway.ts` | ⚠️ env-gated | Kling/Runway wrap `lib/video/*` (PR #489); saas default `runway` resolves |
+| `image` | **MUAPI** | ✅ | `muapi.ts` | ⚠️ `MUAPI_AI_KEY` | Added PR #489 |
+| `voice` | **ElevenLabs** | ✅ | `elevenlabs.ts` | ⚠️ `ELEVENLABS_API_KEY` | Added PR #489 (base64 audio) |
+| `music` | **Suno/Udio** | ✅ | `suno.ts` | ⚠️ `SUNO_API_KEY`\|`UDIO_API_KEY` | Added PR #489 |
+| `avatar` | **HeyGen** | ✅ | `heygen.ts` | ⚠️ `HEYGEN_API_KEY` | Added PR #489 (D-ID fallback TODO) |
+| `speech` | **Whisper** | ✅ | `whisper.ts` | ⚠️ `WHISPER_BASE_URL`\|`OPENAI_API_KEY` | Added PR #489 (OpenAI-compatible STT) |
+| `memory` | memory-hq, GBrain | ✅ | `memory-hq.ts`, `gbrain.ts` | memory-hq 🚀 always `true`; gbrain ⚠️ env | Best-covered after llm |
+| `search` | Tavily, SearXNG | ✅ | `tavily.ts`, `searxng.ts` | ⚠️ env-gated | Paid + self-host both present |
+| `browser` | **Playwright/Browserless** | ✅ | `browserless.ts` | ⚠️ `BROWSER_BASE_URL` | Added PR #489 (headless shim) |
+| `workflow` | Composio, **n8n** | ✅ | `composio.ts`, `n8n.ts` | ⚠️ env-gated | n8n = run-a-workflow; composio = run-one-action (PR #489) |
+| `voice-agent` | Pipecat | ✅ | `pipecat.ts` | ⚠️ `PIPECAT_BASE_URL` | Default repointed `vapi`→`pipecat` |
+| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | Default repointed `docling`→`firecrawl`; scrape-shaped |
 
-**Health summary:** only **2 adapters boot with zero config** (`claude-llm`, `memory-hq`). `memory`/`code`/`search`
-each have two providers (healthiest). `design`/`video`/`workflow`/`voice-agent`/`doc-parse` have exactly one — a
-single env-gate failure leaves the whole kind dark with no fallback. **6 kinds have no adapter at all.**
+**Health summary:** **all 15 kinds are registered** (21 adapters total). Only **2 boot with zero config**
+(`claude-llm`, `memory-hq`); the rest are env-gated and return a typed `unavailable` until configured — the
+platform stays bootable. `memory`/`code`/`search`/`video`/`workflow` have ≥2 providers (fallback-capable); the
+single-provider kinds go dark (not crash) if their one env-gate is unset.
 
-**Priority fills** (each already has a Phase-18 key → ~120-line verb-router clone of `pipecat.ts`):
-`image:muapi` → `voice:elevenlabs` → `music:suno` → `avatar:heygen`. Also: correct the stale "each kind has an
-adapter" comment in `types.ts`.
+**Remaining follow-ups** (best-effort routers → confirm upstream contract when keys land): D-ID avatar
+fallback, a true PDF/OCR `doc-parse` adapter (Firecrawl is scrape-shaped), a Flux image adapter (ecommerce
+currently repointed to MUAPI).
 
 ---
 

@@ -12,8 +12,10 @@
  * overlay and the v1 scope this file ships into.
  */
 
-/** The set of capability classes any team can bind to. Each kind has at
- *  least one concrete adapter (or a stub) in lib/ecosystems/adapters/. */
+/** The set of capability classes any team can bind to. Every kind has at
+ *  least one registered adapter in lib/ecosystems/adapters/ — enforced by
+ *  `npm run check:ecosystem-bindings` (also verifies every default binding in
+ *  lib/teams/default-bindings.ts resolves to a registered `kind:name`). */
 export type EcosystemKind =
   | 'llm'          // text generation
   | 'code'         // code authoring / execution
