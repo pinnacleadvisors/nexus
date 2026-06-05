@@ -133,7 +133,7 @@ export default function BentoMissionControl() {
           value={state.pendingApprovals === null ? null : String(state.pendingApprovals)}
           loading={state.loading}
           accent={state.pendingApprovals && state.pendingApprovals > 0 ? 'amber' : 'emerald'}
-          href="/inbox"
+          href="/inbox?filter=approval"
         />
         <StatTile
           icon={Briefcase}
