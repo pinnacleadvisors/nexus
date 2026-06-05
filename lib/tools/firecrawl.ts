@@ -17,6 +17,8 @@
  * to estimate revenue/stats for the niche.
  */
 
+import { compress } from '@/lib/tokenjuice'
+
 export interface ScrapedPage {
   url:      string
   title:    string
@@ -107,7 +109,11 @@ export async function scrapeUrl(
       }
     }
 
-    const md = (payload.data.markdown ?? '').slice(0, maxChars)
+    // TokenJuice: compress the scraped markdown (HTML-leftover strip + dedupe +
+    // url-shorten) BEFORE truncating, so maxChars buys more real content and the
+    // gateway spends fewer tokens on this page. Pure/deterministic, no LLM call.
+    const compressed = compress(payload.data.markdown ?? '', { html: true })
+    const md = compressed.text.slice(0, maxChars)
     const meta = payload.data.metadata ?? {}
 
     return {

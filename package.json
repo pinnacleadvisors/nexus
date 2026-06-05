@@ -24,6 +24,7 @@
     "check:ecosystem-bindings": "node scripts/check-ecosystem-bindings.mjs",
     "check:branch-hygiene": "node scripts/check-branch-hygiene.mjs",
     "seed:deferred-tasks": "doppler run -- node scripts/seed-deferred-tasks.mjs",
+    "smoke:tokenjuice": "npx --yes tsx lib/tokenjuice/smoke.mjs",
     "check:all": "npm run lint && npx tsc --noEmit && npm run check:retry-storm && npm run check:sentry-config && npm run check:lockfile && npm run check:topology && npm run check:agent-spec-freshness && npm run check:provider-agnostic && npm run check:cron-route && npm run check:codeql-patterns && npm run check:operator-commands && npm run check:agents-md-import && npm run check:ecosystem-bindings",
     "migrate": "doppler run -- node scripts/migrate.mjs",
     "migrate:local": "node scripts/migrate.mjs",
