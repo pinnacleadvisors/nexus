@@ -85,6 +85,7 @@ This is a multi-agent repo where branches stack and PRs merge out of order. The 
 **The invariant (non-negotiable):**
 
 - **One PR per branch. PR merged = branch dead.** New work = a new branch off latest `origin/main`. Never push another commit to a branch whose PR has merged.
+- **After your PR merges, run `npm run sync`** ([`scripts/sync-main.mjs`](scripts/sync-main.mjs)) — NOT a bare `git pull`. Because the repo auto-deletes merged remote branches, a `git pull` from a just-merged branch fails (`no such ref was fetched`). `npm run sync` fetches+prunes, fast-forwards `main`, moves you off the dead branch, and deletes every merged local branch. (2026-06-05 incident: `feat/claudecodeui-deploy` after #500.)
 - **Before pushing or opening a PR**, run `npm run check:branch-hygiene`. If it reports stranded commits, recover them onto a fresh branch (the command is in the output) — do not push to the dead branch.
 - **As the last action of any session that opened a PR**, run `npm run check:branch-hygiene` (and the multi-PR check in the pre-commit checklist if > 1 PR). Stranded commits caught at end-of-session cost one cherry-pick; caught a week later they cost an archaeology session.
 - **Recovery for a stranded/stacked branch** is `reset --hard origin/main` + `cherry-pick <your-unique-SHA>` (see CLAUDE.md) — NOT `rebase` (squash-merge SHAs collide with themselves).
