@@ -23,7 +23,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateText } from 'ai'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
-import { getLlm } from '@/lib/llm/provider'
+import { getLlmForTask } from '@/lib/llm/task-tier-router'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 
 export const runtime     = 'nodejs'
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
 async function extractEdges(atoms: AtomRow[]): Promise<ExtractedEdge[]> {
   const compact = atoms.map(a => `- ${a.slug}: ${a.title} — ${(a.body_md ?? '').slice(0, 200)}`).join('\n')
   const res = await generateText({
-    model:       getLlm(),
+    model:       getLlmForTask('background'),
     system:      SYSTEM_PROMPT,
     prompt:      `Atoms in this batch:\n${compact}\n\nReturn JSON array of edges.`,
     temperature: 0,

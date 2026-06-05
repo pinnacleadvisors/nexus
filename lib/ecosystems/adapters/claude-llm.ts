@@ -13,18 +13,28 @@
 import { generateText } from 'ai'
 import type { EcosystemAdapter, EcosystemResult } from '../types'
 import { capabilityMissing } from '../types'
-import { getLlm } from '@/lib/llm/provider'
+import type { LlmProvider } from '@/lib/llm/provider'
+import { getLlmForTask, type TaskTier } from '@/lib/llm/task-tier-router'
 
 const VERBS = ['generate_text'] as const
 type Verb = (typeof VERBS)[number]
+
+/** Hard ceiling so a runaway generation can't blow the per-route maxDuration.
+ *  Callers override per-call via payload.maxTokens. */
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 interface GenerateTextPayload {
   prompt:       string
   system?:      string
   temperature?: number
-  /** Tighter ceiling than the SDK default so a runaway call doesn't blow
-   *  the per-route maxDuration. Caller can override. */
+  /** Hard output-token cap. Defaults to DEFAULT_MAX_OUTPUT_TOKENS — now ENFORCED. */
   maxTokens?:   number
+  /** Cost/quality posture. background→NIM (free), default→Claude, frontier→OpenRouter. */
+  tier?:        TaskTier
+  /** Explicit provider override (beats tier + DB setting). */
+  provider?:    LlmProvider
+  /** Model name for the resolved provider. */
+  model?:       string
 }
 
 export const claudeLlmAdapter: EcosystemAdapter = {
@@ -51,13 +61,13 @@ async function invokeClaudeLlm(verb: string, payload?: unknown): Promise<Ecosyst
   }
   try {
     const res = await generateText({
-      model:       getLlm(),
-      system:      p.system,
-      prompt:      p.prompt,
-      temperature: typeof p.temperature === 'number' ? p.temperature : 0.2,
-      // No `maxTokens` enforcement here — Vercel AI SDK 6's contract is
-      // model-default unless overridden. Callers needing a hard cap should
-      // pass it through payload.maxTokens once we extend the verb shape.
+      model:           getLlmForTask(p.tier ?? 'default', { provider: p.provider, model: p.model }),
+      system:          p.system,
+      prompt:          p.prompt,
+      temperature:     typeof p.temperature === 'number' ? p.temperature : 0.2,
+      // Enforced hard cap — prevents a runaway generation from blowing the
+      // per-route maxDuration. Caller overrides via payload.maxTokens.
+      maxOutputTokens: typeof p.maxTokens === 'number' ? p.maxTokens : DEFAULT_MAX_OUTPUT_TOKENS,
     })
     return {
       ok:        true,
