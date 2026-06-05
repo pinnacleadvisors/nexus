@@ -160,6 +160,11 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `PIPECAT_BASE_URL` | teams v3 (oss adapters) | Self-hosted Pipecat instance. When set, the `voice-agent:pipecat` adapter becomes available. |
 | `PIPECAT_API_KEY` | teams v3 (oss adapters) | Optional auth for Pipecat. |
 | `SEARXNG_BASE_URL` | teams v3 (oss adapters) | Self-hosted SearXNG instance. When set, the `search:searxng` adapter becomes available. |
+| `MUAPI_BASE_URL` | ecosystems v4 (media adapters) | Optional self-hosted/regional MUAPI base. The `image:muapi` adapter is available on `MUAPI_AI_KEY` alone; this only overrides the endpoint. |
+| `SUNO_BASE_URL` | ecosystems v4 (media adapters) | Optional base override for the `music:suno` adapter (available on `SUNO_API_KEY`/`UDIO_API_KEY`). |
+| `WHISPER_BASE_URL` | ecosystems v4 (media adapters) | Self-hosted / OpenAI-compatible STT base. When set (or `OPENAI_API_KEY` is set), the `speech:whisper` adapter becomes available. |
+| `BROWSER_BASE_URL` | ecosystems v4 (media adapters) | Headless-browser shim base (Browserless/Playwright server). When set, the `browser:playwright` adapter becomes available. |
+| `BROWSER_API_KEY` | ecosystems v4 (media adapters) | Optional bearer auth for the headless-browser shim. |
 | `SLACK_BOT_TOKEN` | teams v12 (cron-health threads) | Bot token for `chat.postMessage`. When set with `SLACK_CHANNEL_ID`, the cron-health alerter uses threaded replies on 4h reminders instead of new top-level pings. Falls back to webhook + `:repeat:` prefix when unset. |
 | `SLACK_CHANNEL_ID` | teams v12 (cron-health threads) | Channel ID (not name) the bot posts to, e.g. `C0123456789`. |
 | `NEXUS_SLACK_WEBHOOK_URL` | E7 | Single-tenant fallback Slack incoming-webhook URL for outbound notifications. Per-user override stored in `user_secrets` `kind='slack' name='webhookUrl'`. |
