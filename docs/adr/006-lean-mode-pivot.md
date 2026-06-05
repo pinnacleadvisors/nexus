@@ -1,8 +1,14 @@
 # ADR 006 — Lean-mode pivot via feature flag, not branch fork
 
-**Status:** Accepted
+**Status:** Superseded by [011](011-mac-mini-local-os.md) (Mac-mini primary host) + [012](012-lean-nexus-integration-cockpit.md) (integration-cockpit pivot)
 **Date:** 2026-05-19
 **Owner:** dylannguyen
+
+> ⚠️ **Superseded 2026-06-04.** The single-KVM Coolify topology this ADR chose is no longer current —
+> the Mac mini is the primary host (ADR 011) and the lean-Nexus integration-cockpit posture (ADR 012)
+> replaced the lean-mode framing. The `LEAN_MODE` *feature flag itself stays live* (Vercel/per-business
+> code remains in tree behind it); only this ADR's host/topology decision is superseded. Canonical
+> "what runs where": [AGENTS.md#topology](../../AGENTS.md#topology).
 
 ## Context
 
