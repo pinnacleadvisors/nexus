@@ -20,7 +20,7 @@ const NICHE_OVERRIDES: Record<string, Partial<Record<EcosystemKind, string>>> = 
   },
   ecommerce: {
     video:  'higgsfield',
-    image:  'flux',       // photo-realistic product shots
+    image:  'muapi',      // photo-realistic product shots (no flux adapter yet → muapi)
   },
 }
 
@@ -39,8 +39,8 @@ const DEFAULT_BINDINGS: Record<EcosystemKind, string> = {
   search:       'tavily',
   browser:      'playwright',
   workflow:     'n8n',
-  'voice-agent':'vapi',
-  'doc-parse':  'docling',
+  'voice-agent':'pipecat',   // wired OSS voice-agent (no vapi adapter yet)
+  'doc-parse':  'firecrawl', // the registered doc-parse adapter (no docling adapter yet)
 }
 
 /**
