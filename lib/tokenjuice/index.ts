@@ -110,15 +110,18 @@ function stripDecorative(s: string): string {
   return s.replace(DECORATIVE, '').replace(/[ \t]{2,}/g, ' ')
 }
 
-/** Collapse a long URL to host + short path. Short URLs pass through. */
+/** Collapse a long URL to scheme + host + short path. Short URLs pass through.
+ *  The scheme is PRESERVED so the result is still a valid absolute URL even when
+ *  the path is truncated (the ellipsis only marks the elided tail). */
 function shortenOne(url: string): string {
   if (url.length <= 48) return url
   const m = url.match(/^(https?:\/\/)?([^/]+)(\/.*)?$/i)
   if (!m) return url.slice(0, 48) + ELLIPSIS
+  const scheme = m[1] ?? 'https://'
   const host = m[2]
   const path = m[3] ?? ''
   const shortPath = path.length > 16 ? path.slice(0, 16) + ELLIPSIS : path
-  return `${host}${shortPath}`
+  return `${scheme}${host}${shortPath}`
 }
 
 function shortenUrls(s: string): string {
@@ -127,6 +130,10 @@ function shortenUrls(s: string): string {
   return s
 }
 
+/** Drop consecutive exact-duplicate lines + collapse blank runs. NOTE: lossy
+ *  by design — legitimately-repeated lines (e.g. two identical table rows) are
+ *  coalesced. Acceptable on the scrape->LLM-reading path this serves; do not
+ *  use compress() where byte-for-byte content fidelity matters. */
 function dedupe(s: string): string {
   const lines = s.split('\n')
   const out: string[] = []
