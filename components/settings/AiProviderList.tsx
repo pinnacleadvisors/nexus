@@ -41,6 +41,8 @@ interface GatewayStatus {
   codexConfigured?:     boolean
   codexHealthy?:        boolean
   openrouterConfigured?: boolean
+  /** Provider keys reachable from env right now (e.g. 'nim', 'openrouter'). */
+  envProviders?:        string[]
 }
 
 export default function AiProviderList({ businessSlug }: { businessSlug?: string | null }) {
@@ -149,6 +151,7 @@ export default function AiProviderList({ businessSlug }: { businessSlug?: string
     <div className="space-y-4">
       <ActiveProviderSwitch />
       <ProviderChainBanner gateway={gateway} accounts={accounts} />
+      <TierRoutingBanner gateway={gateway} />
 
       {err && (
         <div className="flex items-start gap-2.5 px-3.5 py-2.5 text-sm"
@@ -275,6 +278,47 @@ function ProviderChainBanner({ gateway, accounts }: { gateway: GatewayStatus | n
         <Step label="API key fallback"     on={apiOn}     hint={apiOn ? 'available' : 'no keys saved'} />
         <Arrow />
         <Step label="Final error"          on={!subOn && !apiOn} hint="no provider" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * TierRoutingBanner — shows the cost-aware TASK-TIER routing (lib/llm/
+ * task-tier-router.ts). Distinct from the provider chain above: this is which
+ * provider a task gets based on its TIER, not the global default. background →
+ * NVIDIA NIM (free), default → Claude, frontier → OpenRouter. An unconfigured
+ * tier provider silently falls back to the default chain — shown here as a
+ * dimmed pill so the operator knows it isn't active yet.
+ */
+function TierRoutingBanner({ gateway }: { gateway: GatewayStatus | null }) {
+  const env = gateway?.envProviders ?? []
+  const nimOn = env.includes('nim')
+  const orOn  = env.includes('openrouter')
+  return (
+    <div className="relative p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+      style={{
+        background:           'linear-gradient(135deg, rgba(74,222,128,0.05), rgba(255,255,255,0.02))',
+        backdropFilter:       'blur(28px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+        border:               '1px solid rgba(255,255,255,0.10)',
+        borderRadius:         '18px',
+        boxShadow:            '0 1px 0 0 rgba(255,255,255,0.06) inset, 0 24px 48px -24px rgba(0,0,0,0.5)',
+      }}>
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="w-7 h-7 rounded-md flex items-center justify-center"
+          style={{ background: 'linear-gradient(135deg, rgba(74,222,128,0.25), rgba(74,222,128,0.05))', border: '1px solid rgba(74,222,128,0.20)' }}>
+          <Zap size={13} style={{ color: '#86efac' }} />
+        </div>
+        <div>
+          <p className="text-[11px] font-mono uppercase tracking-wider" style={{ color: '#9090b0' }}>Task-tier routing</p>
+          <p className="text-xs" style={{ color: '#e8e8f0' }}>Cost-aware model per task</p>
+        </div>
+      </div>
+      <div className="flex-1 flex items-center gap-2 flex-wrap text-[11px]">
+        <Step label="Background → NVIDIA NIM" on={nimOn} hint={nimOn ? 'free tier' : 'falls back to default'} />
+        <Step label="Default → Claude"        on={true}  hint="plan-billed" />
+        <Step label="Frontier → OpenRouter"   on={orOn}  hint={orOn ? '~200 models' : 'falls back to default'} />
       </div>
     </div>
   )
