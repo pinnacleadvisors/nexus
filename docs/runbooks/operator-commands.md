@@ -10,9 +10,9 @@ Single page covering every script the operator runs by hand. Group by task; show
 
 | I want to… | Run |
 |---|---|
-| **Sync the checkout after pulling main** | `git pull --ff-only origin main && npm install` |
+| **Sync to main after a PR merges (+ delete dead branches)** | `npm run sync && npm install` |
 | **Open a fresh feature branch off main** | `git fetch origin main && git checkout -b feat/<slug> origin/main` |
-| **Reset a stale branch onto latest main** | `git fetch origin main && git rebase origin/main` |
+| **Reset a stale (still-open) branch onto latest main** | `git fetch origin main && git rebase origin/main` |
 | Deploy the Next.js platform | `npm run deploy -- --nexus-app` |
 | Deploy everything Coolify | `npm run deploy -- --all` |
 | Run the deploy picker | `npm run deploy` |
@@ -40,12 +40,23 @@ Single page covering every script the operator runs by hand. Group by task; show
 The `vaul` typecheck regression on 2026-05-24 ([investigation note](#vaul-incident)) traced to a stale `node_modules` after pulling a PR that added a dep. Run these as the very first commands of any session that will edit code.
 
 ```bash
-git pull --ff-only origin main         # fast-forward; never overwrites local commits
+npm run sync                           # safe post-merge: fetch+prune, ff main, bin merged branches
 npm install                            # essential when package.json / lockfile moved
 npm run check:lockfile                 # confirms node_modules ↔ lockfile aligned
 ```
 
-When `git pull` says "Your branch is behind" but `--ff-only` refuses (you have local commits): you're on a feature branch — use `git fetch origin main && git rebase origin/main` instead.
+#### Why `npm run sync`, not a bare `git pull` {#git-pull-merged-branch-trap}
+
+The repo has `deleteBranchOnMerge: true`, so **the moment your PR merges the remote branch is deleted.** If you're still on that local branch and run a bare `git pull`, git tries to fetch the branch's now-gone upstream and dies with:
+
+```
+Your configuration specifies to merge with the ref 'refs/heads/<branch>'
+from the remote, but no such ref was fetched.
+```
+
+(2026-06-05 hit this on `feat/claudecodeui-deploy` right after #500 merged.) `npm run sync` ([`scripts/sync-main.mjs`](../../scripts/sync-main.mjs)) avoids the whole trap: it sets `fetch.prune=true`, fetches + prunes, fast-forwards local `main`, moves you off any merged branch, and deletes every local branch whose upstream is gone (= its PR merged). It never touches a branch with a live upstream and aborts before switching if your working tree is dirty.
+
+When you're on a **still-open** feature branch that's just behind main (not merged), use `git fetch origin main && git rebase origin/main` instead — `npm run sync` deliberately leaves live branches alone.
 
 **For a fresh feature branch:**
 ```bash

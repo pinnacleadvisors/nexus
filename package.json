@@ -42,6 +42,7 @@
     "populate-memory:local": "node scripts/populate-memory.mjs",
     "deploy": "doppler run -- ./scripts/deploy.sh",
     "deploy:local": "./scripts/deploy.sh",
+    "sync": "node scripts/sync-main.mjs",
     "business:local": "npx --yes tsx scripts/local-os-business.ts"
   },
   "dependencies": {
