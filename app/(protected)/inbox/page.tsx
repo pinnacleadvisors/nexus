@@ -252,7 +252,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   if (!userId) redirect('/sign-in?returnUrl=/inbox')
 
   // Deep-link support: dashboard "Pending approvals" KPI links to
-  // /inbox?filter=approvals. Validate against the known filter set; bad value → 'all'.
+  // /inbox?filter=approval (singular — matches the FilterKind set below).
+  // Validate against the known filter set; bad value → 'all'.
   const sp = await searchParams
   const initialFilter: InboxFilter = (VALID_FILTERS as readonly string[]).includes(sp?.filter ?? '')
     ? (sp!.filter as InboxFilter)

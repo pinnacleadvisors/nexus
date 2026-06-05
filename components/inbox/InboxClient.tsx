@@ -300,28 +300,31 @@ function CrashGroupRow({ alerts }: { alerts: InboxItem[] }) {
     new Date(b.created_at).getTime() > new Date(a.created_at).getTime() ? b : a)
   return (
     <div className="rounded-2xl border border-orange-900/40 bg-orange-950/10">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-orange-950/20 rounded-2xl"
-        aria-expanded={open}
-      >
-        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-orange-400" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm text-zinc-200">{n} chat turns crashed</div>
-          <div className="mt-0.5 text-[10px] text-zinc-500">
-            most recent {shortRelative(newest.created_at)} · auto-clears when resolved
+      {/* Toggle button + retry Link are SIBLINGS — an <a> nested in a <button>
+          is invalid HTML and triggers a React hydration error. */}
+      <div className="flex items-center gap-2 p-4">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left transition hover:opacity-90"
+          aria-expanded={open}
+        >
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 text-orange-400" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-zinc-200">{n} chat turns crashed</div>
+            <div className="mt-0.5 text-[10px] text-zinc-500">
+              most recent {shortRelative(newest.created_at)} · auto-clears when resolved
+            </div>
           </div>
-        </div>
+          {open ? <ChevronUp className="h-4 w-4 text-zinc-500" /> : <ChevronDown className="h-4 w-4 text-zinc-500" />}
+        </button>
         <Link
           href="/manage-platform"
-          onClick={e => e.stopPropagation()}
-          className="hidden sm:inline-flex rounded-lg border border-orange-800/50 bg-orange-900/20 px-2.5 py-1 text-[11px] text-orange-200 transition hover:bg-orange-900/40"
+          className="inline-flex shrink-0 rounded-lg border border-orange-800/50 bg-orange-900/20 px-2.5 py-1 text-[11px] text-orange-200 transition hover:bg-orange-900/40"
         >
-          Open chat to retry →
+          retry<span className="hidden sm:inline">&nbsp;in chat</span> →
         </Link>
-        {open ? <ChevronUp className="h-4 w-4 text-zinc-500" /> : <ChevronDown className="h-4 w-4 text-zinc-500" />}
-      </button>
+      </div>
       {open && (
         <ul className="space-y-2 border-t border-orange-900/30 p-3">
           {alerts.map(a => (
