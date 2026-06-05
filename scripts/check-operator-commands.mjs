@@ -18,7 +18,7 @@ const scripts = Object.keys(pkg.scripts || {});
 
 // Internal (CI guards, build tooling, test runners, codegen) — documented in
 // AGENTS.md's pre-commit checklist, not the operator runbook.
-const INTERNAL = /^(dev|build|start|lint|prepare|postinstall|check:|test:|seed:|types:|sync:)/;
+const INTERNAL = /^(dev|build|start|lint|prepare|postinstall|check:|test:|seed:|types:|sync:|smoke:)/;
 
 const missing = [];
 for (const name of scripts) {
