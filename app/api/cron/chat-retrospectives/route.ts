@@ -23,7 +23,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { generateText } from 'ai'
-import { getLlm } from '@/lib/llm/provider'
+import { getLlmForTask } from '@/lib/llm/task-tier-router'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,7 +116,7 @@ Last activity: ${session.last_message_at}
 Messages:
 ${conversation}`
 
-      const llm = getLlm()
+      const llm = getLlmForTask('background')
       const { text } = await generateText({
         model:       llm,
         prompt,

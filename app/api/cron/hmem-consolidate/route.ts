@@ -24,7 +24,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateText } from 'ai'
 import { rateLimit, rateLimitResponse } from '@/lib/ratelimit'
 import { createServerClient } from '@/lib/supabase'
-import { getLlm } from '@/lib/llm/provider'
+import { getLlmForTask } from '@/lib/llm/task-tier-router'
 import { assertUnderCostCap } from '@/lib/cost-guard'
 
 export const runtime     = 'nodejs'
@@ -177,7 +177,7 @@ async function summarise(items: Array<AtomRow | TemporalNodeRow>, level: Level):
     return `- ${it.title} (L${it.level}): ${(it.body ?? '').slice(0, 400)}`
   }).join('\n')
   const res = await generateText({
-    model:       getLlm(),
+    model:       getLlmForTask('background'),
     system:      SYSTEM_PROMPT,
     prompt:      `Level ${level} consolidation. Input items:\n${compact}\n\nWrite the summary.`,
     temperature: 0,
