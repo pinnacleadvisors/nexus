@@ -1,5 +1,11 @@
 # Task Plan — Migrate Nexus to a Local Mac-mini "Personal OS"
 
+> ✅ **DONE 2026-06-04 — migration complete.** The Mac mini is the primary host
+> ([ADR 011](docs/adr/011-mac-mini-local-os.md)); the stack runs under OrbStack + compose. This plan is
+> retained for history. Canonical, living "what runs where" is [AGENTS.md#topology](AGENTS.md#topology)
+> + the ops guide [`services/local-os/README.md`](services/local-os/README.md) — read those, not this plan,
+> for current state.
+
 > Initialised 2026-06-04. Branch: `chore/local-os-migration-plan`.
 > Goal: retire the Hostinger subscription by running the Nexus stack on the operator's Mac mini.
 

@@ -1,5 +1,12 @@
 # task_plan-lean-mode.md
 
+> ⛔ **SUPERSEDED 2026-06-04 — plan only, flag stays live.** The single-KVM Coolify topology this plan
+> drove is replaced by the Mac-mini primary host ([ADR 011](docs/adr/011-mac-mini-local-os.md)) + the
+> lean-Nexus integration-cockpit pivot ([ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md)).
+> The `LEAN_MODE` **feature flag itself remains live** (Vercel/per-business code stays in tree behind it);
+> only this plan's host/topology decisions are superseded. Canonical "what runs where":
+> [AGENTS.md#topology](AGENTS.md#topology). Kept for history (banner+register, never delete).
+
 ## North Star
 
 **Goal:** Pivot Nexus to a single-KVM lean-mode topology while preserving the multi-tenant architecture dormant behind a `LEAN_MODE` flag, and lay the foundations for an autonomous-workforce upskilling loop (Voyager / Hermes / EvoSkill synthesis) plus an "open-orchestration" registry of OSS agent frameworks.

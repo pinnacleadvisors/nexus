@@ -1,5 +1,13 @@
 # Model-agnostic platform — agents, skills, MCP, hooks
 
+> ⚠️ **DEMOTED 2026-06-04 — re-scope against ADR 012.** The lean-Nexus integration-cockpit pivot
+> ([ADR 012](docs/adr/012-lean-nexus-integration-cockpit.md)) selects **opencode** (75+ providers) +
+> **Hermes** as the model-agnostic runtimes, and the sibling `task_plan-model-agnostic-chat.md` is
+> already superseded. Most of this plan's "shim every runtime" scope is now provided by opencode
+> by design. **Action before resuming:** keep only the genuinely-Nexus overlay (provider-neutral
+> agent/skill specs + the `check:provider-agnostic` guard, which shipped) and drop the per-runtime
+> shim work. Live successor: the `workforce-lab` RUN experiment. Kept for history.
+
 Sibling to `task_plan-model-agnostic-chat.md` (which focuses on the streaming chat copilots specifically). This plan covers the entire platform's relationship to a specific provider — today every spec lives under `.claude/`, which encodes the assumption that Claude Code is the runtime. Other runtimes (Codex CLI, OpenCode, Cursor, Cline, future Gemini CLI) either need explicit shims or are blocked entirely.
 
 The fix is **overlay-based**: provider-neutral specs at the repo root, provider-specific overrides nested under each runtime's hidden folder. Resolution order: provider-specific override → base. The change is additive — `.claude/` stays exactly as Claude Code expects it, but the base specs become the authority and other runtimes can read from the same root.
