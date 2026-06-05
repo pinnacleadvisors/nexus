@@ -14,6 +14,7 @@ import FleetOverview from '@/components/dashboard/FleetOverview'
 import FleetApprovalInbox from '@/components/dashboard/FleetApprovalInbox'
 import BentoMissionControl from '@/components/dashboard/BentoMissionControl'
 import PlatformHealthWidget from '@/components/dashboard/PlatformHealthWidget'
+import EcosystemCoverageWidget from '@/components/dashboard/EcosystemCoverageWidget'
 import CoachingCard from '@/components/dashboard/CoachingCard'
 import WelcomeTourModal from '@/components/dashboard/WelcomeTourModal'
 import { supabase } from '@/lib/supabase'
@@ -225,6 +226,11 @@ export default function DashboardPage() {
           read — "is anything broken right now?" — before scrolling
           into KPIs or runs. Pull-only refresh so we don't add traffic. */}
       <PlatformHealthWidget />
+
+      {/* Capability coverage — "what can the platform actually do?" Sits next to
+          health: which ecosystem adapters are wired vs dark. From the registry
+          via GET /api/ecosystems/health. */}
+      <EcosystemCoverageWidget />
 
       {/* ── Coach (R5) — actionable suggestions from platform state.
           Hides itself when there's nothing actionable. */}
