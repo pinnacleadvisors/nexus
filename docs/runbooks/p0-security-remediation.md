@@ -196,6 +196,52 @@ If you'd rather not expose `code.*` publicly at all: install Tailscale on the Ma
 
 ---
 
+## Operating model — run Nexus dev *and* runtime in `nexus-host`
+
+Decided 2026-06-05: rather than only moving the runtime services, **all Nexus work moves to `nexus-host`** — development (the repo, Claude Code, git, PRs) *and* the deployed stack. `dylan_mini` becomes purely the human/personal seat.
+
+**Why this beats moving only the services:** broad-permission AI agents (Claude Code, the gateways, claudecodeui) were running as `dylan_mini` — the iCloud-signed-in admin — which is the exact risk class the audit flagged. Moving them to a non-iCloud account bounds their blast radius to a throwaway user.
+
+| Account | Purpose | iCloud | Admin | Runs |
+|---|---|---|---|---|
+| `dylan_mini` (501) | you, the human — personal projects, Apple ecosystem | ✅ keep | ✅ keep | nothing Nexus (after teardown) |
+| `nexus-host` (502) | everything Nexus — dev + runtime + agents | ❌ none | **standard** (recommended) | repo, Claude Code, stack |
+
+### One-time `nexus-host` onboarding
+
+Switch to the `nexus-host` session (fast user switching), open Terminal:
+```bash
+# node + Claude Code + GitHub auth
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+. ~/.nvm/nvm.sh && nvm install 24
+npm i -g @anthropic-ai/claude-code
+claude              # run once → log in with the SUBSCRIPTION (not an API key)
+gh auth login       # so the repo can pull/push/PR as nexus-host
+```
+Re-create the per-user Claude config (it does NOT copy from `dylan_mini`):
+- `~/.claude/CLAUDE.md` (the agent framework) — copy from `dylan_mini` or `framework-pull`.
+- MCP servers (memory-hq), settings, hooks — re-add in `nexus-host`'s `~/.claude/settings.json`.
+- The `MEMORY_HQ_TOKEN` / any per-user secrets your MCP servers need.
+
+### Running steps 3–6 natively (no sudo, no cross-user grant)
+
+Because the session *is* `nexus-host`, it has full access to that user's files + GUI session + OrbStack — so the bootstrap runs without the sudoers rule we removed:
+```bash
+cd ~/Dev/nexus && git fetch origin main && git checkout main && git pull
+claude   # then instruct it:
+#   "Run services/local-os/bootstrap-nexus-host.sh (I am nexus-host), then verify
+#    the public hostnames serve from this host and report."
+```
+Prereq the script can't self-provide: **OrbStack running in this session** (open OrbStack once, enable *Start at login*).
+
+### Keep `nexus-host` standard, not admin
+
+It runs OrbStack + dev fine as a standard user. Promoting it to admin would let a `nexus-host` compromise `sudo`→root and reach `dylan_mini`'s files — eroding the isolation that makes iCloud safe. If you hit dev-tooling friction (e.g. can't `brew install` into the shared `/opt/homebrew`), do that one install from `dylan_mini` with `sudo`, or set up a per-user brew — don't promote the account.
+
+> Reboot note: OrbStack is tied to a GUI login session, so after a reboot, switch to `nexus-host` once to restart its stack (or enable auto-login for it if you want it hands-off).
+
+---
+
 ## ★ Optional but recommended — scrub the local audit transcript — 🤖
 
 The workflow subagents printed `CODEX_AUTH_JSON` (and enumerated other env values) into local transcript files. On your go-ahead I'll **locate and redact** the secret values in:
