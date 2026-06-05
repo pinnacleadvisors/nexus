@@ -45,6 +45,9 @@ function shortRelative(iso: string): string {
 
 interface Props {
   items: InboxItem[]
+  /** Seed the active filter from the URL (?filter=approval) so deep-links from
+   *  the dashboard land on the right tab. Falls back to 'all'. */
+  initialFilter?: FilterKind
 }
 
 // R1 (UX consult): "since last visit" stamp. Stored per-operator in
@@ -71,8 +74,8 @@ function bucketFor(iso: string, now: number): TimeBucket {
   return 'older'
 }
 
-export default function InboxClient({ items: initialItems }: Props) {
-  const [filter, setFilter] = useState<FilterKind>('all')
+export default function InboxClient({ items: initialItems, initialFilter = 'all' }: Props) {
+  const [filter, setFilter] = useState<FilterKind>(initialFilter)
   // Local state so "mark done" + seed-backlog updates without a full reload.
   const [items, setItems] = useState<InboxItem[]>(initialItems)
   // R1: per-business filter. 'all' = no filter; otherwise the business slug.
@@ -151,6 +154,17 @@ export default function InboxClient({ items: initialItems }: Props) {
     [items],
   )
 
+  // B1 (UX audit): chat-turn crashes pile up as identical rows and flood the
+  // feed (worst on mobile). Collapse them into ONE expandable group when there
+  // are 2+. They have no stable dedup key, so we group by source, not id.
+  const crashAlerts = useMemo(
+    () => filteredAndBucketed.items.filter(
+      i => i.kind === 'system-alert' && i.data.source === 'chat-turn',
+    ),
+    [filteredAndBucketed.items],
+  )
+  const groupCrashes = crashAlerts.length >= 2
+
   return (
     <div>
       {adminTaskCount === 0 && <SeedBacklogBanner onSeedComplete={async () => {
@@ -228,11 +242,17 @@ export default function InboxClient({ items: initialItems }: Props) {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* B1: collapsed crash group, pinned above the time buckets. */}
+          {groupCrashes && <CrashGroupRow alerts={crashAlerts} />}
           {/* R1: time-bucketed groups. Operator's mental model is now
               "what happened since last hour / today / this week" rather
               than "scroll through 30 events of unknown freshness". */}
           {(['last-hour', 'today', 'this-week', 'older'] as TimeBucket[]).map(b => {
-            const bucketItems = filteredAndBucketed.buckets[b]
+            const bucketItems = groupCrashes
+              ? filteredAndBucketed.buckets[b].filter(
+                  it => !(it.kind === 'system-alert' && it.data.source === 'chat-turn'),
+                )
+              : filteredAndBucketed.buckets[b]
             if (bucketItems.length === 0) return null
             return (
               <section key={b}>
@@ -262,6 +282,52 @@ export default function InboxClient({ items: initialItems }: Props) {
             )
           })}
         </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * CrashGroupRow (B1) — collapses repeated chat-turn crash alerts into one
+ * expandable summary so they stop flooding the feed. No batch-retry endpoint
+ * exists, so the action is an honest "open chat to retry" deep-link; expanding
+ * shows the individual crash rows (reusing InboxRow).
+ */
+function CrashGroupRow({ alerts }: { alerts: InboxItem[] }) {
+  const [open, setOpen] = useState(false)
+  const n = alerts.length
+  const newest = alerts.reduce((a, b) =>
+    new Date(b.created_at).getTime() > new Date(a.created_at).getTime() ? b : a)
+  return (
+    <div className="rounded-2xl border border-orange-900/40 bg-orange-950/10">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-orange-950/20 rounded-2xl"
+        aria-expanded={open}
+      >
+        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-orange-400" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-zinc-200">{n} chat turns crashed</div>
+          <div className="mt-0.5 text-[10px] text-zinc-500">
+            most recent {shortRelative(newest.created_at)} · auto-clears when resolved
+          </div>
+        </div>
+        <Link
+          href="/manage-platform"
+          onClick={e => e.stopPropagation()}
+          className="hidden sm:inline-flex rounded-lg border border-orange-800/50 bg-orange-900/20 px-2.5 py-1 text-[11px] text-orange-200 transition hover:bg-orange-900/40"
+        >
+          Open chat to retry →
+        </Link>
+        {open ? <ChevronUp className="h-4 w-4 text-zinc-500" /> : <ChevronDown className="h-4 w-4 text-zinc-500" />}
+      </button>
+      {open && (
+        <ul className="space-y-2 border-t border-orange-900/30 p-3">
+          {alerts.map(a => (
+            <li key={`${a.kind}-${a.id}`}><InboxRow item={a} /></li>
+          ))}
+        </ul>
       )}
     </div>
   )

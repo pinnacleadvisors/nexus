@@ -240,13 +240,23 @@ async function fetchAll(userId: string): Promise<InboxItem[]> {
   return items
 }
 
-export default async function InboxPage() {
+const VALID_FILTERS = ['all', 'approval', 'issue', 'task', 'activity', 'system-alert'] as const
+type InboxFilter = (typeof VALID_FILTERS)[number]
+
+export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   // resolveUserIdSafe() guards against auth() throwing when the Clerk
   // middleware context is missing (proxy.ts:102/117) — otherwise this page
   // 500s instead of bouncing to sign-in. redirect() is OUTSIDE the helper
   // so NEXT_REDIRECT propagates.
   const userId = await resolveUserIdSafe()
   if (!userId) redirect('/sign-in?returnUrl=/inbox')
+
+  // Deep-link support: dashboard "Pending approvals" KPI links to
+  // /inbox?filter=approvals. Validate against the known filter set; bad value → 'all'.
+  const sp = await searchParams
+  const initialFilter: InboxFilter = (VALID_FILTERS as readonly string[]).includes(sp?.filter ?? '')
+    ? (sp!.filter as InboxFilter)
+    : 'all'
 
   const items = await fetchAll(userId)
 
@@ -262,7 +272,7 @@ export default async function InboxPage() {
         </div>
       </header>
 
-      <InboxClient items={items} />
+      <InboxClient items={items} initialFilter={initialFilter} />
     </div>
   )
 }
