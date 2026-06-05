@@ -35,12 +35,44 @@ const TICK_COLORS = [
   '#ef4444', // rose — reserved for errors
 ]
 
-function colorFor(eventType: string): string {
-  if (/error|fail|timeout|kill/i.test(eventType)) return TICK_COLORS[4]!
+/** Pull failure detail out of an event's freeform payload when present.
+ *  Read-only + defensive — different writers use different keys, so we probe
+ *  the common ones. Lets a failure show WHY ("exit 1 · stderr…") + WHO
+ *  (agent) instead of an anonymous red dot. */
+function failureDetail(e: EventRow): { failed: boolean; agent?: string; exit?: number; cause?: string } {
+  const p = (e.payload ?? {}) as Record<string, unknown>
+  const typeFail = /error|fail|timeout|kill|crash/i.test(e.event_type)
+  const okFalse  = p.ok === false
+  const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined)
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+  const exit  = num(p.exit_code) ?? num(p.exitCode)
+  const cause = str(p.error) ?? str(p.error_tail) ?? str(p.stderr_tail) ?? str(p.message) ?? str(p.reason)
+  const agent = str(p.agent_slug) ?? str(p.agent) ?? str(p.agentSlug)
+  const failed = typeFail || okFalse || (exit != null && exit !== 0)
+  return { failed, agent, exit, cause }
+}
+
+function colorFor(e: EventRow): string {
+  if (failureDetail(e).failed) return TICK_COLORS[4]!
+  const eventType = e.event_type
   // Stable hash of the type → palette index 0–3 (skipping rose)
   let h = 0
   for (let i = 0; i < eventType.length; i++) h = ((h << 5) - h) + eventType.charCodeAt(i)
   return TICK_COLORS[Math.abs(h) % 4]!
+}
+
+/** Hover tooltip — surfaces agent + exit code + cause when the payload carries
+ *  them, so a failed tick is diagnosable on hover instead of an anonymous dot. */
+function tickTitle(e: EventRow): string {
+  const d = failureDetail(e)
+  const parts = [e.event_type]
+  if (d.agent) parts.push(d.agent)
+  if (e.business_slug) parts.push(e.business_slug)
+  if (d.exit != null) parts.push(`exit ${d.exit}`)
+  parts.push(shortRelative(e.created_at))
+  let title = parts.join(' · ')
+  if (d.cause) title += `\n${d.cause.slice(0, 160)}`
+  return title
 }
 
 function shortRelative(iso: string): string {
@@ -91,11 +123,11 @@ export default function HeartbeatTimeline({ events, agentSlug, hours = 24 }: Pro
           {inWindow.map(e => {
             const t = new Date(e.created_at).getTime()
             const pct = ((t - since) / windowMs) * 100
-            const color = colorFor(e.event_type)
+            const color = colorFor(e)
             return (
               <div
                 key={e.id}
-                title={`${e.event_type}${e.business_slug ? ` · ${e.business_slug}` : ''} · ${shortRelative(e.created_at)}`}
+                title={tickTitle(e)}
                 className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-help"
                 style={{ left: `${pct}%` }}
               >
