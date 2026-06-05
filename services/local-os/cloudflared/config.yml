@@ -24,4 +24,9 @@ ingress:
   # n8n comes up in Phase 3; ingress defined now, DNS flipped then.
   - hostname: n8n.coolifycloudtunnel.uk
     service: http://n8n:5678
+  # claudecodeui (the /code chat engine, ADR 013). Runs on the Mac HOST (not a
+  # container) on :3010, so reached via host.docker.internal. WS-heavy — the
+  # tunnel proxies WebSocket natively. claudecodeui has its own login.
+  - hostname: code.coolifycloudtunnel.uk
+    service: http://host.docker.internal:3010
   - service: http_status:404

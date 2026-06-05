@@ -1,12 +1,17 @@
 /**
- * /code page (authenticated). The claudecodeui engine is embedded when reachable,
- * but must degrade gracefully when it isn't (the common case until it's deployed
- * behind the tunnel — previously rendered a blank/broken iframe). See CodeEmbed.tsx.
+ * /code page (authenticated). The claudecodeui engine is embedded when reachable
+ * and must degrade gracefully when it isn't. See CodeEmbed.tsx.
  *
- * On this dev box claudecodeui is NOT deployed, so the reachability probe resolves
- * to "down" and we assert the graceful panel + the preserved governance rail.
- * If you later run claudecodeui locally, this spec's "down" assertions won't hold
- * — that's expected; the iframe path takes over.
+ * As of 2026-06-05 claudecodeui IS deployed behind the nexus-mac tunnel at
+ * code.coolifycloudtunnel.uk (ADR 013; runbook docs/runbooks/claudecodeui-setup.md),
+ * so on this box the reachability probe resolves to "up" and the embed iframe
+ * renders. This spec doubles as the production-readiness gate: it asserts the
+ * embed renders AND that no CSP violation is logged for the code-embed origin
+ * (the connect-src fix in next.config.ts must allow *.coolifycloudtunnel.uk).
+ *
+ * If you run this on a box WITHOUT claudecodeui reachable, the embed test is
+ * skipped (the graceful "not connected" panel is the correct fallback there) —
+ * the rail + no-CSP-violation assertions still hold.
  *
  * Runs under the `authed` project only.
  */
@@ -27,18 +32,38 @@ test.describe('/code page', () => {
     await expect(page.getByText('Manual + background tasks')).toBeVisible()
   })
 
-  test('degrades gracefully when claudecodeui is unreachable', async ({ page }) => {
+  test('embeds claudecodeui (or degrades gracefully) with no CSP violation', async ({ page }) => {
+    // Collect CSP violations for the code-embed origin — the regression this guards.
+    const cspViolations: string[] = []
+    page.on('console', (msg) => {
+      const t = msg.text()
+      if (/Content Security Policy/i.test(t) && /coolifycloudtunnel\.uk/i.test(t)) {
+        cspViolations.push(t)
+      }
+    })
+
     await page.goto('/code', { waitUntil: 'networkidle' })
-    // Wait out the 6s reachability probe.
+    // Wait out the 6s reachability probe (CodeEmbed.tsx).
     await page.waitForTimeout(7000)
-    // Either it connected (iframe) or it shows the graceful panel — never a blank
-    // void. On a box without claudecodeui we get the panel + a Retry affordance.
-    const panel = page.getByText(/isn.t connected yet/i)
+
     const iframe = page.locator('iframe[title="claudecodeui"]')
-    const hasPanel = await panel.count()
+    const panel = page.getByText(/isn.t connected yet/i)
     const hasIframe = await iframe.count()
-    expect(hasPanel + hasIframe, 'neither the embed nor the fallback panel rendered').toBeGreaterThan(0)
-    if (hasPanel) {
+    const hasPanel = await panel.count()
+
+    // Never a blank void: either the embed or the fallback panel must render.
+    expect(hasIframe + hasPanel, 'neither the embed nor the fallback panel rendered').toBeGreaterThan(0)
+
+    // The connect-src fix must hold regardless of engine reachability: the
+    // no-cors probe to code.coolifycloudtunnel.uk must NOT trip CSP.
+    expect(cspViolations, `CSP violation(s) for the code-embed origin:\n${cspViolations.join('\n')}`).toHaveLength(0)
+
+    if (hasIframe) {
+      // Production-ready path — claudecodeui reachable behind the tunnel.
+      await expect(iframe).toBeVisible()
+      expect(await iframe.getAttribute('src')).toMatch(/coolifycloudtunnel\.uk|CODE_EMBED_URL/i)
+    } else {
+      // Fallback path — engine not reachable from this box; the panel offers retry.
       await expect(page.getByRole('button', { name: /retry/i })).toBeVisible()
     }
   })
