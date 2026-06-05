@@ -280,6 +280,17 @@ two columns ("absorbed from" / "originated by Nexus") are easy to compare.
 
 ---
 
+## Single-source note — the "OSS-framework registry" is THIS doc
+
+Earlier plans (`task_plan-lean-mode.md`, the `/api/agents/survey-oss-framework` ingestion route) floated a
+standalone "open-orchestration registry of OSS agent frameworks." That ambition is **folded here** — this
+ledger (decision column: RUN / ABSORB / FORK / REJECT) + the companion
+[`THIRD_PARTY_TOOL_MATRIX.md`](THIRD_PARTY_TOOL_MATRIX.md) (selection matrix) are the single source of
+truth for "what OSS exists and what we do with it." Do **not** build a second registry; add a row here
+when a new framework is evaluated, and a matrix row once it's selectable for a task.
+
+---
+
 ## How to update this doc
 
 When you absorb a new pattern OR reject a candidate:

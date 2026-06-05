@@ -1,5 +1,9 @@
 # task_plan — Migrate per-business containers Coolify(KVM4) → Mac local-OS (OrbStack)
 
+> ✅ **DONE 2026-06-04 — per-business containers run on the Mac.** Completed alongside
+> [ADR 011](docs/adr/011-mac-mini-local-os.md). Living state: [AGENTS.md#topology](AGENTS.md#topology)
+> + [`services/local-os/businesses/`](services/local-os/businesses/README.md). Retained for history.
+
 Goal: Run per-business Claude-gateway containers on the Mac mini under OrbStack/docker-compose instead of Coolify on KVM4, and migrate the one existing business (`inkbound`).
 Success criteria:
 - A per-business container builds + runs locally on the `coolify` docker network, reachable internally at `http://nexus-business-<slug>:3000`.
