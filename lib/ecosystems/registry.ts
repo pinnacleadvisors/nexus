@@ -21,6 +21,17 @@ import { composioAdapter   } from './adapters/composio'
 import { aiderAdapter      } from './adapters/aider'
 import { pipecatAdapter    } from './adapters/pipecat'
 import { searxngAdapter    } from './adapters/searxng'
+// v4 — content-media + remaining-capability adapters (close the coverage gaps
+// the Third-Party Tool Matrix surfaced; every EcosystemKind now has ≥1 adapter):
+import { klingAdapter       } from './adapters/kling'
+import { runwayAdapter      } from './adapters/runway'
+import { muapiAdapter       } from './adapters/muapi'
+import { elevenlabsAdapter  } from './adapters/elevenlabs'
+import { sunoAdapter        } from './adapters/suno'
+import { heygenAdapter      } from './adapters/heygen'
+import { whisperAdapter     } from './adapters/whisper'
+import { browserlessAdapter } from './adapters/browserless'
+import { n8nEcosystemAdapter } from './adapters/n8n'
 
 /**
  * Authoritative registry of every wired adapter in v1. Adding a new adapter:
@@ -46,6 +57,16 @@ const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
   openCodeAdapter,
   memoryHqAdapter,
   gbrainAdapter,
+  // v4 — content-media + remaining-capability adapters:
+  klingAdapter,
+  runwayAdapter,
+  muapiAdapter,
+  elevenlabsAdapter,
+  sunoAdapter,
+  heygenAdapter,
+  whisperAdapter,
+  browserlessAdapter,
+  n8nEcosystemAdapter,
 ]
 
 /** O(1) lookup keyed by `${kind}:${name}`. Built once on module load. */
