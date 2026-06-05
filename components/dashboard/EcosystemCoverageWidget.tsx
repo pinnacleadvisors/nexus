@@ -39,7 +39,14 @@ export default function EcosystemCoverageWidget() {
     setLoading(true); setError(null)
     try {
       const r = await fetch('/api/ecosystems/health', { cache: 'no-store' })
-      const b = await r.json() as CoverageBody
+      const b = await r.json().catch(() => null) as CoverageBody | null
+      // Surface real auth/rate-limit/server errors instead of falling through to
+      // the generic "no coverage data" empty state (401/403/429 all return JSON).
+      if (!r.ok || !b || b.ok === false) {
+        setError(b?.error ?? `HTTP ${r.status}`)
+        setBody(null)
+        return
+      }
       setBody(b)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'load failed')
