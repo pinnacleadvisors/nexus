@@ -63,6 +63,14 @@ const CSP = [
     'https://api.us-1.inngest.com',
     'https://*.upstash.io',
     'https://api.notion.com',
+    // Embedded claudecodeui at /code (ADR 013): CodeEmbed.tsx probes the engine
+    // with a no-cors fetch and claudecodeui itself is WebSocket-heavy, so both
+    // the https origin and the wss origin must be allowed here — frame-src below
+    // only covers the iframe, not these connections. Default tunnel host is
+    // code.coolifycloudtunnel.uk (CODE_EMBED_URL); the wildcard mirrors frame-src
+    // so a custom CODE_EMBED_URL on the same tunnel needs no CSP edit.
+    'https://*.coolifycloudtunnel.uk',
+    'wss://*.coolifycloudtunnel.uk',
     process.env.NEXUS_BASE_URL ?? '',
   ]
     .filter(Boolean)
