@@ -14,7 +14,12 @@
  * No-behavioural-change guarantee: nothing in this file is imported by any
  * existing dispatch route. New routes / new strategist code can opt in.
  *
+ * This is the RUNTIME plane (run/poll/cancel an agent). The CAPABILITY plane
+ * (verb+payload providers — video/voice/memory/search/…) is the separate
+ * lib/ecosystems/ registry. The two are intentionally distinct; see ADR 014.
+ *
  * See: lib/adapters/types.ts (interface)
+ *      docs/adr/014-two-plane-adapter-model.md
  *      docs/research/paperclip-audit-2026-05.md §6
  */
 
