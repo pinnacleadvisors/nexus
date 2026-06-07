@@ -296,6 +296,20 @@ doppler secrets get K --project nexus --config prd --plain | \
 export DOPPLER_TOKEN=$(doppler configure get token --plain)
 ```
 
+### Rotate the self-minted `prd` secrets (P0 closeout 1a)
+
+Rotates only the secrets Nexus mints itself (gateway bearers, `CRON_SECRET`, `NEXUS_OPS_TOKEN`, `NEXUS_SANDBOX_TOKEN`) — **not** vendor keys and **never** the two at-rest encryption keys (`ENCRYPTION_KEY`, `N8N_ENCRYPTION_KEY`). The claude gateway bearer is a **pair** (`CLAUDE_GATEWAY_BEARER` = server-validated, `CLAUDE_CODE_BEARER_TOKEN` = client-sent) and is rotated to a single shared value. Dry-run by default; needs `DOPPLER_TOKEN` in env (do **not** wrap in `doppler run`, which strips it from the child).
+
+```bash
+export DOPPLER_TOKEN=...                              # prd service token (or `doppler login`)
+bash scripts/rotate-self-minted-secrets.sh           # DRY RUN — prints what would change
+bash scripts/rotate-self-minted-secrets.sh --apply   # actually rotate
+# then redeploy so containers re-pull:
+docker compose -f services/local-os/docker-compose.yaml restart claude-gateway codex-gateway cron-runner nexus-app nexus-sandbox
+```
+
+After `--apply`, also rotate `CODEX_AUTH_JSON` (`codex login`, §1d), the vendor keys (dashboards, §1c-vendor), and the Doppler service token last (§1e). Full procedure: [`p0-security-remediation.md`](p0-security-remediation.md). Cloudflare Access on the shell-capable hostnames: [`cloudflare-access-setup.md`](cloudflare-access-setup.md).
+
 **Tier classification + per-env placement** — see [`memory/platform/SECRETS.md`](../../memory/platform/SECRETS.md) section "Doppler inventory & environment strategy".
 
 ---
