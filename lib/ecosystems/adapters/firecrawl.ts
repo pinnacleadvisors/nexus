@@ -13,7 +13,12 @@ import type { EcosystemAdapter, EcosystemResult } from '../types'
 import { capabilityMissing, unavailable } from '../types'
 import { scrapeUrl } from '@/lib/tools/firecrawl'
 
-const VERBS = ['scrape_url'] as const
+// `parse_pdf` is the doc-parse verb for a PDF document URL. Firecrawl's
+// /v1/scrape natively detects + extracts PDFs (URL → markdown), so it routes
+// through the same scrapeUrl() helper — the separate verb name documents the
+// intent (a true OCR/file-upload engine like Docling can register a richer
+// doc-parse adapter later without changing callers of this verb).
+const VERBS = ['scrape_url', 'parse_pdf'] as const
 type Verb = (typeof VERBS)[number]
 
 interface ScrapePayload {

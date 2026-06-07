@@ -234,16 +234,17 @@ Verdict so far: most useful as a tool the `ops-compliance-checker` or `security-
 
 Operator brain-dump 2026-05-27 — research item only, no specific pattern identified yet. Likely an alternative LLM provider / agent runtime. Verify scope before deciding absorption.
 
-### NVIDIA NIM &nbsp;🔬
+### NVIDIA NIM &nbsp;✅
 
 Free API tier for developers running NVIDIA's hosted inference. Operator brain-dump 2026-05-27.
+**Status update 2026-06-07: LIVE.** `lib/llm/providers/nim.ts` exists and is wired in
+`lib/llm/provider.ts` (`case 'nim'`); builds via `createOpenAI({baseURL})` against
+`NVIDIA_NIM_API_KEY`. Set `LLM_PROVIDER=nim` to route the fallback tier here.
 
 | Pattern | Verdict | Status |
 |---|---|---|
-| Add as one of the `LLM_PROVIDER` enum values (alongside claude / openrouter / mimo / ollama) | Useful — falls through the existing provider abstraction at `lib/llm/provider.ts` | 🔬 |
-| Use free tier for low-stakes background tasks (failure-cluster scan, weekly digest) | Useful — drops marginal cost to zero for non-customer-facing dispatches | 🔬 |
-
-Next step: add `lib/llm/providers/nim.ts` adapter (mirrors `openrouter.ts` shape). One-PR job. Track as `task_plan-nim-adapter.md`.
+| Add as one of the `LLM_PROVIDER` enum values (alongside claude / openrouter / mimo / ollama) | Done — falls through the provider abstraction at `lib/llm/provider.ts` | ✅ |
+| Use free tier for low-stakes background tasks (failure-cluster scan, weekly digest) | Useful — drops marginal cost to zero for non-customer-facing dispatches | ✅ wired (flip `LLM_PROVIDER=nim`) |
 
 ### Voxcpm &nbsp;🔬
 

@@ -1,24 +1,27 @@
 /**
- * Mimo Pro 2.5 adapter — STUB.
+ * Mimo Pro 2.5 adapter — LIVE (env-gated).
  *
  * Activation plan: switch when the Claude Max subscription ends. Mimo Pro 2.5
  * is a top performer in many areas at a fraction of Claude's price (see the
  * open-orchestration MOC in memory-hq for the comparison atoms).
  *
- * To activate this adapter:
+ * Activation:
  *   1. Sign up at https://mimo.ai, generate an API key
- *   2. Set MIMO_API_KEY + MIMO_BASE_URL in Doppler
- *   3. Confirm the API shape matches the OpenAI-compatible contract assumed
- *      below — if it doesn't, swap the import for Mimo's official SDK
- *   4. Replace the throw in `getMimoModel` with the real factory
- *   5. Set LLM_PROVIDER=mimo in Doppler
+ *   2. Set MIMO_API_KEY (+ optionally MIMO_BASE_URL) in Doppler
+ *   3. Set LLM_PROVIDER=mimo in Doppler OR flip via /settings → AI providers
  *
- * The AI SDK 6 has a community provider pattern (`createOpenAICompatible`)
- * that works for any provider exposing an OpenAI-shaped API — most "open"
- * alternatives do. If Mimo deviates, write a tailored provider.
+ * Mimo exposes an OpenAI-compatible endpoint, so we use `createOpenAI` with a
+ * custom baseURL — same pattern as the OpenRouter / NIM adapters, no new npm
+ * dependency. If Mimo's API shape later diverges from the OpenAI contract,
+ * swap to a tailored provider here without touching callers.
+ *
+ * ⚠️ Upstream-contract note: the OpenAI-compatibility + the default baseURL
+ * below are assumed from Mimo's published docs. Smoke-test `/chat/completions`
+ * with a real key before relying on it for production traffic.
  */
 
 import type { LanguageModel } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
 
 export interface MimoConfig {
   apiKey:  string
@@ -33,9 +36,10 @@ function getConfig(): MimoConfig | null {
 }
 
 /**
- * Returns a Mimo-backed `LanguageModel`. Throws when MIMO_API_KEY is missing
- * or the adapter has not yet been wired to a real SDK. Both errors should
- * surface to the user as "Mimo not yet configured — falling back to Claude"
+ * Returns a Mimo-backed `LanguageModel`.
+ *
+ * Throws when MIMO_API_KEY is missing — callers in the chat fallback path
+ * should catch and surface "Mimo not configured — falling back to Claude"
  * rather than crashing the route.
  */
 export function getMimoModel(model: string): LanguageModel {
@@ -47,21 +51,10 @@ export function getMimoModel(model: string): LanguageModel {
     )
   }
 
-  // TODO(task-12): replace with real provider construction.
-  // Likely shape (using @ai-sdk/openai-compatible):
-  //
-  //   import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-  //   const mimo = createOpenAICompatible({
-  //     name:    'mimo',
-  //     apiKey:  cfg.apiKey,
-  //     baseURL: cfg.baseUrl,
-  //   })
-  //   return mimo(model)
-  //
-  // First confirm Mimo's actual API shape — pricing page, docs, and a curl
-  // smoke test of /v1/chat/completions before flipping the switch.
-  throw new Error(
-    `Mimo adapter not yet wired (requested model=${model}). ` +
-    'Implement getMimoModel() in lib/llm/providers/mimo.ts.',
-  )
+  const mimo = createOpenAI({
+    apiKey:  cfg.apiKey,
+    baseURL: cfg.baseUrl,
+  })
+
+  return mimo(model) as LanguageModel
 }

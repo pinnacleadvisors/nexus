@@ -87,8 +87,8 @@ peer for execution-heavy work; `shouldRouteToCodex` decides Claude-vs-Codex. Bot
 
 **Gaps / picks for the orchestrator:**
 - Design/build → **claude-gateway**; debug/ops/research → **codex-gateway**; model-agnostic/cost-sensitive → **opencode** (once deployed); operator chat surface → **claudecodeui**; workforce coordination → **Paperclip** with **Hermes** as worker.
-- `hermes_local` and `open-code` are **not yet in `lib/adapters/registry.ts`** (only claude/codex/coolify/n8n/inngest) — an orchestrator cannot route to them today.
-- No in-runtime model routing yet — Claude-vs-Codex is two single-identity gateways picked by `shouldRouteToCodex`, not a provider abstraction. **opencode is the intended fix** but is unwired.
+- **Reframed (ADR 014, verified 2026-06-07):** "open-code not in `lib/adapters/registry.ts`" is *by design*, not a gap — `lib/adapters` is the **runtime plane** (run/poll/cancel an agent: claude_gateway/codex_gateway/n8n/inngest/coolify_business), and open-code is a **capability adapter** (`code:open-code`, verb+payload) that lives correctly in `lib/ecosystems` and IS routable via `getEcosystem`. The two planes are intentionally separate ([ADR 014](../adr/014-two-plane-adapter-model.md)); the bridge is deliberately deferred. `hermes_local` is in neither plane yet (needs an external invoke/status/cancel spec — genuinely a future item).
+- No in-runtime model routing yet — Claude-vs-Codex is two single-identity gateways picked by `shouldRouteToCodex`, not a provider abstraction. **opencode is the intended fix** but is unwired. (Note: a `code:claude-code` + `code:code-codex` capability binding now lets `/teams` pick the engine per-step — 2026-06-07.)
 - **OpenClaw is dead weight** (raw key, no substrate) — slated for removal after the per-business pilot.
 - **OpenHuman** has no evaluation row in `OPEN_SOURCE_ABSORPTIONS.md` — add one before considering it.
 
@@ -103,8 +103,8 @@ peer for execution-heavy work; `shouldRouteToCodex` decides Claude-vs-Codex. Bot
 | **Anthropic API** (direct) ⚠️ | ✅ | `ANTHROPIC_API_KEY` · `anthropic(model)` in `lib/llm/provider.ts` (`case 'claude'`) | **API-billed** (per-token) | Final fallback tier (`LLM_PROVIDER=claude`, the default); model the `claude-llm` ecosystem adapter wraps | Proprietary | Last-resort when both gateways are down; `CLAUDE_MAX_ONLY=1` disables in prod |
 | **OpenRouter** ✅ | ✅ | [`lib/llm/providers/openrouter.ts`](../../lib/llm/providers/openrouter.ts) | API-billed (per-model) | `LLM_PROVIDER=openrouter`; default `anthropic/claude-sonnet-4-6`, override `OPENROUTER_DEFAULT_MODEL` | Proprietary router over OSS+proprietary models | Per-task model choice / ~200 models when Max+Pro subs exhausted |
 | **NVIDIA NIM** ✅ | ✅ | [`lib/llm/providers/nim.ts`](../../lib/llm/providers/nim.ts) (live — absorptions doc still marks it 🔬, **stale**) | 🚀 **Free tier** → zero marginal cost | `LLM_PROVIDER=nim`; default `meta/llama-3.3-70b-instruct` | Hosted OSS models (Llama, Mixtral, Gemma, DeepSeek, Nemotron) | 🚀 High-volume low-stakes background: failure-scan, nightly digest, trend-scout, lead-scoring. NOT customer-facing (latency) |
-| **Mimo** (Mimo Pro 2.5) 🟡 | 🟡 stub | `lib/llm/providers/mimo.ts` — `getMimoModel()` throws "not yet wired" | API-billed (cheaper than Claude) | `LLM_PROVIDER=mimo` enum exists; factory throws until activation (TODO task-12) | OpenAI-compatible (planned) | Intended Claude-Max-end cost pivot |
-| **Ollama** (local) 🟡 | 🟡 stub | `lib/llm/providers/ollama.ts` — `getOllamaModel()` throws "not yet wired" | 🚀 **Free** (self-hosted local compute) | `LLM_PROVIDER=ollama` enum exists; factory throws until `ollama-ai-provider` wired (TODO task-13) | OSS (MIT) | Cheap smoke-tests of prompt/agent logic without burning Max budget |
+| **Mimo** (Mimo Pro 2.5) ✅ | ✅ env-gated | `lib/llm/providers/mimo.ts` — `getMimoModel()` builds via `createOpenAI({baseURL})` when `MIMO_API_KEY` set | API-billed (cheaper than Claude) | `LLM_PROVIDER=mimo`; default `mimo-pro-2.5` | OpenAI-compatible | Intended Claude-Max-end cost pivot. ⚠️ Confirm Mimo's `/chat/completions` shape with a real key before prod traffic |
+| **Ollama** (local) ✅ | ✅ env-gated | `lib/llm/providers/ollama.ts` — `getOllamaModel()` builds via `createOpenAI` against `<OLLAMA_BASE_URL>/v1` | 🚀 **Free** (self-hosted local compute) | `LLM_PROVIDER=ollama`; default `llama3.3` | OSS (MIT) | Cheap smoke-tests of prompt/agent logic without burning Max budget |
 | **Plumoai** 🔬 | 🔬 candidate | No code — research line in [`OPEN_SOURCE_ABSORPTIONS.md`](OPEN_SOURCE_ABSORPTIONS.md) | Unknown | Not in `LlmProvider` enum; scope unverified | Unknown | Undetermined — verify scope (provider vs runtime) before wiring |
 
 **Canonical default:** **Claude via the gateway, plan-billed** (asserted in `memory/platform/SECRETS.md` 3-tier
@@ -116,9 +116,9 @@ honour `LLM_PROVIDER` + the dynamic `/settings` override (migration 083, DB valu
 
 **Gaps / picks for the orchestrator:**
 - **Clearest immediate win:** flip `LLM_PROVIDER=nim` for high-volume low-stakes background work — free tier, already wired, currently under-used.
-- **Doc drift:** `OPEN_SOURCE_ABSORPTIONS.md` marks NIM 🔬 with "next step: add `lib/llm/providers/nim.ts`" — that file already exists and is live. Update to ✅ and close `task_plan-nim-adapter.md`.
-- **Two stubs block documented pivots:** Mimo (task-12) and Ollama (task-13) both throw on construct; the Claude-Max-end cost pivot depends on ≥1 being wired (each ~one PR).
-- **`maxTokens` not enforced** in `lib/ecosystems/adapters/claude-llm.ts` (field declared, not passed to `generateText`) — runaway generation can blow per-route `maxDuration`. Minor follow-up.
+- ✅ **Mimo + Ollama wired** (this PR): both build a real `LanguageModel` via `createOpenAI` (OpenAI-compatible / Ollama `/v1`), no new npm dep. They build when configured and throw a friendly ConfigError otherwise (chat fallback downgrades to Claude). The Claude-Max-end cost pivot is now unblocked.
+- ✅ **`maxTokens` IS enforced** in `lib/ecosystems/adapters/claude-llm.ts:70` (passed as `maxOutputTokens`, defaulting to `DEFAULT_MAX_OUTPUT_TOKENS`). The earlier "not enforced" note was stale — verified 2026-06-07.
+- **Doc drift (fixed this PR):** `OPEN_SOURCE_ABSORPTIONS.md` marked NIM as a candidate; the adapter exists and is live. Updated to ✅.
 - **Hard provider swap requires bypassing the gateway** — worth an explicit operator runbook step.
 
 ---
@@ -156,8 +156,8 @@ to "a development cache only — may be empty or stale and the graph still works
 |---|---|---|---|---|---|
 | **open-code** 🚀 | ✅ (Open Code, OSS — pre-GA) | 🟡 stub-with-fallback (real client, no native backend yet) | [`lib/ecosystems/adapters/open-code.ts`](../../lib/ecosystems/adapters/open-code.ts) | 🚀 **Default `code` binding.** Self-healing dual-path: native Open Code HTTP API (`OPEN_CODE_BASE_URL`) when set, else routes through **claude-gateway**. `telemetry.via` reports which backend served | Platform-wide default authoring adapter; ships dev work before Open Code GA by piggybacking the gateway |
 | **aider** | ✅ (Aider, OSS Python CLI) | 🟡 stub (real client, needs self-hosted shim) | [`lib/ecosystems/adapters/aider.ts`](../../lib/ecosystems/adapters/aider.ts) | Thin HTTP client over an operator-deployed shim; `available()` false until `AIDER_BASE_URL` set | Repo-scoped, git-aware OSS pair-programming behind a JSON contract |
-| **claude-code** (via gateway) | 🚫 proprietary | ⚠️ not a standalone `code` adapter — only open-code's fallback | path inside `open-code.ts` (`gatewayBase()` → `/dispatch`); `services/claude-gateway/` | Subscription-billed self-hosted Claude Code; **the de-facto engine today** since Open Code isn't GA | Design-heavy codegen, refactors, multi-file features — entered via the `open-code` binding |
-| **codex** | 🚫 proprietary | 🚫 no ecosystem adapter (agent + gateway only) | `.claude/agents/codex-operator.md`; `services/codex-gateway/` (ADR 002) | Sandboxed exec slice: debug, container setup, deploy, current-UI research. L0 PR-only trust ladder | Execution/ops work — invoked as a managed agent via dispatch (`model: 'gpt-5.5-codex'`), NOT the registry |
+| **claude-code** (via gateway) 🚀 | ✅ **explicit `code:claude-code` adapter** (PR 2026-06-07) | [`lib/ecosystems/adapters/claude-code.ts`](../../lib/ecosystems/adapters/claude-code.ts); `services/claude-gateway/`; **now the `DEFAULT_BINDINGS.code`** | Subscription-billed self-hosted Claude Code; **the de-facto engine today** since Open Code isn't GA | Design-heavy codegen, refactors, multi-file features — the honest default binding (no silent open-code fallback) |
+| **codex** | 🚫 proprietary | ✅ **`code:code-codex` adapter** (PR 2026-06-07) wrapping `dispatchToCodexGateway()` | [`lib/ecosystems/adapters/code-codex.ts`](../../lib/ecosystems/adapters/code-codex.ts); `.claude/agents/codex-operator.md`; `services/codex-gateway/` (ADR 002) | Sandboxed exec slice: debug, container setup, deploy, current-UI research. L0 PR-only trust ladder | Execution/ops work — now bindable via `/teams` (`code:code-codex`), not only as a managed agent |
 | **cursor** | 🚫 proprietary | 🚫 not wired (named only in a comment) | `registry.ts` header comment | None yet — IDE-centric, no headless HTTP contract | 🔬 candidate: needs `adapters/cursor.ts` + a shim |
 
 **Canonical default:** **open-code** (`DEFAULT_BINDINGS.code = 'open-code'`; no niche overrides it). It is
@@ -168,7 +168,7 @@ are registered for `kind: 'code'`.
 - General codegen / refactor / multi-file (design-heavy) → **open-code** binding (executes on claude-gateway today; the only one `available()` without extra env).
 - OSS / self-hosted git-aware pairing → **aider** (needs `AIDER_BASE_URL`).
 - Execution-heavy ops (debug, container, deploy, sysadmin) → route to the **codex-operator** agent via dispatch, **not** an ecosystem binding. Anything touching financial/auth secrets → hand to `doppler-broker` (ADR 001).
-- **Honesty gap:** the registry/`/teams` picker shows "open-code" even when claude-gateway is what runs (only `telemetry.via` reveals it). A thin `adapters/claude-code.ts` would make the binding explicit. No `code:codex` adapter exists either.
+- ✅ **Honesty gap closed (PR 2026-06-07):** added explicit [`adapters/claude-code.ts`](../../lib/ecosystems/adapters/claude-code.ts) (`code:claude-code`, no silent fallback — `telemetry.via` always `claude-gateway`) and [`adapters/code-codex.ts`](../../lib/ecosystems/adapters/code-codex.ts) (`code:code-codex`, wraps `dispatchToCodexGateway()`). `DEFAULT_BINDINGS.code` flipped `open-code`→`claude-code` so the binding name matches the backend. `open-code` stays registered for Open Code GA.
 
 ---
 
@@ -188,7 +188,10 @@ fallback** — dark until `OPEN_DESIGN_BASE_URL` is set. The four alternatives (
 exist **only as prose** in the design-lead spec — `getEcosystem('design','v0')` returns `null` today.
 
 **Gaps / picks for the orchestrator:**
-- **Naming-vs-wiring mismatch:** the spec advertises 4 swappable providers with zero implementation — rebinding to any hits a "no provider configured" manual-task. Either add stubs (~130-line verb-routers) or soften the prose to "planned".
+- ✅ **Naming-vs-wiring mismatch resolved (2026-06-07):** rather than ship 4 dead stubs for a deprioritized
+  department (design-team was superseded by the ADR 012 Paperclip pivot, and v0/Lovable/Galileo/Figma APIs
+  don't cleanly map to `render_comp`/`export_tokens`/`list_templates`), the design-lead + visual-renderer
+  prose was softened to "open-design is the sole wired provider; alternates planned". No more false-availability.
 - **No codegen verb in the design kind** — design→code is intentionally the `code` ecosystem's job (`generate_module` → open-code/claude-code) or the `frontend-design` skill. v0/Lovable would fill it only if you want codegen owned by the design dept.
 - Comp render / token export → **open-design** (sole provider). Prompt→component code → **`code` ecosystem** or `frontend-design` skill, not design.
 
@@ -225,7 +228,7 @@ Pipecat); the rest existed as **env-var names only** in `SECRETS.md`. "Default-b
 
 **Gaps / picks for the orchestrator:**
 - **Default-vs-reality mismatch (worst in the repo):** `video` defaults to **higgsfield** — simultaneously the only callable video adapter AND marked ❌ superseded. The named successors (Kling/Runway) have env vars but no adapter, so a `saas`-niche team binds video→`runway` and hits `unavailable` at invoke. Build runway/kling adapters (fork `higgsfield.ts`) or change the default off a tool documented as dead.
-- **Registry-uncallable today:** voice (ElevenLabs), image (MUAPI), music (Suno/Udio), avatar (HeyGen/D-ID) — all have secrets but **no adapter**. Routing these verbs through the registry returns nothing. Each is a ~120-line verb-router clone of `pipecat.ts`/`higgsfield.ts` and the secrets already exist.
+- ✅ **Registry-callable now:** voice (ElevenLabs), image (MUAPI **+ Flux**), music (Suno/Udio), avatar (HeyGen **+ D-ID**) all have registered env-gated adapters (PR #489 + 2026-06-07). Routing these verbs resolves; they return typed `unavailable` until their key is set.
 - Outbound phone / real-time voice → **Pipecat** (only fully-wired option; safer than the unbuilt `vapi` default).
 - Voiceover / music / image / avatar through the registry → **not routable** until adapters land — use Phase-18 direct integrations or build the adapter first.
 
@@ -263,7 +266,7 @@ escalating to hosted Firecrawl only for JS/anti-bot/screenshot/large-crawl.
 |---|---|---|---|---|---|
 | **Composio** 🚀 | OAuth/API broker + action fan-out for 100+ connectors (Twitter, Gmail, Slack, Notion, Stripe, Shopify, GitHub, GA…) | ✅ fully wired — [`lib/composio/client.ts`](../../lib/composio/client.ts), `lib/composio/actions.ts` (`executeBusinessAction()`/`executeAdminAction()`), `lib/oauth/providers.ts`, `adapters/composio.ts` (`run_action`); UI `/settings/accounts` | 🚫 SaaS (managed broker) | 🚀 **Single source of truth** — Composio holds all OAuth tokens; we store only `composio_account_id`; tokens never touch our DB | Any authenticated SaaS action on behalf of a business/user; per-business + admin-scope isolation |
 | **n8n** | Visual multi-step workflow runner | ⚠️ runs externally — generated/validated by Nexus (`lib/n8n/validate.ts`, `finalize.ts`, `/api/n8n/generate`+`/debug`, strategist+debugger agents, `mcp__n8n__*`) | ✅ fair-code (Sustainable Use License) | 🚫 delegates auth to Composio / `N8N_ENCRYPTION_KEY` | Long-lived visual workflows for an idea card; steps auto-retry 3× → routes must return 200+`{ok:false}` |
-| **Inngest** | Durable event/queue + step-function runtime | ⚠️ half-wired — functions ship (`inngest/functions/*`) + serve route, but `lib/adapters/inngest.ts` marked "NOT YET WIRED" (no cancel, limited status) | ⚠️ SDK Apache-2.0; orchestration hosted (self-host option) | ➖ N/A (event runtime) | Async / fan-out / batch agent loops with durable retries |
+| **Inngest** | Durable event/queue + step-function runtime | ⚠️ functions ship (`inngest/functions/*`) + serve route; `lib/adapters/inngest.ts` `status()` now polls the Cloud REST API (`/v1/events/{id}/runs`, gated on `INNGEST_SIGNING_KEY`, degrades gracefully). `cancel()` is cooperative-only (Inngest exposes no per-run REST cancel from an event id). Runtime plane still abstraction-only pending Phase 4e (ADR 007) | ⚠️ SDK Apache-2.0; orchestration hosted (self-host option) | ➖ N/A (event runtime) | Async / fan-out / batch agent loops with durable retries |
 | **supercronic** (cron-runner) | Container-native cron firing `/api/cron/*` | ✅ wired — [`services/local-os/cron/`](../../services/local-os/cron/), control surface `crons.json` (`{path,schedule,enabled}`) on the Mac | ✅ MIT | ➖ N/A (scheduler) | Time-based triggers; **replaced cron-job.org** (retired 2026-06-04) — idempotent 200-returning routes |
 
 **Canonical tools:** **Composio** (the only fully production-wired integration layer; the OAuth invariant —
@@ -275,7 +278,7 @@ agent-editable cron control surface on the always-on Mac host).
 - Multi-step visual workflow → **n8n** (strategist→generate, debugger→repair).
 - Async/fan-out/durable retries → **Inngest** functions. Plain time triggers → **supercronic** `crons.json`.
 - **Auth-source split (keep visible):** `lib/oauth/providers.ts` is NOT all-Composio — ConvertKit, Cloudflare DNS, Vercel, Resend, PostHog, Sentry, Doppler, Supabase use the `apiKeySetup` pattern (encrypted key on the row + per-business env injection). "Composio is the single OAuth source of truth" holds only for OAuth-brokered platforms.
-- The `workflow` ecosystem kind is overloaded — `composio.ts` itself flags that an **n8n adapter** is the canonical workflow adapter still to be added. Inngest adapter needs run-status lookup + cooperative cancel if it becomes load-bearing.
+- The `workflow` ecosystem kind is overloaded — `composio.ts` itself flags that an **n8n adapter** is the canonical workflow adapter still to be added (✅ `n8n.ts` ecosystem adapter now exists, PR #489). ✅ **Inngest runtime adapter `status()` wired** (2026-06-07) via the Cloud REST event-runs lookup; `cancel()` stays cooperative because Inngest exposes no per-run REST cancel from an event id (honest, not faked).
 
 ---
 
@@ -291,29 +294,29 @@ The master "what can the registry route today" map. Source of truth: the `Ecosys
 | `EcosystemKind` | Bound adapter(s) | In registry? | File | `available()` gate | Notes |
 |---|---|---|---|---|---|
 | `llm` | Claude (`llm:claude`) | ✅ | `claude-llm.ts` | 🚀 always `true` | Only kind with a no-config default |
-| `code` | Aider, Open Code | ✅ | `aider.ts`, `open-code.ts` | ⚠️ env-gated | Two providers |
+| `code` | Aider, Open Code, **Claude Code**, **Codex** | ✅ | `aider.ts`, `open-code.ts`, `claude-code.ts`, `code-codex.ts` | ⚠️ env-gated | Explicit gateway bindings (2026-06-07); default = `claude-code` |
 | `design` | open-design | ✅ | `open-design.ts` | ⚠️ `OPEN_DESIGN_BASE_URL` | Single provider |
 | `video` | Higgsfield, **Kling**, **Runway** | ✅ | `higgsfield.ts`, `kling.ts`, `runway.ts` | ⚠️ env-gated | Kling/Runway wrap `lib/video/*` (PR #489); saas default `runway` resolves |
-| `image` | **MUAPI** | ✅ | `muapi.ts` | ⚠️ `MUAPI_AI_KEY` | Added PR #489 |
+| `image` | **MUAPI**, **Flux** | ✅ | `muapi.ts`, `flux.ts` | ⚠️ env-gated | Flux via Replicate (`REPLICATE_API_TOKEN`), photo-real (2026-06-07) |
 | `voice` | **ElevenLabs** | ✅ | `elevenlabs.ts` | ⚠️ `ELEVENLABS_API_KEY` | Added PR #489 (base64 audio) |
 | `music` | **Suno/Udio** | ✅ | `suno.ts` | ⚠️ `SUNO_API_KEY`\|`UDIO_API_KEY` | Added PR #489 |
-| `avatar` | **HeyGen** | ✅ | `heygen.ts` | ⚠️ `HEYGEN_API_KEY` | Added PR #489 (D-ID fallback TODO) |
+| `avatar` | **HeyGen**, **D-ID** | ✅ | `heygen.ts`, `did.ts` | ⚠️ env-gated | D-ID talking-head fallback wired (`DID_API_KEY`, 2026-06-07) |
 | `speech` | **Whisper** | ✅ | `whisper.ts` | ⚠️ `WHISPER_BASE_URL`\|`OPENAI_API_KEY` | Added PR #489 (OpenAI-compatible STT) |
 | `memory` | memory-hq, GBrain | ✅ | `memory-hq.ts`, `gbrain.ts` | memory-hq 🚀 always `true`; gbrain ⚠️ env | Best-covered after llm |
 | `search` | Tavily, SearXNG | ✅ | `tavily.ts`, `searxng.ts` | ⚠️ env-gated | Paid + self-host both present |
 | `browser` | **Playwright/Browserless** | ✅ | `browserless.ts` | ⚠️ `BROWSER_BASE_URL` | Added PR #489 (headless shim) |
 | `workflow` | Composio, **n8n** | ✅ | `composio.ts`, `n8n.ts` | ⚠️ env-gated | n8n = run-a-workflow; composio = run-one-action (PR #489) |
 | `voice-agent` | Pipecat | ✅ | `pipecat.ts` | ⚠️ `PIPECAT_BASE_URL` | Default repointed `vapi`→`pipecat` |
-| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | Default repointed `docling`→`firecrawl`; scrape-shaped |
+| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | `scrape_url` + `parse_pdf` (PDF URL→md; 2026-06-07). True OCR/file-upload engine (Docling) still a follow-up |
 
-**Health summary:** **all 15 kinds are registered** (21 adapters total). Only **2 boot with zero config**
-(`claude-llm`, `memory-hq`); the rest are env-gated and return a typed `unavailable` until configured — the
-platform stays bootable. `memory`/`code`/`search`/`video`/`workflow` have ≥2 providers (fallback-capable); the
-single-provider kinds go dark (not crash) if their one env-gate is unset.
+**Health summary:** **all 15 kinds are registered** (25 adapters total as of 2026-06-07). Only **2 boot with
+zero config** (`claude-llm`, `memory-hq`); the rest are env-gated and return a typed `unavailable` until
+configured — the platform stays bootable. `code` (4), `memory`/`search`/`video`/`workflow`/`image`/`avatar`
+(≥2) are fallback-capable; the single-provider kinds go dark (not crash) if their one env-gate is unset.
 
-**Remaining follow-ups** (best-effort routers → confirm upstream contract when keys land): D-ID avatar
-fallback, a true PDF/OCR `doc-parse` adapter (Firecrawl is scrape-shaped), a Flux image adapter (ecommerce
-currently repointed to MUAPI).
+**Remaining follow-ups** (best-effort routers — confirm upstream contract when keys land): the D-ID (`did.ts`)
+and Flux (`flux.ts`) routers + the firecrawl `parse_pdf` verb are wired but unverified against live keys;
+a true OCR/file-upload `doc-parse` engine (Docling) and a Vapi voice-agent adapter remain unbuilt.
 
 ---
 
@@ -350,10 +353,13 @@ and the per-business containers as Nexus-owned; let Paperclip own the org-chart/
 and **call** the Nexus dispatch + loop + ecosystem libraries beneath it. Decommission the redundant Nexus UI
 only after Paperclip's equivalent is proven in the `workforce-lab` soak — not before.
 
-**Blocking gaps** (from §1): `hermes_local` and `open-code` are **not yet in `lib/adapters/registry.ts`**, so
-Paperclip can't route to them; and `lib/adapters` (Paperclip's plane) and `lib/ecosystems` (the capability
-plane) are **two separate registries** that should be bridged so a Paperclip worker can reach a video/search/
-memory adapter without a third abstraction.
+**Status (ADR 014, verified 2026-06-07):** the "two separate registries" are **separate by design**, not a
+blocking gap — `lib/adapters` is the runtime plane (run/poll/cancel) and `lib/ecosystems` is the capability
+plane (verb+payload). open-code is correctly a capability adapter (routable today via `getEcosystem`); it was
+never meant to live in `lib/adapters`. The remaining genuine follow-ups: (a) the explicit runtime↔capability
+**bridge** (let a Paperclip worker on a runtime reach a capability adapter) is deferred per ADR 014; (b)
+`hermes_local` needs an external invoke/status/cancel spec before it can join the runtime plane; (c) the
+runtime plane is abstraction-only until the Phase 4e dispatch-route migration (ADR 007).
 
 ### B. Document consolidation opportunities (review-only)
 

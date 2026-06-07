@@ -128,7 +128,7 @@ default → env vars above. See `lib/claw/business-client.ts`.
 | `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | 5 | Notion OAuth |
 | `NOTION_API_KEY` | 6 | Notion internal integration (server-side writes) |
 | `INNGEST_EVENT_KEY` | 7 | Inngest background jobs |
-| `INNGEST_SIGNING_KEY` | 7 | Inngest webhook verification |
+| `INNGEST_SIGNING_KEY` | 7 | Inngest webhook verification + runtime-adapter status/cancel REST polling (`lib/adapters/inngest.ts`). Optional alias: `INNGEST_API_KEY`. Optional `INNGEST_API_BASE` (default `https://api.inngest.com`). When unset, the adapter degrades to side-effect-inferred status (no regression). |
 | `NEXUS_BASE_URL` | 7 | Vercel deployment URL |
 | `N8N_BASE_URL` | 13 | n8n instance URL |
 | `N8N_API_KEY` | 13 | n8n API key |

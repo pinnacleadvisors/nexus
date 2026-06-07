@@ -12,6 +12,8 @@ import type { EcosystemAdapter, EcosystemKind } from './types'
 import { higgsfieldAdapter } from './adapters/higgsfield'
 import { openDesignAdapter } from './adapters/open-design'
 import { openCodeAdapter   } from './adapters/open-code'
+import { claudeCodeAdapter } from './adapters/claude-code'
+import { codeCodexAdapter  } from './adapters/code-codex'
 import { memoryHqAdapter   } from './adapters/memory-hq'
 import { gbrainAdapter     } from './adapters/gbrain'
 import { claudeLlmAdapter  } from './adapters/claude-llm'
@@ -32,6 +34,9 @@ import { heygenAdapter      } from './adapters/heygen'
 import { whisperAdapter     } from './adapters/whisper'
 import { browserlessAdapter } from './adapters/browserless'
 import { n8nEcosystemAdapter } from './adapters/n8n'
+// §9 follow-ups: avatar fallback + photo-real image (best-effort routers):
+import { didAdapter         } from './adapters/did'
+import { fluxAdapter        } from './adapters/flux'
 
 /**
  * Authoritative registry of every wired adapter in v1. Adding a new adapter:
@@ -51,6 +56,10 @@ const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
   aiderAdapter,
   pipecatAdapter,
   searxngAdapter,
+  // code-kind: explicit gateway bindings (close the §4 "honesty gap" — open-code
+  // silently fell back to the claude-gateway; these name the backend directly):
+  claudeCodeAdapter,
+  codeCodexAdapter,
   // v1 — stub adapters (verb routers; real wiring lands per team plans):
   higgsfieldAdapter,
   openDesignAdapter,
@@ -64,9 +73,11 @@ const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
   elevenlabsAdapter,
   sunoAdapter,
   heygenAdapter,
+  didAdapter,
   whisperAdapter,
   browserlessAdapter,
   n8nEcosystemAdapter,
+  fluxAdapter,
 ]
 
 /** O(1) lookup keyed by `${kind}:${name}`. Built once on module load. */

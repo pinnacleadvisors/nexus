@@ -360,6 +360,7 @@ function BindingChip({ kindRaw, name, editing, busy, onClick, onPick, onCancel }
   if (!editing) {
     return (
       <button type="button" onClick={onClick} disabled={busy}
+              data-testid={`binding-chip-${kindRaw}`}
               className="text-[10px] px-1.5 py-0.5 rounded-md font-mono inline-flex items-center gap-1 transition-colors disabled:opacity-50"
               style={{ color: '#a8a3ff', background: 'rgba(108,99,255,0.10)', border: '1px solid rgba(108,99,255,0.22)' }}
               title="Click to rebind">
@@ -374,11 +375,13 @@ function BindingChip({ kindRaw, name, editing, busy, onClick, onPick, onCancel }
         defaultValue={name}
         disabled={busy}
         onChange={async e => { await onPick(e.target.value) }}
+        data-testid={`binding-picker-${kindRaw}`}
+        aria-label={`Pick a ${kindRaw} adapter`}
         className="text-[10px] px-1.5 py-0.5 rounded-md font-mono"
         style={{ color: '#e8e8f0', background: 'rgba(5,5,16,0.55)', border: '1px solid rgba(108,99,255,0.40)' }}
       >
         {candidates.map(c => (
-          <option key={c.name} value={c.name}>{c.label} {c.available() ? '' : '(unwired)'}</option>
+          <option key={c.name} value={c.name} data-adapter-name={c.name}>{c.label} {c.available() ? '' : '(unwired)'}</option>
         ))}
       </select>
       <button type="button" onClick={onCancel} className="text-[10px]" style={{ color: '#9090b0' }}>cancel</button>
