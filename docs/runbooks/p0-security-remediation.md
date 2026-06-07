@@ -47,7 +47,7 @@ The three P0 items:
 | **Rotate now** | gateway bearers, `CRON_SECRET`, `NEXUS_OPS_TOKEN`, `NEXUS_SANDBOX_TOKEN`, the Doppler service token itself, `MEMORY_HQ_TOKEN` (GitHub PAT), `CODEX_AUTH_JSON` | minutes |
 | **Rotate now (vendor)** | `SUPABASE_SERVICE_ROLE_KEY`, `CLERK_SECRET_KEY`, `COMPOSIO_API_KEY`, `COOLIFY_KVM4_API_TOKEN`, `INNGEST_SIGNING_KEY`/`INNGEST_EVENT_KEY` | dashboard each |
 | **⚠️ DO NOT blind-rotate** | `ENCRYPTION_KEY`, `N8N_ENCRYPTION_KEY` | see 1b |
-| Delete (already dead) | `COOLIFY_KVM2_API_TOKEN` (KVM2 retired) | `doppler secrets delete` |
+| Delete (already dead) | `COOLIFY_KVM2_API_TOKEN` (KVM2 retired) | `doppler secrets delete` | <!-- topology-check: ignore: intentionally names the dead KVM2 token so the operator deletes it -->
 
 ### 1b. ⚠️ The two secrets you must NOT just swap
 
