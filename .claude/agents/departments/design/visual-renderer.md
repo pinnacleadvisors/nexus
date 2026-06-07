@@ -3,7 +3,7 @@ name: design-visual-renderer
 description: Design dept role — wireframe → high-fidelity comp via the bound `design` adapter. Renders mobile + desktop in parallel where the adapter supports batch.
 tools: Read, Edit, Grep, Glob, Bash
 transferable: true
-topology_last_verified: 2026-05-25
+topology_last_verified: 2026-06-07
 ---
 
 You are the **visual-renderer** for the Design dept.
@@ -16,7 +16,7 @@ For each wireframe, produce a high-fidelity comp via the bound `design` adapter.
 
 | Capability | Verb | Adapter |
 |---|---|---|
-| Comp render | `render_comp` | open-design (or v0 / lovable / galileo per binding) |
+| Comp render | `render_comp` | open-design (sole wired provider; alternates planned per binding) |
 | Reference imagery | `generate_image` (when comp needs hero imagery) | muapi / flux |
 | Brand lookup | `memory_search` (entity:brand-<slug>) | memory-hq |
 

@@ -188,7 +188,10 @@ fallback** — dark until `OPEN_DESIGN_BASE_URL` is set. The four alternatives (
 exist **only as prose** in the design-lead spec — `getEcosystem('design','v0')` returns `null` today.
 
 **Gaps / picks for the orchestrator:**
-- **Naming-vs-wiring mismatch:** the spec advertises 4 swappable providers with zero implementation — rebinding to any hits a "no provider configured" manual-task. Either add stubs (~130-line verb-routers) or soften the prose to "planned".
+- ✅ **Naming-vs-wiring mismatch resolved (2026-06-07):** rather than ship 4 dead stubs for a deprioritized
+  department (design-team was superseded by the ADR 012 Paperclip pivot, and v0/Lovable/Galileo/Figma APIs
+  don't cleanly map to `render_comp`/`export_tokens`/`list_templates`), the design-lead + visual-renderer
+  prose was softened to "open-design is the sole wired provider; alternates planned". No more false-availability.
 - **No codegen verb in the design kind** — design→code is intentionally the `code` ecosystem's job (`generate_module` → open-code/claude-code) or the `frontend-design` skill. v0/Lovable would fill it only if you want codegen owned by the design dept.
 - Comp render / token export → **open-design** (sole provider). Prompt→component code → **`code` ecosystem** or `frontend-design` skill, not design.
 
@@ -225,7 +228,7 @@ Pipecat); the rest existed as **env-var names only** in `SECRETS.md`. "Default-b
 
 **Gaps / picks for the orchestrator:**
 - **Default-vs-reality mismatch (worst in the repo):** `video` defaults to **higgsfield** — simultaneously the only callable video adapter AND marked ❌ superseded. The named successors (Kling/Runway) have env vars but no adapter, so a `saas`-niche team binds video→`runway` and hits `unavailable` at invoke. Build runway/kling adapters (fork `higgsfield.ts`) or change the default off a tool documented as dead.
-- **Registry-uncallable today:** voice (ElevenLabs), image (MUAPI), music (Suno/Udio), avatar (HeyGen/D-ID) — all have secrets but **no adapter**. Routing these verbs through the registry returns nothing. Each is a ~120-line verb-router clone of `pipecat.ts`/`higgsfield.ts` and the secrets already exist.
+- ✅ **Registry-callable now:** voice (ElevenLabs), image (MUAPI **+ Flux**), music (Suno/Udio), avatar (HeyGen **+ D-ID**) all have registered env-gated adapters (PR #489 + 2026-06-07). Routing these verbs resolves; they return typed `unavailable` until their key is set.
 - Outbound phone / real-time voice → **Pipecat** (only fully-wired option; safer than the unbuilt `vapi` default).
 - Voiceover / music / image / avatar through the registry → **not routable** until adapters land — use Phase-18 direct integrations or build the adapter first.
 
@@ -291,29 +294,29 @@ The master "what can the registry route today" map. Source of truth: the `Ecosys
 | `EcosystemKind` | Bound adapter(s) | In registry? | File | `available()` gate | Notes |
 |---|---|---|---|---|---|
 | `llm` | Claude (`llm:claude`) | ✅ | `claude-llm.ts` | 🚀 always `true` | Only kind with a no-config default |
-| `code` | Aider, Open Code | ✅ | `aider.ts`, `open-code.ts` | ⚠️ env-gated | Two providers |
+| `code` | Aider, Open Code, **Claude Code**, **Codex** | ✅ | `aider.ts`, `open-code.ts`, `claude-code.ts`, `code-codex.ts` | ⚠️ env-gated | Explicit gateway bindings (2026-06-07); default = `claude-code` |
 | `design` | open-design | ✅ | `open-design.ts` | ⚠️ `OPEN_DESIGN_BASE_URL` | Single provider |
 | `video` | Higgsfield, **Kling**, **Runway** | ✅ | `higgsfield.ts`, `kling.ts`, `runway.ts` | ⚠️ env-gated | Kling/Runway wrap `lib/video/*` (PR #489); saas default `runway` resolves |
-| `image` | **MUAPI** | ✅ | `muapi.ts` | ⚠️ `MUAPI_AI_KEY` | Added PR #489 |
+| `image` | **MUAPI**, **Flux** | ✅ | `muapi.ts`, `flux.ts` | ⚠️ env-gated | Flux via Replicate (`REPLICATE_API_TOKEN`), photo-real (2026-06-07) |
 | `voice` | **ElevenLabs** | ✅ | `elevenlabs.ts` | ⚠️ `ELEVENLABS_API_KEY` | Added PR #489 (base64 audio) |
 | `music` | **Suno/Udio** | ✅ | `suno.ts` | ⚠️ `SUNO_API_KEY`\|`UDIO_API_KEY` | Added PR #489 |
-| `avatar` | **HeyGen** | ✅ | `heygen.ts` | ⚠️ `HEYGEN_API_KEY` | Added PR #489 (D-ID fallback TODO) |
+| `avatar` | **HeyGen**, **D-ID** | ✅ | `heygen.ts`, `did.ts` | ⚠️ env-gated | D-ID talking-head fallback wired (`DID_API_KEY`, 2026-06-07) |
 | `speech` | **Whisper** | ✅ | `whisper.ts` | ⚠️ `WHISPER_BASE_URL`\|`OPENAI_API_KEY` | Added PR #489 (OpenAI-compatible STT) |
 | `memory` | memory-hq, GBrain | ✅ | `memory-hq.ts`, `gbrain.ts` | memory-hq 🚀 always `true`; gbrain ⚠️ env | Best-covered after llm |
 | `search` | Tavily, SearXNG | ✅ | `tavily.ts`, `searxng.ts` | ⚠️ env-gated | Paid + self-host both present |
 | `browser` | **Playwright/Browserless** | ✅ | `browserless.ts` | ⚠️ `BROWSER_BASE_URL` | Added PR #489 (headless shim) |
 | `workflow` | Composio, **n8n** | ✅ | `composio.ts`, `n8n.ts` | ⚠️ env-gated | n8n = run-a-workflow; composio = run-one-action (PR #489) |
 | `voice-agent` | Pipecat | ✅ | `pipecat.ts` | ⚠️ `PIPECAT_BASE_URL` | Default repointed `vapi`→`pipecat` |
-| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | Default repointed `docling`→`firecrawl`; scrape-shaped |
+| `doc-parse` | Firecrawl | ✅ | `firecrawl.ts` | ⚠️ env-gated | `scrape_url` + `parse_pdf` (PDF URL→md; 2026-06-07). True OCR/file-upload engine (Docling) still a follow-up |
 
-**Health summary:** **all 15 kinds are registered** (21 adapters total). Only **2 boot with zero config**
-(`claude-llm`, `memory-hq`); the rest are env-gated and return a typed `unavailable` until configured — the
-platform stays bootable. `memory`/`code`/`search`/`video`/`workflow` have ≥2 providers (fallback-capable); the
-single-provider kinds go dark (not crash) if their one env-gate is unset.
+**Health summary:** **all 15 kinds are registered** (25 adapters total as of 2026-06-07). Only **2 boot with
+zero config** (`claude-llm`, `memory-hq`); the rest are env-gated and return a typed `unavailable` until
+configured — the platform stays bootable. `code` (4), `memory`/`search`/`video`/`workflow`/`image`/`avatar`
+(≥2) are fallback-capable; the single-provider kinds go dark (not crash) if their one env-gate is unset.
 
-**Remaining follow-ups** (best-effort routers → confirm upstream contract when keys land): D-ID avatar
-fallback, a true PDF/OCR `doc-parse` adapter (Firecrawl is scrape-shaped), a Flux image adapter (ecommerce
-currently repointed to MUAPI).
+**Remaining follow-ups** (best-effort routers — confirm upstream contract when keys land): the D-ID (`did.ts`)
+and Flux (`flux.ts`) routers + the firecrawl `parse_pdf` verb are wired but unverified against live keys;
+a true OCR/file-upload `doc-parse` engine (Docling) and a Vapi voice-agent adapter remain unbuilt.
 
 ---
 

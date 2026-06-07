@@ -20,7 +20,7 @@ const NICHE_OVERRIDES: Record<string, Partial<Record<EcosystemKind, string>>> = 
   },
   ecommerce: {
     video:  'higgsfield',
-    image:  'muapi',      // photo-realistic product shots (no flux adapter yet → muapi)
+    image:  'muapi',      // seed = muapi; rebind to `flux` (Replicate) for photo-real product shots
   },
 }
 
@@ -37,7 +37,7 @@ const DEFAULT_BINDINGS: Record<EcosystemKind, string> = {
   image:        'muapi',
   voice:        'elevenlabs',
   music:        'suno',
-  avatar:       'heygen',
+  avatar:       'heygen',     // rebind to `did` (D-ID) as the talking-head fallback
   speech:       'whisper',
   memory:       'memory-hq',
   search:       'tavily',
