@@ -87,8 +87,8 @@ peer for execution-heavy work; `shouldRouteToCodex` decides Claude-vs-Codex. Bot
 
 **Gaps / picks for the orchestrator:**
 - Design/build → **claude-gateway**; debug/ops/research → **codex-gateway**; model-agnostic/cost-sensitive → **opencode** (once deployed); operator chat surface → **claudecodeui**; workforce coordination → **Paperclip** with **Hermes** as worker.
-- `hermes_local` and `open-code` are **not yet in `lib/adapters/registry.ts`** (only claude/codex/coolify/n8n/inngest) — an orchestrator cannot route to them today.
-- No in-runtime model routing yet — Claude-vs-Codex is two single-identity gateways picked by `shouldRouteToCodex`, not a provider abstraction. **opencode is the intended fix** but is unwired.
+- **Reframed (ADR 014, verified 2026-06-07):** "open-code not in `lib/adapters/registry.ts`" is *by design*, not a gap — `lib/adapters` is the **runtime plane** (run/poll/cancel an agent: claude_gateway/codex_gateway/n8n/inngest/coolify_business), and open-code is a **capability adapter** (`code:open-code`, verb+payload) that lives correctly in `lib/ecosystems` and IS routable via `getEcosystem`. The two planes are intentionally separate ([ADR 014](../adr/014-two-plane-adapter-model.md)); the bridge is deliberately deferred. `hermes_local` is in neither plane yet (needs an external invoke/status/cancel spec — genuinely a future item).
+- No in-runtime model routing yet — Claude-vs-Codex is two single-identity gateways picked by `shouldRouteToCodex`, not a provider abstraction. **opencode is the intended fix** but is unwired. (Note: a `code:claude-code` + `code:code-codex` capability binding now lets `/teams` pick the engine per-step — 2026-06-07.)
 - **OpenClaw is dead weight** (raw key, no substrate) — slated for removal after the per-business pilot.
 - **OpenHuman** has no evaluation row in `OPEN_SOURCE_ABSORPTIONS.md` — add one before considering it.
 
@@ -353,10 +353,13 @@ and the per-business containers as Nexus-owned; let Paperclip own the org-chart/
 and **call** the Nexus dispatch + loop + ecosystem libraries beneath it. Decommission the redundant Nexus UI
 only after Paperclip's equivalent is proven in the `workforce-lab` soak — not before.
 
-**Blocking gaps** (from §1): `hermes_local` and `open-code` are **not yet in `lib/adapters/registry.ts`**, so
-Paperclip can't route to them; and `lib/adapters` (Paperclip's plane) and `lib/ecosystems` (the capability
-plane) are **two separate registries** that should be bridged so a Paperclip worker can reach a video/search/
-memory adapter without a third abstraction.
+**Status (ADR 014, verified 2026-06-07):** the "two separate registries" are **separate by design**, not a
+blocking gap — `lib/adapters` is the runtime plane (run/poll/cancel) and `lib/ecosystems` is the capability
+plane (verb+payload). open-code is correctly a capability adapter (routable today via `getEcosystem`); it was
+never meant to live in `lib/adapters`. The remaining genuine follow-ups: (a) the explicit runtime↔capability
+**bridge** (let a Paperclip worker on a runtime reach a capability adapter) is deferred per ADR 014; (b)
+`hermes_local` needs an external invoke/status/cancel spec before it can join the runtime plane; (c) the
+runtime plane is abstraction-only until the Phase 4e dispatch-route migration (ADR 007).
 
 ### B. Document consolidation opportunities (review-only)
 
