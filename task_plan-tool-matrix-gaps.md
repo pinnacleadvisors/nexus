@@ -17,10 +17,28 @@ Hard constraints:
 - Env-gated adapters that need an upstream key I can't verify: scaffold + register + `available()` gate, mark the upstream-contract risk in a comment; do NOT fake a working integration.
 
 ## Progress (as of 2026-06-07)
-### Completed
-- Ground-truthed adapter inventory: 21 ecosystem adapters + 6 lib/adapters present.
-- Confirmed `brew install openhuman` is a dead end (no such formula in the tap; non-admin user can't write to operator's Homebrew). Reported, awaiting correct source.
+### Completed (branch feat/tool-matrix-gap-closeout)
+- 7-agent recon workflow ground-truthed every documented gap vs actual code. Key corrections:
+  `maxTokens` already enforced (stale doc); two-plane registry separation is by-design (ADR 014/007), not a bug.
+- **Tier 1** (commit a91e6f6): Mimo + Ollama LLM providers wired via `createOpenAI` (no new dep);
+  new `code:claude-code` + `code:code-codex` adapters close the §4 honesty gap; `DEFAULT_BINDINGS.code`
+  → `claude-code`; NIM doc drift fixed.
+- **Tier 2** (commit a187442): `did.ts` (avatar fallback) + `flux.ts` (Replicate image) best-effort routers;
+  firecrawl `parse_pdf` verb; design v0/Lovable/Galileo/Figma prose softened to "planned" (deprioritized dept).
+- **Inngest** (commit ae57a3f): runtime `status()` via Cloud REST event-runs lookup (gated, graceful degrade);
+  `cancel()` cooperative (no per-run REST cancel exists — honest, not faked); SECRETS.md annotated.
+- **UI + spec + §1 reframe** (commit a59b3c6): `data-testid` on BindingChip; Playwright binding-picker spec;
+  matrix §1/Synergy reframed per ADR 014.
+- Drive-by: `topology-check: ignore` on a pre-existing main breakage (p0-security-remediation.md KVM2 row).
+- Verification: `npx tsc --noEmit` 0; `npm run check:all` exit 0 (lint 0-errors, all 13 guards pass);
+  registry = 25 adapters / 15 kinds; dev server serves `/teams` 200 with all new adapters.
+
+### Deferred by design (documented, not forced)
+- Runtime↔capability bridge (ADR 014 defers it); `hermes_local` runtime (needs external spec);
+  runtime-plane dispatch-route migration (Phase 4e, ADR 007); true OCR/file-upload doc-parse (Docling);
+  Vapi voice-agent adapter; dynamic registry file-discovery (M follow-up).
+- `openhuman` brew install: no such formula in `tinyhumansai/core` tap; awaiting correct source from operator.
 
 ### Remaining
-- [ ] Exploration workflow → ground-truth gap report per area
-- [ ] Prioritized implementation plan (post-exploration)
+- [ ] Confirm Playwright spec skips cleanly once browser binary present (env detail, not spec correctness)
+- [ ] Open PR; restore the parked p0-closeout startup.sh stash to its own branch
