@@ -103,8 +103,8 @@ peer for execution-heavy work; `shouldRouteToCodex` decides Claude-vs-Codex. Bot
 | **Anthropic API** (direct) ⚠️ | ✅ | `ANTHROPIC_API_KEY` · `anthropic(model)` in `lib/llm/provider.ts` (`case 'claude'`) | **API-billed** (per-token) | Final fallback tier (`LLM_PROVIDER=claude`, the default); model the `claude-llm` ecosystem adapter wraps | Proprietary | Last-resort when both gateways are down; `CLAUDE_MAX_ONLY=1` disables in prod |
 | **OpenRouter** ✅ | ✅ | [`lib/llm/providers/openrouter.ts`](../../lib/llm/providers/openrouter.ts) | API-billed (per-model) | `LLM_PROVIDER=openrouter`; default `anthropic/claude-sonnet-4-6`, override `OPENROUTER_DEFAULT_MODEL` | Proprietary router over OSS+proprietary models | Per-task model choice / ~200 models when Max+Pro subs exhausted |
 | **NVIDIA NIM** ✅ | ✅ | [`lib/llm/providers/nim.ts`](../../lib/llm/providers/nim.ts) (live — absorptions doc still marks it 🔬, **stale**) | 🚀 **Free tier** → zero marginal cost | `LLM_PROVIDER=nim`; default `meta/llama-3.3-70b-instruct` | Hosted OSS models (Llama, Mixtral, Gemma, DeepSeek, Nemotron) | 🚀 High-volume low-stakes background: failure-scan, nightly digest, trend-scout, lead-scoring. NOT customer-facing (latency) |
-| **Mimo** (Mimo Pro 2.5) 🟡 | 🟡 stub | `lib/llm/providers/mimo.ts` — `getMimoModel()` throws "not yet wired" | API-billed (cheaper than Claude) | `LLM_PROVIDER=mimo` enum exists; factory throws until activation (TODO task-12) | OpenAI-compatible (planned) | Intended Claude-Max-end cost pivot |
-| **Ollama** (local) 🟡 | 🟡 stub | `lib/llm/providers/ollama.ts` — `getOllamaModel()` throws "not yet wired" | 🚀 **Free** (self-hosted local compute) | `LLM_PROVIDER=ollama` enum exists; factory throws until `ollama-ai-provider` wired (TODO task-13) | OSS (MIT) | Cheap smoke-tests of prompt/agent logic without burning Max budget |
+| **Mimo** (Mimo Pro 2.5) ✅ | ✅ env-gated | `lib/llm/providers/mimo.ts` — `getMimoModel()` builds via `createOpenAI({baseURL})` when `MIMO_API_KEY` set | API-billed (cheaper than Claude) | `LLM_PROVIDER=mimo`; default `mimo-pro-2.5` | OpenAI-compatible | Intended Claude-Max-end cost pivot. ⚠️ Confirm Mimo's `/chat/completions` shape with a real key before prod traffic |
+| **Ollama** (local) ✅ | ✅ env-gated | `lib/llm/providers/ollama.ts` — `getOllamaModel()` builds via `createOpenAI` against `<OLLAMA_BASE_URL>/v1` | 🚀 **Free** (self-hosted local compute) | `LLM_PROVIDER=ollama`; default `llama3.3` | OSS (MIT) | Cheap smoke-tests of prompt/agent logic without burning Max budget |
 | **Plumoai** 🔬 | 🔬 candidate | No code — research line in [`OPEN_SOURCE_ABSORPTIONS.md`](OPEN_SOURCE_ABSORPTIONS.md) | Unknown | Not in `LlmProvider` enum; scope unverified | Unknown | Undetermined — verify scope (provider vs runtime) before wiring |
 
 **Canonical default:** **Claude via the gateway, plan-billed** (asserted in `memory/platform/SECRETS.md` 3-tier
@@ -116,9 +116,9 @@ honour `LLM_PROVIDER` + the dynamic `/settings` override (migration 083, DB valu
 
 **Gaps / picks for the orchestrator:**
 - **Clearest immediate win:** flip `LLM_PROVIDER=nim` for high-volume low-stakes background work — free tier, already wired, currently under-used.
-- **Doc drift:** `OPEN_SOURCE_ABSORPTIONS.md` marks NIM 🔬 with "next step: add `lib/llm/providers/nim.ts`" — that file already exists and is live. Update to ✅ and close `task_plan-nim-adapter.md`.
-- **Two stubs block documented pivots:** Mimo (task-12) and Ollama (task-13) both throw on construct; the Claude-Max-end cost pivot depends on ≥1 being wired (each ~one PR).
-- **`maxTokens` not enforced** in `lib/ecosystems/adapters/claude-llm.ts` (field declared, not passed to `generateText`) — runaway generation can blow per-route `maxDuration`. Minor follow-up.
+- ✅ **Mimo + Ollama wired** (this PR): both build a real `LanguageModel` via `createOpenAI` (OpenAI-compatible / Ollama `/v1`), no new npm dep. They build when configured and throw a friendly ConfigError otherwise (chat fallback downgrades to Claude). The Claude-Max-end cost pivot is now unblocked.
+- ✅ **`maxTokens` IS enforced** in `lib/ecosystems/adapters/claude-llm.ts:70` (passed as `maxOutputTokens`, defaulting to `DEFAULT_MAX_OUTPUT_TOKENS`). The earlier "not enforced" note was stale — verified 2026-06-07.
+- **Doc drift (fixed this PR):** `OPEN_SOURCE_ABSORPTIONS.md` marked NIM as a candidate; the adapter exists and is live. Updated to ✅.
 - **Hard provider swap requires bypassing the gateway** — worth an explicit operator runbook step.
 
 ---
@@ -156,8 +156,8 @@ to "a development cache only — may be empty or stale and the graph still works
 |---|---|---|---|---|---|
 | **open-code** 🚀 | ✅ (Open Code, OSS — pre-GA) | 🟡 stub-with-fallback (real client, no native backend yet) | [`lib/ecosystems/adapters/open-code.ts`](../../lib/ecosystems/adapters/open-code.ts) | 🚀 **Default `code` binding.** Self-healing dual-path: native Open Code HTTP API (`OPEN_CODE_BASE_URL`) when set, else routes through **claude-gateway**. `telemetry.via` reports which backend served | Platform-wide default authoring adapter; ships dev work before Open Code GA by piggybacking the gateway |
 | **aider** | ✅ (Aider, OSS Python CLI) | 🟡 stub (real client, needs self-hosted shim) | [`lib/ecosystems/adapters/aider.ts`](../../lib/ecosystems/adapters/aider.ts) | Thin HTTP client over an operator-deployed shim; `available()` false until `AIDER_BASE_URL` set | Repo-scoped, git-aware OSS pair-programming behind a JSON contract |
-| **claude-code** (via gateway) | 🚫 proprietary | ⚠️ not a standalone `code` adapter — only open-code's fallback | path inside `open-code.ts` (`gatewayBase()` → `/dispatch`); `services/claude-gateway/` | Subscription-billed self-hosted Claude Code; **the de-facto engine today** since Open Code isn't GA | Design-heavy codegen, refactors, multi-file features — entered via the `open-code` binding |
-| **codex** | 🚫 proprietary | 🚫 no ecosystem adapter (agent + gateway only) | `.claude/agents/codex-operator.md`; `services/codex-gateway/` (ADR 002) | Sandboxed exec slice: debug, container setup, deploy, current-UI research. L0 PR-only trust ladder | Execution/ops work — invoked as a managed agent via dispatch (`model: 'gpt-5.5-codex'`), NOT the registry |
+| **claude-code** (via gateway) 🚀 | ✅ **explicit `code:claude-code` adapter** (PR 2026-06-07) | [`lib/ecosystems/adapters/claude-code.ts`](../../lib/ecosystems/adapters/claude-code.ts); `services/claude-gateway/`; **now the `DEFAULT_BINDINGS.code`** | Subscription-billed self-hosted Claude Code; **the de-facto engine today** since Open Code isn't GA | Design-heavy codegen, refactors, multi-file features — the honest default binding (no silent open-code fallback) |
+| **codex** | 🚫 proprietary | ✅ **`code:code-codex` adapter** (PR 2026-06-07) wrapping `dispatchToCodexGateway()` | [`lib/ecosystems/adapters/code-codex.ts`](../../lib/ecosystems/adapters/code-codex.ts); `.claude/agents/codex-operator.md`; `services/codex-gateway/` (ADR 002) | Sandboxed exec slice: debug, container setup, deploy, current-UI research. L0 PR-only trust ladder | Execution/ops work — now bindable via `/teams` (`code:code-codex`), not only as a managed agent |
 | **cursor** | 🚫 proprietary | 🚫 not wired (named only in a comment) | `registry.ts` header comment | None yet — IDE-centric, no headless HTTP contract | 🔬 candidate: needs `adapters/cursor.ts` + a shim |
 
 **Canonical default:** **open-code** (`DEFAULT_BINDINGS.code = 'open-code'`; no niche overrides it). It is
@@ -168,7 +168,7 @@ are registered for `kind: 'code'`.
 - General codegen / refactor / multi-file (design-heavy) → **open-code** binding (executes on claude-gateway today; the only one `available()` without extra env).
 - OSS / self-hosted git-aware pairing → **aider** (needs `AIDER_BASE_URL`).
 - Execution-heavy ops (debug, container, deploy, sysadmin) → route to the **codex-operator** agent via dispatch, **not** an ecosystem binding. Anything touching financial/auth secrets → hand to `doppler-broker` (ADR 001).
-- **Honesty gap:** the registry/`/teams` picker shows "open-code" even when claude-gateway is what runs (only `telemetry.via` reveals it). A thin `adapters/claude-code.ts` would make the binding explicit. No `code:codex` adapter exists either.
+- ✅ **Honesty gap closed (PR 2026-06-07):** added explicit [`adapters/claude-code.ts`](../../lib/ecosystems/adapters/claude-code.ts) (`code:claude-code`, no silent fallback — `telemetry.via` always `claude-gateway`) and [`adapters/code-codex.ts`](../../lib/ecosystems/adapters/code-codex.ts) (`code:code-codex`, wraps `dispatchToCodexGateway()`). `DEFAULT_BINDINGS.code` flipped `open-code`→`claude-code` so the binding name matches the backend. `open-code` stays registered for Open Code GA.
 
 ---
 

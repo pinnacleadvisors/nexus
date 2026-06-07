@@ -5,6 +5,7 @@
  * Switching providers is a one-env-var change:
  *   LLM_PROVIDER=claude     (default — Anthropic via @ai-sdk/anthropic)
  *   LLM_PROVIDER=openrouter (OpenRouter unified router — GPT-5, Claude, Gemini, Llama, …)
+ *   LLM_PROVIDER=nim        (NVIDIA NIM — free-tier OpenAI-compatible inference)
  *   LLM_PROVIDER=mimo       (Mimo Pro 2.5 — see lib/llm/providers/mimo.ts)
  *   LLM_PROVIDER=ollama     (local Ollama — see lib/llm/providers/ollama.ts)
  *
@@ -14,10 +15,11 @@
  * by `LLM_PROVIDER`. To use OpenRouter/Mimo/Ollama instead of Claude Max,
  * the chat route's gateway probe will fail-over to this provider abstraction.
  *
- * OpenRouter is live (requires OPENROUTER_API_KEY in Doppler). Mimo and
- * Ollama implementations are stubs — they throw "not yet wired" until
- * activation. The plan is to switch when the Claude Max subscription ends;
- * see task_plan-lean-mode.md Task 12-13.
+ * OpenRouter, NIM, Mimo, and Ollama are all live (each env-gated on its own
+ * API key / base URL). Mimo and Ollama build a model only when configured;
+ * an unconfigured provider throws a friendly ConfigError the chat fallback
+ * path catches and downgrades to Claude. The plan is to switch when the
+ * Claude Max subscription ends; see task_plan-lean-mode.md Task 12-13.
  */
 
 import type { LanguageModel } from 'ai'

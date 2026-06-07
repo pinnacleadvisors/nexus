@@ -12,6 +12,8 @@ import type { EcosystemAdapter, EcosystemKind } from './types'
 import { higgsfieldAdapter } from './adapters/higgsfield'
 import { openDesignAdapter } from './adapters/open-design'
 import { openCodeAdapter   } from './adapters/open-code'
+import { claudeCodeAdapter } from './adapters/claude-code'
+import { codeCodexAdapter  } from './adapters/code-codex'
 import { memoryHqAdapter   } from './adapters/memory-hq'
 import { gbrainAdapter     } from './adapters/gbrain'
 import { claudeLlmAdapter  } from './adapters/claude-llm'
@@ -51,6 +53,10 @@ const ALL_ADAPTERS: readonly EcosystemAdapter[] = [
   aiderAdapter,
   pipecatAdapter,
   searxngAdapter,
+  // code-kind: explicit gateway bindings (close the §4 "honesty gap" — open-code
+  // silently fell back to the claude-gateway; these name the backend directly):
+  claudeCodeAdapter,
+  codeCodexAdapter,
   // v1 — stub adapters (verb routers; real wiring lands per team plans):
   higgsfieldAdapter,
   openDesignAdapter,

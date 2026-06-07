@@ -27,7 +27,11 @@ const NICHE_OVERRIDES: Record<string, Partial<Record<EcosystemKind, string>>> = 
 /** Platform-wide defaults — used when no niche override exists. */
 const DEFAULT_BINDINGS: Record<EcosystemKind, string> = {
   llm:          'claude',
-  code:         'open-code',
+  // Explicit: code runs on the claude-gateway today (Open Code isn't GA). The
+  // `open-code` binding stays registered for when Open Code GAs; until then
+  // `claude-code` names the backend honestly instead of open-code's silent
+  // gateway fallback. Rebind to `code-codex` for execution-heavy work.
+  code:         'claude-code',
   design:       'open-design',
   video:        'higgsfield',
   image:        'muapi',
