@@ -26,20 +26,47 @@ degrades to a soft "not reachable" card (proxy returns `200 {ok:false}`, no retr
 
 `nexus-host` (non-admin) can't read `dylan_mini`'s `0700` home or stop its process.
 
-```bash
-# A1. GATED STOP — quiesce paperclip so the embedded-PG DB copies consistently.
-#     Ctrl-C the foreground `npx paperclipai@latest run` (or kill the paperclipai pid), then confirm down:
-lsof -nP -iTCP:3100 -sTCP:LISTEN                                   # must be EMPTY
-ps aux | grep -E 'paperclipai|postgres: paperclip' | grep -v grep # must be EMPTY
+> **zsh shell note (run this FIRST).** Interactive `zsh` does NOT treat `#` as a comment
+> by default, so pasting a block with `# …` lines or trailing `# …` annotations throws
+> `command not found: #`, `no matches found: (…)`, `missing delimiter for 'u' glob qualifier`,
+> etc. Enable comments for the session before pasting any block below:
+> ```zsh
+> setopt interactive_comments        # add to ~/.zshrc to make it permanent
+> ```
 
-# A2. Copy the whole data dir cross-user (carries DB + config + keys), then chown to nexus-host.
+A1 — GATED STOP. On `dylan_mini`, paperclip is a **KeepAlive LaunchAgent**
+(`com.workforce.paperclip`, parent PID 1), NOT a foreground `npx` — so Ctrl-C / `kill`
+just lets launchd **respawn** it. You must bootout + disable the agent (which SIGTERMs the
+process so embedded-PG shuts down cleanly), then confirm down:
+
+```bash
+GUI="gui/$(id -u)"
+launchctl bootout  "$GUI/com.workforce.paperclip" 2>/dev/null || true
+launchctl disable  "$GUI/com.workforce.paperclip" 2>/dev/null || true
+sleep 5
+lsof -nP -iTCP:3100 -sTCP:LISTEN
+ps aux | grep -E 'paperclipai|postgres: paperclip' | grep -v grep
+```
+
+Both of the last two commands must print **nothing**. If a `postgres: paperclip` worker
+lingers past ~10s, give it another `sleep 5` (graceful shutdown) — only `pkill -TERM -f
+'postgres: paperclip'` as a last resort (never SIGKILL embedded-PG — it can tear the DB).
+
+A2 — only AFTER A1 shows empty, copy the quiesced data dir cross-user, then chown:
+
+```bash
 sudo rsync -a --delete \
   /Users/dylan_mini/Dev/workforce-lab/paperclip-data/ \
   /Users/nexus-host/Dev/workforce-lab/paperclip-data/
 sudo chown -R nexus-host:staff /Users/nexus-host/Dev/workforce-lab
 ```
 
-Keep the stopped `dylan_mini` paperclip **recoverable** (do not delete its data) until Phase C is green.
+> ⚠️ If you ran the rsync while paperclip was STILL up (A1 hadn't actually stopped it), the
+> copied embedded-PG data may be torn — **re-run the A2 rsync after A1 shows empty**; the
+> `--delete` flag makes the redo overwrite the suspect copy cleanly.
+
+Keep the stopped `dylan_mini` paperclip **recoverable** (do not delete its data, leave the
+plist in place) until Phase C is green.
 
 ## Phase B — `nexus-host` stands up paperclip (as `nexus-host`)
 
