@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Machine-local LaunchAgent for Paperclip (the /workforce engine) on :3100.
+  Paths use /Users/dylan_mini as a placeholder — when installing under another
+  account, rewrite them with:  sed 's#/Users/dylan_mini#$HOME#g'  (see the
+  paperclip cutover plan, Phase B2). Same convention as ../com.nexus.local-os.plist.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.workforce.paperclip</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/dylan_mini/Dev/workforce-lab/run-paperclip.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- It's a server (embedded PG + API on :3100): restart if it dies. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/dylan_mini/Dev/workforce-lab/paperclip.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dylan_mini/Dev/workforce-lab/paperclip.launchd.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
