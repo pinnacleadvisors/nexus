@@ -91,6 +91,24 @@ The `run-paperclip.sh` script resolves `node` dynamically — it will NOT crash-
 version-path mismatch the way the first claudecodeui script did (dylan v24.8.0 vs nexus-host
 v24.16.0, exit 127).
 
+### B4 — rewrite the baked-in absolute paths in the copied config (REQUIRED)
+
+⚠️ **Paperclip's `instances/default/config.json` stores ABSOLUTE paths**, so the copied data dir
+still points at the *source* account's home. On first start paperclip's `doctor` preflight fails
+3 checks (`Secrets adapter` / `Storage` / `Log directory` — `EACCES` on `/Users/<old-user>/...`)
+and **refuses to start**. Rewrite the prefix to this account before (re)starting:
+
+```bash
+cd ~/Dev/workforce-lab/paperclip-data/instances/default
+sed -i '' 's#/Users/dylan_mini#'"$HOME"'#g' config.json config.json.backup
+grep -c dylan_mini config.json          # -> 0
+# the 5 keys fixed: embeddedPostgresDataDir, backups dir, logDir, storage baseDir, secrets keyFilePath
+launchctl kickstart -k "gui/$(id -u)/com.workforce.paperclip"
+```
+
+(Historical `logs/`, `run-logs/*.ndjson`, and agent-instruction prose also mention the old path —
+harmless content, leave them. Only `config.json` gates startup.)
+
 ## Phase C — verify, then permanently release `dylan_mini`
 
 ```bash
