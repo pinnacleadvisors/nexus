@@ -19,6 +19,7 @@ Single page covering every script the operator runs by hand. Group by task; show
 | Spin up a per-business container locally | `npm run business:local -- add <slug>` |
 | List / start / stop per-business containers | `npm run business:local -- list` · `up <slug>` · `down <slug>` |
 | Print a business's dispatch gateway secret | `npm run business:local -- secret <slug>` |
+| **Enable / disable PUBLIC web access (travel toggle)** | `npm run access on` · `npm run access off` · `npm run access status` |
 | Migrate Vercel crons → cron-job.org | `doppler run -- node scripts/migrate-crons-to-cronjob-org.mjs --apply` |
 | Run a DB migration | `npm run migrate` |
 | Regenerate `lib/database.types.ts` after a migration | `npm run types:regen` |
@@ -111,6 +112,30 @@ npm run deploy -- --kvm4 --firecrawl          # firecrawl (KVM4-only)
 **Success looks like**: `docker compose up -d --build` finishes and the closing `── done ──` block lists each service `Up … (healthy)`. Watch logs: `docker compose -f services/local-os/docker-compose.yaml logs -f <service>`.
 
 **On failure**: a build error prints inline; `docker not found` → start OrbStack; `.env missing` → mint the prd service token (README). For `--kvm4`: 401/403 = bad token, 404 = wrong UUID.
+
+---
+
+## 1.5 Public web access — travel toggle
+
+Public reachability of the Mac host (the `nexus-mac` cloudflared tunnel → `nexus.*` / `code.*` /
+`claude-gw.*` / `codex-gw.*`, all behind Cloudflare Access OTP) is **opt-in, default OFF**. Work
+locally on the Mac with **no public ingress**; flip it on before you travel.
+
+```bash
+npm run access on        # tunnel UP  → public hostnames serve (enable BEFORE you leave)
+npm run access off       # tunnel DOWN → zero public ingress (default); local 127.0.0.1 unaffected
+npm run access status    # show current state + a live public probe
+```
+
+Or double-click the Desktop buttons: **`Nexus Access ON/OFF/STATUS.command`**.
+
+- **Mechanism**: `cloudflared` sits in the compose `remote-access` profile, so `startup.sh` / reboot
+  never starts it — the box defaults to OFF. State is sticky (`unless-stopped`): left ON it survives
+  a reboot; OFF stays off. Script: [`services/local-os/nexus-access.sh`](../../services/local-os/nexus-access.sh).
+- ⚠️ **Inbound webhooks** (Stripe events, OAuth callbacks → `nexus.*`) are **not delivered while OFF**.
+  Leave access ON if you depend on live webhooks.
+- **Chicken-and-egg**: enabling needs to reach the box, so press `on` while on the Mac / LAN. To toggle
+  while already away, use a private always-on channel (Tailscale) instead of the public tunnel.
 
 ---
 
