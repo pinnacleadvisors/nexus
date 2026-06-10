@@ -112,6 +112,34 @@ npm run deploy -- --kvm4 --firecrawl          # firecrawl (KVM4-only)
 
 **On failure**: a build error prints inline; `docker not found` → start OrbStack; `.env missing` → mint the prd service token (README). For `--kvm4`: 401/403 = bad token, 404 = wrong UUID.
 
+### 1b. Stack on/off switch — free RAM for local testing {#stack-switch}
+
+A shutdown switch for the whole Mac local-OS stack, for when you want to free RAM to test other
+tools (openhuman / paperclip / shopify, etc.) and bring everything back afterward. Wraps
+[`services/local-os/nexus-stack.sh`](../../services/local-os/nexus-stack.sh). Stopping preserves all
+images + named volumes — **no data loss**; Supabase is cloud, so state is never on the box anyway.
+
+```bash
+npm run stack:status                 # read-only: what's running + free RAM (safe anytime)
+npm run stack:down                   # stop the Nexus containers; OrbStack stays up for your tests
+npm run stack:up                     # bring the whole stack back
+
+# down flags (append after `--`):
+npm run stack:down -- --orbstack     # ALSO stop the OrbStack VM — frees the MOST RAM
+                                     #   (use only if your testing doesn't need Docker itself)
+npm run stack:down -- --no-autostart # also prevent the login LaunchAgent from restarting it
+npm run stack:down -- --remove       # `compose down` (remove containers) instead of `stop`
+```
+
+**What `down` stops**: the 6 `local-os` containers (nexus-app, claude/codex gateways, sandbox,
+cron-runner, cloudflared) + any `nexus-business-*` containers. `up` reverses exactly what `down` did
+(starts OrbStack if it was stopped, restarts businesses, re-bootstraps the login agent if booted out).
+
+**Heads-up**: `down` takes the public site offline (the `nexus-mac` tunnel has nothing to serve) until
+`up`. That's the point of the switch — just remember to `stack:up` when you're done testing. By default
+OrbStack keeps running so Docker-based tests (paperclip/shopify containers) still work; add `--orbstack`
+only when you want every last GB back.
+
 ---
 
 ## 2. Cron jobs — cron-job.org

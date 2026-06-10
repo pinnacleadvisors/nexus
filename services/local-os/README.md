@@ -42,6 +42,24 @@ Autostart at login is handled by OrbStack (`app.start_at_login=true`) + the
 LaunchAgent `com.nexus.local-os` (→ `startup.sh`). Containers carry
 `restart: unless-stopped`.
 
+## On/off switch (free RAM for testing)
+
+`nexus-stack.sh` is the shutdown switch — stop the whole stack to free RAM for
+testing other tools, then bring it back. Stopping preserves images + volumes
+(no data loss). Path-independent (works for any host user).
+
+```bash
+npm run stack:status                  # what's running + free RAM (read-only)
+npm run stack:down                    # stop Nexus containers (OrbStack stays up)
+npm run stack:up                      # bring it all back
+npm run stack:down -- --orbstack      # also stop the OrbStack VM (frees the most RAM)
+npm run stack:down -- --no-autostart  # also stop the login agent restarting it
+```
+
+`down` also stops any `nexus-business-*` containers; `up` reverses exactly what
+`down` did. Note: `down` takes the public site offline until `up`. Full operator
+reference: [operator-commands.md §1b](../../docs/runbooks/operator-commands.md#stack-switch).
+
 ## Manage crons (agent-friendly)
 
 Crons run **locally** now (no cron-job.org). The control surface is
