@@ -43,7 +43,8 @@
     "deploy": "doppler run -- ./scripts/deploy.sh",
     "deploy:local": "./scripts/deploy.sh",
     "sync": "node scripts/sync-main.mjs",
-    "business:local": "npx --yes tsx scripts/local-os-business.ts"
+    "business:local": "npx --yes tsx scripts/local-os-business.ts",
+    "access": "bash services/local-os/nexus-access.sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",

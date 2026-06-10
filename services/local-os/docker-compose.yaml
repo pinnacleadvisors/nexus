@@ -83,6 +83,14 @@ services:
   # hostnames are flipped to this tunnel via DNS (see cloudflared/config.yml).
   cloudflared:
     image: cloudflare/cloudflared:latest
+    # Public web access (the nexus-mac tunnel) is OPT-IN. The `remote-access`
+    # profile means the default `docker compose up -d` (boot / startup.sh) does
+    # NOT start cloudflared — so the box defaults to NO public ingress while you
+    # work locally on the Mac (reach the app at 127.0.0.1). Toggle it for travel
+    # with `npm run access on|off` (services/local-os/nexus-access.sh).
+    # `restart: unless-stopped` makes the state sticky: turned on, it survives a
+    # crash/reboot; `off` (stop) stays off across reboot. Default = off.
+    profiles: ["remote-access"]
     restart: unless-stopped
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
     volumes:
